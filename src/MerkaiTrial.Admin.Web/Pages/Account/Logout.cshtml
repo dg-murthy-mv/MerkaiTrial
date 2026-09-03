@@ -1,0 +1,20 @@
+﻿@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/Account/Logout.cshtml
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Account.LogoutModel
+@{
+    Layout = "_AuthLayout";
+    ViewData["Title"] = "Sign out";
+}
+
+<h1>Sign out</h1>
+<p class="auth-sub">You'll need to sign in again to get back to your workspace.</p>
+
+<form method="post">
+    <button type="submit" class="btn-primary">Sign out</button>
+</form>
+
+<div class="auth-foot">
+    <a asp-page="/Account/Login">Stay signed in</a>
+</div>

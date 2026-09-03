@@ -1,0 +1,276 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Admin Dashboard";
+}
+
+<!-- Page Header -->
+<div class="page-header mb-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="mb-2">
+                <i class="bi bi-gear-fill me-2"></i>System Administration
+            </h2>
+            <p class="mb-0 opacity-75">Configure system-wide settings and reference data</p>
+        </div>
+        <div>
+            <a href="/Dashboard" class="btn btn-light">
+                <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Welcome Message -->
+<div class="alert alert-info border-0 shadow-sm mb-4">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-info-circle-fill me-3" style="font-size: 1.5rem;"></i>
+        <div>
+            <h6 class="alert-heading mb-1">Welcome to System Administration</h6>
+            <p class="mb-0 small">Manage countries, industry verticals, and tax configurations for all tenants.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Management Cards -->
+<div class="row g-4">
+    <!-- Countries Card -->
+    <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm hover-card">
+            <div class="card-body">
+                <div class="d-flex align-items-start mb-3">
+                    <div class="icon-wrapper me-3" style="width: 56px; height: 56px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);">
+                        <i class="bi bi-globe text-white" style="font-size: 1.75rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="card-title mb-1">Countries</h5>
+                        <p class="text-muted small mb-0">Global settings</p>
+                    </div>
+                </div>
+                
+                <p class="text-muted small mb-3">Manage country configurations, currency codes, dial codes, and default tax settings.</p>
+                
+                <ul class="list-unstyled small mb-3">
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Enable/disable countries</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Configure tax labels & rates</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Update currency information</span>
+                    </li>
+                </ul>
+                
+                <a href="/Admin/Countries" class="btn btn-primary w-100">
+                    <i class="bi bi-arrow-right-circle me-2"></i>Manage Countries
+                </a>
+            </div>
+            <div class="card-footer bg-light border-0">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>45 countries available
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company Verticals Card -->
+    <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm hover-card">
+            <div class="card-body">
+                <div class="d-flex align-items-start mb-3">
+                    <div class="icon-wrapper me-3" style="width: 56px; height: 56px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);">
+                        <i class="bi bi-diagram-3-fill text-white" style="font-size: 1.75rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="card-title mb-1">Company Verticals</h5>
+                        <p class="text-muted small mb-0">Industry categories</p>
+                    </div>
+                </div>
+                
+                <p class="text-muted small mb-3">Manage industry verticals and allow tenants to create custom categories for their businesses.</p>
+                
+                <ul class="list-unstyled small mb-3">
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>20 system verticals included</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Create tenant-specific categories</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Customize icons and colors</span>
+                    </li>
+                </ul>
+                
+                <a href="/Admin/Verticals" class="btn btn-success w-100">
+                    <i class="bi bi-arrow-right-circle me-2"></i>Manage Verticals
+                </a>
+            </div>
+            <div class="card-footer bg-light border-0">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>System + custom verticals
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tax Rates Card -->
+    <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm hover-card">
+            <div class="card-body">
+                <div class="d-flex align-items-start mb-3">
+                    <div class="icon-wrapper me-3" style="width: 56px; height: 56px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);">
+                        <i class="bi bi-calculator-fill text-white" style="font-size: 1.75rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <h5 class="card-title mb-1">Tax Rates</h5>
+                        <p class="text-muted small mb-0">Per-tenant configuration</p>
+                    </div>
+                </div>
+                
+                <p class="text-muted small mb-3">Configure country-specific tax rates for each tenant with support for multiple rates per country.</p>
+                
+                <ul class="list-unstyled small mb-3">
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Set country-specific rates</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Multiple rates per country</span>
+                    </li>
+                    <li class="mb-2">
+                        <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        <span>Default rate selection</span>
+                    </li>
+                </ul>
+                
+                <a href="/Admin/TaxRates" class="btn btn-warning w-100">
+                    <i class="bi bi-arrow-right-circle me-2"></i>Manage Tax Rates
+                </a>
+            </div>
+            <div class="card-footer bg-light border-0">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>Tenant-specific settings
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row g-4 mt-2">
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h5 class="mb-0">
+                    <i class="bi bi-bar-chart-fill me-2"></i>System Overview
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="bi bi-globe text-primary" style="font-size: 2rem;"></i>
+                            <h3 class="mb-1 mt-2">45</h3>
+                            <p class="text-muted small mb-0">Countries</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="bi bi-diagram-3 text-success" style="font-size: 2rem;"></i>
+                            <h3 class="mb-1 mt-2">20+</h3>
+                            <p class="text-muted small mb-0">Industry Verticals</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="bi bi-currency-dollar text-warning" style="font-size: 2rem;"></i>
+                            <h3 class="mb-1 mt-2">15+</h3>
+                            <p class="text-muted small mb-0">Currency Codes</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3">
+                            <i class="bi bi-shield-check text-info" style="font-size: 2rem;"></i>
+                            <h3 class="mb-1 mt-2">100%</h3>
+                            <p class="text-muted small mb-0">Multi-tenant Safe</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Best Practices -->
+<div class="row g-4 mt-2">
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h5 class="mb-0">
+                    <i class="bi bi-lightbulb-fill me-2"></i>Best Practices
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6 class="text-primary">
+                            <i class="bi bi-1-circle-fill me-2"></i>Countries
+                        </h6>
+                        <ul class="small text-muted">
+                            <li>Keep country codes ISO 3166-1 compliant</li>
+                            <li>Update tax labels when regulations change</li>
+                            <li>Disable rather than delete unused countries</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-success">
+                            <i class="bi bi-2-circle-fill me-2"></i>Verticals
+                        </h6>
+                        <ul class="small text-muted">
+                            <li>Use descriptive, industry-standard names</li>
+                            <li>System verticals are shared across tenants</li>
+                            <li>Custom verticals are tenant-specific</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="text-warning">
+                            <i class="bi bi-3-circle-fill me-2"></i>Tax Rates
+                        </h6>
+                        <ul class="small text-muted">
+                            <li>Set one default rate per country</li>
+                            <li>Keep rates up-to-date with regulations</li>
+                            <li>Document rate changes for audit trail</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .hover-card {
+        transition: all 0.3s ease;
+    }
+    
+    .hover-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
+    }
+    
+    .icon-wrapper {
+        transition: transform 0.3s ease;
+    }
+    
+    .hover-card:hover .icon-wrapper {
+        transform: scale(1.1);
+    }
+</style>

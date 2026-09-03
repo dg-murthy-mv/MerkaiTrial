@@ -1,0 +1,154 @@
+@page "/Products/Create"
+@model MerkaiTrial.Admin.Web.Pages.Products.CreateModel
+@{
+    ViewData["Title"] = "Create Product";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> Create Product</h2>
+            <p class="text-muted mb-0">Add a new product to your catalog</p>
+        </div>
+        <a asp-page="./Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
+        </a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Product Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label asp-for="Input.Name" class="form-label">
+                                    Product Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Name" class="form-control" placeholder="e.g., Premium Support Plan" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+                            <div class="col-12">
+                                <label asp-for="Input.Description" class="form-label">Description</label>
+                                <textarea asp-for="Input.Description" class="form-control" rows="3" placeholder="Product description..."></textarea>
+                                <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.Sku" class="form-label">SKU</label>
+                                <input asp-for="Input.Sku" class="form-control" placeholder="e.g., PROD-001" />
+                                <span asp-validation-for="Input.Sku" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.Category" class="form-label">
+                                    Category <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Category" asp-items="Model.GetCategoryOptions()" class="form-select">
+                                    <option value="">-- Select Category --</option>
+                                </select>
+                                <span asp-validation-for="Input.Category" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><span class="text-white fw-bold fs-5">@Model.TenantCurrencySymbol</span> Pricing</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label asp-for="Input.ListPrice" class="form-label">
+                                    List Price <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text fw-semibold">@Model.TenantCurrencySymbol</span>
+                                    <input asp-for="Input.ListPrice" class="form-control" type="number" step="0.01" min="0.01" />
+                                </div>
+                                <span asp-validation-for="Input.ListPrice" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-4">
+                                @* Currency is tenant-level — not editable per product *@
+                                <label class="form-label">Currency</label>
+                                <input type="hidden" asp-for="Input.Currency" />
+                                <input class="form-control bg-light" value="@Model.TenantCurrencyCode — @Model.TenantCurrencyName" readonly />
+                                <div class="form-text">Set by your tenant configuration.</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label asp-for="Input.TaxRate" class="form-label">Tax Rate (%)</label>
+                                <input asp-for="Input.TaxRate" class="form-control" type="number" step="0.01" min="0" max="100" placeholder="e.g., 18.00" />
+                                <span asp-validation-for="Input.TaxRate" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Create Product
+                            </button>
+                            <a asp-page="./Index" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-gear"></i> Settings</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="Input.Type" class="form-label">
+                                Product Type <span class="text-danger">*</span>
+                            </label>
+                            <select asp-for="Input.Type" asp-items="Model.GetTypeOptions()" class="form-select"></select>
+                            <span asp-validation-for="Input.Type" class="text-danger small"></span>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input asp-for="Input.IsActive" class="form-check-input" type="checkbox" role="switch" />
+                            <label asp-for="Input.IsActive" class="form-check-label">Active</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            <li class="mb-2">Choose the right <strong>category</strong> for easy filtering</li>
+                            <li class="mb-2">Add a unique <strong>SKU</strong> for inventory tracking</li>
+                            <li class="mb-2">Set <strong>tax rate</strong> if product is taxable</li>
+                            <li>Mark as <strong>Active</strong> to make it available</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

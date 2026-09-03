@@ -1,0 +1,76 @@
+@* =====================================================================
+   FILE: Pages/Reports/Pipeline/Index.cshtml
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.Pipeline.IndexModel
+@{ ViewData["Title"] = "Pipeline Summary"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-kanban-fill me-2 text-primary"></i>Pipeline Summary</h2>
+            <p class="text-muted mb-0 small">Deals by stage with value and probability</p>
+        </div>
+        @if (Model.Data != null)
+        {
+            <a asp-page-handler="Export"
+               asp-route-fromDate="@Model.FromDate?.ToString("yyyy-MM-dd")"
+               asp-route-toDate="@Model.ToDate?.ToString("yyyy-MM-dd")"
+               asp-route-vertical="@Model.Vertical"
+               class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-file-earmark-excel me-1"></i>Export
+            </a>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-primary">@d.TotalActiveDeals</div><div class="text-muted small">Active Deals</div>
+            </div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-success">@Model.FormatCurrency(d.TotalPipelineValue)</div><div class="text-muted small">Pipeline Value</div>
+            </div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-warning">@Model.FormatCurrency(d.AvgDealSize)</div><div class="text-muted small">Avg Deal Size</div>
+            </div></div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body"><canvas id="chart" height="100"></canvas></div>
+        </div>
+    }
+    else { <div class="text-center py-5 text-muted"><i class="bi bi-kanban fs-1 d-block mb-3"></i>No data for selected filters.</div> }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d) {
+    const colors = { 'Discovery':'#94a3b8','Qualification':'#3b82f6','Proposal':'#0ea5e9','Negotiation':'#f59e0b','ClosedWon':'#16a34a','ClosedLost':'#dc2626' };
+    new Chart(document.getElementById('chart'), {
+        type: 'bar',
+        data: {
+            labels: d.stages.map(s => s.stage),
+            datasets: [
+                { label: 'Deal Count', data: d.stages.map(s => s.count), backgroundColor: d.stages.map(s => colors[s.stage] || '#94a3b8'), borderRadius: 4, yAxisID: 'y' },
+                { label: 'Total Value', data: d.stages.map(s => s.totalValue), type: 'line', borderColor: '#6366f1', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                y:  { beginAtZero: true, title: { display: true, text: 'Count' } },
+                y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Value' } }
+            }
+        }
+    });
+}
+</script>
+}

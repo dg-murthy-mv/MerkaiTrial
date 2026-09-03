@@ -1,0 +1,112 @@
+@* =====================================================================
+   _AttachmentsTab.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/_AttachmentsTab.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-paperclip me-2"></i>Attachments
+            <span class="badge bg-secondary ms-1">@Model.Attachments.Count</span>
+        </h5>
+    </div>
+    <div class="card-body">
+
+        @* ── Upload Form ───────────────────────────────────────────── *@
+        @if (Model.CanUpdate)
+        {
+            <form method="post"
+                  asp-page-handler="UploadAttachment"
+                  asp-route-id="@Model.Lead.Id"
+                  enctype="multipart/form-data"
+                  class="mb-4">
+
+                <label class="form-label fw-semibold">Upload Document</label>
+                <div class="input-group">
+                    <input type="file"
+                           name="file"
+                           class="form-control"
+                           accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.csv"
+                           required />
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-upload me-1"></i>Upload
+                    </button>
+                </div>
+                <div class="form-text text-muted">
+                    Allowed: PDF, Word, Excel, Images, CSV &nbsp;•&nbsp; Max 10 MB
+                </div>
+            </form>
+        }
+
+        @* ── File List ─────────────────────────────────────────────── *@
+        @if (!Model.Attachments.Any())
+        {
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-file-earmark-x fs-1 d-block mb-2"></i>
+                No attachments yet. Upload your first document above.
+            </div>
+        }
+        else
+        {
+            <div class="list-group list-group-flush">
+                @foreach (var file in Model.Attachments)
+                {
+                    <div class="list-group-item px-0">
+                        <div class="d-flex align-items-center justify-content-between">
+
+                            @* File icon + name *@
+                            <div class="d-flex align-items-center gap-3 flex-grow-1 min-width-0">
+                                <i class="bi @file.FileIcon fs-4 flex-shrink-0"></i>
+                                <div class="min-width-0">
+                                    <a href="@file.FileUrl"
+                                       target="_blank"
+                                       class="fw-semibold text-decoration-none text-truncate d-block"
+                                       title="@file.FileName">
+                                        @file.FileName
+                                    </a>
+                                    <small class="text-muted">
+                                        @file.FileSizeDisplay
+                                        &nbsp;•&nbsp;
+                                        @file.CreatedAtUtc.ToString("MMM dd, yyyy HH:mm")
+                                        @if (!string.IsNullOrEmpty(file.CreatedBy))
+                                        {
+                                            <span>&nbsp;•&nbsp; @file.CreatedBy</span>
+                                        }
+                                    </small>
+                                </div>
+                            </div>
+
+                            @* Actions *@
+                            <div class="d-flex gap-2 flex-shrink-0 ms-3">
+                                <a href="@file.FileUrl"
+                                   target="_blank"
+                                   class="btn btn-sm btn-outline-primary"
+                                   title="Download">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                @if (Model.CanUpdate)
+                                {
+                                    <form method="post"
+                                          asp-page-handler="DeleteAttachment"
+                                          asp-route-id="@Model.Lead.Id"
+                                          asp-route-attachmentId="@file.Id"
+                                          onsubmit="return confirm('Delete @Html.Raw(file.FileName.Replace("'", "\\'"))?');"
+                                          class="d-inline">
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger"
+                                                title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+    </div>
+</div>

@@ -1,0 +1,173 @@
+@* =====================================================================
+   ACTIVITIES TAB
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_ActivitiesTab.cshtml
+   Fixes:
+     - Removed SMS and WhatsApp (not in scope)
+     - Added "Meeting / Demo" as a type
+     - Added color-coded timeline markers per activity type
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+@* Log New Activity — only shown to roles with update permission *@
+@if (Model.CanUpdate)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Log Activity</h6>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="AddActivity" asp-route-id="@Model.Deal.Id">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="ActivityInput.ActivityType" class="form-label">
+                            Activity Type <span class="text-danger">*</span>
+                        </label>
+                        <select asp-for="ActivityInput.ActivityType" class="form-select" required>
+                            <option value="">— Select Type —</option>
+                            <option value="Call">📞 Call</option>
+                            <option value="Email">📧 Email</option>
+                            <option value="Meeting">🤝 Meeting / Demo</option>
+                            <option value="Task">✅ Task</option>
+                            <option value="Note">📝 Note</option>
+                        </select>
+                        <span asp-validation-for="ActivityInput.ActivityType" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="ActivityInput.Duration" class="form-label">Duration (minutes)</label>
+                        <input type="number" asp-for="ActivityInput.Duration" class="form-control"
+                               min="1" max="480" placeholder="e.g., 30" />
+                        <small class="text-muted">Optional — 1 to 480 minutes</small>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="ActivityInput.Subject" class="form-label">Subject <span class="text-muted small">(optional)</span></label>
+                        <input type="text" asp-for="ActivityInput.Subject" class="form-control"
+                               placeholder="Brief description of the activity" />
+                        <span asp-validation-for="ActivityInput.Subject" class="text-danger small"></span>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="ActivityInput.Description" class="form-label">Notes / Details</label>
+                        <textarea asp-for="ActivityInput.Description" class="form-control" rows="3"
+                                  placeholder="What was discussed or accomplished?"></textarea>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-activity me-2"></i>Log Activity
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+<!-- Activity History -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Activity History</h6>
+        <span class="badge bg-secondary">@Model.Activities.Count</span>
+    </div>
+    <div class="card-body">
+        @if (Model.Activities.Any())
+        {
+            <div class="activity-timeline">
+                @foreach (var activity in Model.Activities.OrderByDescending(a => a.ActivityDate))
+                {
+                    var (icon, colorClass) = activity.ActivityType switch
+                    {
+                        "Call"    => ("bi-telephone-fill",     "activity-call"),
+                        "Email"   => ("bi-envelope-fill",      "activity-email"),
+                        "Meeting" => ("bi-people-fill",        "activity-meeting"),
+                        "Task"    => ("bi-check-circle-fill",  "activity-task"),
+                        "Note"    => ("bi-sticky-fill",        "activity-note"),
+                        _         => ("bi-activity",           "activity-default")
+                    };
+                    <div class="activity-item mb-4">
+                        <div class="activity-marker @colorClass">
+                            <i class="bi @icon"></i>
+                        </div>
+                        <div class="activity-content">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <div>
+                                    <h6 class="mb-0">
+                                        <span class="badge activity-badge @colorClass me-2">@activity.ActivityType</span>
+                                        @(activity.Subject ?? "Activity logged")
+                                    </h6>
+                                    <small class="text-muted">
+                                        <i class="bi bi-person me-1"></i>@activity.CreatedBy
+                                        @if (activity.Duration.HasValue)
+                                        {
+                                            <span class="ms-2"><i class="bi bi-clock me-1"></i>@activity.Duration min</span>
+                                        }
+                                    </small>
+                                </div>
+                                <small class="text-muted text-nowrap ms-2">
+                                    @Model.GetRelativeTime(activity.ActivityDate)
+                                    <br />
+                                    <span class="text-muted" style="font-size:0.7rem;">
+                                        @activity.ActivityDate.ToLocalTime().ToString("MMM dd, hh:mm tt")
+                                    </span>
+                                </small>
+                            </div>
+                            @if (!string.IsNullOrEmpty(activity.Description))
+                            {
+                                <p class="mb-0 text-muted mt-1" style="white-space: pre-wrap; font-size: 0.9rem;">@activity.Description</p>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted py-5">
+                <i class="bi bi-activity fs-1"></i>
+                <p class="mt-2">No activities logged yet.</p>
+                <p class="small">Log a call, email, or meeting above to start tracking engagement.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .activity-timeline { position: relative; padding-left: 44px; }
+    .activity-timeline::before {
+        content: '';
+        position: absolute;
+        left: 15px; top: 16px; bottom: 0;
+        width: 2px;
+        background-color: #e9ecef;
+    }
+    .activity-item { position: relative; }
+    .activity-marker {
+        position: absolute;
+        left: -44px; top: 0;
+        width: 32px; height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        z-index: 1;
+        color: white;
+    }
+    .activity-content {
+        background-color: #f8f9fa;
+        padding: 12px 16px;
+        border-radius: 8px;
+    }
+    /* Per-type colors */
+    .activity-call    { background-color: #198754; }
+    .activity-email   { background-color: #0d6efd; }
+    .activity-meeting { background-color: #6f42c1; }
+    .activity-task    { background-color: #fd7e14; }
+    .activity-note    { background-color: #17a2b8; }
+    .activity-default { background-color: #6c757d; }
+
+    /* Badge uses same color class */
+    .activity-badge.activity-call    { background-color: #198754; color: white; }
+    .activity-badge.activity-email   { background-color: #0d6efd; color: white; }
+    .activity-badge.activity-meeting { background-color: #6f42c1; color: white; }
+    .activity-badge.activity-task    { background-color: #fd7e14; color: white; }
+    .activity-badge.activity-note    { background-color: #17a2b8; color: white; }
+    .activity-badge.activity-default { background-color: #6c757d; color: white; }
+</style>

@@ -1,0 +1,191 @@
+@* =====================================================================
+   ROLE DETAIL PAGE
+   ===================================================================== *@
+@page "/Admin/Roles/Detail/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Roles.DetailModel
+@{
+    ViewData["Title"] = $"Role: {Model.Role.DisplayName}";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <div style="background-color: #ff6b35; color: white; width: 50px; height: 50px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">
+                    @Model.Role.DisplayName[0]
+                </div>
+                @Model.Role.DisplayName
+                @if (Model.Role.IsSystemRole)
+                {
+                    <span class="badge bg-info">System</span>
+                }
+                else
+                {
+                    <span class="badge bg-success">Custom</span>
+                }
+            </h2>
+            <p class="text-muted mb-0">@Model.Role.Name</p>
+        </div>
+        <div>
+            @if (!Model.Role.IsSystemRole)
+            {
+                <a asp-page="./Edit" asp-route-id="@Model.Id" class="btn btn-warning">
+                    <i class="bi bi-pencil"></i> Edit Role
+                </a>
+            }
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#overview">
+                <i class="bi bi-info-circle"></i> Overview
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#permissions">
+                <i class="bi bi-key"></i> Permissions
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">
+                <i class="bi bi-people"></i> Users <span class="badge bg-secondary">@Model.Role.UserCount</span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- Overview Tab -->
+        <div class="tab-pane fade show active" id="overview">
+            <div class="card">
+                <div class="card-header" style="background-color: #ff6b35; color: white;">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Role Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Role Name</label>
+                            <p class="form-control-plaintext">@Model.Role.Name</p>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Display Name</label>
+                            <p class="form-control-plaintext">@Model.Role.DisplayName</p>
+                        </div>
+                        <div class="col-md-12 mb-3">
+                            <label class="form-label fw-bold">Description</label>
+                            <p class="form-control-plaintext">@(Model.Role.Description ?? "No description")</p>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Type</label>
+                            <p class="form-control-plaintext">
+                                @if (Model.Role.IsSystemRole)
+                                {
+                                    <span class="badge bg-info">System Role</span>
+                                    <small class="text-muted d-block">Built-in role, cannot be modified</small>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-success">Custom Role</span>
+                                    <small class="text-muted d-block">User-created role</small>
+                                }
+                            </p>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Assigned Users</label>
+                            <p class="form-control-plaintext">
+                                <span class="badge bg-secondary">@Model.Role.UserCount</span>
+                                <small class="text-muted d-block">Users with this role</small>
+                            </p>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Created</label>
+                            <p class="form-control-plaintext">@Model.Role.CreatedAtUtc.ToString("MMM dd, yyyy")</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Permissions Tab -->
+        <div class="tab-pane fade" id="permissions">
+            <div class="card">
+                <div class="card-header" style="background-color: #ff6b35; color: white;">
+                    <h5 class="mb-0"><i class="bi bi-key"></i> Permissions</h5>
+                </div>
+                <div class="card-body">
+                    @if (Model.ParsedPermissions.Any())
+                    {
+                        <div class="row g-3">
+                            @foreach (var module in Model.ParsedPermissions)
+                            {
+                                <div class="col-md-6">
+                                    <div class="border rounded p-3">
+                                        <h6 style="color: #ff6b35;">
+                                            <i class="bi bi-@(module.Key == "leads" ? "funnel" : module.Key == "contacts" ? "person" : module.Key == "deals" ? "currency-dollar" : module.Key == "users" ? "people" : module.Key == "tenants" ? "building" : "gear")"></i>
+                                            @module.Key.ToUpper()
+                                        </h6>
+                                        <div class="d-flex flex-wrap gap-2 mt-2">
+                                            @foreach (var perm in module.Value)
+                                            {
+                                                <span class="badge bg-success">@perm</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted text-center py-4">No permissions assigned</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div class="tab-pane fade" id="users">
+            <div class="card">
+                <div class="card-header" style="background-color: #ff6b35; color: white;">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> Assigned Users</h5>
+                </div>
+                <div class="card-body">
+                    @if (Model.Users.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in Model.Users)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <i class="bi bi-person-circle" style="color: #ff6b35;"></i>
+                                                @user.FullName
+                                            </td>
+                                            <td>@user.Email</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted text-center py-4">No users assigned to this role</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

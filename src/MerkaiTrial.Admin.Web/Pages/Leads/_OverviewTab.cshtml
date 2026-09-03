@@ -1,0 +1,187 @@
+@* =====================================================================
+   OVERVIEW TAB - Basic Contact and Lead Information
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/_OverviewTab.cshtml
+   Change: Added Vertical/Industry field in Lead Details card
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
+
+<!-- Basic Information Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            <i class="bi bi-person-fill me-2"></i>Contact Information
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="text-muted small">Full Name</label>
+                <p class="mb-0"><strong>@Model.Lead.FullName</strong></p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Email</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.Email))
+                    {
+                        <a href="mailto:@Model.Lead.Email"><i class="bi bi-envelope me-1"></i>@Model.Lead.Email</a>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not provided</span>
+                    }
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Phone</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.Phone))
+                    {
+                        <a href="tel:@Model.Lead.Phone"><i class="bi bi-telephone me-1"></i>@Model.Lead.Phone</a>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not provided</span>
+                    }
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Company</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.CompanyName))
+                    {
+                        <i class="bi bi-building me-1"></i>@Model.Lead.CompanyName
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not provided</span>
+                    }
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Address & Location Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            <i class="bi bi-geo-alt-fill me-2"></i>Address & Location
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12">
+                <label class="text-muted small">Address</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.Address))
+                    {
+                        @Model.Lead.Address
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not provided</span>
+                    }
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Country</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.CountryName))
+                    {
+                        <i class="bi bi-flag me-1"></i>@Model.Lead.CountryName
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not specified</span>
+                    }
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Currency</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.Currency))
+                    {
+                        <i class="bi bi-currency-exchange me-1"></i>@Model.Lead.Currency
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not specified</span>
+                    }
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lead Details Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            <i class="bi bi-bar-chart-fill me-2"></i>Lead Details
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="text-muted small">Channel</label>
+                <p class="mb-0">
+                    <i class="bi bi-megaphone me-1"></i>@Model.Lead.Channel
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Source</label>
+                <p class="mb-0">
+                    <i class="bi bi-signpost me-1"></i>@Model.Lead.Source
+                </p>
+            </div>
+
+            @* ✅ NEW: Industry / Vertical *@
+            <div class="col-md-6">
+                <label class="text-muted small">Industry / Vertical</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Lead.VerticalName))
+                    {
+                        <i class="bi bi-diagram-3 me-1"></i>
+                        <span class="badge bg-light text-dark border">@Model.Lead.VerticalName</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not specified</span>
+                    }
+                </p>
+            </div>
+
+            <div class="col-md-6">
+                <label class="text-muted small">Status</label>
+                <p class="mb-0">
+                    <span class="badge @Model.GetStatusBadgeClass(Model.Lead.Status)">
+                        @Model.Lead.Status
+                    </span>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Lead Score</label>
+                <p class="mb-0">
+                    <strong>@Model.Lead.Score</strong> / 100
+                    <div class="progress mt-1" style="height: 8px;">
+                        <div class="progress-bar @Model.GetScoreColor(Model.Lead.Score)"
+                             role="progressbar"
+                             style="width: @Model.Lead.Score%"
+                             aria-valuenow="@Model.Lead.Score"
+                             aria-valuemin="0"
+                             aria-valuemax="100">
+                        </div>
+                    </div>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Expected Value</label>
+                <p class="mb-0">
+                    <strong class="text-success">
+                        @Model.FormatCurrency(Model.Lead.ExpectedValue)
+                    </strong>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>

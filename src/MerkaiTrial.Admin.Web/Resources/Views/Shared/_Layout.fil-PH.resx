@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+	<data name="App_Title">
+		<value>MerkaiTrial Starter Admin</value>
+	</data>
+	<data name="Nav_Contacts">
+		<value>Mga Contact</value>
+	</data>
+	<data name="Nav_Leads">
+		<value>Mga Lead</value>
+	</data>
+	<data name="Nav_Pipelines">
+		<value>Mga Pipeline</value>
+	</data>
+	<data name="Nav_Journeys">
+		<value>Mga Journey</value>
+	</data>
+	<data name="Nav_Inbox">
+		<value>Inbox</value>
+	</data>
+	<data name="Nav_Widget">
+		<value>Widget</value>
+	</data>
+	<data name="Lang">
+		<value>Wika</value>
+	</data>
+	<data name="Footer_Disclaimer">
+		<value>Demo lamang ang lahat ng datos na ipinapakita.</value>
+	</data>
+</root>

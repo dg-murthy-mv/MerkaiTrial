@@ -1,0 +1,140 @@
+@* =====================================================================
+   TIMELINE TAB - Unified Timeline of All Lead Interactions
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/_TimelineTab.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
+
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            <i class="bi bi-clock-history me-2"></i>Complete Timeline
+            <span class="badge bg-secondary ms-2">@Model.Timeline.Count Events</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        @if (Model.Timeline.Any())
+        {
+            <div class="timeline">
+                @foreach (var item in Model.Timeline)
+                {
+                    <div class="timeline-item">
+                        <div class="timeline-marker">
+                            <span class="badge @item.BadgeClass">
+                                <i class="@item.Icon"></i>
+                            </span>
+                        </div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <h6 class="mb-1">@item.Title</h6>
+                                <small class="text-muted">
+                                    <i class="bi bi-clock me-1"></i>
+                                    @item.Date.ToString("MMM dd, yyyy HH:mm") 
+                                    (@Model.GetRelativeTime(item.Date))
+                                </small>
+                            </div>
+                            @if (!string.IsNullOrEmpty(item.Description))
+                            {
+                                <div class="timeline-body">
+                                    <p class="mb-1 text-muted">@item.Description</p>
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(item.CreatedBy))
+                            {
+                                <div class="timeline-footer">
+                                    <small class="text-muted">
+                                        <i class="bi bi-person-circle me-1"></i>
+                                        @item.CreatedBy
+                                    </small>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-5">
+                <i class="bi bi-clock-history text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">No timeline events yet.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .timeline {
+        position: relative;
+        padding-left: 0;
+        margin: 0;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-left: 50px;
+        padding-bottom: 30px;
+        border-left: 2px solid #e0e0e0;
+        margin-left: 10px;
+    }
+
+    .timeline-item:last-child {
+        border-left: none;
+        padding-bottom: 0;
+    }
+
+    .timeline-marker {
+        position: absolute;
+        left: -14px;
+        top: 0;
+    }
+
+    .timeline-marker .badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        background-color: #fff;
+        border: 2px solid currentColor;
+    }
+
+    .timeline-content {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+
+    .timeline-header h6 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .timeline-body {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    .timeline-footer {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e0e0e0;
+    }
+
+    /* Mobile responsive */
+    @@media (max-width: 576px) {
+        .timeline-item {
+            padding-left: 40px;
+        }
+        
+        .timeline-marker .badge {
+            width: 24px;
+            height: 24px;
+            font-size: 0.75rem;
+        }
+    }
+</style>

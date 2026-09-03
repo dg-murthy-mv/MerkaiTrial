@@ -1,0 +1,196 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Contacts.CreateModel
+@{
+    ViewData["Title"] = "Create Contact";
+}
+
+<!-- Page Header -->
+<div class="mb-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a asp-page="./Index">Contacts</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Create</li>
+        </ol>
+    </nav>
+    <h2 class="mb-0">
+        <i class="bi bi-person-plus me-2"></i>Create New Contact
+    </h2>
+</div>
+
+<!-- Alert Messages -->
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+<div class="row">
+    <!-- Main Form -->
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h5 class="mb-0">Contact Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="row g-3">
+                        <!-- Company -->
+                        <div class="col-md-12">
+                            <label asp-for="Input.CompanyId" class="form-label">Company (Optional)</label>
+                            <select asp-for="Input.CompanyId"
+                                    asp-items="Model.CompanyOptions"
+                                    class="form-select">
+                                <option value="">-- No Company --</option>
+                            </select>
+                            <span asp-validation-for="Input.CompanyId" class="text-danger"></span>
+                        </div>
+
+                        <!-- First Name -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.FirstName" class="form-label">
+                                First Name <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.FirstName" class="form-control" autofocus />
+                            <span asp-validation-for="Input.FirstName" class="text-danger"></span>
+                        </div>
+
+                        <!-- Last Name -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.LastName" class="form-label">Last Name</label>
+                            <input asp-for="Input.LastName" class="form-control" />
+                            <span asp-validation-for="Input.LastName" class="text-danger"></span>
+                        </div>
+
+                        <!-- Job Title -->
+                        <div class="col-md-12">
+                            <label asp-for="Input.JobTitle" class="form-label">Job Title</label>
+                            <input asp-for="Input.JobTitle" class="form-control" placeholder="e.g. Sales Manager" />
+                            <span asp-validation-for="Input.JobTitle" class="text-danger"></span>
+                        </div>
+
+                        <!-- Email -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.Email" class="form-label">Email</label>
+                            <input asp-for="Input.Email" type="email" class="form-control" placeholder="contact@example.com" />
+                            <span asp-validation-for="Input.Email" class="text-danger"></span>
+                        </div>
+
+                        <!-- Phone -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.Phone" class="form-label">Phone</label>
+                            <input asp-for="Input.Phone" type="tel" class="form-control" placeholder="+1 234 567 8900" />
+                            <span asp-validation-for="Input.Phone" class="text-danger"></span>
+                        </div>
+
+                        <!-- Mobile -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.Mobile" class="form-label">Mobile</label>
+                            <input asp-for="Input.Mobile" type="tel" class="form-control" placeholder="+1 234 567 8900" />
+                            <span asp-validation-for="Input.Mobile" class="text-danger"></span>
+                        </div>
+
+                        <!-- Country -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.Country" class="form-label">Country Code</label>
+                            <input asp-for="Input.Country" class="form-control" placeholder="TH, US, IN" maxlength="5" />
+                            <span asp-validation-for="Input.Country" class="text-danger"></span>
+                            <small class="text-muted">Use 2-letter country code (e.g., TH, US, IN)</small>
+                        </div>
+
+                        <!-- Address -->
+                        <div class="col-md-12">
+                            <label asp-for="Input.Address" class="form-label">Address</label>
+                            <input asp-for="Input.Address" class="form-control" placeholder="Street address" />
+                            <span asp-validation-for="Input.Address" class="text-danger"></span>
+                        </div>
+
+                        <!-- City -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.City" class="form-label">City</label>
+                            <input asp-for="Input.City" class="form-control" placeholder="Bangkok" />
+                            <span asp-validation-for="Input.City" class="text-danger"></span>
+                        </div>
+
+                        <!-- Postal Code -->
+                        <div class="col-md-6">
+                            <label asp-for="Input.PostalCode" class="form-label">Postal Code</label>
+                            <input asp-for="Input.PostalCode" class="form-control" placeholder="10110" />
+                            <span asp-validation-for="Input.PostalCode" class="text-danger"></span>
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="col-md-12">
+                            <label asp-for="Input.Notes" class="form-label">Notes</label>
+                            <textarea asp-for="Input.Notes" class="form-control" rows="3" placeholder="Additional information..."></textarea>
+                            <span asp-validation-for="Input.Notes" class="text-danger"></span>
+                        </div>
+
+                        <!-- Is Primary -->
+                        <div class="col-md-12">
+                            <div class="form-check">
+                                <input asp-for="Input.IsPrimary" class="form-check-input" type="checkbox" />
+                                <label asp-for="Input.IsPrimary" class="form-check-label">
+                                    Mark as Primary Contact
+                                </label>
+                            </div>
+                            <small class="text-muted">Primary contacts are highlighted in lists and reports</small>
+                        </div>
+                    </div>
+
+                    <hr class="my-4" />
+
+                    <div class="d-flex justify-content-between">
+                        <a asp-page="./Index" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>Create Contact
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Sidebar -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Tips
+                </h6>
+            </div>
+            <div class="card-body">
+                <ul class="small mb-0 ps-3">
+                    <li class="mb-2">Only <strong>First Name</strong> is required</li>
+                    <li class="mb-2">Link to a company for better organization</li>
+                    <li class="mb-2">Mark important contacts as <strong>Primary</strong></li>
+                    <li class="mb-2">Use country codes (TH, US, IN) for consistency</li>
+                    <li>Add notes for context and reminders</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="bi bi-lightbulb me-2"></i>Next Steps
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small mb-2">After creating this contact, you can:</p>
+                <ul class="small mb-0 ps-3">
+                    <li class="mb-2">Create deals associated with this contact</li>
+                    <li class="mb-2">View their activity timeline</li>
+                    <li>Export contact information</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

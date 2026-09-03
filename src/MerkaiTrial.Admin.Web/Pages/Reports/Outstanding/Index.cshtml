@@ -1,0 +1,104 @@
+@* FILE: Pages/Reports/Outstanding/Index.cshtml *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.Outstanding.IndexModel
+@{ ViewData["Title"] = "Outstanding Invoices"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-receipt-cutoff me-2 text-danger"></i>Outstanding Invoices</h2>
+            <p class="text-muted mb-0 small">Aging analysis of unpaid invoices — always shows current snapshot</p>
+        </div>
+        @if (Model.Data != null)
+        {
+            <a asp-page-handler="Export"
+               asp-route-fromDate="@Model.FromDate?.ToString("yyyy-MM-dd")"
+               asp-route-toDate="@Model.ToDate?.ToString("yyyy-MM-dd")"
+               asp-route-vertical="@Model.Vertical"
+               class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-file-earmark-excel me-1"></i>Export
+            </a>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var o = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-danger">@Model.FormatCurrency(o.TotalOutstanding)</div><div class="text-muted small">Total Outstanding</div>
+            </div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-warning">@o.TotalCount</div><div class="text-muted small">Unpaid Invoices</div>
+            </div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-danger">@o.Buckets.Where(b => b.Label != "Current (not due)").Sum(b => b.Count)</div>
+                <div class="text-muted small">Overdue Invoices</div>
+            </div></div>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-bottom fw-semibold small">
+                        <i class="bi bi-clock-history me-1 text-danger"></i>Aging Buckets
+                    </div>
+                    <div class="card-body"><canvas id="chart" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-bottom fw-semibold small">
+                        <i class="bi bi-list-ul me-1"></i>Invoice Detail
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Invoice</th><th>Contact</th>
+                                    <th class="text-end">Balance</th>
+                                    <th class="text-end">Days Overdue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var inv in o.Invoices)
+                                {
+                                    <tr>
+                                        <td><span class="badge bg-secondary">@inv.Number</span></td>
+                                        <td class="small">@inv.ContactName</td>
+                                        <td class="text-end small fw-semibold text-danger">@Model.FormatCurrency(inv.Balance)</td>
+                                        <td class="text-end small">
+                                            @if (inv.DaysOverdue > 0) { <span class="badge bg-danger">@inv.DaysOverdue d</span> }
+                                            else { <span class="badge bg-secondary">Current</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else { <div class="text-center py-5 text-muted"><i class="bi bi-receipt-cutoff fs-1 d-block mb-3"></i>No outstanding invoices.</div> }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d) {
+    new Chart(document.getElementById('chart'), {
+        type: 'doughnut',
+        data: {
+            labels: d.buckets.map(b => b.label),
+            datasets: [{ data: d.buckets.map(b => b.amount), backgroundColor: ['#3b82f6','#f59e0b','#f97316','#dc2626','#7f1d1d'], hoverOffset: 6 }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } } }
+    });
+}
+</script>
+}

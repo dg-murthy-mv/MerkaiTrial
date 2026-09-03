@@ -1,0 +1,12 @@
+﻿@* Pages/_ViewStart.cshtml
+   ONE place that decides which layout every page uses.
+   Admin pages → _SuperAdminLayout
+   All other pages → _Layout
+*@
+@{
+    var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+
+    Layout = page.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase)
+        ? "_SuperAdminLayout"
+        : "_Layout";
+}

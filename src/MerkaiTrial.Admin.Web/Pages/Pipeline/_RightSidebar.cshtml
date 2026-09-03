@@ -1,0 +1,216 @@
+@* =====================================================================
+   RIGHT SIDEBAR
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_RightSidebar.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+<!-- Quick Info Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Quick Info</h6>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="text-muted small">Stage</label>
+            <p class="mb-0">
+                <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage) fs-6">
+                    @Model.Deal.Stage
+                </span>
+            </p>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Win Probability</label>
+            <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 20px;">
+                    <div class="progress-bar @Model.GetStageBadgeClass(Model.Deal.Stage)"
+                         role="progressbar"
+                         style="width: @Model.Deal.Probability%"
+                         aria-valuenow="@Model.Deal.Probability"
+                         aria-valuemin="0" aria-valuemax="100">
+                        <strong>@Model.Deal.Probability%</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Expected Value</label>
+            <p class="mb-0">
+                <strong class="text-success fs-5">
+                    @Model.FormatCurrency(Model.Deal.ExpectedValue)
+                </strong>
+            </p>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Expected Close Date</label>
+            <p class="mb-0">
+                <i class="bi bi-calendar3 me-1"></i>@Model.FormatDate(Model.Deal.ExpectedCloseDateUtc)
+                <br />
+                @{
+                    var daysUntilClose = (Model.Deal.ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days;
+                    var daysClass = daysUntilClose < 0 ? "text-danger" : daysUntilClose < 7 ? "text-warning" : "text-muted";
+                }
+                <small class="@daysClass">
+                    @if (daysUntilClose < 0)
+                    { <text>@Math.Abs(daysUntilClose) days overdue</text> }
+                    else if (daysUntilClose == 0)
+                    { <text>Closes today!</text> }
+                    else
+                    { <text>@daysUntilClose days remaining</text> }
+                </small>
+            </p>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Created</label>
+            <p class="mb-0">
+                <i class="bi bi-calendar3 me-1"></i>@Model.FormatDate(Model.Deal.CreatedAtUtc)
+                <br /><small class="text-muted">@Model.GetRelativeTime(Model.Deal.CreatedAtUtc)</small>
+            </p>
+        </div>
+        <div class="mb-0">
+            <label class="text-muted small">Owner</label>
+            <p class="mb-0">
+                <i class="bi bi-person-circle me-1"></i><strong>@Model.Deal.OwnerName</strong>
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Summary Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Activity Summary</h6>
+    </div>
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted"><i class="bi bi-chat-left-text me-1"></i>Notes</span>
+            <span class="badge bg-primary">@Model.Notes.Count</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted"><i class="bi bi-activity me-1"></i>Activities</span>
+            <span class="badge bg-success">@Model.Activities.Count</span>
+        </div>
+        <div class="d-flex justify-content-between mb-0">
+            <span class="text-muted"><i class="bi bi-bell me-1"></i>Pending Reminders</span>
+            <span class="badge bg-warning text-dark">@Model.Reminders.Count(r => !r.IsCompleted)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Stage History Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Stage History</h6>
+        <span class="badge bg-secondary">@Model.StageHistory.Count</span>
+    </div>
+    <div class="card-body p-0">
+        @if (Model.StageHistory.Any())
+        {
+            <div class="stage-timeline px-3 py-2">
+                @foreach (var entry in Model.StageHistory)
+                {
+                    <div class="stage-timeline-item py-2 border-bottom">
+                        <div class="d-flex align-items-start gap-2">
+                            <div class="stage-timeline-dot mt-1 flex-shrink-0"></div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-1 flex-wrap">
+                                    @if (!string.IsNullOrEmpty(entry.FromStage))
+                                    {
+                                        <span class="badge @Model.GetStageBadgeClass(entry.FromStage) badge-sm">
+                                            @entry.FromStage
+                                        </span>
+                                        <i class="bi bi-arrow-right text-muted small"></i>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-plus-circle text-muted small me-1"></i>
+                                    }
+                                    <span class="badge @Model.GetStageBadgeClass(entry.ToStage) badge-sm">
+                                        @entry.ToStage
+                                    </span>
+                                </div>
+                                <div class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">
+                                    @Model.FormatDateTime(entry.ChangedAtUtc)
+                                    @if (!string.IsNullOrEmpty(entry.ChangedBy))
+                                    {
+                                        <span class="ms-1">by @entry.ChangedBy</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted py-3 px-3">
+                <i class="bi bi-clock-history fs-4"></i>
+                <p class="mb-0 mt-2 small">No stage changes recorded yet.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Quick Actions Card -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Actions</h6>
+    </div>
+    <div class="card-body">
+        <div class="d-grid gap-2">
+
+            @* ✅ FIX 1: Edit Deal only shown when deal is not ClosedWon/ClosedLost AND role has update permission *@
+            @if (Model.IsEditableState && Model.CanUpdate)
+            {
+                <a asp-page="./Edit" asp-route-id="@Model.Deal.Id" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil me-2"></i>Edit Deal
+                </a>
+            }
+
+            @* ✅ FIX 2: Create Quote only shown when:
+                  - deal is not closed
+                  - stage is Proposal or Negotiation
+                  - no quote exists yet for this deal
+                  - role has Quotes.Create permission (cross-module — this page is Deals) *@
+            @if (Model.CanCreateQuote && Model.UserCanCreate("quotes"))
+            {
+                <a href="/Quotes/Create?DealId=@Model.Deal.Id" class="btn btn-sm btn-success">
+                    <i class="bi bi-file-earmark-text me-2"></i>Create Quote
+                </a>
+            }
+            @if (Model.HasExistingQuote)
+            {
+                <a href="/Quotes?dealId=@Model.Deal.Id" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-file-earmark-check me-2"></i>View Quote
+                </a>
+            }
+
+            @if (!Model.IsClosedDeal)
+            {
+                <button class="btn btn-sm btn-outline-success"
+                        onclick="document.getElementById('activities-tab').click();">
+                    <i class="bi bi-clock-history me-2"></i>Log Activity
+                </button>
+                <button class="btn btn-sm btn-outline-warning"
+                        onclick="document.getElementById('reminders-tab').click();">
+                    <i class="bi bi-bell me-2"></i>Set Reminder
+                </button>
+            }
+            <a asp-page="/Pipeline/Index" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>Back to Pipeline
+            </a>
+        </div>
+    </div>
+</div>
+
+<style>
+    .stage-timeline-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #667eea;
+        flex-shrink: 0;
+    }
+    .stage-timeline-item:last-child { border-bottom: none !important; }
+    .badge-sm { font-size: 0.7rem; padding: 0.2em 0.5em; }
+</style>

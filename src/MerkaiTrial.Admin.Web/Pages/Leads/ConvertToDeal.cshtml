@@ -1,0 +1,204 @@
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Leads.ConvertToDealModel
+@{
+    ViewData["Title"] = "Convert Lead to Deal";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/Leads">Leads</a></li>
+                    <li class="breadcrumb-item"><a href="/Leads/Detail/@Model.LeadId">@Model.LeadName</a></li>
+                    <li class="breadcrumb-item active">Convert to Deal</li>
+                </ol>
+            </nav>
+            <h2><i class="bi bi-arrow-right-circle me-2"></i>Convert Lead to Deal</h2>
+            <p class="text-muted">Create a new deal from this qualified lead</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Left Column: Form -->
+        <div class="col-lg-8">
+            <form method="post">
+                <!-- Lead Summary Card -->
+                <div class="card shadow-sm mb-4 border-success">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person-check-fill me-2"></i>Converting Lead
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="mb-1"><strong>Name:</strong> @Model.LeadName</p>
+                                <p class="mb-1"><strong>Email:</strong> @Model.LeadEmail</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="mb-1"><strong>Phone:</strong> @Model.LeadPhone</p>
+                                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-success">Qualified</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deal Information Card -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0">
+                            <i class="bi bi-briefcase me-2"></i>Deal Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                        <div class="row g-3">
+                            <!-- Deal Title -->
+                            <div class="col-12">
+                                <label asp-for="Input.DealTitle" class="form-label">
+                                    Deal Title <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.DealTitle" class="form-control" required>
+                                <span asp-validation-for="Input.DealTitle" class="text-danger"></span>
+                            </div>
+
+                            <!-- Pipeline Stage -->
+                            <div class="col-md-6">
+                                <label asp-for="Input.Stage" class="form-label">
+                                    Pipeline Stage <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Stage" class="form-select" required>
+                                    <option value="Discovery">🔍 Discovery (20% probability)</option>
+                                    <option value="Qualification" selected>✅ Qualification (50% probability)</option>
+                                    <option value="Proposal">📄 Proposal (40% probability)</option>
+                                    <option value="Negotiation">🤝 Negotiation (60% probability)</option>
+                                </select>
+                                <span asp-validation-for="Input.Stage" class="text-danger"></span>
+                                <small class="text-muted d-block mt-1">Recommended: Qualification (lead is already qualified)</small>
+                            </div>
+
+                            <!-- Expected Close Date -->
+                            <div class="col-md-6">
+                                <label asp-for="Input.ExpectedCloseDate" class="form-label">
+                                    Expected Close Date <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" required>
+                                <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger"></span>
+                                <small class="text-muted d-block mt-1">Default: 30 days from today</small>
+                            </div>
+
+                            <!-- Expected Value -->
+                            <div class="col-md-6">
+                                <label asp-for="Input.ExpectedValue" class="form-label">
+                                    Expected Value <span class="text-danger">*</span>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text">@GetCurrencySymbol(Model.TenantCurrencySymbol)</span>
+                                    <input asp-for="Input.ExpectedValue" type="number" step="0.01" class="form-control" required min="0">
+                                </div>
+                                <span asp-validation-for="Input.ExpectedValue" class="text-danger"></span>
+                            </div>
+
+                            <!-- Currency (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label">Currency</label>
+                                <input type="text" class="form-control" value="@Model.TenantCurrency" readonly>
+                                <input asp-for="Input.Currency" type="hidden">
+                            </div>
+
+                            <!-- Description -->
+                            <div class="col-12">
+                                <label asp-for="Input.Description" class="form-label">
+                                    Description (Optional)
+                                </label>
+                                <textarea asp-for="Input.Description" class="form-control" rows="3" 
+                                          placeholder="Additional notes about this deal..."></textarea>
+                                <span asp-validation-for="Input.Description" class="text-danger"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <a href="/Leads/Detail/@Model.LeadId" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="bi bi-check-circle me-2"></i>Create Deal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Right Column: Info -->
+        <div class="col-lg-4">
+            <!-- What Happens Next -->
+            <div class="card shadow-sm mb-4 border-info">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0">
+                        <i class="bi bi-info-circle-fill me-2"></i>What Happens Next?
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0 ps-3">
+                        <li class="mb-2">Deal will be created in the pipeline</li>
+                        <li class="mb-2">Lead status will change to "Converted"</li>
+                        @if (!Model.ContactId.HasValue)
+                        {
+                            <li class="mb-2">A new contact will be created automatically</li>
+                        }
+                        else
+                        {
+                            <li class="mb-2">Deal will be linked to existing contact</li>
+                        }
+                        <li class="mb-0">You'll be redirected to the pipeline view</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- Tips -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h6 class="mb-0">
+                        <i class="bi bi-lightbulb me-2"></i>Tips
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0 ps-3 small">
+                        <li class="mb-2">Choose a realistic close date based on your sales cycle</li>
+                        <li class="mb-2">The expected value helps with pipeline forecasting</li>
+                        <li class="mb-2">You can update deal details later from the pipeline</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+
+@functions {
+    string GetCurrencySymbol(string? currencyCode)
+    {
+        return currencyCode switch
+        {
+            "INR" => "₹",
+            "USD" => "$",
+            "EUR" => "€",
+            "GBP" => "£",
+            "THB" => "฿",
+            "PHP" => "₱",
+            _ => currencyCode ?? "$"
+        };
+    }
+}

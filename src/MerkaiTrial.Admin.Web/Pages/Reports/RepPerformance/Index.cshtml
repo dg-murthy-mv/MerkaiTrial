@@ -1,0 +1,90 @@
+@* =====================================================================
+   FILE: Pages/Reports/RepPerformance/Index.cshtml
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.RepPerformance.IndexModel
+@{ ViewData["Title"] = "Sales Rep Performance"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-person-check-fill me-2 text-primary"></i>Sales Rep Performance</h2>
+            <p class="text-muted mb-0 small">Deals, revenue and win rate per sales owner</p>
+        </div>
+        @if (Model.Data != null)
+        {
+            <a asp-page-handler="Export" asp-route-fromDate="@Model.FromDate?.ToString("yyyy-MM-dd")" asp-route-toDate="@Model.ToDate?.ToString("yyyy-MM-dd")" asp-route-vertical="@Model.Vertical" class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-file-earmark-excel me-1"></i>Export
+            </a>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-primary">@d.TotalDeals</div><div class="text-muted small">Total Deals</div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-success">@d.TotalWon</div><div class="text-muted small">Total Won</div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-warning">@Model.FormatCurrency(d.TotalWonValue)</div><div class="text-muted small">Won Value</div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-info">@d.OverallWinRate%</div><div class="text-muted small">Win Rate</div></div></div>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-bar-chart me-1 text-primary"></i>Won vs Active Deals</div>
+                    <div class="card-body"><canvas id="dealsChart" height="160"></canvas></div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-table me-1"></i>Full Breakdown</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr><th>Owner</th><th class="text-center">Deals</th><th class="text-center">Won</th><th class="text-center">Win Rate</th><th class="text-end">Won Value</th><th class="text-end">Pipeline</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var r in d.Reps)
+                                {
+                                    <tr>
+                                        <td class="small fw-semibold">@r.OwnerName</td>
+                                        <td class="text-center small">@r.TotalDeals</td>
+                                        <td class="text-center small text-success">@r.Won</td>
+                                        <td class="text-center small"><span class="badge @(r.WinRate >= 50 ? "bg-success" : "bg-warning text-dark")">@r.WinRate%</span></td>
+                                        <td class="text-end small fw-semibold text-success">@Model.FormatCurrency(r.WonValue)</td>
+                                        <td class="text-end small text-primary">@Model.FormatCurrency(r.PipelineValue)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else { <div class="text-center py-5 text-muted"><i class="bi bi-person-check fs-1 d-block mb-3"></i>No data for selected filters.</div> }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d) {
+    new Chart(document.getElementById('dealsChart'), {
+        type: 'bar',
+        data: {
+            labels: d.reps.map(r => r.ownerName),
+            datasets: [
+                { label: 'Won',    data: d.reps.map(r => r.won),    backgroundColor: '#16a34a', borderRadius: 4 },
+                { label: 'Active', data: d.reps.map(r => r.active), backgroundColor: '#3b82f6', borderRadius: 4 },
+                { label: 'Lost',   data: d.reps.map(r => r.lost),   backgroundColor: '#dc2626', borderRadius: 4 }
+            ]
+        },
+        options: { plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    });
+}
+</script>
+}

@@ -1,0 +1,539 @@
+@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Detail.cshtml
+   CHANGES:
+     1. Alert messages — converted from toast to TempData standard alerts
+     2. Edit button — gated with CanUpdate            (invoices.update)
+     3. Record Payment button — HasRecordPaymentPermission (invoices.update)
+     4. Update Status buttons — gated with CanUpdate  (invoices.update)
+     5. Delete button + modal confirm — CanDelete AND IsDeletableState
+
+   ✅ SESSION 5 FIX — WRONG MODULE:
+     All five gates above previously read CanUpdate("Deals") / CanDelete("Deals").
+     That is the DEALS module, not Invoices, and unlike the identical bug in
+     Quotes/Detail it caused real damage, because Deals and Invoices
+     permissions genuinely differ per role:
+       sales_rep     has deals.update but Invoices READ-ONLY
+                     → saw Edit / Record Payment / Status buttons it must not
+       sales_manager has deals.delete but NO invoices.delete
+                     → saw the Delete Invoice button (confirmed in testing)
+     Now bound to this page's own module via the base-class Can* properties.
+   ===================================================================== *@
+
+@page
+@model MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel
+@{
+    ViewData["Title"] = $"Invoice {Model.Invoice?.Number}";
+}
+
+<!-- Page Header -->
+<div class="page-header mb-4"
+     style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:2rem;border-radius:12px;">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="mb-2" style="font-family:'Courier New',monospace;font-size:2.5rem;">
+                <i class="bi bi-receipt me-2"></i>@Model.Invoice?.Number
+            </h2>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge @Model.GetStatusBadgeClass(Model.Invoice?.Status ?? "Draft")" style="font-size:1rem;">
+                    @Model.Invoice?.Status
+                </span>
+                @if (Model.IsOverdue())
+                {
+                    <span class="badge bg-danger" style="font-size:1rem;">
+                        <i class="bi bi-exclamation-triangle me-1"></i>OVERDUE
+                    </span>
+                }
+                @if (Model.Invoice?.IsFullyPaid == true)
+                {
+                    <span class="badge bg-success" style="font-size:1rem;">
+                        <i class="bi bi-check-circle-fill me-1"></i>PAID
+                    </span>
+                }
+            </div>
+        </div>
+        <div>
+            @if (Model.Invoice?.DealId.HasValue == true)
+            {
+                @* Pipeline/Detail declares @@page "{id:guid}" — the id must be a ROUTE SEGMENT
+                   (/Pipeline/Detail/{guid}), not a query string. Using asp-page/asp-route-id
+                   lets routing generate the correct URL and stays correct if the template changes.
+                   (Quotes/Detail uses plain @@page, which is why its link below uses ?id= instead.) *@
+                <a asp-page="/Pipeline/Detail" asp-route-id="@Model.Invoice.DealId" class="btn btn-light me-2">
+                    <i class="bi bi-briefcase me-2"></i>View Deal
+                </a>
+            }
+            <a href="/Invoices" class="btn btn-light">
+                <i class="bi bi-arrow-left me-2"></i>All Invoices
+            </a>
+        </div>
+    </div>
+</div>
+
+@* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+
+<div class="row">
+    <!-- Left Column: Invoice Details -->
+    <div class="col-lg-8">
+
+        <!-- Invoice Information Card -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Invoice Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="text-muted small">Company</label>
+                        <div class="fw-bold">
+                            <i class="bi bi-building me-2 text-primary"></i>@Model.Invoice?.CompanyName
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted small">Contact</label>
+                        <div class="fw-bold">
+                            <i class="bi bi-person me-2 text-primary"></i>@Model.Invoice?.ContactName
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.Invoice?.DealTitle))
+                    {
+                        <div class="col-md-6">
+                            <label class="text-muted small">Deal</label>
+                            <div class="fw-bold">
+                                <i class="bi bi-briefcase me-2 text-primary"></i>@Model.Invoice.DealTitle
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Invoice?.QuoteNumber))
+                    {
+                        <div class="col-md-6">
+                            <label class="text-muted small">Quote</label>
+                            <div class="fw-bold">
+                                <i class="bi bi-file-earmark-text me-2 text-primary"></i>
+                                <a href="/Quotes/Detail?id=@Model.Invoice.QuoteId">@Model.Invoice.QuoteNumber</a>
+                            </div>
+                        </div>
+                    }
+                    <div class="col-md-4">
+                        <label class="text-muted small">Issue Date</label>
+                        <div class="fw-bold">
+                            <i class="bi bi-calendar3 me-2 text-muted"></i>@Model.FormatDate(Model.Invoice!.IssueDateUtc)
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="text-muted small">Due Date</label>
+                        <div class="fw-bold @(Model.IsOverdue() ? "text-danger" : "")">
+                            <i class="bi bi-calendar-check me-2"></i>
+                            @if (Model.Invoice?.DueDateUtc.HasValue == true)
+                            {
+                                @Model.GetRelativeDate(Model.Invoice.DueDateUtc)
+                            }
+                            else
+                            {
+                                <span class="text-muted">No due date</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        @if (!string.IsNullOrEmpty(Model.Invoice?.VerticalName))
+                        {
+                            <label class="text-muted small">Industry / Vertical</label>
+                            <p class="mb-3">
+                                <span class="badge bg-light text-dark border">
+                                    <i class="bi bi-diagram-3 me-1"></i>@Model.Invoice.VerticalName
+                                </span>
+                            </p>
+                        }
+                        <label class="text-muted small">Currency</label>
+                        <div class="fw-bold">
+                            <i class="bi bi-currency-exchange me-2 text-muted"></i>@Model.Invoice?.Currency
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="text-muted small">Created</label>
+                        <div>
+                            @Model.FormatDateTime(Model.Invoice!.CreatedAtUtc)
+                            @if (!string.IsNullOrEmpty(Model.Invoice?.CreatedBy))
+                            {
+                                <span class="text-muted">by @Model.Invoice.CreatedBy</span>
+                            }
+                        </div>
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.Invoice?.Notes))
+                    {
+                        <div class="col-12">
+                            <label class="text-muted small">Notes</label>
+                            <div class="alert alert-info mb-0">
+                                <i class="bi bi-sticky me-2"></i>@Model.Invoice.Notes
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Line Items Card -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul me-2"></i>Invoice Items
+                    <span class="badge bg-primary ms-2">@Model.Invoice?.Lines.Count items</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                @if (Model.Invoice?.Lines != null)
+                {
+                    @foreach (var line in Model.Invoice.Lines)
+                    {
+                        <div class="border rounded p-3 mb-3" style="background:#f8f9fa;">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h6 class="mb-1">@line.Name</h6>
+                                    @if (!string.IsNullOrEmpty(line.Description))
+                                    {
+                                        <small class="text-muted">@line.Description</small>
+                                    }
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-bold text-primary" style="font-size:1.25rem;">
+                                        @Model.FormatCurrency(line.LineGrandTotal)
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row text-muted small">
+                                <div class="col-auto">
+                                    <span class="badge bg-light text-dark">Qty: @line.Quantity</span>
+                                </div>
+                                <div class="col-auto">
+                                    <strong>Unit Price:</strong> @Model.FormatCurrency(line.UnitPrice)
+                                </div>
+                                @if (line.LineDiscount > 0)
+                                {
+                                    <div class="col-auto text-success">
+                                        <strong>Discount:</strong> -@Model.FormatCurrency(line.LineDiscount)
+                                    </div>
+                                }
+                                <div class="col-auto">
+                                    <strong>Tax:</strong> @((line.TaxRate * 100).ToString("N2"))% (@Model.FormatCurrency(line.LineTax))
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Payment History Card -->
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>Payment History
+                    <span class="badge bg-primary ms-2">@Model.Invoice?.Payments.Count payments</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                @if (Model.Invoice?.Payments?.Count > 0)
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th>Notes</th>
+                                    <th>Recorded By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var payment in Model.Invoice.Payments.OrderByDescending(p => p.PaidAtUtc))
+                                {
+                                    <tr>
+                                        <td><i class="bi bi-calendar3 me-2 text-muted"></i>@Model.FormatDate(payment.PaidAtUtc)</td>
+                                        <td class="fw-bold text-success">@Model.FormatCurrency(payment.Amount)</td>
+                                        <td><i class="bi bi-@Model.GetPaymentMethodIcon(payment.Method) me-2 text-muted"></i>@Model.GetPaymentMethodName(payment.Method)</td>
+                                        <td><span class="badge @Model.GetPaymentStatusBadge(payment.Status)">@payment.Status</span></td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(payment.Notes))
+                                            {
+                                                <small class="text-muted">@payment.Notes</small>
+                                            }
+                                            else
+                                            {
+
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td><small class="text-muted">@payment.CreatedBy</small></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox" style="font-size:3rem;opacity:0.3;"></i>
+                        <p class="mt-3 mb-0">No payments recorded yet</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Summary and Actions -->
+    <div class="col-lg-4">
+        <div class="card mb-4 position-sticky" style="top:20px;">
+            <div class="card-header"
+                 style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;">
+                <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>Invoice Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Subtotal:</span>
+                    <span class="fw-bold">@Model.FormatCurrency(Model.Invoice!.Subtotal)</span>
+                </div>
+                @if (Model.Invoice?.DiscountTotal > 0)
+                {
+                    <div class="d-flex justify-content-between mb-2 text-success">
+                        <span>Discount:</span>
+                        <span class="fw-bold">-@Model.FormatCurrency(Model.Invoice!.DiscountTotal)</span>
+                    </div>
+                }
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Tax:</span>
+                    <span class="fw-bold">@Model.FormatCurrency(Model.Invoice!.TaxTotal)</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="fs-5 fw-bold">Grand Total:</span>
+                    <span class="fs-4 fw-bold text-primary">@Model.FormatCurrency(Model.Invoice!.GrandTotal)</span>
+                </div>
+                @if (Model.Invoice?.TotalPaid > 0)
+                {
+                    <hr style="border-style:dashed;">
+                    <div class="d-flex justify-content-between mb-2 text-success">
+                        <span>Total Paid:</span>
+                        <span class="fw-bold">@Model.FormatCurrency(Model.Invoice!.TotalPaid)</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="fw-bold">Balance Due:</span>
+                        <span class="fs-5 fw-bold @(Model.Invoice?.Balance > 0 ? "text-danger" : "text-success")">
+                            @Model.FormatCurrency(Model.Invoice!.Balance)
+                        </span>
+                    </div>
+                }
+            </div>
+
+            <!-- ✅ Action buttons — role-based permission gates -->
+            <div class="card-footer bg-light">
+
+                @* PDF — always available (read is enough) *@
+                <a asp-page-handler="DownloadPdf"
+                   asp-route-id="@Model.Invoice!.Id"
+                   class="btn btn-success w-100 mb-2">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>Download PDF
+                </a>
+
+                @* ✅ Edit — Draft only AND has update permission *@
+                @if (Model.Invoice?.Status == "Draft" && Model.CanUpdate)
+                {
+                    <a asp-page="./Edit"
+                       asp-route-id="@Model.Invoice.Id"
+                       class="btn btn-outline-primary w-100 mb-2">
+                        <i class="bi bi-pencil-square me-2"></i>Edit Invoice
+                    </a>
+                }
+
+                @* ✅ Record Payment — business rule AND role permission *@
+                @if (Model.CanRecordPayment() && Model.HasRecordPaymentPermission)
+                {
+                    <button type="button" class="btn btn-success w-100 mb-2"
+                            data-bs-toggle="modal" data-bs-target="#paymentModal">
+                        <i class="bi bi-cash-coin me-2"></i>Record Payment
+                    </button>
+                }
+
+                @* ✅ Status transitions — business rule AND role permission *@
+                @if (Model.CanChangeStatus() && Model.CanUpdate)
+                {
+                    @foreach (var status in Model.GetAvailableStatuses())
+                    {
+                        <form method="post" asp-page-handler="UpdateStatus" class="mb-2">
+                            @* ✅ BUGFIX: this form posted ONLY newStatus. DetailModel.Id is a
+                               [BindProperty] with nothing to bind from on POST, so it arrived as
+                               Guid.Empty and the API 404'd on
+                               00000000-0000-0000-0000-000000000000. Matches the pattern the
+                               RecordPayment form below already had. *@
+                            <input type="hidden" asp-for="Id" value="@Model.Invoice!.Id" />
+                            <input type="hidden" name="newStatus" value="@status" />
+                            <button type="submit" class="btn btn-outline-primary w-100">
+                                <i class="bi bi-arrow-right-circle me-2"></i>Mark as @status
+                            </button>
+                        </form>
+                    }
+                }
+
+                @* ✅ Delete — role permission required *@
+                @if (Model.CanDelete && Model.IsDeletableState)
+                {
+                    <button type="button" class="btn btn-outline-danger w-100"
+                            data-bs-toggle="modal" data-bs-target="#deleteModal">
+                        <i class="bi bi-trash me-2"></i>Delete Invoice
+                    </button>
+                }
+                else if (Model.CanDelete && !Model.IsDeletableState)
+                {
+                    @* ✅ Has permission, but the record is locked by business rule.
+                       Shown disabled rather than hidden so the reason is visible —
+                       same pattern Index.cshtml already uses. *@
+                    <span class="btn btn-outline-secondary w-100 disabled pe-none"
+                          title="@Model.DeleteBlockedReason">
+                        <i class="bi bi-lock me-2"></i>Delete Locked
+                    </span>
+                }
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Record Payment</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" asp-page-handler="RecordPayment">
+                <div class="modal-body">
+                    <input type="hidden" asp-for="Id" value="@Model.Invoice!.Id" />
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Current Balance:</strong> @Model.FormatCurrency(Model.Invoice!.Balance)
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Amount *</label>
+                        <div class="input-group">
+                            <span class="input-group-text">@Model.TenantCurrencySymbol</span>
+                            <input type="number" name="amount" class="form-control"
+                                   step="0.01" min="0.01" max="@Model.Invoice?.Balance"
+                                   value="@Model.Invoice?.Balance" required />
+                        </div>
+                        <small class="text-muted">Maximum: @Model.FormatCurrency(Model.Invoice!.Balance)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Payment Date *</label>
+                        <input type="date" name="paymentDate" class="form-control"
+                               value="@DateTime.Today.ToString("yyyy-MM-dd")" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Payment Method *</label>
+                        <select name="paymentMethod" class="form-select" required>
+                            <option value="BankTransfer">Bank Transfer</option>
+                            <option value="CreditCard">Credit Card</option>
+                            <option value="DebitCard">Debit Card</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Check">Check</option>
+                            <option value="PromptPay">PromptPay</option>
+                            <option value="PayPal">PayPal</option>
+                            <option value="Stripe">Stripe</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Notes (Optional)</label>
+                        <textarea name="notes" class="form-control" rows="3"
+                                  placeholder="Add any notes about this payment..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-2"></i>Record Payment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete Invoice</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete invoice <strong>@Model.Invoice?.Number</strong>?</p>
+                @* ✅ SESSION 5: this used to WARN that deleting would also destroy the
+                   payment rows, then let you proceed — while Index.OnPostDelete refused
+                   the same operation outright. The server-side guard in
+                   DetailModel.OnPostDelete now blocks Paid/PartiallyPaid, so this modal
+                   is only reachable for genuinely deletable invoices. Kept as a
+                   defensive message in case a payment exists on some other status. *@
+                @if (Model.Invoice?.Payments?.Count > 0)
+                {
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-octagon me-2"></i>
+                        This invoice has <strong>@Model.Invoice.Payments.Count payment(s)</strong>
+                        recorded against it. Deletion will be refused by the server.
+                    </div>
+                }
+                <p class="text-danger mb-0"><strong>This action cannot be undone.</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                @* ✅ Delete confirm — role permission required *@
+                @if (Model.CanDelete && Model.IsDeletableState)
+                {
+                    <form method="post" asp-page-handler="Delete" class="d-inline">
+                        @* ✅ BUGFIX: same missing-Id bug as the UpdateStatus form above.
+                           Delete from this page could never have worked — it posted
+                           Guid.Empty and the API 404'd. Note this also meant the
+                           payments guard added in OnPostDelete was unreachable, since
+                           GetByIdAsync(Guid.Empty) returns null. Failed safe, but
+                           silently. *@
+                        <input type="hidden" asp-for="Id" value="@Model.Invoice!.Id" />
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash me-2"></i>Delete Invoice
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.location.hash === '#payment') {
+                setTimeout(function () {
+                    new bootstrap.Modal(document.getElementById('paymentModal')).show();
+                }, 500);
+            }
+        });
+    </script>
+}
+
+<style>
+    .position-sticky {
+        position: -webkit-sticky;
+    }
+
+    @@media (max-width: 991px) {
+        .position-sticky {
+            position: relative !important;
+        }
+    }
+
+    .card {
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+</style>

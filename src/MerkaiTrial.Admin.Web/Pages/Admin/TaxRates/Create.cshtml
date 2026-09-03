@@ -1,0 +1,128 @@
+@page "/Admin/TaxRates/Create"
+@model MerkaiTrial.Admin.Web.Pages.TaxRates.CreateModel
+@{
+    ViewData["Title"] = "Create Tax Rate";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> Create Tax Rate</h2>
+            <p class="text-muted mb-0">Add a new tax rate for a country</p>
+        </div>
+        <div>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
+            </a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Tax Rate Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Input.CountryCode" class="form-label">
+                                    Country <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.CountryCode" asp-items="Model.CountryOptions" class="form-select">
+                                    <option value="">-- Select Country --</option>
+                                </select>
+                                <span asp-validation-for="Input.CountryCode" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.TaxType" class="form-label">
+                                    Tax Type <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.TaxType" asp-items="Model.TaxTypeOptions" class="form-select">
+                                    <option value="">-- Select Type --</option>
+                                </select>
+                                <span asp-validation-for="Input.TaxType" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.Name" class="form-label">
+                                    Rate Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Name" class="form-control" 
+                                       placeholder="e.g., Standard VAT" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.Rate" class="form-label">
+                                    Tax Rate (%) <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Rate" type="number" step="0.01" class="form-control" 
+                                       placeholder="e.g., 7.00" />
+                                <span asp-validation-for="Input.Rate" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input asp-for="Input.IsDefault" class="form-check-input" type="checkbox" />
+                                    <label asp-for="Input.IsDefault" class="form-check-label">
+                                        Set as default rate for this country
+                                    </label>
+                                </div>
+                                <small class="text-muted">
+                                    If enabled, this will become the default tax rate for the selected country
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Create Tax Rate
+                            </button>
+                            <a asp-page="./Index" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            <li class="mb-2">Select the <strong>country</strong> this rate applies to</li>
+                            <li class="mb-2">Choose appropriate <strong>tax type</strong> (VAT, GST, etc.)</li>
+                            <li class="mb-2">Enter rate as a <strong>percentage</strong> (e.g., 7 for 7%)</li>
+                            <li>Only <strong>one default</strong> rate per country</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,383 @@
+@* =====================================================================
+   COMPANY VERTICAL DETAIL PAGE
+   Location: Pages/Admin/Verticals/Detail.cshtml
+   ===================================================================== *@
+@page "/Admin/Verticals/Detail/{id}"
+@model MerkaiTrial.Admin.Web.Pages.Verticals.DetailModel
+@{
+    ViewData["Title"] = "Vertical Details";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="d-flex align-items-center">
+            <!-- Large Icon Avatar -->
+            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" 
+                 style="width: 80px; height: 80px; background: linear-gradient(135deg, #3b82f6, #2563eb);">
+                <i class="bi bi-@(Model.Vertical.Icon ?? "briefcase") text-white" style="font-size: 2.5rem;"></i>
+            </div>
+            <div>
+                <h2 class="mb-1">
+                    @Model.Vertical.Name
+                    @if (Model.Vertical.IsSystem)
+                    {
+                        <span class="badge bg-primary ms-2">System</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-warning ms-2">Custom</span>
+                    }
+                </h2>
+                <p class="text-muted mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Vertical.Description))
+                    {
+                        @Model.Vertical.Description
+                    }
+                    else
+                    {
+                        <span class="fst-italic">No description provided</span>
+                    }
+                </p>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="./Edit" asp-route-id="@Model.Vertical.Id" class="btn btn-warning">
+                <i class="bi bi-pencil"></i> <span class="d-none d-sm-inline">Edit Vertical</span>
+            </a>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back to List</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Alerts -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" 
+                    data-bs-target="#overview" type="button" role="tab">
+                <i class="bi bi-info-circle"></i> Overview
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="settings-tab" data-bs-toggle="tab" 
+                    data-bs-target="#settings" type="button" role="tab">
+                <i class="bi bi-gear"></i> Settings
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- Overview Tab -->
+        <div class="tab-pane fade show active" id="overview" role="tabpanel">
+            <div class="row g-4">
+                <!-- Vertical Information -->
+                <div class="col-lg-8">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-briefcase"></i> Vertical Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Vertical Name</label>
+                                    <div class="fw-semibold">@Model.Vertical.Name</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Type</label>
+                                    <div>
+                                        @if (Model.Vertical.IsSystem)
+                                        {
+                                            <span class="badge bg-primary">System Vertical</span>
+                                            <br />
+                                            <small class="text-muted">Available to all tenants</small>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning">Custom Vertical</span>
+                                            <br />
+                                            <small class="text-muted">Tenant-specific vertical</small>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="text-muted small">Description</label>
+                                    <div class="fw-semibold">
+                                        @if (!string.IsNullOrEmpty(Model.Vertical.Description))
+                                        {
+                                            @Model.Vertical.Description
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted fst-italic">No description provided</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Icon</label>
+                                    <div class="fw-semibold">
+                                        <div class="bg-@(Model.Vertical.Color ?? "primary") bg-opacity-10 rounded p-3 d-inline-block">
+                                            <i class="bi bi-@(Model.Vertical.Icon ?? "briefcase") text-@(Model.Vertical.Color ?? "primary") fs-3"></i>
+                                        </div>
+                                        <span class="ms-2">@(Model.Vertical.Icon ?? "briefcase")</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Color</label>
+                                    <div class="fw-semibold">
+                                        <span class="badge bg-@(Model.Vertical.Color ?? "primary")">
+                                            @(Model.Vertical.Color ?? "primary")
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Display Order</label>
+                                    <div class="fw-semibold">@Model.Vertical.DisplayOrder</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Status</label>
+                                    <div>
+                                        @if (Model.Vertical.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger">Inactive</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <div class="col-lg-4">
+                    <!-- Type Badge Card -->
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-shield-check"></i> Vertical Type</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="text-center mb-3">
+                                @if (Model.Vertical.IsSystem)
+                                {
+                                    <div class="mb-3">
+                                        <i class="bi bi-star-fill text-primary" style="font-size: 3rem;"></i>
+                                    </div>
+                                    <h5 class="mb-2">System Vertical</h5>
+                                    <p class="text-muted small mb-0">
+                                        This vertical is shared across all tenants in the system
+                                    </p>
+                                }
+                                else
+                                {
+                                    <div class="mb-3">
+                                        <i class="bi bi-building text-warning" style="font-size: 3rem;"></i>
+                                    </div>
+                                    <h5 class="mb-2">Custom Vertical</h5>
+                                    <p class="text-muted small mb-0">
+                                        This vertical is specific to a single tenant
+                                    </p>
+                                }
+                            </div>
+
+                            <hr />
+
+                            <div class="mb-3">
+                                <label class="text-muted small">Editable</label>
+                                <div>
+                                    @if (Model.Vertical.IsSystem)
+                                    {
+                                        <i class="bi bi-lock text-warning"></i>
+                                        <span class="fw-semibold ms-2">Limited</span>
+                                        <br />
+                                        <small class="text-muted">Icon, color, description only</small>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                        <span class="fw-semibold ms-2">Fully Editable</span>
+                                        <br />
+                                        <small class="text-muted">All fields can be modified</small>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="text-muted small">Deletable</label>
+                                <div>
+                                    @if (Model.Vertical.IsSystem)
+                                    {
+                                        <i class="bi bi-x-circle-fill text-danger"></i>
+                                        <span class="fw-semibold ms-2">No</span>
+                                        <br />
+                                        <small class="text-muted">System verticals cannot be deleted</small>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                        <span class="fw-semibold ms-2">Yes</span>
+                                        <br />
+                                        <small class="text-muted">Can be deleted if not in use</small>
+                                    }
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="text-muted small">Status</label>
+                                <div>
+                                    @if (Model.Vertical.IsActive)
+                                    {
+                                        <i class="bi bi-check-circle-fill text-success"></i>
+                                        <span class="fw-semibold ms-2">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-x-circle-fill text-danger"></i>
+                                        <span class="fw-semibold ms-2">Inactive</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-pane fade" id="settings" role="tabpanel">
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-sliders"></i> Vertical Settings</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Display Order</label>
+                                    <div class="fw-semibold fs-5">@Model.Vertical.DisplayOrder</div>
+                                    <small class="text-muted">
+                                        Lower numbers appear first in lists
+                                    </small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Active Status</label>
+                                    <div>
+                                        @if (Model.Vertical.IsActive)
+                                        {
+                                            <span class="badge bg-success fs-6">Active</span>
+                                            <br />
+                                            <small class="text-muted">Visible in dropdowns and selections</small>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger fs-6">Inactive</span>
+                                            <br />
+                                            <small class="text-muted">Hidden from dropdowns</small>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <hr />
+                                    <p class="text-muted mb-0">
+                                        <i class="bi bi-info-circle"></i>
+                                        @if (Model.Vertical.IsSystem)
+                                        {
+                                            <span>System verticals have limited editability. You can change the icon, color, and description, but not the name.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Custom verticals can be fully edited. Changes apply immediately to all companies using this vertical.</span>
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-secondary text-white">
+                            <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2">
+                                <a asp-page="./Edit" asp-route-id="@Model.Vertical.Id" class="btn btn-outline-warning">
+                                    <i class="bi bi-pencil"></i> Edit Vertical
+                                </a>
+                                @if (!Model.Vertical.IsSystem)
+                                {
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            onclick="confirmDelete('@Model.Vertical.Id', '@Model.Vertical.Name')">
+                                        <i class="bi bi-trash"></i> Delete Vertical
+                                    </button>
+                                }
+                                <a asp-page="./Index" class="btn btn-outline-secondary">
+                                    <i class="bi bi-list"></i> View All Verticals
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tips Card -->
+                    <div class="card border-0 shadow-sm mt-3">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
+                        </div>
+                        <div class="card-body">
+                            @if (Model.Vertical.IsSystem)
+                            {
+                                <ul class="small mb-0 ps-3">
+                                    <li class="mb-2"><strong>System verticals</strong> are shared across all tenants</li>
+                                    <li class="mb-2">You can update the <strong>icon, color, and description</strong></li>
+                                    <li class="mb-2">The <strong>name cannot be changed</strong></li>
+                                    <li>System verticals <strong>cannot be deleted</strong></li>
+                                </ul>
+                            }
+                            else
+                            {
+                                <ul class="small mb-0 ps-3">
+                                    <li class="mb-2"><strong>Custom verticals</strong> belong to a specific tenant</li>
+                                    <li class="mb-2">All fields can be <strong>fully edited</strong></li>
+                                    <li class="mb-2">Changes apply <strong>immediately</strong> to companies</li>
+                                    <li>Can be <strong>deleted</strong> if not in use by companies</li>
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<form method="post" asp-page-handler="Delete" id="deleteForm">
+    <input type="hidden" name="id" id="deleteId" />
+</form>
+
+@section Scripts {
+    <script>
+        function confirmDelete(id, name) {
+            if (confirm(`Are you sure you want to delete vertical "${name}"?\n\nThis action cannot be undone.`)) {
+                document.getElementById('deleteId').value = id;
+                document.getElementById('deleteForm').action = '/Admin/Verticals/Index?handler=Delete&id=' + id;
+                document.getElementById('deleteForm').submit();
+            }
+        }
+    </script>
+}

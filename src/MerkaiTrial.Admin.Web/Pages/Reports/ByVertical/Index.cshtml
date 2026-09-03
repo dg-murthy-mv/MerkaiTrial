@@ -1,0 +1,133 @@
+@* FILE: Pages/Reports/ByVertical/Index.cshtml *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.ByVertical.IndexModel
+@{ ViewData["Title"] = "Revenue by Vertical"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-grid-fill me-2 text-purple" style="color:#7c3aed;"></i>Revenue by Vertical</h2>
+            <p class="text-muted mb-0 small">Pipeline, won revenue and invoiced value per industry vertical</p>
+        </div>
+        @if (Model.Data != null)
+        {
+            <a asp-page-handler="Export"
+               asp-route-fromDate="@Model.FromDate?.ToString("yyyy-MM-dd")"
+               asp-route-toDate="@Model.ToDate?.ToString("yyyy-MM-dd")"
+               asp-route-vertical="@Model.Vertical"
+               class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-file-earmark-excel me-1"></i>Export
+            </a>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var rv = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-primary">@rv.TotalDeals</div><div class="text-muted small">Total Deals</div>
+            </div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-success">@Model.FormatCurrency(rv.TotalRevenue)</div><div class="text-muted small">Won Revenue</div>
+            </div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4" style="color:#0ea5e9;">@Model.FormatCurrency(rv.TotalInvoiced)</div><div class="text-muted small">Total Invoiced</div>
+            </div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4" style="color:#7c3aed;">@rv.Verticals.Count(v => v.DealCount > 0)</div><div class="text-muted small">Active Verticals</div>
+            </div></div>
+        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small">
+                        <i class="bi bi-bar-chart me-1 text-primary"></i>Won Value by Vertical
+                    </div>
+                    <div class="card-body"><canvas id="barChart" height="140"></canvas></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small">
+                        <i class="bi bi-pie-chart me-1 text-warning"></i>Deal Share
+                    </div>
+                    <div class="card-body"><canvas id="doughnutChart" height="180"></canvas></div>
+                </div>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom fw-semibold small">
+                <i class="bi bi-table me-1"></i>Breakdown by Vertical
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Vertical</th>
+                            <th class="text-center">Deals</th>
+                            <th class="text-center">Won</th>
+                            <th class="text-center">Win Rate</th>
+                            <th class="text-end">Pipeline</th>
+                            <th class="text-end">Won Value</th>
+                            <th class="text-end">Invoiced</th>
+                            <th class="text-end">Collected</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var v in rv.Verticals)
+                        {
+                            <tr>
+                                <td><span class="badge" style="background:#f5f3ff;color:#5b21b6;">@v.VerticalName</span></td>
+                                <td class="text-center small">@v.DealCount</td>
+                                <td class="text-center small text-success fw-semibold">@v.WonDeals</td>
+                                <td class="text-center small">
+                                    <span class="badge @(v.WinRate >= 50 ? "bg-success" : "bg-warning text-dark")">@v.WinRate%</span>
+                                </td>
+                                <td class="text-end small text-primary">@Model.FormatCurrency(v.PipelineValue)</td>
+                                <td class="text-end small fw-semibold text-success">@Model.FormatCurrency(v.WonValue)</td>
+                                <td class="text-end small">@Model.FormatCurrency(v.InvoicedValue)</td>
+                                <td class="text-end small">@Model.FormatCurrency(v.CollectedValue)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else { <div class="text-center py-5 text-muted"><i class="bi bi-grid fs-1 d-block mb-3"></i>No data for selected filters.</div> }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d) {
+    const palette = ['#6366f1','#3b82f6','#0ea5e9','#14b8a6','#16a34a','#84cc16','#f59e0b','#f97316','#dc2626','#94a3b8'];
+    new Chart(document.getElementById('barChart'), {
+        type: 'bar',
+        data: {
+            labels: d.verticals.map(v => v.verticalName),
+            datasets: [
+                { label: 'Won Value',     data: d.verticals.map(v => v.wonValue),      backgroundColor: '#16a34a', borderRadius: 4 },
+                { label: 'Pipeline',      data: d.verticals.map(v => v.pipelineValue), backgroundColor: '#3b82f688', borderRadius: 4 },
+                { label: 'Invoiced',      data: d.verticals.map(v => v.invoicedValue), backgroundColor: '#0ea5e988', borderRadius: 4 }
+            ]
+        },
+        options: { plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+    });
+    new Chart(document.getElementById('doughnutChart'), {
+        type: 'doughnut',
+        data: {
+            labels: d.verticals.map(v => v.verticalName),
+            datasets: [{ data: d.verticals.map(v => v.dealCount), backgroundColor: palette.slice(0, d.verticals.length), hoverOffset: 6 }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } } }
+    });
+}
+</script>
+}

@@ -1,0 +1,137 @@
+@page "/Admin/TaxRates/Edit/{id}"
+@model MerkaiTrial.Admin.Web.Pages.TaxRates.EditModel
+@{
+    ViewData["Title"] = "Edit Tax Rate";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-pencil text-warning"></i> Edit Tax Rate</h2>
+            <p class="text-muted mb-0">@Model.Input.Name</p>
+        </div>
+        <div>
+            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
+            </a>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <input type="hidden" asp-for="Id" />
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Tax Rate Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Country</label>
+                                <input type="text" class="form-control" 
+                                       value="@Model.CountryName (@Model.CountryCode)" disabled />
+                                <small class="text-muted">
+                                    <i class="bi bi-lock me-1"></i>Country cannot be changed
+                                </small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Tax Type</label>
+                                <input type="text" class="form-control" value="@Model.TaxType" disabled />
+                                <small class="text-muted">
+                                    <i class="bi bi-lock me-1"></i>Tax type cannot be changed
+                                </small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.Name" class="form-label">
+                                    Rate Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Name" class="form-control" 
+                                       placeholder="e.g., Standard VAT" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.Rate" class="form-label">
+                                    Tax Rate (%) <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Rate" type="number" step="0.01" class="form-control" 
+                                       placeholder="e.g., 7.00" />
+                                <span asp-validation-for="Input.Rate" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input asp-for="Input.IsDefault" class="form-check-input" type="checkbox" />
+                                    <label asp-for="Input.IsDefault" class="form-check-label">
+                                        Set as default rate for this country
+                                    </label>
+                                </div>
+                                <small class="text-muted">
+                                    If enabled, this will become the default tax rate for @Model.CountryName
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="bi bi-receipt text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h5>@Model.TaxType</h5>
+                        <p class="text-muted small mb-0">for @Model.CountryName</p>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-check-circle"></i> Save Changes
+                            </button>
+                            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            <li class="mb-2"><strong>Country and type</strong> cannot be changed</li>
+                            <li class="mb-2">You can update the <strong>name and rate</strong></li>
+                            <li class="mb-2">Setting as default <strong>updates</strong> previous default</li>
+                            <li>Changes apply <strong>immediately</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,89 @@
+@* FILE: Pages/Reports/DealVelocity/Index.cshtml *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.DealVelocity.IndexModel
+@{ ViewData["Title"] = "Deal Velocity"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-speedometer2 me-2 text-warning"></i>Deal Velocity</h2>
+            <p class="text-muted mb-0 small">Average days spent in each stage across closed deals</p>
+        </div>
+        @if (Model.Data != null)
+        {
+            <a asp-page-handler="Export" asp-route-fromDate="@Model.FromDate?.ToString("yyyy-MM-dd")" asp-route-toDate="@Model.ToDate?.ToString("yyyy-MM-dd")" asp-route-vertical="@Model.Vertical" class="btn btn-sm btn-outline-success ms-auto">
+                <i class="bi bi-file-earmark-excel me-1"></i>Export
+            </a>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-primary">@d.DealsAnalyzed</div><div class="text-muted small">Closed Deals Analysed</div></div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-warning">@d.AvgDaysDealToClose d</div><div class="text-muted small">Avg Days Deal → Close</div></div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-success">@d.Stages.Count</div><div class="text-muted small">Stage Transitions</div></div></div>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-bar-chart me-1 text-warning"></i>Avg Days per Stage Transition</div>
+                    <div class="card-body"><canvas id="velocityChart" height="140"></canvas></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-table me-1"></i>Stage Detail</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr><th>Transition</th><th class="text-end">Avg</th><th class="text-end">Min</th><th class="text-end">Max</th><th class="text-end">Count</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in d.Stages)
+                                {
+                                    <tr>
+                                        <td class="small">@s.FromStage <i class="bi bi-arrow-right text-muted"></i> @s.ToStage</td>
+                                        <td class="text-end small fw-semibold text-warning">@s.AvgDays d</td>
+                                        <td class="text-end small text-success">@s.MinDays d</td>
+                                        <td class="text-end small text-danger">@s.MaxDays d</td>
+                                        <td class="text-end small">@s.Transitions</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else { <div class="text-center py-5 text-muted"><i class="bi bi-speedometer2 fs-1 d-block mb-3"></i>No closed deals in selected period.</div> }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d && d.stages.length) {
+    new Chart(document.getElementById('velocityChart'), {
+        type: 'bar',
+        data: {
+            labels: d.stages.map(s => s.fromStage + ' → ' + s.toStage),
+            datasets: [
+                { label: 'Avg Days', data: d.stages.map(s => s.avgDays), backgroundColor: '#f59e0b', borderRadius: 4 },
+                { label: 'Max Days', data: d.stages.map(s => s.maxDays), backgroundColor: '#dc262644', borderRadius: 4 }
+            ]
+        },
+        options: {
+            indexAxis: 'y',
+            plugins: { legend: { position: 'top' } },
+            scales: { x: { beginAtZero: true, title: { display: true, text: 'Days' } } }
+        }
+    });
+}
+</script>
+}

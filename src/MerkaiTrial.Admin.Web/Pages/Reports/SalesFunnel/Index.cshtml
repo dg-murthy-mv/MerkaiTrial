@@ -1,0 +1,85 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.SalesFunnel.IndexModel
+@{ ViewData["Title"] = "Sales Funnel Report"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-funnel-fill me-2 text-primary"></i>Sales Funnel</h2>
+            <p class="text-muted mb-0 small">Lead → Deal → Quote → Invoice conversion rates</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger">@Model.ErrorMessage</div>
+    }
+
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4">
+            @foreach (var kpi in new[] {
+                ("Total Leads",       d.TotalLeads.ToString(),          "#3b82f6"),
+                ("Qualified",         d.QualifiedLeads.ToString(),      "#0ea5e9"),
+                ("Converted",         d.ConvertedLeads.ToString(),      "#16a34a"),
+                ("Conversion Rate",   d.LeadToConvertedPct + "%",       "#6366f1"),
+                ("Quote Accept Rate", d.QuoteToAcceptedPct + "%",       "#f59e0b"),
+                ("Invoice Paid Rate", d.InvoiceToPaidPct + "%",         "#10b981")
+            })
+            {
+                <div class="col-6 col-md-2">
+                    <div class="card border-0 shadow-sm text-center p-3">
+                        <div class="fw-bold fs-5" style="color:@kpi.Item3;">@kpi.Item2</div>
+                        <div class="text-muted small">@kpi.Item1</div>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <canvas id="chart" height="100"></canvas>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-funnel fs-1 d-block mb-3"></i>No data for selected filters.
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d) {
+    new Chart(document.getElementById('chart'), {
+        type: 'bar',
+        data: {
+            labels: ['Leads','Qualified','Converted','Deals','Quotes','Accepted Quotes','Invoices','Paid'],
+            datasets: [{
+                label: 'Count',
+                data: [d.totalLeads, d.qualifiedLeads, d.convertedLeads,
+                       d.totalDeals, d.totalQuotes, d.acceptedQuotes,
+                       d.totalInvoices, d.paidInvoices],
+                backgroundColor: ['#3b82f6','#0ea5e9','#16a34a',
+                                   '#6366f1','#f59e0b','#f97316','#dc2626','#10b981'],
+                borderRadius: 4
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+    });
+}
+</script>
+}

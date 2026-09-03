@@ -1,0 +1,259 @@
+@* =====================================================================
+   FIXED CREATE LEAD - View
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/Create.cshtml
+   
+   FIXES APPLIED:
+     1. currency-symbol id added to span
+     2. All scripts moved OUT of form, into @section Scripts
+     3. countryCodeMap moved into @section Scripts alongside sync script
+     4. Constants moved to module scope (outside DOMContentLoaded)
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Leads.CreateModel
+@{
+    ViewData["Title"] = "Create New Lead";
+}
+
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-0">Create New Lead</h2>
+                    <p class="text-muted mb-0">Add a new lead to your pipeline</p>
+                </div>
+                <a asp-page="./Index" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Leads
+                </a>
+            </div>
+
+            <!-- Error Messages -->
+            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>@Model.ErrorMessage
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            }
+
+            <!-- Form Card -->
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <form method="post">
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                        <!-- Basic Information -->
+                        <div class="mb-4">
+                            <h5 class="card-title mb-3">
+                                <i class="bi bi-person-fill me-2"></i>Basic Information
+                            </h5>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label asp-for="Input.FullName" class="form-label">
+                                        Full Name <span class="text-danger">*</span>
+                                    </label>
+                                    <input asp-for="Input.FullName" class="form-control" placeholder="John Doe" />
+                                    <span asp-validation-for="Input.FullName" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.Email" class="form-label">Email</label>
+                                    <input asp-for="Input.Email" class="form-control" placeholder="john@example.com" />
+                                    <span asp-validation-for="Input.Email" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.Phone" class="form-label">Phone</label>
+                                    <input asp-for="Input.Phone" class="form-control" placeholder="+1 234 567 8900" />
+                                    <span asp-validation-for="Input.Phone" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.CompanyName" class="form-label">Company Name</label>
+                                    <input asp-for="Input.CompanyName" class="form-control" placeholder="Acme Corp" />
+                                    <span asp-validation-for="Input.CompanyName" class="text-danger"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <!-- Address & Location -->
+                        <div class="mb-4">
+                            <h5 class="card-title mb-3">
+                                <i class="bi bi-geo-alt-fill me-2"></i>Address & Location
+                            </h5>
+                            <div class="row g-3">
+                                <div class="col-12">
+                                    <label asp-for="Input.Address" class="form-label">Address</label>
+                                    <textarea asp-for="Input.Address" class="form-control" rows="2"
+                                              placeholder="123 Main Street, Suite 100"></textarea>
+                                    <span asp-validation-for="Input.Address" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.CountryId" class="form-label">
+                                        Country <span class="text-danger">*</span>
+                                    </label>
+                                    <select asp-for="Input.CountryId" class="form-select"
+                                            asp-items="Model.CountryOptions">
+                                        <option value="">-- Select Country --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.CountryId" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.CurrencyId" class="form-label">
+                                        Currency <span class="text-danger">*</span>
+                                    </label>
+                                    <select asp-for="Input.CurrencyId" class="form-select"
+                                            asp-items="Model.CurrencyOptions">
+                                        <option value="">-- Select Currency --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.CurrencyId" class="text-danger"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <!-- Lead Details -->
+                        <div class="mb-4">
+                            <h5 class="card-title mb-3">
+                                <i class="bi bi-funnel-fill me-2"></i>Lead Details
+                            </h5>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label asp-for="Input.ChannelId" class="form-label">
+                                        Channel <span class="text-danger">*</span>
+                                    </label>
+                                    <select asp-for="Input.ChannelId" class="form-select"
+                                            asp-items="Model.ChannelOptions">
+                                        <option value="">-- Select Channel --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.ChannelId" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.SourceId" class="form-label">Source</label>
+                                    <select asp-for="Input.SourceId" class="form-select"
+                                            asp-items="Model.SourceOptions">
+                                        <option value="">-- Select Source --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.SourceId" class="text-danger"></span>
+                                </div>
+                                @* ✅ NEW: Vertical/Industry — informational, not enforced *@
+                                <div class="col-md-6">
+                                    <label asp-for="Input.VerticalId" class="form-label">
+                                        Industry / Vertical
+                                        <span class="text-muted small ms-1">(optional)</span>
+                                    </label>
+                                    <select asp-for="Input.VerticalId" class="form-select"
+                                            asp-items="Model.VerticalOptions">
+                                        <option value="">-- Select Industry --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.VerticalId" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.EstimatedValue" class="form-label">Estimated Value</label>
+                                    <div class="input-group">
+                                        @* FIX 1: id="currency-symbol" added so JS can update it *@
+                                        <span class="input-group-text" id="currency-symbol">
+                                            @Model.TenantCurrencySymbol
+                                        </span>
+                                        <input asp-for="Input.EstimatedValue" type="number" step="0.01"
+                                               class="form-control" placeholder="10000.00" />
+                                    </div>
+                                    <span asp-validation-for="Input.EstimatedValue" class="text-danger"></span>
+                                </div>
+                                <div class="col-md-6">
+                                    <label asp-for="Input.OwnerUserId" class="form-label">Assign To</label>
+                                    <select asp-for="Input.OwnerUserId" class="form-select"
+                                            asp-items="Model.SalesTeamOptions">
+                                        <option value="">-- Unassigned --</option>
+                                    </select>
+                                    <span asp-validation-for="Input.OwnerUserId" class="text-danger"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-flex justify-content-end gap-2 mt-4">
+                            <a asp-page="./Index" class="btn btn-secondary">
+                                <i class="bi bi-x-lg me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-lg me-2"></i>Create Lead
+                            </button>
+                        </div>
+
+                    </form>  @* FIX 2: form closes here — scripts are BELOW in @section Scripts *@
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            // ── countryId → countryCode map from server ───────────────
+            const countryCodeMap = @Html.Raw(Model.CountryCodesJson);
+
+            // ── countryCode → default currency mapping ────────────────
+            const currencyMap = {
+                'IN': 'INR', 'TH': 'THB', 'PH': 'PHP',
+                'AE': 'AED', 'SG': 'SGD', 'MY': 'MYR',
+                'ID': 'IDR', 'VN': 'VND', 'AU': 'AUD',
+                'GB': 'GBP', 'US': 'USD', 'EU': 'EUR',
+                'CN': 'CNY', 'JP': 'JPY', 'KR': 'KRW',
+                'BD': 'BDT', 'LK': 'LKR', 'NP': 'NPR',
+                'PK': 'PKR', 'MM': 'MMK',
+            };
+
+            // ── currency code → symbol mapping ────────────────────────
+            const symbolMap = {
+                'INR': '₹', 'THB': '฿', 'PHP': '₱',
+                'AED': 'د.إ', 'SGD': 'S$', 'MYR': 'RM',
+                'IDR': 'Rp', 'VND': '₫', 'AUD': 'A$',
+                'GBP': '£', 'USD': '$', 'EUR': '€',
+                'CNY': '¥', 'JPY': '¥', 'KRW': '₩',
+                'BDT': '৳', 'LKR': 'Rs', 'NPR': 'Rs',
+                'PKR': 'Rs', 'MMK': 'K',
+            };
+
+            const countrySelect  = document.getElementById('Input_CountryId');
+            const currencySelect = document.getElementById('Input_CurrencyId');
+            const symbolSpan     = document.getElementById('currency-symbol');
+
+            if (!countrySelect || !currencySelect) return;
+
+            function syncCurrency() {
+                const countryId  = countrySelect.value;
+                const countryCode = countryCodeMap[countryId];
+                if (!countryCode) return;
+
+                const currency = currencyMap[countryCode];
+                if (!currency) return;
+
+                // Update currency dropdown
+                for (const opt of currencySelect.options) {
+                    if (opt.value === currency) {
+                        opt.selected = true;
+                        break;
+                    }
+                }
+
+                // Update currency symbol span
+                if (symbolSpan) {
+                    symbolSpan.textContent = symbolMap[currency] || currency;
+                }
+            }
+
+            // Sync on country change
+            countrySelect.addEventListener('change', syncCurrency);
+
+            // Sync once on page load in case country is already pre-selected
+            if (countrySelect.value) syncCurrency();
+        })();
+    </script>
+    
+}

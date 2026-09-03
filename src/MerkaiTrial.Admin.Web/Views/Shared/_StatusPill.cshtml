@@ -1,0 +1,15 @@
+﻿@* /Pages/Shared/_StatusPill.cshtml *@
+@model string
+@{
+    string s = Model?.Trim() ?? "Draft";
+    string cls = s switch
+    {
+        "Draft" => "badge text-bg-secondary",
+        "Sent" => "badge text-bg-info",
+        "Accepted" => "badge text-bg-success",
+        "Rejected" => "badge text-bg-danger",
+        "Expired" => "badge text-bg-dark",
+        _ => "badge text-bg-secondary"
+    };
+}
+<span class="@cls">@s</span>

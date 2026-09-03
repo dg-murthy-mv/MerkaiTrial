@@ -1,0 +1,362 @@
+@page "/Pipeline/Edit/{id}"
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.EditModel
+@{
+    ViewData["Title"] = "Edit Deal";
+}
+
+<style>
+.page-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem 0;
+    margin: -1rem -1rem 2rem -1rem;
+    border-radius: 0 0 1rem 1rem;
+}
+.form-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.form-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e9ecef;
+}
+.form-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+}
+.section-title i { margin-right: 0.5rem; color: #667eea; }
+.form-label { font-weight: 600; color: #495057; margin-bottom: 0.5rem; }
+.read-only-field {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    color: #495057;
+    font-weight: 500;
+}
+.currency-group { position: relative; }
+.currency-symbol {
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    font-weight: 600; color: #667eea; font-size: 1.1rem;
+    pointer-events: none; z-index: 2;
+}
+.currency-input { padding-left: 35px !important; }
+
+/* ✅ FIXED: stage colors now match Create.cshtml exactly */
+.stage-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    user-select: none;
+}
+.stage-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+.stage-badge.active { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.25); }
+.stage-discovery    { background-color: #6c757d; color: white; }      /* gray     */
+.stage-qualification{ background-color: #17a2b8; color: white; }      /* teal     */
+.stage-proposal     { background-color: #0d6efd; color: white; }      /* blue     */
+.stage-negotiation  { background-color: #ffc107; color: #000; }       /* yellow   */
+.stage-won          { background-color: #198754; color: white; }      /* green    */
+.stage-lost         { background-color: #dc3545; color: white; }      /* red      */
+
+.probability-display { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+.probability-value { font-size: 2rem; font-weight: 700; color: #667eea; min-width: 80px; }
+.info-box {
+    background-color: #f8f9fa;
+    border-left: 4px solid #0dcaf0;
+    padding: 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1.5rem;
+}
+.info-box .info-label { font-size: 0.875rem; color: #6c757d; margin-bottom: 0.25rem; }
+.info-box .info-value { font-weight: 600; color: #495057; }
+
+@@media (max-width: 767.98px) {
+    .form-container { padding: 1.5rem; }
+    .page-header { padding: 1.5rem 0; }
+    .stage-badge { font-size: 0.875rem; padding: 0.4rem 0.8rem; }
+}
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div class="mb-3 mb-md-0">
+                    <h1 class="h3 mb-1"><i class="bi bi-pencil-square me-2"></i>Edit Deal</h1>
+                    <p class="mb-0 opacity-75">Update deal information</p>
+                </div>
+                <div>
+                    <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-light me-2">
+                        <i class="bi bi-arrow-left me-2"></i>Back to Detail
+                    </a>
+                    <a asp-page="./Index" class="btn btn-outline-light">
+                        <i class="bi bi-kanban me-2"></i>Pipeline
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-container">
+        @* alerts handled by _Layout.cshtml TempData rendering *@
+
+        <!-- Created info -->
+        <div class="info-box">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="info-label">Created On</div>
+                    <div class="info-value"><i class="bi bi-calendar me-2"></i>@Model.CreatedAt.ToString("MMM dd, yyyy 'at' hh:mm tt")</div>
+                </div>
+                <div class="col-md-6">
+                    <div class="info-label">Created By</div>
+                    <div class="info-value"><i class="bi bi-person me-2"></i>@Model.CreatedBy</div>
+                </div>
+            </div>
+        </div>
+
+        <form method="post" id="editDealForm" asp-route-id="@Model.DealId">
+            <input type="hidden" asp-for="Input.Stage" id="stageInput" />
+            <input type="hidden" asp-for="Input.Probability" id="probabilityInput" />
+
+            <!-- Basic Information -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-info-circle"></i>Basic Information</div>
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="Input.Title" class="form-label">Deal Title <span class="text-danger">*</span></label>
+                        <input asp-for="Input.Title" class="form-control" placeholder="e.g., TechCorp CRM Implementation" />
+                        <span asp-validation-for="Input.Title" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="Input.Description" class="form-label">Description</label>
+                        <textarea asp-for="Input.Description" class="form-control" rows="3"
+                                  placeholder="Brief description of the deal..."></textarea>
+                        <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact (read-only) -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-person-circle"></i>Contact Information</div>
+                <div class="mb-3">
+                    <div class="text-muted small mb-1"><i class="bi bi-lock me-1"></i>Contact (cannot be changed)</div>
+                    <div class="read-only-field"><i class="bi bi-person me-2"></i>@Model.ContactName</div>
+                    <small class="text-muted">Deals are permanently linked to their original contact to maintain history</small>
+                </div>
+            </div>
+
+            <!-- Deal Value -->
+            <div class="form-section">
+                <div class="section-title"><span style="margin-right:0.5rem;color:#667eea;font-weight:700;">@Model.GetCurrencySymbol(Model.Input.Currency)</span>Deal Value</div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.Currency" class="form-label">Currency <span class="text-danger">*</span></label>
+                        <select asp-for="Input.Currency" class="form-select" id="currencySelect">
+                            @foreach (var country in Model.Countries.OrderBy(c => c.CurrencyCode))
+                            {
+                                <option value="@country.CurrencyCode"
+                                        data-symbol="@Model.GetCurrencySymbol(country.CurrencyCode)"
+                                        selected="@(country.CurrencyCode == Model.Input.Currency)">
+                                    @country.CurrencyCode — @country.Name
+                                </option>
+                            }
+                        </select>
+                        <span asp-validation-for="Input.Currency" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.ExpectedValue" class="form-label">Expected Value <span class="text-danger">*</span></label>
+                        <div class="currency-group">
+                            <span class="currency-symbol" id="currencySymbol">@Model.GetCurrencySymbol(Model.Input.Currency)</span>
+                            <input asp-for="Input.ExpectedValue" type="number" step="0.01"
+                                   class="form-control currency-input" placeholder="0.00" />
+                        </div>
+                        <span asp-validation-for="Input.ExpectedValue" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stage & Timeline -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-funnel"></i>Stage & Timeline</div>
+
+                <div class="mb-3">
+                    <label class="form-label">Deal Stage <span class="text-danger">*</span></label>
+                    <div class="stage-selector">
+                        <div class="stage-badge stage-discovery @(Model.Input.Stage == "Discovery" ? "active" : "")"
+                             data-stage="Discovery" data-probability="20">
+                            <i class="bi bi-search me-1"></i>Discovery (20%)
+                        </div>
+                        <div class="stage-badge stage-qualification @(Model.Input.Stage == "Qualification" ? "active" : "")"
+                             data-stage="Qualification" data-probability="30">
+                            <i class="bi bi-check-circle me-1"></i>Qualification (30%)
+                        </div>
+                        <div class="stage-badge stage-proposal @(Model.Input.Stage == "Proposal" ? "active" : "")"
+                             data-stage="Proposal" data-probability="40">
+                            <i class="bi bi-file-earmark-text me-1"></i>Proposal (40%)
+                        </div>
+                        <div class="stage-badge stage-negotiation @(Model.Input.Stage == "Negotiation" ? "active" : "")"
+                             data-stage="Negotiation" data-probability="60">
+                            <i class="bi bi-handshake me-1"></i>Negotiation (60%)
+                        </div>
+                        <div class="stage-badge stage-won @(Model.Input.Stage == "ClosedWon" ? "active" : "")"
+                             data-stage="ClosedWon" data-probability="100">
+                            <i class="bi bi-trophy me-1"></i>Won (100%)
+                        </div>
+                        <div class="stage-badge stage-lost @(Model.Input.Stage == "ClosedLost" ? "active" : "")"
+                             data-stage="ClosedLost" data-probability="0">
+                            <i class="bi bi-x-circle me-1"></i>Lost (0%)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Probability of Closing</label>
+                    <div class="probability-display">
+                        <input type="range" class="form-range" min="0" max="100"
+                               value="@Model.Input.Probability" id="probabilitySlider" />
+                        <span class="probability-value" id="probabilityDisplay">@Model.Input.Probability%</span>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.ExpectedCloseDate" class="form-label">
+                            Expected Close Date <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" />
+                        <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.OwnerUserId" class="form-label">Deal Owner</label>
+                        <select asp-for="Input.OwnerUserId" class="form-select">
+                            <option value="">— Select Owner —</option>
+                            @foreach (var u in Model.SalesTeam)
+                            {
+                                <option value="@u.Value" selected="@(u.Selected ? "selected" : null)">@u.Text</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex justify-content-between align-items-center">
+                @if (Model.CanDelete)
+                {
+                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+                        <i class="bi bi-trash me-2"></i>Delete Deal
+                    </button>
+                }
+                else
+                {
+                    <span></span>
+                }
+                <div>
+                    <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-secondary me-2">
+                        <i class="bi bi-x-circle me-2"></i>Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-save me-2"></i>Save Changes
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+@if (Model.CanDelete)
+{
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete Deal</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p><strong>⚠️ Warning:</strong> This action cannot be undone!</p>
+                    <div class="alert alert-warning mb-0">
+                        <strong>Deal:</strong> @Model.Input.Title<br />
+                        <strong>Value:</strong> @Model.GetCurrencySymbol(Model.Input.Currency) @Model.Input.ExpectedValue.ToString("N2")<br />
+                        <strong>Stage:</strong> @Model.Input.Stage
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x me-2"></i>Cancel
+                    </button>
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@Model.DealId" class="d-inline">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash me-2"></i>Delete Permanently
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const stageBadges       = document.querySelectorAll('.stage-badge');
+        const stageInput        = document.getElementById('stageInput');
+        const probabilityInput  = document.getElementById('probabilityInput');
+        const probabilitySlider = document.getElementById('probabilitySlider');
+        const probabilityDisplay= document.getElementById('probabilityDisplay');
+        const currencySelect    = document.getElementById('currencySelect');
+        const currencySymbol    = document.getElementById('currencySymbol');
+
+        // Stage selection
+        stageBadges.forEach(badge => {
+            badge.addEventListener('click', function () {
+                stageBadges.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                stageInput.value        = this.dataset.stage;
+                probabilityInput.value  = this.dataset.probability;
+                probabilitySlider.value = this.dataset.probability;
+                probabilityDisplay.textContent = this.dataset.probability + '%';
+            });
+        });
+
+        // Set initial values from server-side model
+        stageInput.value       = '@Model.Input.Stage';
+        probabilityInput.value = '@Model.Input.Probability';
+
+        // Probability slider
+        probabilitySlider.addEventListener('input', function () {
+            probabilityInput.value = this.value;
+            probabilityDisplay.textContent = this.value + '%';
+        });
+
+        // Currency symbol
+        function updateCurrencySymbol() {
+            const opt = currencySelect.options[currencySelect.selectedIndex];
+            currencySymbol.textContent = opt ? (opt.dataset.symbol || currencySelect.value) : '';
+        }
+        currencySelect.addEventListener('change', updateCurrencySymbol);
+        updateCurrencySymbol();
+    });
+    </script>
+}

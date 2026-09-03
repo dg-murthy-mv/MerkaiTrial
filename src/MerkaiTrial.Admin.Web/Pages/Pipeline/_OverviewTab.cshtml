@@ -1,0 +1,148 @@
+@* =====================================================================
+   OVERVIEW TAB
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_OverviewTab.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+<!-- Deal Information Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-briefcase-fill me-2"></i>Deal Information</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="text-muted small">Deal Title</label>
+                <p class="mb-0"><strong>@Model.Deal.Title</strong></p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Company / Contact</label>
+                <p class="mb-0">
+                    @if (!string.IsNullOrEmpty(Model.Deal.CompanyName))
+                    {
+                        <span><i class="bi bi-building me-1"></i>@Model.Deal.CompanyName</span>
+                    }
+                    @if (!string.IsNullOrEmpty(Model.Deal.ContactName))
+                    {
+                        <br /><span class="text-muted small"><i class="bi bi-person me-1"></i>@Model.Deal.ContactName</span>
+                    }
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Stage</label>
+                <p class="mb-0">
+                    <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage)">@Model.Deal.Stage</span>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Probability</label>
+                <p class="mb-0">
+                    <strong>@Model.Deal.Probability%</strong>
+                    <div class="progress mt-1" style="height: 8px;">
+                        <div class="progress-bar @Model.GetStageBadgeClass(Model.Deal.Stage)"
+                             role="progressbar"
+                             style="width: @Model.Deal.Probability%"
+                             aria-valuenow="@Model.Deal.Probability"
+                             aria-valuemin="0" aria-valuemax="100">
+                        </div>
+                    </div>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Expected Value</label>
+                <p class="mb-0">
+                    <strong class="text-success fs-5">
+                        @Model.FormatCurrency(Model.Deal.ExpectedValue)
+                    </strong>
+                    <span class="text-muted small ms-1">(@Model.Deal.Currency)</span>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Expected Close Date</label>
+                <p class="mb-0">
+                    <i class="bi bi-calendar me-1"></i>@Model.FormatDate(Model.Deal.ExpectedCloseDateUtc)
+                    @{
+                        var daysLeft = (Model.Deal.ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days;
+                        var cls = daysLeft < 0 ? "text-danger" : daysLeft < 7 ? "text-warning" : "text-muted";
+                    }
+                    <br />
+                    <small class="@cls">
+                        @if (daysLeft < 0)
+                        { <text>@Math.Abs(daysLeft) days overdue</text> }
+                        else if (daysLeft == 0)
+                        { <text>Closes today!</text> }
+                        else
+                        { <text>@daysLeft days remaining</text> }
+                    </small>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Owner</label>
+                <p class="mb-0">
+                    <i class="bi bi-person-circle me-1"></i><strong>@Model.Deal.OwnerName</strong>
+                </p>
+            </div>
+            <div class="col-md-6">
+                <label class="text-muted small">Created</label>
+                <p class="mb-0">
+                    <i class="bi bi-clock me-1"></i>@Model.FormatDate(Model.Deal.CreatedAtUtc)
+                    <br />
+                    <small class="text-muted">@Model.GetRelativeTime(Model.Deal.CreatedAtUtc)</small>
+                    @if (!string.IsNullOrEmpty(Model.Deal.CreatedBy))
+                    {
+                        <br /><small class="text-muted">by @Model.Deal.CreatedBy</small>
+                    }
+                </p>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.Deal.Source))
+            {
+                <div class="col-md-6">
+                    <label class="text-muted small">Source</label>
+                    <p class="mb-0"><i class="bi bi-signpost me-1"></i>@Model.Deal.Source</p>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Model.Deal.Tags))
+            {
+                <div class="col-md-6">
+                    <label class="text-muted small">Tags</label>
+                    <p class="mb-0">
+                        @foreach (var tag in Model.Deal.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            <span class="badge bg-light text-dark border me-1">@tag.Trim()</span>
+                        }
+                    </p>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Model.Deal.VerticalName))
+            {
+                <div class="col-md-6">
+                    <label class="text-muted small">Industry / Vertical</label>
+                    <p class="mb-0">
+                        <i class="bi bi-diagram-3 me-1"></i>
+                        <span class="badge bg-light text-dark border">@Model.Deal.VerticalName</span>
+                    </p>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Model.Deal.Description))
+            {
+                <div class="col-12">
+                    <label class="text-muted small">Description</label>
+                    <p class="mb-0" style="white-space: pre-wrap;">@Model.Deal.Description</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (Model.Deal.LeadId.HasValue)
+{
+    <div class="alert alert-info d-flex align-items-center gap-3 mb-4" role="alert">
+        <i class="bi bi-arrow-left-right fs-5"></i>
+        <div>
+            <strong>Converted from Lead</strong> — This deal was created by converting a lead.
+            <a href="/Leads/Detail/@Model.Deal.LeadId.Value" class="alert-link ms-2">
+                <i class="bi bi-box-arrow-up-right me-1"></i>View Original Lead
+            </a>
+        </div>
+    </div>
+}

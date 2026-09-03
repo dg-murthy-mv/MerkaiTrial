@@ -1,0 +1,36 @@
+﻿@*
+    =====================================================================
+    VALIDATION SCRIPTS PARTIAL
+    Location: MerkaiTrial.Admin.Web/Views/Shared/_ValidationScriptsPartial.cshtml
+    (NOTE: the previous header said Pages/Shared/ — it has always lived in
+     Views/Shared/. Razor Pages falls back to Views/Shared when resolving a
+     partial, which is why it worked despite the wrong comment.)
+
+    Purpose: Client-side validation scripts for forms.
+
+    ── DISABLED 2026-08-01 ──────────────────────────────────────────────
+    Both scripts pointed at ~/lib/..., but wwwroot/lib/ does not exist and
+    there is no libman.json. They 404'd on every page that includes this
+    partial (~25 pages), costing 1.2–3.3s per page load in the Admin.Web
+    logs. Client-side validation was therefore NEVER working — this is a
+    missing feature, not a regression. Server-side validation is intact
+    and is what actually protects the data.
+
+    TO RE-ENABLE properly (do this alongside the real-auth work):
+      1. jQuery must be loaded first — check _Layout.cshtml. As of this
+         change the layout loads only bootstrap.bundle.min.js, which does
+         NOT include jQuery. Uncommenting these lines without adding
+         jQuery will throw a JS error instead of a 404.
+      2. Then either add libman.json and restore wwwroot/lib/, or switch
+         both tags to cdnjs.cloudflare.com — several Admin pages
+         (Admin/Roles, Admin/Users, Admin/Tenants) already use cdnjs, so
+         that route is consistent with existing practice.
+      3. Once wired, the existing [Required] attributes will populate the
+         asp-validation-for spans with no further changes.
+    ─────────────────────────────────────────────────────────────────────
+*@
+
+@*
+<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
+<script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js"></script>
+*@

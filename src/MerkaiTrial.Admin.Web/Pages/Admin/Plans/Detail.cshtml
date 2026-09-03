@@ -1,0 +1,451 @@
+@* =====================================================================
+   PLANS DETAIL PAGE — Frontend
+   Location: MerkaiTrial.Admin.Web/Pages/Admin/Plans/Detail.cshtml
+   
+   Shows: plan info, limits, features, tenants on this plan.
+   ===================================================================== *@
+
+@page "/Admin/Plans/Detail/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Plans.DetailModel
+@{
+    ViewData["Title"] = $"{Model.Plan.DisplayName} — Plan Details";
+
+    string planBadgeColor = Model.Plan.Name switch
+    {
+        "starter"      => "secondary",
+        "professional" => "primary",
+        "enterprise"   => "warning",
+        _              => "info"
+    };
+}
+
+<div class="container-fluid py-4">
+
+    <!-- ==================== HEADER ==================== -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-box-seam"></i>
+                @Model.Plan.DisplayName
+                <span class="badge bg-@planBadgeColor ms-2">@Model.Plan.Name</span>
+                @if (Model.Plan.IsTrial)
+                {
+                    <span class="badge bg-warning text-dark ms-1">
+                        <i class="bi bi-hourglass-split me-1"></i>@(Model.Plan.TrialDurationDays)-Day Trial
+                    </span>
+                }
+                @if (!Model.Plan.IsActive)
+                {
+                    <span class="badge bg-danger ms-1">Inactive</span>
+                }
+                @if (!Model.Plan.IsPublic)
+                {
+                    <span class="badge bg-secondary ms-1">Hidden</span>
+                }
+            </h2>
+            <p class="text-muted mb-0">
+                @Model.Tenants.Count tenant@(Model.Tenants.Count == 1 ? "" : "s") on this plan
+            </p>
+        </div>
+        <div class="btn-group">
+            <a asp-page="./CreateEdit" asp-route-planId="@Model.Id" class="btn btn-primary">
+                <i class="bi bi-pencil"></i> Edit Plan
+            </a>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Plans
+            </a>
+        </div>
+    </div>
+
+    @* Alerts *@
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div class="row">
+
+        <!-- ==================== LEFT COLUMN ==================== -->
+        <div class="col-lg-8">
+
+            <!-- Plan Overview Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Plan Overview</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-borderless mb-0">
+                                <tr>
+                                    <td class="fw-bold text-muted" style="width:40%">Name (key)</td>
+                                    <td><code>@Model.Plan.Name</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-muted">Display Name</td>
+                                    <td>@Model.Plan.DisplayName</td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-muted">Monthly Price</td>
+                                    <td>
+                                        @if (Model.Plan.MonthlyPrice == 0)
+                                        {
+                                            <span class="badge bg-success fs-6">Free</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="fs-5 fw-bold text-success">$@Model.Plan.MonthlyPrice.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                                            <span class="text-muted">/mo</span>
+                                        }
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-borderless mb-0">
+                                <tr>
+                                    <td class="fw-bold text-muted" style="width:40%">Status</td>
+                                    <td>
+                                        <span class="badge @(Model.Plan.IsActive ? "bg-success" : "bg-danger")">
+                                            @(Model.Plan.IsActive ? "Active" : "Inactive")
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-muted">Visibility</td>
+                                    <td>
+                                        <span class="badge @(Model.Plan.IsPublic ? "bg-info" : "bg-secondary")">
+                                            @(Model.Plan.IsPublic ? "Public" : "Hidden")
+                                        </span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-muted">Tenants</td>
+                                    <td>
+                                        <span class="badge bg-primary fs-6">@Model.Tenants.Count</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="fw-bold text-muted">Trial Plan</td>
+                                    <td>
+                                        @if (Model.Plan.IsTrial)
+                                        {
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="bi bi-hourglass-split me-1"></i>@(Model.Plan.TrialDurationDays) days
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">No</span>
+                                        }
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resource Limits Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-sliders"></i> Resource Limits</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3 col-6">
+                            <div class="border rounded p-3 text-center h-100">
+                                <i class="bi bi-people display-6 text-primary"></i>
+                                <div class="display-6 fw-bold mt-2">@Model.Plan.MaxUsers.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted small">Max Users</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="border rounded p-3 text-center h-100">
+                                <i class="bi bi-funnel display-6 text-success"></i>
+                                <div class="display-6 fw-bold mt-2">@Model.Plan.MaxLeads.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted small">Max Leads</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="border rounded p-3 text-center h-100">
+                                <i class="bi bi-briefcase display-6 text-warning"></i>
+                                <div class="display-6 fw-bold mt-2">@Model.Plan.MaxDeals.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted small">Max Deals</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="border rounded p-3 text-center h-100">
+                                <i class="bi bi-hdd display-6 text-info"></i>
+                                <div class="display-6 fw-bold mt-2">@((Model.Plan.StorageLimitBytes / 1_073_741_824m).ToString("N0", System.Globalization.CultureInfo.InvariantCulture))</div>
+                                <div class="text-muted small">Storage (GB)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Features Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-stars"></i> Features</h5>
+                </div>
+                <div class="card-body">
+                    @if (Model.PlanFeatures.Any())
+                    {
+                        <div class="row">
+                            @foreach (var feature in Model.PlanFeatures)
+                            {
+                                <div class="col-md-6 mb-2">
+                                    <i class="bi bi-@feature.Icon text-success me-2"></i>
+                                    @feature.Label
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            No features configured.
+                            <a asp-page="./CreateEdit" asp-route-planId="@Model.Id">Edit plan</a> to add features.
+                        </p>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(Model.Plan.Features))
+                    {
+                        <hr />
+                        <details>
+                            <summary class="text-muted small" style="cursor:pointer">
+                                <i class="bi bi-code-slash me-1"></i>Raw JSON
+                            </summary>
+                            <pre class="mt-2 p-2 bg-light rounded small">@Model.Plan.Features</pre>
+                        </details>
+                    }
+                </div>
+            </div>
+
+            <!-- Country Pricing Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-globe2"></i> Country Pricing</h5>
+                    <span class="badge bg-light text-dark">@Model.Plan.PlanPricings.Count currenc@(Model.Plan.PlanPricings.Count == 1 ? "y" : "ies")</span>
+                </div>
+                <div class="card-body p-0">
+                    @{
+                        var orderedPricing = Model.Plan.PlanPricings.OrderBy(p => p.SortOrder).ThenBy(p => p.CurrencyCode).ToList();
+                    }
+                    @if (orderedPricing.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Market</th>
+                                        <th>Currency</th>
+                                        <th>Monthly Price</th>
+                                        <th>Annual Price</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var pricing in orderedPricing)
+                                    {
+                                        <tr>
+                                            <td>@pricing.CountryName</td>
+                                            <td><span class="badge bg-secondary">@pricing.CurrencyCode</span></td>
+                                            <td>
+                                                @if (pricing.MonthlyPrice == 0)
+                                                {
+                                                    <span class="badge bg-success">Free</span>
+                                                }
+                                                else
+                                                {
+                                                    <strong>@pricing.CurrencySymbol@pricing.MonthlyPrice.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                                                    <span class="text-muted small">/mo</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (pricing.AnnualPrice == 0)
+                                                {
+                                                    <span class="badge bg-success">Free</span>
+                                                }
+                                                else
+                                                {
+                                                    <strong>@pricing.CurrencySymbol@pricing.AnnualPrice.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                                                    <span class="text-muted small">/yr</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-globe2 display-4 text-muted"></i>
+                            <p class="text-muted mt-2 mb-0">
+                                No country-specific pricing configured. This plan uses the base USD price for all markets.
+                            </p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Tenants on this Plan -->
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-buildings"></i> Tenants on This Plan
+                    </h5>
+                    <span class="badge bg-light text-dark">@Model.Tenants.Count</span>
+                </div>
+                <div class="card-body p-0">
+                    @if (Model.Tenants.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Tenant</th>
+                                        <th>Country</th>
+                                        <th>Currency</th>
+                                        <th>Status</th>
+                                        <th>Created</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tenant in Model.Tenants)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <strong>@tenant.Name</strong>
+                                                <div class="text-muted small">@tenant.TenantKey</div>
+                                            </td>
+                                            <td>@(tenant.CountryName ?? "—")</td>
+                                            <td><span class="badge bg-secondary">@tenant.DefaultCurrency</span></td>
+                                            <td>
+                                                <span class="badge @(tenant.IsActive ? "bg-success" : "bg-danger")">
+                                                    @(tenant.IsActive ? "Active" : "Inactive")
+                                                </span>
+                                            </td>
+                                            <td class="text-muted small">@tenant.CreatedAtUtc.ToString("MMM dd, yyyy")</td>
+                                            <td>
+                                                <a asp-page="/Admin/Tenants/Detail"
+                                                   asp-route-id="@tenant.Id"
+                                                   class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-eye"></i>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-4">
+                            <i class="bi bi-buildings display-4 text-muted"></i>
+                            <p class="text-muted mt-2">No tenants on this plan yet.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ==================== RIGHT COLUMN ==================== -->
+        <div class="col-lg-4">
+
+            <!-- Quick Actions -->
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body d-grid gap-2">
+                    <a asp-page="./CreateEdit" asp-route-planId="@Model.Id" class="btn btn-primary">
+                        <i class="bi bi-pencil me-2"></i>Edit Plan
+                    </a>
+                    <a asp-page="./Index" class="btn btn-outline-secondary">
+                        <i class="bi bi-list me-2"></i>All Plans
+                    </a>
+                    <hr class="my-1"/>
+                    <form method="post" asp-page-handler="Deactivate"
+                          onsubmit="return confirm('Toggle plan status?')">
+                        <input type="hidden" name="id" value="@Model.Id" />
+                        <input type="hidden" name="isActive" value="@(!Model.Plan.IsActive)" />
+                        <button type="submit"
+                                class="btn w-100 @(Model.Plan.IsActive ? "btn-outline-warning" : "btn-outline-success")">
+                            <i class="bi bi-@(Model.Plan.IsActive ? "pause-circle" : "play-circle") me-2"></i>
+                            @(Model.Plan.IsActive ? "Deactivate Plan" : "Activate Plan")
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Plan Summary Card -->
+            <div class="card mb-4 border-@planBadgeColor">
+                <div class="card-header bg-@planBadgeColor @(planBadgeColor == "warning" ? "text-dark" : "text-white")">
+                    <h5 class="mb-0"><i class="bi bi-card-checklist"></i> Plan Summary</h5>
+                </div>
+                <div class="card-body">
+                    <h4 class="text-center mb-1">@Model.Plan.DisplayName</h4>
+                    <div class="text-center mb-3">
+                        @if (Model.Plan.MonthlyPrice == 0)
+                        {
+                            <span class="display-6 text-success fw-bold">Free</span>
+                        }
+                        else
+                        {
+                            <span class="display-6 fw-bold">$@Model.Plan.MonthlyPrice.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</span>
+                            <span class="text-muted">/month</span>
+                        }
+                    </div>
+                    <ul class="list-unstyled">
+                        <li class="mb-2 d-flex justify-content-between">
+                            <span><i class="bi bi-people text-primary me-2"></i>Users</span>
+                            <strong>@Model.Plan.MaxUsers.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                        </li>
+                        <li class="mb-2 d-flex justify-content-between">
+                            <span><i class="bi bi-funnel text-success me-2"></i>Leads</span>
+                            <strong>@Model.Plan.MaxLeads.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                        </li>
+                        <li class="mb-2 d-flex justify-content-between">
+                            <span><i class="bi bi-briefcase text-warning me-2"></i>Deals</span>
+                            <strong>@Model.Plan.MaxDeals.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</strong>
+                        </li>
+                        <li class="d-flex justify-content-between">
+                            <span><i class="bi bi-hdd text-info me-2"></i>Storage</span>
+                            <strong>@((Model.Plan.StorageLimitBytes / 1_073_741_824m).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)) GB</strong>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            @* Warning if plan has tenants and you try to deactivate *@
+            @if (Model.Tenants.Count > 0 && Model.Plan.IsActive)
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>@Model.Tenants.Count tenant@(Model.Tenants.Count == 1 ? "" : "s")</strong>
+                    currently on this plan. Deactivating hides it from new signups but
+                    does <strong>not</strong> affect existing tenants.
+                </div>
+            }
+
+        </div>
+    </div>
+</div>

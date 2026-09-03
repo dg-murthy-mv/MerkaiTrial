@@ -1,0 +1,76 @@
+@* =====================================================================
+   NOTES TAB - Add and View Notes
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_NotesTab.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+@* Add New Note Section — only shown to roles with update permission *@
+@if (Model.CanUpdate)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h6 class="mb-0">
+                <i class="bi bi-plus-circle me-2"></i>Add New Note
+            </h6>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="AddNote" asp-route-id="@Model.Deal.Id">
+                <div class="mb-3">
+                    <label asp-for="NoteInput.Note" class="form-label">Note</label>
+                    <textarea asp-for="NoteInput.Note" class="form-control" rows="4" 
+                              placeholder="Enter your note here..." required></textarea>
+                    <span asp-validation-for="NoteInput.Note" class="text-danger"></span>
+                    <small class="text-muted">Maximum 2000 characters</small>
+                </div>
+                
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save me-2"></i>Add Note
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+<!-- Notes History Section -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+            <i class="bi bi-chat-left-text me-2"></i>Notes History
+        </h6>
+        <span class="badge bg-secondary">@Model.Notes.Count</span>
+    </div>
+    <div class="card-body">
+        @if (Model.Notes.Any())
+        {
+            <div class="list-group">
+                @foreach (var note in Model.Notes)
+                {
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between align-items-start mb-2">
+                            <div>
+                                <small class="text-muted">
+                                    <i class="bi bi-person me-1"></i>@note.CreatedBy
+                                </small>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <small class="text-muted">
+                                    <i class="bi bi-clock me-1"></i>@Model.GetRelativeTime(note.CreatedAtUtc)
+                                </small>
+                            </div>
+                        </div>
+                        <p class="mb-0" style="white-space: pre-wrap;">@note.Note</p>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-chat-left-text fs-1"></i>
+                <p class="mt-2">No notes yet. Add your first note above!</p>
+            </div>
+        }
+    </div>
+</div>

@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+	<data name="App_Title">
+		<value>MerkaiTrial Starter Admin</value>
+	</data>
+	<data name="Nav_Contacts">
+		<value>Contacts</value>
+	</data>
+	<data name="Nav_Leads">
+		<value>Leads</value>
+	</data>
+	<data name="Nav_Pipelines">
+		<value>Pipelines</value>
+	</data>
+	<data name="Nav_Journeys">
+		<value>Journeys</value>
+	</data>
+	<data name="Nav_Inbox">
+		<value>Inbox</value>
+	</data>
+	<data name="Nav_Widget">
+		<value>Widget</value>
+	</data>
+	<data name="Lang">
+		<value>Language</value>
+	</data>
+	<data name="Footer_Disclaimer">
+		<value>All data shown is for demonstration purposes.</value>
+	</data>
+</root>

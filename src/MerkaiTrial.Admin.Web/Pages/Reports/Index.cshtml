@@ -1,0 +1,169 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.IndexModel
+@{ ViewData["Title"] = "Reports"; }
+
+<style>
+.rep-card {
+    background:#fff; border-radius:12px;
+    border:1px solid #e2e8f0; padding:1.25rem;
+    transition:box-shadow .2s, transform .15s;
+    height:100%;
+    text-decoration:none; color:inherit; display:block;
+}
+.rep-card:hover {
+    box-shadow:0 6px 24px rgba(0,0,0,.09);
+    transform:translateY(-2px);
+}
+.rep-icon {
+    width:48px; height:48px; border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.4rem; margin-bottom:1rem;
+}
+.rep-name  { font-size:15px; font-weight:600; color:#0f172a; margin-bottom:4px; }
+.rep-desc  { font-size:12px; color:#64748b; line-height:1.5; margin-bottom:12px; }
+.rep-meta  { font-size:11px; color:#94a3b8; }
+.section-label {
+    font-size:11px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:#64748b;
+    padding-bottom:10px; border-bottom:1px solid #f1f5f9;
+    margin-bottom:16px;
+}
+.badge-soon {
+    font-size:10px; font-weight:500; padding:2px 8px;
+    border-radius:4px; background:#fef3c7; color:#92400e;
+}
+</style>
+
+<div class="container-fluid py-4">
+
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-bar-chart-line me-2 text-primary"></i>Reports</h2>
+            <p class="text-muted mb-0">@Model.TenantName &nbsp;·&nbsp; @Model.CurrencyCode (@Model.CurrencySymbol)</p>
+        </div>
+    </div>
+
+    @* ── CORE REPORTS ──────────────────────────────────────────── *@
+    <div class="section-label"><i class="bi bi-check-circle me-1 text-success"></i>Core Reports</div>
+
+    <div class="row g-3 mb-5">
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/SalesFunnel/Index">
+                <div class="rep-icon" style="background:#eff6ff;color:#3b82f6;">
+                    <i class="bi bi-funnel-fill"></i>
+                </div>
+                <div class="rep-name">Sales Funnel</div>
+                <div class="rep-desc">Track lead-to-invoice conversion rates across every stage of your pipeline.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Horizontal bar · Conversion rates</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/Pipeline/Index">
+                <div class="rep-icon" style="background:#eef2ff;color:#6366f1;">
+                    <i class="bi bi-kanban-fill"></i>
+                </div>
+                <div class="rep-name">Pipeline Summary</div>
+                <div class="rep-desc">View deals by stage with total value, count, and average probability.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Bar + line · Stage breakdown</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/Revenue/Index">
+                <div class="rep-icon" style="background:#ecfdf5;color:#10b981;">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <div class="rep-name">Revenue by Period</div>
+                <div class="rep-desc">Monthly view of invoiced vs collected revenue with outstanding balance.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Grouped bar · Monthly trend</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/WinLoss/Index">
+                <div class="rep-icon" style="background:#fef9c3;color:#ca8a04;">
+                    <i class="bi bi-trophy-fill"></i>
+                </div>
+                <div class="rep-name">Win / Loss Analysis</div>
+                <div class="rep-desc">Win rate per sales owner with total won value and deal breakdown.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Grouped bar · By owner</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/Outstanding/Index">
+                <div class="rep-icon" style="background:#fff7ed;color:#ea580c;">
+                    <i class="bi bi-receipt-cutoff"></i>
+                </div>
+                <div class="rep-name">Outstanding Invoices</div>
+                <div class="rep-desc">Aging analysis of unpaid invoices — current, 1–30, 31–60, 61–90, 90+ days.</div>
+                <div class="rep-meta"><i class="bi bi-pie-chart me-1"></i>Doughnut · Aging buckets</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/ByVertical/Index">
+                <div class="rep-icon" style="background:#f5f3ff;color:#7c3aed;">
+                    <i class="bi bi-grid-fill"></i>
+                </div>
+                <div class="rep-name">Revenue by Vertical</div>
+                <div class="rep-desc">Which industry verticals generate the most pipeline, won revenue, and invoiced value.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Bar + doughnut · By vertical</div>
+            </a>
+        </div>
+
+    </div>
+
+    @* ── ADVANCED REPORTS ──────────────────────────────────────── *@
+    <div class="section-label"><i class="bi bi-lightning me-1 text-warning"></i>Advanced Reports</div>
+
+    <div class="row g-3">
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/RepPerformance/Index">
+                <div class="rep-icon" style="background:#eff6ff;color:#3b82f6;">
+                    <i class="bi bi-person-check-fill"></i>
+                </div>
+                <div class="rep-name">Sales Rep Performance</div>
+                <div class="rep-desc">Ranked leaderboard of deals won, revenue, and win rate per sales rep.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Grouped bar · By owner</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/LeadSources/Index">
+                <div class="rep-icon" style="background:#f0fdf4;color:#16a34a;">
+                    <i class="bi bi-megaphone-fill"></i>
+                </div>
+                <div class="rep-name">Lead Source Analysis</div>
+                <div class="rep-desc">Which channels and sources bring the most leads and highest conversion rate.</div>
+                <div class="rep-meta"><i class="bi bi-pie-chart me-1"></i>Doughnut + bar · By channel</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/DealVelocity/Index">
+                <div class="rep-icon" style="background:#fefce8;color:#ca8a04;">
+                    <i class="bi bi-speedometer2"></i>
+                </div>
+                <div class="rep-name">Deal Velocity</div>
+                <div class="rep-desc">Average days from lead creation to deal close, broken down by stage transition.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Horizontal bar · Stage duration</div>
+            </a>
+        </div>
+
+        <div class="col-sm-6 col-lg-4">
+            <a class="rep-card" asp-page="/Reports/ActivityLeaderboard/Index">
+                <div class="rep-icon" style="background:#ecfeff;color:#0891b2;">
+                    <i class="bi bi-list-check"></i>
+                </div>
+                <div class="rep-name">Activity Leaderboard</div>
+                <div class="rep-desc">Notes, activities, and reminders logged per sales rep over a period.</div>
+                <div class="rep-meta"><i class="bi bi-bar-chart me-1"></i>Stacked bar · By rep</div>
+            </a>
+        </div>
+
+    </div>
+</div>

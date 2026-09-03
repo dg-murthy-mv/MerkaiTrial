@@ -1,0 +1,283 @@
+@* =====================================================================
+   TENANT CREATE PAGE - Frontend
+   Location: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Create.cshtml
+   ===================================================================== *@
+
+@page "/Admin/Tenants/Create"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.CreateModel
+@{
+    ViewData["Title"] = "Create Tenant";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-plus-circle"></i> Create New Tenant
+            </h2>
+            <p class="text-muted mb-0">Add a new tenant to the system</p>
+        </div>
+        <div>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+    <!-- Success Alert (from TempData) -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Error Alert (from TempData) -->
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    <!-- Validation Summary -->
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+    <form method="post">
+        <div class="row">
+            <!-- Main Form -->
+            <div class="col-lg-8">
+                <!-- Basic Information -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-building"></i> Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Tenant Name -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.Name" class="form-label">
+                                    Tenant Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Name" class="form-control" placeholder="Enter tenant name" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Email -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.FromEmail" class="form-label">
+                                    Email Address <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.FromEmail" class="form-control" type="email" 
+                                       placeholder="contact@company.com" />
+                                <span asp-validation-for="Input.FromEmail" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Phone -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.Phone" class="form-label">
+                                    Phone Number
+                                </label>
+                                <input asp-for="Input.Phone" class="form-control" type="tel" 
+                                       placeholder="+1 234 567 8900" />
+                                <span asp-validation-for="Input.Phone" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Country -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.CountryId" class="form-label">
+                                    <i class="bi bi-flag"></i> Country
+                                </label>
+                                <select asp-for="Input.CountryId" class="form-select" asp-items="Model.CountryOptions">
+                                </select>
+                                <span asp-validation-for="Input.CountryId" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Domain -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.Domain" class="form-label">
+                                    <i class="bi bi-link"></i> Custom Domain
+                                </label>
+                                <input asp-for="Input.Domain" class="form-control" 
+                                       placeholder="acmecorp" />
+                                <div class="form-text">
+                                    <small>For custom subdomain: acmecorp.yourdomain.com</small>
+                                </div>
+                                <span asp-validation-for="Input.Domain" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Reply-To Email -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.ReplyToEmail" class="form-label">
+                                    <i class="bi bi-envelope"></i> Reply-To Email
+                                </label>
+                                <input asp-for="Input.ReplyToEmail" class="form-control" type="email" 
+                                       placeholder="support@company.com" />
+                                <span asp-validation-for="Input.ReplyToEmail" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Regional & Plan Settings -->
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-globe"></i> Regional & Plan Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Currency -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.DefaultCurrency" class="form-label">
+                                    <i class="bi bi-currency-exchange"></i> Default Currency <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.DefaultCurrency" class="form-select" asp-items="Model.CurrencyOptions">
+                                </select>
+                                <span asp-validation-for="Input.DefaultCurrency" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Timezone -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.TimeZone" class="form-label">
+                                    <i class="bi bi-clock"></i> Timezone <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.TimeZone" class="form-select" asp-items="Model.TimezoneOptions">
+                                </select>
+                                <span asp-validation-for="Input.TimeZone" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Plan -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.Plan" class="form-label">
+                                    <i class="bi bi-award"></i> Subscription Plan <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Plan" class="form-select" asp-items="Model.PlanOptions">
+                                </select>
+                                <div class="form-text">
+                                    <small>Plan determines resource limits</small>
+                                </div>
+                                <span asp-validation-for="Input.Plan" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Language -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.PreferredLanguage" class="form-label">
+                                    <i class="bi bi-translate"></i> Preferred Language
+                                </label>
+                                <select asp-for="Input.PreferredLanguage" class="form-select">
+                                    <option value="en">English</option>
+                                    <option value="th">Thai</option>
+                                    <option value="es">Spanish</option>
+                                    <option value="fr">French</option>
+                                    <option value="de">German</option>
+                                    <option value="zh">Chinese</option>
+                                    <option value="ja">Japanese</option>
+                                </select>
+                                <span asp-validation-for="Input.PreferredLanguage" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Status -->
+                            <div class="col-12 mb-3">
+                                <div class="form-check">
+                                    <input asp-for="Input.IsActive" class="form-check-input" type="checkbox" />
+                                    <label asp-for="Input.IsActive" class="form-check-label">
+                                        <strong>Activate tenant immediately</strong>
+                                    </label>
+                                </div>
+                                <div class="form-text">
+                                    <small>Uncheck to create tenant in inactive state</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panel -->
+            <div class="col-lg-4">
+                <!-- Actions Card -->
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <button type="submit" class="btn btn-primary w-100 mb-2">
+                            <i class="bi bi-plus-circle"></i> Create Tenant
+                        </button>
+                        <a asp-page="./Index" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Plan Comparison Card -->
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Plan Comparison</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <h6 class="text-primary">Starter</h6>
+                            <ul class="small mb-0">
+                                <li>5 users</li>
+                                <li>100 leads</li>
+                                <li>50 deals</li>
+                                <li>5 GB storage</li>
+                            </ul>
+                        </div>
+                        <div class="mb-3">
+                            <h6 class="text-success">Professional</h6>
+                            <ul class="small mb-0">
+                                <li>10 users</li>
+                                <li>200 leads</li>
+                                <li>100 deals</li>
+                                <li>10 GB storage</li>
+                            </ul>
+                        </div>
+                        <div class="mb-0">
+                            <h6 class="text-warning">Enterprise</h6>
+                            <ul class="small mb-0">
+                                <li>20 users</li>
+                                <li>300 leads</li>
+                                <li>200 deals</li>
+                                <li>20 GB storage</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Card -->
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0 small">
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                All fields marked with * are required
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                Default settings will be created based on plan
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                Email must be unique
+                            </li>
+                            <li class="mb-0">
+                                <i class="bi bi-check-circle text-success"></i>
+                                Settings can be modified later
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MerkaiTrial.Infrastructure\MerkaiTrial.Infrastructure.csproj" />
+    <ProjectReference Include="..\MerkaiTrial.Domain\MerkaiTrial.Domain.csproj" />
+	<ProjectReference Include="..\MerkaiTrial.Application\MerkaiTrial.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Areas\Admin\Leads\" />
+    <Folder Include="Startup\" />
+    <Folder Include="Pages\Admin\ViewAs\" />
+    <Folder Include="Pages\Admin\Plans\" />
+    <Folder Include="Pages\Public\" />
+    <Folder Include="Pages\Reports\ByVertical\" />
+    <Folder Include="Pages\Reports\LeadSources\" />
+    <Folder Include="Pages\Reports\DealVelocity\" />
+    <Folder Include="Pages\Reports\ActivityLeaderboard\" />
+    <Folder Include="Pages\Reports\RepPerformance\" />
+    <Folder Include="Pages\Reports\Shared\" />
+    <Folder Include="Pages\Reports\Outstanding\" />
+    <Folder Include="Pages\Reports\WinLoss\" />
+    <Folder Include="Pages\Reports\Revenue\" />
+    <Folder Include="Pages\Reports\Pipeline\" />
+    <Folder Include="Pages\Reports\SalesFunnel\" />
+    <Folder Include="Services\Activities\" />
+    <Folder Include="Services\Meta\" />
+    <Folder Include="Services\Reports\" />
+    <Folder Include="Uploads\" />
+    <Folder Include="Pages\Admin\TaxRates\" />
+    <Folder Include="Pages\Products\" />
+    <Folder Include="wwwroot\js\" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="EPPlus" Version="8.5.0" />
+    <PackageReference Include="OfficeOpenXml.Core.ExcelPackage" Version="1.0.0" />
+    <PackageReference Include="OpenXmlTools" Version="2.0.0" />
+    <PackageReference Include="QuestPDF" Version="2026.2.3" />
+    <PackageReference Include="Scrutor" Version="7.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+</Project>

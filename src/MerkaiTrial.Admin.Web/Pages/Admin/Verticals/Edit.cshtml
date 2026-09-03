@@ -1,0 +1,231 @@
+@page "/Admin/Verticals/Edit/{id}"
+@model MerkaiTrial.Admin.Web.Pages.Verticals.EditModel
+@{
+    ViewData["Title"] = "Edit Vertical";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-pencil text-warning"></i> Edit Vertical</h2>
+            <p class="text-muted mb-0">
+                @Model.Input.Name
+                @if (Model.IsSystemVertical)
+                {
+                    <span class="badge bg-primary ms-2">System</span>
+                }
+                else
+                {
+                    <span class="badge bg-warning ms-2">Custom</span>
+                }
+            </p>
+        </div>
+        <div>
+            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back to Details</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- System Vertical Warning -->
+    @if (Model.IsSystemVertical)
+    {
+        <div class="alert alert-warning border-0 shadow-sm">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-shield-exclamation me-3 fs-4"></i>
+                <div>
+                    <h6 class="alert-heading mb-1">System Vertical</h6>
+                    <p class="mb-0 small">You can only update the description, icon, and color. The name cannot be changed.</p>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Error Alert -->
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <input type="hidden" asp-for="Id" />
+
+        <div class="row g-4">
+            <!-- Main Form -->
+            <div class="col-lg-8">
+                <!-- Basic Information -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="Input.Name" class="form-label">
+                                Vertical Name <span class="text-danger">*</span>
+                            </label>
+                            @if (Model.IsSystemVertical)
+                            {
+                                <input asp-for="Input.Name" class="form-control" disabled />
+                                <input type="hidden" asp-for="Input.Name" />
+                                <small class="text-muted">
+                                    <i class="bi bi-lock me-1"></i>System vertical names cannot be changed
+                                </small>
+                            }
+                            else
+                            {
+                                <input asp-for="Input.Name" class="form-control" 
+                                       placeholder="e.g., PropTech, FinTech" oninput="updatePreview()" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            }
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Description" class="form-label">Description</label>
+                            <textarea asp-for="Input.Description" class="form-control" rows="3" 
+                                      placeholder="Brief description of this vertical"></textarea>
+                            <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Appearance -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-palette"></i> Appearance</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Input.Icon" class="form-label">
+                                    Icon <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Icon" asp-items="Model.IconOptions" 
+                                        class="form-select" onchange="updatePreview()">
+                                    <option value="">-- Select Icon --</option>
+                                </select>
+                                <span asp-validation-for="Input.Icon" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.Color" class="form-label">
+                                    Color <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Color" asp-items="Model.ColorOptions" 
+                                        class="form-select" onchange="updatePreview()">
+                                    <option value="">-- Select Color --</option>
+                                </select>
+                                <span asp-validation-for="Input.Color" class="text-danger small"></span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <label class="form-label">Live Preview</label>
+                            <div id="iconPreview" class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="bg-@(Model.Input.Color ?? "secondary") bg-opacity-10 rounded p-3">
+                                    <i class="bi bi-@(Model.Input.Icon ?? "briefcase") text-@(Model.Input.Color ?? "secondary") fs-4"></i>
+                                </div>
+                                <span class="ms-3 fw-semibold">@Model.Input.Name</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-4">
+                <!-- Type Badge -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-body text-center">
+                        @if (Model.IsSystemVertical)
+                        {
+                            <div class="mb-3">
+                                <i class="bi bi-star-fill text-primary" style="font-size: 3rem;"></i>
+                            </div>
+                            <h5>System Vertical</h5>
+                            <p class="text-muted small mb-0">Available to all tenants</p>
+                        }
+                        else
+                        {
+                            <div class="mb-3">
+                                <i class="bi bi-building text-warning" style="font-size: 3rem;"></i>
+                            </div>
+                            <h5>Custom Vertical</h5>
+                            <p class="text-muted small mb-0">Specific to one tenant</p>
+                        }
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-check-circle"></i> Save Changes
+                            </button>
+                            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Guidelines -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            @if (Model.IsSystemVertical)
+                            {
+                                <li class="mb-2"><strong>System verticals</strong> have limited editability</li>
+                                <li class="mb-2">You can update <strong>description, icon, and color</strong></li>
+                                <li class="mb-2">The <strong>name cannot be changed</strong></li>
+                                <li>System verticals <strong>cannot be deleted</strong></li>
+                            }
+                            else
+                            {
+                                <li class="mb-2"><strong>Custom verticals</strong> can be fully edited</li>
+                                <li class="mb-2">Changes apply <strong>immediately</strong> across the system</li>
+                                <li class="mb-2">Choose <strong>descriptive names</strong> users will understand</li>
+                                <li>You can <strong>delete</strong> custom verticals if not in use</li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        function updatePreview() {
+            const nameInput = document.getElementById('Input_Name');
+            const name = nameInput && !nameInput.disabled ? nameInput.value : '@Model.Input.Name';
+            const icon = document.getElementById('Input_Icon').value || '@Model.Input.Icon';
+            const color = document.getElementById('Input_Color').value || '@Model.Input.Color';
+
+            const preview = document.getElementById('iconPreview');
+            preview.innerHTML = `
+                <div class="bg-${color} bg-opacity-10 rounded p-3">
+                    <i class="bi bi-${icon} text-${color} fs-4"></i>
+                </div>
+                <span class="ms-3 fw-semibold">${name}</span>
+            `;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updatePreview();
+        });
+    </script>
+}

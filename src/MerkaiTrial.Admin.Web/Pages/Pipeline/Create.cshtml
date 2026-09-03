@@ -1,0 +1,424 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.CreateModel
+@{
+    ViewData["Title"] = "Create New Deal";
+}
+
+<style>
+.page-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem 0;
+    margin: -1rem -1rem 2rem -1rem;
+    border-radius: 0 0 1rem 1rem;
+}
+.form-container {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+.form-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e9ecef;
+}
+.form-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+}
+.section-title i { margin-right: 0.5rem; color: #667eea; }
+.form-label { font-weight: 600; color: #495057; margin-bottom: 0.5rem; }
+.currency-group { position: relative; }
+.currency-symbol {
+    position: absolute;
+    left: 12px; top: 50%;
+    transform: translateY(-50%);
+    font-weight: 600; color: #667eea; font-size: 1.1rem;
+    pointer-events: none; z-index: 2;
+}
+.currency-input { padding-left: 35px !important; }
+
+/* Stage badge colors */
+.stage-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+    user-select: none;
+}
+.stage-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+.stage-badge.active { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.25); }
+.stage-discovery     { background-color: #6c757d; color: white; }
+.stage-qualification { background-color: #17a2b8; color: white; }
+.stage-proposal      { background-color: #0d6efd; color: white; }
+.stage-negotiation   { background-color: #ffc107; color: #000; }
+.stage-closedwon     { background-color: #198754; color: white; }
+.stage-closedlost    { background-color: #dc3545; color: white; }
+
+.probability-display { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+.probability-value { font-size: 2rem; font-weight: 700; color: #667eea; min-width: 80px; }
+
+/* Auto-fill hint badge */
+.autofill-hint {
+    font-size: 0.75rem;
+    color: #6366f1;
+    margin-top: 0.25rem;
+    display: none;
+}
+.autofill-hint.visible { display: block; }
+
+@@media (max-width: 767.98px) {
+    .form-container { padding: 1.5rem; }
+    .page-header { padding: 1.5rem 0; }
+    .stage-badge { font-size: 0.875rem; padding: 0.4rem 0.8rem; }
+}
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1"><i class="bi bi-plus-circle me-2"></i>Create New Deal</h1>
+                    <p class="mb-0 opacity-75">Add a new sales opportunity to your pipeline</p>
+                </div>
+                <a asp-page="./Index" class="btn btn-light">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Pipeline
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-container">
+        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+
+        <form method="post" id="createDealForm">
+            @Html.AntiForgeryToken()
+            <input type="hidden" asp-for="Input.Stage"       id="stageInput" />
+            <input type="hidden" asp-for="Input.Probability" id="probabilityInput" />
+            @if (Model.Input.LeadId.HasValue)
+            {
+                <input type="hidden" asp-for="Input.LeadId" />
+            }
+            <input type="hidden" id="tenantCurrencySymbol" value="@Model.TenantCurrencySymbol" />
+            <input type="hidden" id="tenantCurrencyCode"   value="@Model.TenantCurrencyCode" />
+
+            <!-- Basic Information -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-info-circle"></i>Basic Information</div>
+                <div class="row">
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="Input.Title" class="form-label">
+                            Deal Title <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.Title" class="form-control"
+                               placeholder="e.g., TechCorp CRM Implementation" />
+                        <span asp-validation-for="Input.Title" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-12 mb-3">
+                        <label asp-for="Input.Description" class="form-label">Description</label>
+                        <textarea asp-for="Input.Description" class="form-control" rows="3"
+                                  placeholder="Brief description of the opportunity..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contact & Company -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-people"></i>Contact & Company</div>
+                <div class="row">
+                    <!-- Contact — carries data-company-id/name for auto-fill -->
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.ContactId" class="form-label">
+                            Contact <span class="text-danger">*</span>
+                        </label>
+                        <select asp-for="Input.ContactId" class="form-select" id="contactSelect">
+                            <option value="">-- Select Contact --</option>
+                            @foreach (var c in Model.ContactItems)
+                            {
+                                <option value="@c.Id"
+                                        data-company-id="@(c.CompanyId ?? "")"
+                                        data-company-name="@(c.CompanyName ?? "")">
+                                    @c.Text
+                                </option>
+                            }
+                        </select>
+                        <span asp-validation-for="Input.ContactId" class="text-danger small"></span>
+                    </div>
+
+                    <!-- Company — auto-filled from Contact, still manually editable -->
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.CompanyId" class="form-label">
+                            Company <span class="text-muted small">(optional)</span>
+                        </label>
+                        <select asp-for="Input.CompanyId" class="form-select" id="companySelect">
+                            <option value="">-- Select Company --</option>
+                            @foreach (var c in Model.Companies)
+                            {
+                                <option value="@c.Value" selected="@(c.Selected ? "selected" : null)">@c.Text</option>
+                            }
+                        </select>
+                        <!-- ✅ Hint shown when company was auto-filled from contact -->
+                        <div class="autofill-hint" id="companyAutoFillHint">
+                            <i class="bi bi-magic me-1"></i>Auto-filled from contact — you can change this
+                        </div>
+                    </div>
+
+                    <!-- Vertical / Industry — manual, loaded from CompanyVerticals table -->
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.VerticalId" class="form-label">
+                            Industry / Vertical <span class="text-muted small">(optional)</span>
+                        </label>
+                        <select asp-for="Input.VerticalId" class="form-select" id="verticalSelect">
+                            <option value="">-- Select Industry --</option>
+                            @foreach (var v in Model.VerticalOptions)
+                            {
+                                <option value="@v.Value">@v.Text</option>
+                            }
+                        </select>
+                        <small class="text-muted">
+                            Auto-set when converting from a Lead. Set manually for direct deals.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deal Value -->
+            <div class="form-section">
+                <div class="section-title">
+                    <i class="bi bi-currency-exchange"></i>&nbsp;Deal Value
+                    <span class="badge ms-2 text-white" style="background:#6366f1;font-size:0.75rem;">
+                        @Model.TenantCurrencyCode
+                    </span>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Currency</label>
+                        <input type="text" class="form-control bg-light"
+                               value="@Model.TenantCurrencyCode" readonly />
+                        <input type="hidden" asp-for="Input.Currency" />
+                        <small class="text-muted">
+                            Fixed to your workspace (@Model.TenantCurrencyCode)
+                        </small>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.ExpectedValue" class="form-label">
+                            Expected Value <span class="text-danger">*</span>
+                        </label>
+                        <div class="currency-group">
+                            <span class="currency-symbol" id="currencySymbol">
+                                @Model.TenantCurrencySymbol
+                            </span>
+                            <input asp-for="Input.ExpectedValue" type="number" step="0.01"
+                                   class="form-control currency-input" placeholder="0.00" min="0.01" />
+                        </div>
+                        <span asp-validation-for="Input.ExpectedValue" class="text-danger small"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stage & Timeline -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-funnel"></i>Stage & Timeline</div>
+
+                <div class="mb-3">
+                    <label class="form-label">Deal Stage <span class="text-danger">*</span></label>
+                    <div class="stage-selector">
+                        <div class="stage-badge stage-discovery active"
+                             data-stage="Discovery" data-probability="20">
+                            <i class="bi bi-search me-1"></i>Discovery (20%)
+                        </div>
+                        <div class="stage-badge stage-qualification"
+                             data-stage="Qualification" data-probability="30">
+                            <i class="bi bi-check-circle me-1"></i>Qualification (30%)
+                        </div>
+                        <div class="stage-badge stage-proposal"
+                             data-stage="Proposal" data-probability="40">
+                            <i class="bi bi-file-earmark-text me-1"></i>Proposal (40%)
+                        </div>
+                        <div class="stage-badge stage-negotiation"
+                             data-stage="Negotiation" data-probability="60">
+                            <i class="bi bi-handshake me-1"></i>Negotiation (60%)
+                        </div>
+                        <div class="stage-badge stage-closedwon"
+                             data-stage="ClosedWon" data-probability="100">
+                            <i class="bi bi-trophy me-1"></i>Won (100%)
+                        </div>
+                        <div class="stage-badge stage-closedlost"
+                             data-stage="ClosedLost" data-probability="0">
+                            <i class="bi bi-x-circle me-1"></i>Lost (0%)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Probability of Closing</label>
+                    <div class="probability-display">
+                        <input type="range" class="form-range" min="0" max="100"
+                               value="20" id="probabilitySlider" />
+                        <span class="probability-value" id="probabilityDisplay">20%</span>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.ExpectedCloseDate" class="form-label">
+                            Expected Close Date <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" />
+                        <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.OwnerUserId" class="form-label">
+                            Owner <span class="text-muted small">(optional — defaults to you)</span>
+                        </label>
+                        <select asp-for="Input.OwnerUserId" class="form-select">
+                            <option value="">-- Assign to me --</option>
+                            @foreach (var u in Model.SalesTeam)
+                            {
+                                <option value="@u.Value">@u.Text</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Information -->
+            <div class="form-section">
+                <div class="section-title"><i class="bi bi-tag"></i>Additional Information</div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.SourceId" class="form-label">Source</label>
+                        <select asp-for="Input.SourceId" class="form-select">
+                            <option value="">-- Select Source --</option>
+                            @foreach (var s in Model.Sources)
+                            {
+                                <option value="@s.Value">@s.Text</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="Input.Tags" class="form-label">
+                            Tags <span class="text-muted small">(comma-separated)</span>
+                        </label>
+                        <input asp-for="Input.Tags" class="form-control"
+                               placeholder="e.g., enterprise, high-value, urgent" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex justify-content-between">
+                <a asp-page="./Index" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-2"></i>Cancel
+                </a>
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-save me-2"></i>Create Deal
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        // ── Stage badges ────────────────────────────────────────────
+        const stageBadges        = document.querySelectorAll('.stage-badge');
+        const stageInput         = document.getElementById('stageInput');
+        const probabilityInput   = document.getElementById('probabilityInput');
+        const probabilitySlider  = document.getElementById('probabilitySlider');
+        const probabilityDisplay = document.getElementById('probabilityDisplay');
+
+        stageInput.value       = 'Discovery';
+        probabilityInput.value = '20';
+
+        stageBadges.forEach(badge => {
+            badge.addEventListener('click', function () {
+                stageBadges.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                stageInput.value               = this.dataset.stage;
+                probabilityInput.value         = this.dataset.probability;
+                probabilitySlider.value        = this.dataset.probability;
+                probabilityDisplay.textContent = this.dataset.probability + '%';
+            });
+        });
+
+        probabilitySlider.addEventListener('input', function () {
+            probabilityInput.value         = this.value;
+            probabilityDisplay.textContent = this.value + '%';
+        });
+
+        // ── Currency symbol ─────────────────────────────────────────
+        const tenantSymbol = document.getElementById('tenantCurrencySymbol').value;
+        const symbolEl     = document.getElementById('currencySymbol');
+        if (symbolEl) symbolEl.textContent = tenantSymbol;
+
+        // ── Default close date ──────────────────────────────────────
+        const closeDateInput = document.querySelector('input[name="Input.ExpectedCloseDate"]');
+        if (closeDateInput && !closeDateInput.value) {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 1);
+            closeDateInput.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+
+        // ── ✅ Contact → auto-fill Company ──────────────────────────
+        const contactSelect       = document.getElementById('contactSelect');
+        const companySelect       = document.getElementById('companySelect');
+        const companyAutoFillHint = document.getElementById('companyAutoFillHint');
+
+        contactSelect.addEventListener('change', function () {
+            const selected = this.options[this.selectedIndex];
+            const companyId   = selected.dataset.companyId   || '';
+            const companyName = selected.dataset.companyName || '';
+
+            if (companyId) {
+                // Only auto-fill if company is not already manually set
+                // (i.e., user hasn't explicitly picked one)
+                const currentCompany = companySelect.value;
+
+                companySelect.value = companyId;
+                companyAutoFillHint.classList.add('visible');
+
+                // If the companyId isn't in the dropdown options, add it temporarily
+                const exists = Array.from(companySelect.options)
+                    .some(o => o.value === companyId);
+
+                if (!exists && companyName) {
+                    const opt = new Option(companyName, companyId, true, true);
+                    companySelect.add(opt);
+                }
+            } else {
+                // Contact has no company — clear auto-fill hint but keep manual value
+                companyAutoFillHint.classList.remove('visible');
+            }
+        });
+
+        // Hide hint if user manually changes company after auto-fill
+        companySelect.addEventListener('change', function () {
+            companyAutoFillHint.classList.remove('visible');
+        });
+    });
+    </script>
+}

@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\MerkaiTrial.Infrastructure\MerkaiTrial.Infrastructure.csproj" />
+		<ProjectReference Include="..\MerkaiTrial.Domain\MerkaiTrial.Domain.csproj" />		
+	</ItemGroup>
+  <ItemGroup>
+    <Folder Include="Commands\Activities\" />
+    <Folder Include="Commands\Meta\" />
+    <Folder Include="Commands\Reports\" />
+    <Folder Include="Commands\Plans\" />
+    <Folder Include="Commands\Roles\" />
+    <Folder Include="Commands\Tenants\" />
+    <Folder Include="Services\Pdf\" />
+    <Folder Include="Services\Tenants\" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="EPPlus" Version="8.5.0" />
+    <PackageReference Include="OfficeOpenXml.Core.ExcelPackage" Version="1.0.0" />
+    <PackageReference Include="OpenXmlTools" Version="2.0.0" />
+    <PackageReference Include="QuestPDF" Version="2026.2.3" />
+    <PackageReference Include="Scrutor" Version="7.0.0" />
+  </ItemGroup>
+
+</Project>

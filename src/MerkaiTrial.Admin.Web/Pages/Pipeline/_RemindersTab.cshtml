@@ -1,0 +1,167 @@
+@* =====================================================================
+   REMINDERS TAB - Create and View Reminders
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_RemindersTab.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+@* Create New Reminder Section — only shown to roles with update permission *@
+@if (Model.CanUpdate)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h6 class="mb-0">
+                <i class="bi bi-plus-circle me-2"></i>Set Reminder
+            </h6>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="AddReminder" asp-route-id="@Model.Deal.Id">
+                <div class="row g-3">
+                    <!-- Title -->
+                    <div class="col-12">
+                        <label asp-for="ReminderInput.Title" class="form-label">
+                            Title <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" asp-for="ReminderInput.Title" class="form-control" 
+                               placeholder="Brief description of the reminder" required>
+                        <span asp-validation-for="ReminderInput.Title" class="text-danger"></span>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="col-12">
+                        <label asp-for="ReminderInput.Description" class="form-label">Description</label>
+                        <textarea asp-for="ReminderInput.Description" class="form-control" rows="2" 
+                                  placeholder="Additional details..."></textarea>
+                        <span asp-validation-for="ReminderInput.Description" class="text-danger"></span>
+                    </div>
+
+                    <!-- Reminder Date -->
+                    <div class="col-md-6">
+                        <label asp-for="ReminderInput.ReminderDate" class="form-label">
+                            Reminder Date & Time <span class="text-danger">*</span>
+                        </label>
+                        <input type="datetime-local" asp-for="ReminderInput.ReminderDate" class="form-control" required>
+                        <span asp-validation-for="ReminderInput.ReminderDate" class="text-danger"></span>
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="btn btn-warning text-dark">
+                        <i class="bi bi-bell me-2"></i>Create Reminder
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+<!-- Pending Reminders Section -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+            <i class="bi bi-bell-fill me-2"></i>Pending Reminders
+        </h6>
+        <span class="badge bg-dark">@Model.Reminders.Count(r => !r.IsCompleted)</span>
+    </div>
+    <div class="card-body">
+        @{
+            var pendingReminders = Model.Reminders.Where(r => !r.IsCompleted).ToList();
+        }
+        @if (pendingReminders.Any())
+        {
+            <div class="list-group">
+                @foreach (var reminder in pendingReminders)
+                {
+                    var isPastDue = reminder.ReminderDate < DateTime.Now;
+                    <div class="list-group-item @(isPastDue ? "border-danger" : "")">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">
+                                    @if (isPastDue)
+                                    {
+                                        <span class="badge bg-danger me-2">OVERDUE</span>
+                                    }
+                                    @reminder.Title
+                                </h6>
+                                @if (!string.IsNullOrEmpty(reminder.Description))
+                                {
+                                    <p class="mb-2 text-muted small" style="white-space: pre-wrap;">@reminder.Description</p>
+                                }
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar-event me-1"></i>
+                                    @reminder.ReminderDate.ToString("MMM dd, yyyy hh:mm tt")
+                                    @if (isPastDue)
+                                    {
+                                        <span class="text-danger ms-2">(Past Due)</span>
+                                    }
+                                </small>
+                                <br />
+                                <small class="text-muted">
+                                    <i class="bi bi-person me-1"></i>Created by @reminder.CreatedBy
+                                </small>
+                            </div>
+                            <div>
+                                @if (Model.CanUpdate)
+                                {
+                                    <form method="post" asp-page-handler="CompleteReminder" 
+                                          asp-route-id="@Model.Deal.Id" asp-route-reminderId="@reminder.Id" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-success">
+                                            <i class="bi bi-check2"></i> Complete
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-check-circle fs-1 text-success"></i>
+                <p class="mt-2">No pending reminders. All caught up!</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Completed Reminders Section -->
+@{
+    var completedReminders = Model.Reminders.Where(r => r.IsCompleted).ToList();
+}
+@if (completedReminders.Any())
+{
+    <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">
+                <i class="bi bi-check-circle me-2"></i>Completed Reminders
+            </h6>
+            <span class="badge bg-success">@completedReminders.Count</span>
+        </div>
+        <div class="card-body">
+            <div class="list-group">
+                @foreach (var reminder in completedReminders)
+                {
+                    <div class="list-group-item bg-light">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1 text-muted">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <del>@reminder.Title</del>
+                                </h6>
+                                @if (!string.IsNullOrEmpty(reminder.Description))
+                                {
+                                    <p class="mb-2 text-muted small">@reminder.Description</p>
+                                }
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar-check me-1"></i>
+                                    Completed on @reminder.CompletedAtUtc?.ToString("MMM dd, yyyy")
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}

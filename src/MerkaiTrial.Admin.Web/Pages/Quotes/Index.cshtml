@@ -1,0 +1,458 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Quotes.IndexModel
+@{
+    ViewData["Title"] = "Quotes";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin: -1rem -1rem 2rem -1rem;
+        border-radius: 0 0 1rem 1rem;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 0.5rem;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+        border-left: 4px solid #667eea;
+    }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #667eea;
+    }
+
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+    }
+
+    .quote-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        border: 1px solid #e9ecef;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+        .quote-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+    .quote-number {
+        font-weight: 700;
+        color: #667eea;
+        font-size: 1.1rem;
+    }
+
+    .quote-deal {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-bottom: 0.5rem;
+    }
+
+    .quote-amount {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #28a745;
+    }
+
+    .status-column {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 1rem;
+        min-height: 400px;
+    }
+
+    .column-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .column-title {
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: #495057;
+    }
+
+    .column-count {
+        background: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .status-draft .column-count {
+        background: #6c757d;
+        color: white;
+    }
+
+    .status-sent .column-count {
+        background: #0d6efd;
+        color: white;
+    }
+
+    .status-viewed .column-count {
+        background: #0dcaf0;
+        color: white;
+    }
+
+    .status-accepted .column-count {
+        background: #198754;
+        color: white;
+    }
+
+    .status-rejected .column-count {
+        background: #dc3545;
+        color: white;
+    }
+
+    .status-expired .column-count {
+        background: #ffc107;
+        color: #000;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: #6c757d;
+    }
+
+        .empty-state i {
+            font-size: 3rem;
+            opacity: 0.3;
+            margin-bottom: 1rem;
+        }
+
+    @@media (max-width: 991.98px) {
+        .status-columns {
+            display: block !important;
+        }
+
+        .status-column {
+            margin-bottom: 1rem;
+            min-height: auto;
+        }
+    }
+</style>
+
+<div class="container-fluid">
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6 mb-3 mb-md-0">
+                    <h2 class="mb-0">
+                        <i class="bi bi-file-earmark-text me-2"></i>Quotes
+                    </h2>
+                    <p class="mb-0 mt-1 opacity-75">Manage sales quotations</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+
+                    <div class="d-inline-flex align-items-center gap-2">
+
+                        @* ✅ Plan badge *@
+                        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
+                            @Model.PlanDisplayName
+                        </span>
+
+                        <a asp-page="/Pipeline/Index" class="btn btn-outline-light">
+                            <i class="bi bi-kanban me-2"></i>View Pipeline
+                        </a>
+
+                        @* ✅ Create Quote — permission aware (tied to Deals module) *@
+                        @if (Model.CanCreate)
+                        {
+                            <a asp-page="/Quotes/Create" class="btn btn-light">
+                                <i class="bi bi-plus-circle me-2"></i>Create Quote
+                            </a>
+                        }
+                        @* No quota bar — no MaxQuotes in any plan *@
+                        @* No plan gate — "deals" feature is available on all plans *@
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+
+        <!-- Statistics Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="stat-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-muted small mb-1">Total Quotes</div>
+                            <div class="stat-value">@Model.Statistics.TotalQuotes</div>
+                        </div>
+                        <div class="stat-icon bg-primary">
+                            <i class="bi bi-file-earmark-text"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card border-success">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-muted small mb-1">Accepted</div>
+                            <div class="stat-value text-success">@Model.Statistics.AcceptedQuotes</div>
+                            <small class="text-muted">@Model.FormatCurrency(Model.Statistics.AcceptedValue)</small>
+                        </div>
+                        <div class="stat-icon bg-success">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card border-warning">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-muted small mb-1">Pending</div>
+                            <div class="stat-value text-warning">@Model.Statistics.SentQuotes</div>
+                            <small class="text-muted">@Model.FormatCurrency(Model.Statistics.PendingValue)</small>
+                        </div>
+                        <div class="stat-icon bg-warning">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="stat-card border-info">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="text-muted small mb-1">Total Value</div>
+                            <div class="stat-value text-info">@Model.FormatCurrency(Model.Statistics.TotalValue)</div>
+                        </div>
+                        <div class="stat-icon bg-info">
+                            <span style="font-size:1.2rem;font-weight:700;line-height:1;">@Model.TenantCurrencySymbol</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Columns (Kanban-style) -->
+        <div class="status-columns"
+             style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
+
+            <!-- Draft Column -->
+            <div class="status-column status-draft">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-file-earmark me-2"></i>Draft
+                    </div>
+                    <span class="column-count">@Model.Statistics.DraftQuotes</span>
+                </div>
+                @{
+                    var draftQuotes = Model.GetQuotesByStatus("Draft");
+                }
+                @if (draftQuotes.Any())
+                {
+                    foreach (var quote in draftQuotes)
+                    {
+                        @* ✅ Draft quotes are editable — only show edit hint if user can update *@
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="quote-number">@quote.Number</div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
+                                <span>@quote.ItemCount items</span>
+                            </div>
+                            @* ✅ Edit shortcut — only for users with update permission *@
+                            @if (Model.CanUpdate)
+                            {
+                                <div class="mt-2 text-end">
+                                    <a asp-page="/Quotes/Edit" asp-route-id="@quote.Id"
+                                       class="btn btn-sm btn-outline-secondary"
+                                       onclick="event.stopPropagation()">
+                                        <i class="bi bi-pencil me-1"></i>Edit
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>No draft quotes</div>
+                    </div>
+                }
+            </div>
+
+            <!-- Sent Column -->
+            <div class="status-column status-sent">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-send me-2"></i>Sent
+                    </div>
+                    <span class="column-count">@Model.Statistics.SentQuotes</span>
+                </div>
+                @{
+                    var sentQuotes = Model.GetQuotesByStatus("Sent");
+                }
+                @if (sentQuotes.Any())
+                {
+                    foreach (var quote in sentQuotes)
+                    {
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="quote-number">@quote.Number</div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
+                                <span>Expires: @Model.FormatDate(quote.ExpiresAtUtc)</span>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>No sent quotes</div>
+                    </div>
+                }
+            </div>
+
+            <!-- In Review (Viewed) Column -->
+            <div class="status-column status-viewed">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-eye me-2"></i>In Review
+                    </div>
+                    <span class="column-count">@(Model.GetQuotesByStatus("Viewed").Count)</span>
+                </div>
+                @{
+                    var viewedQuotes = Model.GetQuotesByStatus("Viewed");
+                }
+                @if (viewedQuotes.Any())
+                {
+                    foreach (var quote in viewedQuotes)
+                    {
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="quote-number">@quote.Number</div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
+                                <span>@quote.ItemCount items</span>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>No quotes in review</div>
+                    </div>
+                }
+            </div>
+
+            <!-- Accepted Column -->
+            <div class="status-column status-accepted">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-check-circle me-2"></i>Accepted
+                    </div>
+                    <span class="column-count">@Model.Statistics.AcceptedQuotes</span>
+                </div>
+                @{
+                    var acceptedQuotes = Model.GetQuotesByStatus("Accepted");
+                }
+                @if (acceptedQuotes.Any())
+                {
+                    foreach (var quote in acceptedQuotes)
+                    {
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="quote-number">@quote.Number</div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span>
+                                    <i class="bi bi-check-circle-fill text-success me-1"></i>Accepted
+                                </span>
+                                <span>@quote.ItemCount items</span>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>No accepted quotes</div>
+                    </div>
+                }
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@* Bootstrap JS is already loaded once by _Layout.cshtml — do not load it again here. *@
+@* Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here. *@

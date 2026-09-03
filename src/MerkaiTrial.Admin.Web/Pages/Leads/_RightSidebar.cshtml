@@ -1,0 +1,216 @@
+@* =====================================================================
+   RIGHT SIDEBAR - Quick Info and Actions (FIXED - Shows Owner Name)
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/_RightSidebar.cshtml
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
+@{
+    var isQualified = Model.Lead.Status?.Trim().Equals("Qualified", StringComparison.OrdinalIgnoreCase) ?? false;
+    var isConverted = Model.Lead.DealId.HasValue;
+}
+
+<!-- Quick Stats Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>Quick Info</h6>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="text-muted small">Status</label>
+            <p class="mb-0">
+                <span class="badge @Model.GetStatusBadgeClass(Model.Lead.Status)">
+                    @Model.Lead.Status
+                </span>
+            </p>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Lead Score</label>
+            <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height: 20px;">
+                    <div class="progress-bar @Model.GetScoreColor(Model.Lead.Score)" 
+                         role="progressbar" 
+                         style="width: @Model.Lead.Score%"
+                         aria-valuenow="@Model.Lead.Score" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        <strong>@Model.Lead.Score</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="text-muted small">Created</label>
+            <p class="mb-0">
+                <i class="bi bi-calendar3 me-1"></i>
+                @Model.FormatDate(Model.Lead.CreatedAtUtc)
+                <br />
+                <small class="text-muted">@Model.GetRelativeTime(Model.Lead.CreatedAtUtc)</small>
+            </p>
+        </div>
+        @if (Model.Lead.UpdatedAtUtc.HasValue)
+        {
+            <div class="mb-3">
+                <label class="text-muted small">Last Updated</label>
+                <p class="mb-0">
+                    <i class="bi bi-clock me-1"></i>
+                    @Model.FormatDate(Model.Lead.UpdatedAtUtc.Value)
+                    <br />
+                    <small class="text-muted">@Model.GetRelativeTime(Model.Lead.UpdatedAtUtc.Value)</small>
+                </p>
+            </div>
+        }
+        <div class="mb-0">
+            <label class="text-muted small">Owner</label>
+            <p class="mb-0">
+                @* ✅ FIXED: Show owner name and job title instead of ID *@
+                @if (!string.IsNullOrEmpty(Model.Lead.OwnerName))
+                {
+                    <div>
+                        <i class="bi bi-person-circle me-1"></i><strong>@Model.Lead.OwnerName</strong>
+                        @if (!string.IsNullOrEmpty(Model.Lead.OwnerJobTitle))
+                        {
+                            <br />
+                            <small class="text-muted ms-3">@Model.Lead.OwnerJobTitle</small>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <span class="text-muted">
+                        <i class="bi bi-person-x me-1"></i>Unassigned
+                    </span>
+                }
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Summary Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Activity Summary</h6>
+    </div>
+    <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">
+                <i class="bi bi-chat-left-text me-1"></i>Notes
+            </span>
+            <span class="badge bg-primary">@Model.Notes.Count</span>
+        </div>
+        <div class="d-flex justify-content-between mb-2">
+            <span class="text-muted">
+                <i class="bi bi-activity me-1"></i>Activities
+            </span>
+            <span class="badge bg-success">@Model.Activities.Count</span>
+        </div>
+        <div class="d-flex justify-content-between mb-0">
+            <span class="text-muted">
+                <i class="bi bi-bell me-1"></i>Pending Reminders
+            </span>
+            <span class="badge bg-warning text-dark">@Model.Reminders.Count(r => !r.IsCompleted)</span>
+        </div>
+    </div>
+</div>
+
+<!-- Deal Status Card (if applicable) -->
+@if (Model.Lead.HasDeal)
+{
+    <div class="card shadow-sm border-success mb-4">
+        <div class="card-header bg-success text-white">
+            <h6 class="mb-0">
+                <i class="bi bi-briefcase-fill me-2"></i>Associated Deal
+            </h6>
+        </div>
+        <div class="card-body">
+            <p class="mb-2">
+                <strong>Stage:</strong>
+                @(string.IsNullOrEmpty(Model.Lead.DealStage) ? "—" : Model.Lead.DealStage)
+            </p>
+            <p class="mb-0">
+                <strong>Value:</strong> @Model.FormatCurrency(Model.Lead.ExpectedValue)
+            </p>
+            <a href="/Pipeline/Detail/@Model.Lead.DealId"
+               class="btn btn-sm btn-outline-success mt-2 w-100">
+                View Deal <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+        </div>
+    </div>
+}
+
+<!-- Quick Actions Card -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Actions</h6>
+    </div>
+    <div class="card-body">
+        @if (isQualified && !isConverted && Model.CanUpdate && Model.UserCanCreate("deals"))
+        {
+            <div class="alert alert-success mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-check-circle-fill me-2"></i>Lead Qualified!
+                </h6>
+                <p class="mb-2 small">This lead is ready to be converted to a deal.</p>
+                <a asp-page="/Leads/ConvertToDeal"
+                   asp-route-id="@Model.Lead.Id"
+                   class="btn btn-success btn-sm w-100">
+                    <i class="bi bi-arrow-right-circle me-2"></i>Convert to Deal
+                </a>
+            </div>
+        }
+        @* ✅ VIEW DEAL LINK (if already converted) *@
+        @if (isConverted && Model.Lead.DealId.HasValue)
+        {
+            <div class="alert alert-info mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-check-circle-fill me-2"></i>Lead Converted
+                </h6>
+                <p class="mb-0 small">This lead has been converted to a deal.</p>
+                <a href="/Pipeline/Detail/@Model.Lead.DealId" class="btn btn-sm btn-outline-primary w-100 mt-2">
+                    <i class="bi bi-box-arrow-up-right me-2"></i>View Deal
+                </a>
+            </div>
+        }
+        <div class="d-grid gap-2">
+            @* ✅ Edit only allowed before conversion AND with update permission *@
+            @if (!isConverted && Model.CanUpdate)
+            {
+                <a asp-page="./Edit" asp-route-id="@Model.Lead.Id" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil me-2"></i>Edit Lead
+                </a>
+            }
+
+            @* Contact actions — always visible *@
+            <a href="mailto:@Model.Lead.Email" class="btn btn-sm btn-outline-secondary"
+               @(string.IsNullOrEmpty(Model.Lead.Email) ? "disabled" : "")>
+                <i class="bi bi-envelope me-2"></i>Send Email
+            </a>
+            <a href="tel:@Model.Lead.Phone" class="btn btn-sm btn-outline-secondary"
+               @(string.IsNullOrEmpty(Model.Lead.Phone) ? "disabled" : "")>
+                <i class="bi bi-telephone me-2"></i>Call Now
+            </a>
+
+            @* ✅ Activity/Reminder only before conversion, with update permission — after conversion use the Deal *@
+            @if (!isConverted)
+            {
+                @if (Model.CanUpdate)
+                {
+                    <button class="btn btn-sm btn-outline-info"
+                            onclick="document.getElementById('activities-tab').click(); document.querySelector('#activities textarea').focus();">
+                        <i class="bi bi-clock-history me-2"></i>Log Activity
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning"
+                            onclick="document.getElementById('reminders-tab').click(); document.querySelector('#reminders input[type=text]').focus();">
+                        <i class="bi bi-bell me-2"></i>Set Reminder
+                    </button>
+                }
+            }
+            else
+            {
+                @* ✅ Guide rep to the Deal for further actions *@
+                <a href="/Pipeline/Detail/@Model.Lead.DealId"
+                   class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-briefcase me-2"></i>Manage in Deal
+                </a>
+            }
+        </div>
+    </div>
+</div>

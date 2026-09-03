@@ -1,0 +1,672 @@
+﻿@page
+@model MerkaiTrial.Admin.Web.Pages.Quotes.CreateModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Create Quote";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin: -1rem -1rem 2rem -1rem;
+        border-radius: 0 0 1rem 1rem;
+    }
+
+    .form-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 2rem;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .deal-info-box {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #667eea;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .deal-selection-box {
+        background: linear-gradient(135deg, #fff7e6 0%, #ffe9c5 100%);
+        border-left: 4px solid #ffc107;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+
+    .line-items-table thead {
+        background: #f8f9fa;
+    }
+
+    .line-items-table th {
+        font-weight: 600;
+        color: #495057;
+        padding: 1rem 0.75rem;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .totals-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .total-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+    }
+
+        .total-row.grand-total {
+            border-top: 2px solid #dee2e6;
+            margin-top: 0.5rem;
+            padding-top: 1rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+    .btn-remove-item {
+        color: #dc3545;
+        cursor: pointer;
+    }
+
+    .form-control.is-invalid {
+        border-color: #dc3545 !important;
+        padding-right: calc(1.5em + 0.75rem);
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath stroke-linejoin='round' d='M5.8 3.6h.4L6 6.5z'/%3e%3ccircle cx='6' cy='8.2' r='.6' fill='%23dc3545' stroke='none'/%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right calc(0.375em + 0.1875rem) center;
+        background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+    }
+
+        .form-control.is-invalid:focus {
+            border-color: #dc3545 !important;
+            box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+        }
+
+    @@media (max-width: 767.98px) {
+        .form-container {
+            padding: 1rem;
+        }
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div class="mb-3 mb-md-0">
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-file-earmark-plus me-2"></i>Create Quote
+                    </h1>
+                    <p class="mb-0 opacity-75">Generate a quotation for your customer</p>
+                </div>
+                <div>
+                    <a href="/Quotes/Index" class="btn btn-outline-light">
+                        <i class="bi bi-arrow-left me-2"></i>Back to Quotes
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-container">
+
+        @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here.
+           Model.ErrorMessage is [TempData]-backed, so rendering it here produced a second banner. *@
+
+        @* STEP 1: Deal selection *@
+        @if (Model.ShowDealSelection)
+        {
+            <div class="deal-selection-box">
+                <h4 class="mb-3"><i class="bi bi-briefcase me-2"></i>Step 1: Select a Deal</h4>
+                <p class="text-muted mb-4">
+                    Choose a deal in <strong>Discovery</strong>, <strong>Qualification</strong> or <strong>Proposal</strong> stage.
+                    Creating a quote automatically advances the deal to <strong>Proposal</strong>.
+                </p>
+
+                @if (Model.AvailableDeals.Any())
+                {
+                    <form method="post" asp-page-handler="SelectDeal" class="row g-3">
+                        <div class="col-md-8 offset-md-2">
+                            <select asp-for="SelectedDealId" class="form-select form-select-lg" required>
+                                <option value="">-- Select a Deal --</option>
+                                @foreach (var deal in Model.AvailableDeals)
+                                {
+                                    <option value="@deal.Value">@deal.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                <i class="bi bi-arrow-right me-2"></i>Continue
+                            </button>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <div class="alert alert-warning mb-0">
+                        <h5 class="alert-heading"><i class="bi bi-exclamation-triangle me-2"></i>No Deals Available</h5>
+                        <p class="mb-2">
+                            There are no deals in the <strong>Discovery</strong>, <strong>Qualification</strong> or <strong>Proposal</strong> stage.
+                        </p>
+                        <hr />
+                        <p class="mb-0">
+                            <a href="/Pipeline/Index" class="alert-link">Go to Pipeline</a> to create or advance deals.
+                        </p>
+                    </div>
+                }
+            </div>
+
+            <div class="text-center text-muted">
+                <p class="mb-2"><i class="bi bi-lightbulb me-2"></i><strong>Tip:</strong> You can also create quotes directly from the Deal Detail page</p>
+                <p class="small mb-0">Go to <a href="/Pipeline/Index">Pipeline</a> → Click a deal → Click "Create Quote"</p>
+            </div>
+        }
+
+        @* STEP 2: Quote create *@
+        @if (Model.Deal != null)
+        {
+            <div class="deal-info-box">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5 class="mb-3"><i class="bi bi-briefcase me-2"></i>Deal Information</h5>
+                        <p class="mb-2"><strong>Deal:</strong> @Model.Deal.Title</p>
+                        <p class="mb-2"><strong>Company:</strong> @Model.Deal.CompanyName</p>
+                        <p class="mb-2">
+                            <strong>Stage:</strong>
+                            <span class="badge bg-primary">@Model.Deal.Stage</span>
+                        </p>
+                        <p class="mb-0"><strong>Owner:</strong> @Model.Deal.OwnerName</p>
+                        <p class="mb-1">
+                            <strong>Expected Value:</strong>
+                            <span class="text-primary fw-semibold">
+                                @Model.FormatCurrency(Model.Deal.ExpectedValue) (@Model.Currency)
+                            </span>
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="row">
+                            @* BUG FIX 2026-08-03: these two inputs sit OUTSIDE any
+                               <form>. The SelectDeal form closes at the card above
+                               and the Create form opens below, so neither date was
+                               ever posted — IssueDate/ExpiryDate fell back to their
+                               property initialisers and whatever the user typed was
+                               silently discarded.
+
+                               The HTML5 form="" attribute associates an input with a
+                               form by id without moving it, so the card layout is
+                               untouched. The Create form is id="createQuoteForm". *@
+                            <div class="col-6">
+                                <label class="form-label">Issue Date</label>
+                                <input type="date" asp-for="IssueDate" form="createQuoteForm" class="form-control" />
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Expiry Date</label>
+                                <input type="date" asp-for="ExpiryDate" form="createQuoteForm" class="form-control" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <form method="post" asp-page-handler="Create" id="createQuoteForm">
+                <input type="hidden" name="itemsJson" id="itemsJson" />
+                <input type="hidden" asp-for="DealId" />
+
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Line Items</h5>
+                        <div>
+                            @if (Model.Products != null && Model.Products.Any())
+                            {
+                                <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="showProductCatalog()">
+                                    <i class="bi bi-box-seam me-1"></i>Add from Catalog
+                                </button>
+                            }
+                            <button type="button" class="btn btn-primary btn-sm" onclick="addCustomItem()">
+                                <i class="bi bi-plus-circle me-1"></i>Add Custom Item
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-bordered line-items-table" id="lineItemsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 30%">Item Name</th>
+                                    <th style="width: 20%">Description</th>
+                                    <th style="width: 10%">Qty</th>
+                                    <th style="width: 12%">Unit Price</th>
+                                    <th style="width: 10%">Tax %</th>
+                                    <th style="width: 10%">Discount</th>
+                                    <th style="width: 13%">Total</th>
+                                    <th style="width: 5%"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="lineItemsBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="text-muted text-center py-3" id="emptyState">
+                        <i class="bi bi-inbox" style="font-size: 2rem; opacity: 0.3;"></i>
+                        <p class="mb-0">No items added yet. Click "Add Custom Item" to get started.</p>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 offset-md-6">
+                        <div class="totals-section">
+                            <div class="total-row">
+                                <span>Subtotal:</span>
+                                <strong id="subtotalDisplay">@Model.Currency 0.00</strong>
+                            </div>
+                            <div class="total-row">
+                                <span>Discount:</span>
+                                <strong id="discountDisplay">@Model.Currency 0.00</strong>
+                            </div>
+                            <div class="total-row">
+                                <span>Tax:</span>
+                                <strong id="taxDisplay">@Model.Currency 0.00</strong>
+                            </div>
+                            <div class="total-row grand-total">
+                                <span>Grand Total:</span>
+                                <strong id="grandTotalDisplay">@Model.Currency 0.00</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <a href="/Quotes/Index" class="btn btn-secondary">
+                        <i class="bi bi-x-circle me-2"></i>Cancel
+                    </a>
+                    <button type="button" class="btn btn-outline-primary" onclick="submitQuote(false)">
+                        <i class="bi bi-save me-2"></i>Save as Draft
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="submitQuote(true)">
+                        <i class="bi bi-send me-2"></i>Send to Customer
+                    </button>
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
+@if (Model.Products != null && Model.Products.Any())
+{
+    <div class="modal fade" id="productCatalogModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-box-seam me-2"></i>Select from Product Catalog</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <input type="text" class="form-control" id="productSearch"
+                               placeholder="Search products..." onkeyup="filterProducts()">
+                    </div>
+
+                    <div class="list-group" id="productList">
+                        @foreach (var product in Model.Products)
+                        {
+                            var nameJson = JsonSerializer.Serialize(product.Name ?? "");
+                            var descJson = JsonSerializer.Serialize(product.Description ?? "");
+
+                            <button type="button"
+                                    class="list-group-item list-group-item-action"
+                                    onclick='addProductToQuote("@product.Id", @nameJson, @descJson, @product.ListPrice)'>
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="me-3">
+                                        <h6 class="mb-1">@product.Name</h6>
+                                        @if (!string.IsNullOrWhiteSpace(product.Description))
+                                        {
+                                            <small class="text-muted">@product.Description</small>
+                                        }
+                                    </div>
+                                    <span class="badge bg-primary">@Model.FormatCurrency(product.ListPrice)</span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Bootstrap JS is already loaded once by _Layout.cshtml — do not load it again here. *@
+
+<script>
+    /* =========================
+       Quote Line Items Script
+       Complete Working Version
+       ========================= */
+
+    let lineItems = [];
+    let itemCounter = 0;
+    // ✅ was: const currency = '...'  +  `${currency} ${x.toFixed(2)}`
+    //    toFixed() does NO grouping, so client-computed totals rendered
+    //    ungrouped ("255000.00") while the server rendered "฿255,000.00".
+    //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
+    //    culture, so client and server now agree by construction.
+    const fmtMoney = (x) => window.MerkaiCurrency.format(x);
+    const defaultTaxRate = @Model.DefaultTaxRate;
+
+    function addCustomItem() {
+        const item = {
+            id: itemCounter++,
+            productId: null,
+            name: '',
+            description: '',
+            quantity: 1,
+            unitPrice: 0,
+            lineDiscount: 0,
+            taxRate: defaultTaxRate
+        };
+
+        lineItems.push(item);
+        renderLineItems();
+
+        setTimeout(() => document.getElementById(`name-${item.id}`)?.focus(), 50);
+    }
+
+    function showProductCatalog() {
+        const modalEl = document.getElementById('productCatalogModal');
+        if (!modalEl || typeof bootstrap === 'undefined') return;
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
+    function addProductToQuote(productId, name, description, unitPrice) {
+        const item = {
+            id: itemCounter++,
+            productId: productId || null,
+            name: name || '',
+            description: description || '',
+            quantity: 1,
+            unitPrice: parseFloat(unitPrice) || 0,
+            lineDiscount: 0,
+            taxRate: defaultTaxRate
+        };
+
+        lineItems.push(item);
+        renderLineItems();
+
+        const modalEl = document.getElementById('productCatalogModal');
+        if (modalEl && typeof bootstrap !== 'undefined') {
+            const inst = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+            inst.hide();
+        }
+
+        setTimeout(() => document.getElementById(`name-${item.id}`)?.focus(), 50);
+    }
+
+    function filterProducts() {
+        const searchEl = document.getElementById('productSearch');
+        if (!searchEl) return;
+
+        const searchTerm = (searchEl.value || '').toLowerCase();
+        const products = document.querySelectorAll('#productList .list-group-item');
+
+        products.forEach(p => {
+            const text = (p.textContent || '').toLowerCase();
+            p.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+    }
+
+    function removeItem(index) {
+        lineItems.splice(index, 1);
+        renderLineItems();
+    }
+
+    function updateItem(index, field, value) {
+        if (!lineItems[index]) return;
+
+        if (['quantity', 'unitPrice', 'lineDiscount', 'taxRate'].includes(field)) {
+            value = parseFloat(value);
+            if (Number.isNaN(value)) value = 0;
+        }
+
+        lineItems[index][field] = value;
+
+        if (field === 'name') {
+            const nameInput = document.getElementById(`name-${lineItems[index].id}`);
+            if (nameInput && value && value.toString().trim().length > 0) {
+                nameInput.classList.remove('is-invalid');
+            }
+        }
+
+        updateItemTotal(index);
+        calculateTotals();
+    }
+
+    function calculateItemTotal(item) {
+        const qty = parseFloat(item.quantity) || 0;
+        const unit = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.lineDiscount) || 0;
+        const rate = parseFloat(item.taxRate) || 0;
+
+        const subtotal = qty * unit;
+        const afterDiscount = Math.max(0, subtotal - disc);
+        const tax = afterDiscount * (rate / 100);
+
+        return afterDiscount + tax;
+    }
+
+    function updateItemTotal(index) {
+        const item = lineItems[index];
+        if (!item) return;
+
+        const total = calculateItemTotal(item);
+        const el = document.getElementById(`total-${item.id}`);
+        if (el) el.textContent = fmtMoney(total);
+    }
+
+    function calculateTotals() {
+        const subtotalEl = document.getElementById('subtotalDisplay');
+        const discountEl = document.getElementById('discountDisplay');
+        const taxEl = document.getElementById('taxDisplay');
+        const grandEl = document.getElementById('grandTotalDisplay');
+
+        if (!subtotalEl || !discountEl || !taxEl || !grandEl) return;
+
+        let subtotal = 0, discount = 0, tax = 0;
+
+        lineItems.forEach(item => {
+            const qty = parseFloat(item.quantity) || 0;
+            const unit = parseFloat(item.unitPrice) || 0;
+            const disc = parseFloat(item.lineDiscount) || 0;
+            const rate = parseFloat(item.taxRate) || 0;
+
+            const itemSubtotal = qty * unit;
+            subtotal += itemSubtotal;
+            discount += disc;
+
+            const afterDiscount = Math.max(0, itemSubtotal - disc);
+            tax += afterDiscount * (rate / 100);
+        });
+
+        const grandTotal = Math.max(0, subtotal - discount + tax);
+
+        subtotalEl.textContent = fmtMoney(subtotal);
+        discountEl.textContent = fmtMoney(discount);
+        taxEl.textContent = fmtMoney(tax);
+        grandEl.textContent = fmtMoney(grandTotal);
+    }
+
+    function escapeHtml(str) {
+        return (str ?? '')
+            .toString()
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function renderLineItems() {
+        const tbody = document.getElementById('lineItemsBody');
+        const emptyState = document.getElementById('emptyState');
+
+        if (!tbody || !emptyState) return;
+
+        if (lineItems.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            calculateTotals();
+            return;
+        }
+
+        emptyState.style.display = 'none';
+
+        tbody.innerHTML = lineItems.map((item, index) => `
+            <tr>
+                <td>
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           id="name-${item.id}"
+                           value="${escapeHtml(item.name)}"
+                           oninput="updateItem(${index}, 'name', this.value)"
+                           placeholder="Item name" required />
+                </td>
+                <td>
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           id="desc-${item.id}"
+                           value="${escapeHtml(item.description)}"
+                           oninput="updateItem(${index}, 'description', this.value)"
+                           placeholder="Description" />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.quantity}"
+                           oninput="updateItem(${index}, 'quantity', this.value)"
+                           min="1" required />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.unitPrice}"
+                           oninput="updateItem(${index}, 'unitPrice', this.value)"
+                           step="0.01" min="0" required />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.taxRate}"
+                           oninput="updateItem(${index}, 'taxRate', this.value)"
+                           step="0.01" min="0" max="100" />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.lineDiscount}"
+                           oninput="updateItem(${index}, 'lineDiscount', this.value)"
+                           step="0.01" min="0" />
+                </td>
+                <td class="text-end">
+                    <strong id="total-${item.id}">
+                        ${fmtMoney(calculateItemTotal(item))}
+                    </strong>
+                </td>
+                <td class="text-center">
+                    <i class="bi bi-trash btn-remove-item"
+                       onclick="removeItem(${index})"
+                       title="Remove"></i>
+                </td>
+            </tr>
+        `).join('');
+
+        calculateTotals();
+    }
+
+    function syncLineItemsFromUI() {
+        lineItems.forEach(item => {
+            const nameEl = document.getElementById(`name-${item.id}`);
+            if (nameEl) item.name = nameEl.value || '';
+
+            const descEl = document.getElementById(`desc-${item.id}`);
+            if (descEl) item.description = descEl.value || '';
+        });
+    }
+
+    function submitQuote(sendToCustomer) {
+        const form = document.getElementById('createQuoteForm');
+        const itemsJsonEl = document.getElementById('itemsJson');
+
+        if (!form || !itemsJsonEl) return;
+
+        syncLineItemsFromUI();
+
+        if (lineItems.length === 0) {
+            alert('⚠️ Please add at least one item to the quote.\n\nClick "Add Custom Item" or "Add from Catalog" to get started.');
+            return;
+        }
+
+        const invalidItems = lineItems.filter(i => !i.name || i.name.trim() === '');
+        if (invalidItems.length > 0) {
+            alert(`⚠️ All items must have a name.\n\n${invalidItems.length} item(s) missing names.`);
+
+            invalidItems.forEach(item => {
+                const nameInput = document.getElementById(`name-${item.id}`);
+                if (nameInput) {
+                    nameInput.classList.add('is-invalid');
+                    nameInput.focus();
+                }
+            });
+            return;
+        }
+
+        const invalidPrices = lineItems.filter(i => !(parseFloat(i.unitPrice) > 0));
+        if (invalidPrices.length > 0) {
+            alert(`⚠️ Please enter a Unit Price greater than 0 for all items.\n\n${invalidPrices.length} item(s) missing prices.`);
+            return;
+        }
+
+         // ✅ Serialize only server-side fields — map dbId→id, exclude UI tracking id
+        const serverItems = lineItems.map(item => ({
+            id: item.dbId || null,           // Guid? — null for new items
+            productId: item.productId || null,
+            name: item.name,
+            description: item.description || '',
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            lineDiscount: item.lineDiscount || 0,
+            taxRate: item.taxRate
+        }));
+        itemsJsonEl.value = JSON.stringify(serverItems);
+
+        const existing = form.querySelector('input[name="sendToCustomer"]');
+        if (existing) existing.remove();
+
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'sendToCustomer';
+        hidden.value = sendToCustomer ? 'true' : 'false';
+        form.appendChild(hidden);
+
+        form.submit();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (!document.getElementById('lineItemsBody')) return;
+
+        if (lineItems.length === 0) addCustomItem();
+        renderLineItems();
+    });
+</script>

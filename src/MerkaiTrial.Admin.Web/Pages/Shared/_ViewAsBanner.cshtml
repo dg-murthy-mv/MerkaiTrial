@@ -1,0 +1,45 @@
+@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/Shared/_ViewAsBanner.cshtml
+
+   Drop this include near the top of _Layout.cshtml's <body>, right after
+   the opening tag (so it's visible on every page, tenant CRM or SuperAdmin
+   console). It renders nothing at all unless the ViewingAs claim is
+   present, so it's safe to include unconditionally.
+
+   Add this single line to _Layout.cshtml:
+       <partial name="_ViewAsBanner" />
+   ===================================================================== *@
+
+@if (User.HasClaim(c => c.Type == "ViewingAs" && c.Value == "true"))
+{
+    var userName = User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "this user";
+    var isAdmin  = User.HasClaim(c => c.Type == "IsTenantAdmin" && c.Value == "true");
+
+    <div class="view-as-banner">
+        <span>
+            <i class="bi bi-eye-fill me-2"></i>
+            Viewing as <strong>@userName</strong>@(isAdmin ? " (Tenant Admin)" : "")
+        </span>
+        <form method="post" asp-page="/Admin/ViewAs/ViewAsIndex" asp-page-handler="Exit" class="mb-0">
+            <button type="submit" class="btn btn-sm btn-light">
+                <i class="bi bi-box-arrow-left me-1"></i>Exit View As
+            </button>
+        </form>
+    </div>
+
+    <style>
+        .view-as-banner {
+            background: #f59e0b;
+            color: #1e1e1e;
+            padding: .5rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: .85rem;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1050;
+        }
+    </style>
+}

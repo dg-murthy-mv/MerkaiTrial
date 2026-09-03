@@ -1,0 +1,686 @@
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="LeadFlow CRM - Multi-tenant SaaS CRM Platform" />
+    <title>@ViewData["Title"] - LeadFlow CRM</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="~/js/country-currency.js"></script>
+    <style>
+        :root {
+            --sidebar-width: 260px;
+            --header-height: 70px;
+            --primary-color: #10b981;
+            --sidebar-bg: #1e293b;
+            --sidebar-text: #94a3b8;
+            --sidebar-hover: #334155;
+            --sidebar-active: #10b981;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        /* ===== HEADER ===== */
+        .top-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--header-height);
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1.5rem;
+            z-index: 1030;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .mobile-menu-btn {
+            display: none;
+            width: 40px;
+            height: 40px;
+            border: none;
+            background: #f8fafc;
+            border-radius: 8px;
+            color: #0f172a;
+            font-size: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mobile-menu-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: #0f172a;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--primary-color), #059669);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.25rem;
+            flex-shrink: 0;
+        }
+
+        .brand-text h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+            color: #0f172a;
+        }
+
+        .brand-text p {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin: 0;
+            line-height: 1;
+        }
+
+        .search-bar {
+            flex: 1;
+            max-width: 400px;
+            margin: 0 1.5rem;
+            position: relative;
+        }
+
+        .search-bar input {
+            width: 100%;
+            border-radius: 25px;
+            border: 1px solid #e2e8f0;
+            padding: 0.5rem 1rem 0.5rem 2.5rem;
+            background: #f8fafc;
+            font-size: 0.875rem;
+        }
+
+        .search-bar .bi-search {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            pointer-events: none;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .header-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: #f8fafc;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .header-btn:hover {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+
+        .header-btn .badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            background: #ef4444;
+            color: white;
+            border-radius: 10px;
+            padding: 2px 5px;
+            font-size: 0.625rem;
+            min-width: 18px;
+            text-align: center;
+        }
+
+        .user-profile {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 25px;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .user-profile:hover {
+            background: #e2e8f0;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .user-info h6 {
+            margin: 0;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #0f172a;
+            line-height: 1.2;
+        }
+
+        .user-info p {
+            margin: 0;
+            font-size: 0.6875rem;
+            color: #64748b;
+            line-height: 1;
+        }
+
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: var(--header-height);
+            bottom: 0;
+            width: var(--sidebar-width);
+            background: var(--sidebar-bg);
+            overflow-y: auto;
+            overflow-x: hidden;
+            z-index: 1020;
+            padding: 1.5rem 0;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+
+        .nav-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .nav-header {
+            padding: 0.5rem 1.5rem;
+            font-size: 0.6875rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #475569;
+            letter-spacing: 0.05em;
+        }
+
+        .nav-item {
+            list-style: none;
+            margin: 0.25rem 0.75rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.7rem 1rem;
+            color: var(--sidebar-text);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+            position: relative;
+        }
+
+        .nav-link:hover {
+            background: var(--sidebar-hover);
+            color: white;
+        }
+
+        .nav-link.active {
+            background: var(--sidebar-active);
+            color: white;
+            box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
+        }
+
+        .nav-link i {
+            font-size: 1.1rem;
+            width: 20px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .nav-link span:first-of-type {
+            flex: 1;
+        }
+
+        .nav-badge {
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.625rem;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .nav-badge.new {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .nav-badge.count {
+            background: #ef4444;
+            color: white;
+        }
+
+        .nav-badge.dev {
+            background: #f59e0b;
+            color: white;
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            margin-top: var(--header-height);
+            padding: 1.5rem;
+            min-height: calc(100vh - var(--header-height));
+            transition: margin-left 0.3s ease;
+        }
+
+        /* ===== MOBILE OVERLAY ===== */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: var(--header-height);
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1019;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.show {
+            opacity: 1;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @@media (max-width: 991px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.show {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay {
+                display: block;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .mobile-menu-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .search-bar {
+                display: none;
+            }
+
+            .brand-text p {
+                display: none;
+            }
+
+            .user-info {
+                display: none;
+            }
+
+            .header-actions {
+                gap: 0.5rem;
+            }
+        }
+
+        @@media (max-width: 576px) {
+            .top-header {
+                padding: 0 1rem;
+            }
+
+            .brand-text h1 {
+                font-size: 1.1rem;
+            }
+
+            .main-content {
+                padding: 1rem;
+            }
+        }
+    </style>
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body>
+    <!-- Header -->
+    <header class="top-header">
+        <!-- Mobile Menu Button -->
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle Menu">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <!-- Brand -->
+        <a href="/" class="brand">
+            <div class="brand-icon">
+                <i class="bi bi-graph-up-arrow"></i>
+            </div>
+            <div class="brand-text">
+                <h1>LeadFlow</h1>
+                <p>Simple CRM</p>
+            </div>
+        </a>
+
+        <!-- Search Bar -->
+        <div class="search-bar">
+            <i class="bi bi-search"></i>
+            <input type="text" class="form-control" placeholder="Search contacts, companies, deals...">
+        </div>
+
+        <!-- Header Actions -->
+        <div class="header-actions">
+            <button class="header-btn" aria-label="Notifications">
+                <i class="bi bi-bell"></i>
+                <span class="badge">3</span>
+            </button>
+            <button class="header-btn" aria-label="Settings">
+                <i class="bi bi-gear"></i>
+            </button>
+            <div class="user-profile">
+                <div class="user-avatar">AD</div>
+                <div class="user-info">
+                    <h6>Admin</h6>
+                    <p>Account Manager</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <nav>
+            <!-- Dashboard -->
+            <div class="nav-section">
+                <ul class="p-0 m-0">
+                    <li class="nav-item">
+                        <a href="/Dashboard" class="nav-link" data-page="Dashboard">
+                            <i class="bi bi-speedometer2"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- CONTACTS & ACCOUNTS -->
+            <div class="nav-section">
+                <div class="nav-header">CONTACTS & ACCOUNTS</div>
+                <ul class="p-0 m-0">                    
+                    <li class="nav-item">
+                        <a href="/Companies" class="nav-link" data-page="Companies">
+                            <i class="bi bi-building"></i>
+                            <span>Companies</span>
+                            <span class="nav-badge new">NEW</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Contacts" class="nav-link" data-page="Contacts">
+                            <i class="bi bi-people"></i>
+                            <span>Contacts</span>
+                            <span class="nav-badge new">NEW</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Products" class="nav-link" data-page="Products">
+                            <i class="bi bi-funnel"></i>
+                            <span>Products</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Leads" class="nav-link" data-page="Leads">
+                            <i class="bi bi-funnel"></i>
+                            <span>Leads</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- SALES PIPELINE -->
+            <div class="nav-section">
+                <div class="nav-header">SALES PIPELINE</div>
+                <ul class="p-0 m-0">
+                    <li class="nav-item">
+                        <a href="/Pipeline" class="nav-link" data-page="Pipeline">
+                            <i class="bi bi-kanban"></i>
+                            <span>Pipeline</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Quotes" class="nav-link" data-page="Quotes">
+                            <i class="bi bi-file-text"></i>
+                            <span>Quotes</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Invoices" class="nav-link" data-page="Invoices">
+                            <i class="bi bi-receipt"></i>
+                            <span>Invoices</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- COMMUNICATION -->
+            <div class="nav-section">
+                <div class="nav-header">COMMUNICATION</div>
+                <ul class="p-0 m-0">
+                    <li class="nav-item">
+                        <a href="/Inbox" class="nav-link" data-page="Inbox">
+                            <i class="bi bi-inbox"></i>
+                            <span>Inbox</span>
+                            <span class="nav-badge count">3</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- ADMINISTRATION -->
+            <div class="nav-section">
+                <div class="nav-header">ADMINISTRATION</div>
+                <ul class="p-0 m-0">
+                    <li class="nav-item">
+                        <a href="/Admin" class="nav-link" data-page="Admin">
+                            <i class="bi bi-gear"></i>
+                            <span>Admin Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Tenants" class="nav-link" data-page="Tenants">
+                            <i class="bi bi-building-gear"></i>
+                            <span>Tenants</span>
+                            <span class="nav-badge dev">DEV</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Verticals" class="nav-link" data-page="CompanyVerticals">
+                            <i class="bi bi-diagram-3"></i>
+                            <span>Company Verticals</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Plans" class="nav-link" data-page="Plans">
+                            <i class="bi bi-calculator"></i>
+                            <span>Plans</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Users" class="nav-link" data-page="Users">
+                            <i class="bi bi-people"></i>
+                            <span>Users</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/TaxRates" class="nav-link" data-page="TaxRates">
+                            <i class="bi bi-calculator"></i>
+                            <span>Tax Rates</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Roles" class="nav-link" data-page="Roles">
+                            <i class="bi bi-shield"></i>
+                            <span>Roles</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="/Admin/Countries" class="nav-link" data-page="Countries">
+                            <i class="bi bi-globe"></i>
+                            <span>Countries</span>
+                        </a>
+                    </li>                    
+                </ul>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        @RenderBody()
+    </main>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Mobile Menu Toggle
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('show');
+            sidebarOverlay.classList.toggle('show');
+        }
+
+        if (mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', toggleSidebar);
+        }
+
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', toggleSidebar);
+        }
+
+        // Set Active Link (FIXED VERSION)
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentPath = window.location.pathname.toLowerCase();
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            // Remove all active classes first
+            navLinks.forEach(link => link.classList.remove('active'));
+
+            // Find and set active link
+            let activeLink = null;
+            let maxMatchLength = 0;
+
+            navLinks.forEach(link => {
+                const href = link.getAttribute('href');
+                if (!href) return;
+
+                const hrefLower = href.toLowerCase();
+
+                // Exact match
+                if (currentPath === hrefLower) {
+                    if (hrefLower.length > maxMatchLength) {
+                        maxMatchLength = hrefLower.length;
+                        activeLink = link;
+                    }
+                }
+                // Starts with match (for sub-pages)
+                else if (currentPath.startsWith(hrefLower + '/')) {
+                    if (hrefLower.length > maxMatchLength) {
+                        maxMatchLength = hrefLower.length;
+                        activeLink = link;
+                    }
+                }
+            });
+
+            if (activeLink) {
+                activeLink.classList.add('active');
+            }
+
+            // Close mobile menu on link click
+            navLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth < 992) {
+                        sidebar.classList.remove('show');
+                        sidebarOverlay.classList.remove('show');
+                    }
+                });
+            });
+        });
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (window.innerWidth >= 992) {
+                sidebar.classList.remove('show');
+                sidebarOverlay.classList.remove('show');
+            }
+        });
+
+                document.addEventListener('DOMContentLoaded', function () {
+            CountryMeta.init('@Configuration["WebApi:BaseUrl"]');
+        });
+        });
+    </script>
+
+    @await RenderSectionAsync("Scripts", required: false)
+    
+</body>
+</html>

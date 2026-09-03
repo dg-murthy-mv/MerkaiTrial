@@ -1,0 +1,242 @@
+@* =====================================================================
+   LEAD DETAIL - Updated with role-based permissions + plan features
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/Detail.cshtml
+   CHANGES:
+     1. Alert messages — uncommented, using TempData pattern
+     2. Status dropdown — disabled if locked OR no update permission
+     3. Edit button — requires Model.IsEditableState AND Model.CanUpdate
+     4. Delete button — requires Model.IsDeletableState AND Model.CanDelete
+     5. Score display — feature-gated by HasFeature("lead_scoring")
+
+   MIGRATION FIX (this pass): CanEdit/CanDelete renamed to
+   IsEditableState/IsDeletableState (business-rule state, e.g. "not
+   converted") to stop colliding with AuthorizedPageModel's own
+   permission-based CanUpdate/CanDelete properties. Also fixed
+   Model.CanUpdate("Leads") / Model.CanDelete("Leads") — those were method
+   calls valid under the old AppPageModel base class; AuthorizedPageModel's
+   CanUpdate/CanDelete are parameterless properties, not methods.
+   ===================================================================== *@
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
+@{
+    ViewData["Title"] = "Lead Details - " + Model.Lead.FullName;
+    ViewData["SuppressBrowserReload"] = true;
+}
+
+<div class="container-fluid py-4">
+
+    @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h2 class="mb-2">@Model.Lead.FullName</h2>
+                    <div class="d-flex align-items-center gap-3">
+
+                        @* ✅ Status dropdown — disabled if locked (Converted) OR no update permission *@
+                        <form method="post" asp-page-handler="ChangeStatus"
+                              asp-route-id="@Model.Lead.Id"
+                              id="statusChangeForm" class="d-inline">
+                            <select name="status"
+                                    class="form-select form-select-sm d-inline-block w-auto"
+                                    onchange="this.form.submit()"
+                                    @((!Model.IsEditableState || !Model.CanUpdate) ? "disabled" : "")>
+                                @foreach (var status in Model.StatusOptions)
+                                {
+                                    <option value="@status.Value" selected="@status.Selected">
+                                        @status.Text
+                                    </option>
+                                }
+                            </select>
+                        </form>
+
+                        <span class="text-muted">•</span>
+
+                        @* ✅ Score — feature-gated for lead_scoring *@
+                        @if (Model.HasFeature("lead_scoring"))
+                        {
+                            <span class="text-muted">Score: @Model.Lead.Score/100</span>
+                        }
+                        else
+                        {
+                            <span class="text-muted">
+                                Score: <span class="badge bg-light text-muted border ms-1"
+                                             title="@Model.UpgradePrompt to unlock lead scoring">
+                                    <i class="bi bi-lock-fill me-1" style="font-size:10px;"></i>Pro
+                                </span>
+                            </span>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(Model.Lead.OwnerName) ||
+                                                !string.IsNullOrWhiteSpace(Model.Lead.OwnerJobTitle))
+                        {
+                            <span class="text-muted">•</span>
+                            <span class="text-muted">
+                                <i class="bi bi-person me-1"></i>
+                                <strong>@(Model.Lead.OwnerName ?? "Owner")</strong>
+                                @if (!string.IsNullOrWhiteSpace(Model.Lead.OwnerJobTitle))
+                                {
+                                    <span class="ms-1">(@Model.Lead.OwnerJobTitle)</span>
+                                }
+                            </span>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(Model.Lead.OwnerUserId))
+                        {
+                            <span class="text-muted">•</span>
+                            <span class="text-muted">
+                                <i class="bi bi-person me-1"></i>@Model.Lead.OwnerUserId
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                <div class="d-flex gap-2">
+
+                    @* ✅ Edit — requires record not locked AND role has update permission *@
+                    @if (Model.IsEditableState && Model.CanUpdate)
+                    {
+                        <a asp-page="./Edit" asp-route-id="@Model.Lead.Id"
+                           class="btn btn-primary">
+                            <i class="bi bi-pencil me-2"></i>Edit
+                        </a>
+                    }
+                    else if (!Model.IsEditableState)
+                    {
+                        @* Record is locked (Converted) — show lock badge regardless of role *@
+                        <span class="badge bg-success align-self-center px-3 py-2"
+                              style="font-size:12px;">
+                            <i class="bi bi-lock-fill me-1"></i>Converted — View Only
+                        </span>
+                    }
+                    @* If IsEditableState=true but CanUpdate=false → user has no update
+                       permission, button is simply hidden (viewer/sales_rep with read-only) *@
+
+                    @* ✅ Delete — requires record not locked AND role has delete permission *@
+                    @if (Model.IsDeletableState && Model.CanDelete)
+                    {
+                        <form method="post"
+                              asp-page-handler="Delete"
+                              asp-route-id="@Model.Lead.Id"
+                              onsubmit="return confirm('Are you sure you want to delete this lead?');"
+                              class="d-inline">
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="bi bi-trash me-2"></i>Delete
+                            </button>
+                        </form>
+                    }
+
+                    <a asp-page="./Index" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-2"></i>Back
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content with Tabs -->
+    <div class="row">
+        <div class="col-lg-8">
+
+            <!-- Navigation Tabs -->
+            <ul class="nav nav-tabs mb-4" id="leadDetailTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="overview-tab"
+                            data-bs-toggle="tab" data-bs-target="#overview"
+                            type="button" role="tab">
+                        <i class="bi bi-info-circle me-2"></i>Overview
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="notes-tab"
+                            data-bs-toggle="tab" data-bs-target="#notes"
+                            type="button" role="tab">
+                        <i class="bi bi-chat-left-text me-2"></i>Notes
+                        <span class="badge bg-secondary ms-1">@Model.Notes.Count</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="activities-tab"
+                            data-bs-toggle="tab" data-bs-target="#activities"
+                            type="button" role="tab">
+                        <i class="bi bi-activity me-2"></i>Activities
+                        <span class="badge bg-secondary ms-1">@Model.Activities.Count</span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="reminders-tab"
+                            data-bs-toggle="tab" data-bs-target="#reminders"
+                            type="button" role="tab">
+                        <i class="bi bi-bell me-2"></i>Reminders
+                        <span class="badge bg-secondary ms-1">
+                            @Model.Reminders.Count(r => !r.IsCompleted)
+                        </span>
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="timeline-tab"
+                            data-bs-toggle="tab" data-bs-target="#timeline"
+                            type="button" role="tab">
+                        <i class="bi bi-clock-history me-2"></i>Timeline
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="attachments-tab"
+                            data-bs-toggle="tab" data-bs-target="#attachments"
+                            type="button" role="tab">
+                        <i class="bi bi-paperclip me-2"></i>Attachments
+                        <span class="badge bg-secondary ms-1">@Model.Attachments.Count</span>
+                    </button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="leadDetailTabContent">
+                <div class="tab-pane fade show active" id="overview" role="tabpanel">
+                    @await Html.PartialAsync("_OverviewTab", Model)
+                </div>
+                <div class="tab-pane fade" id="notes" role="tabpanel">
+                    @await Html.PartialAsync("_NotesTab", Model)
+                </div>
+                <div class="tab-pane fade" id="activities" role="tabpanel">
+                    @await Html.PartialAsync("_ActivitiesTab", Model)
+                </div>
+                <div class="tab-pane fade" id="reminders" role="tabpanel">
+                    @await Html.PartialAsync("_RemindersTab", Model)
+                </div>
+                <div class="tab-pane fade" id="timeline" role="tabpanel">
+                    @await Html.PartialAsync("_TimelineTab", Model)
+                </div>
+                <div class="tab-pane fade" id="attachments" role="tabpanel">
+                    @await Html.PartialAsync("_AttachmentsTab", Model)
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar -->
+        <div class="col-lg-4">
+            @await Html.PartialAsync("_RightSidebar", Model)
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+
+        // Tab activation from URL hash
+        var hash = window.location.hash;
+        if (hash) {
+            var tab = document.querySelector('button[data-bs-target="' + hash + '"]');
+            if (tab) { new bootstrap.Tab(tab).show(); }
+        }
+
+        // Push hash on tab change
+        document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(function (tab) {
+            tab.addEventListener('shown.bs.tab', function (e) {
+                history.pushState(null, null, e.target.getAttribute('data-bs-target'));
+            });
+        });
+    </script>
+}

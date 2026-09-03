@@ -1,0 +1,256 @@
+@* =====================================================================
+   USER DETAIL PAGE
+   ===================================================================== *@
+@page "/Admin/Users/Detail/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Users.DetailModel
+@{
+    ViewData["Title"] = $"User: {Model.User.FirstName} {Model.User.LastName}";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <div style="background-color: #007bff; color: white; width: 50px; height: 50px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">
+                    @Model.User.FirstName[0]@Model.User.LastName[0]
+                </div>
+                @Model.User.FirstName @Model.User.LastName
+                @if (Model.User.IsTenantAdmin)
+                {
+                    <span class="badge bg-warning">Admin</span>
+                }
+                @if (Model.User.IsActive)
+                {
+                    <span class="badge bg-success">Active</span>
+                }
+                else
+                {
+                    <span class="badge bg-danger">Inactive</span>
+                }
+            </h2>
+            <p class="text-muted mb-0">@Model.User.Email</p>
+        </div>
+        <div>
+            <a asp-page="./Edit" asp-route-tenantId="@Model.TenantId" asp-route-id="@Model.Id" 
+               class="btn btn-warning">
+                <i class="bi bi-pencil"></i> Edit User
+            </a>
+            <a asp-page="./Index" asp-route-tenantId="@Model.TenantId" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Users
+            </a>
+        </div>
+    </div>
+
+    <!-- Success Alert -->
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>@TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#overview">
+                <i class="bi bi-info-circle"></i> Overview
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#roles">
+                <i class="bi bi-person-badge"></i> Roles 
+                <span class="badge bg-secondary">@Model.User.Roles.Count</span>
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#activity">
+                <i class="bi bi-clock-history"></i> Activity
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- Overview Tab -->
+        <div class="tab-pane fade show active" id="overview">
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header" style="background-color: #007bff; color: white;">
+                            <h5 class="mb-0"><i class="bi bi-person"></i> User Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">First Name</label>
+                                    <p class="form-control-plaintext">@Model.User.FirstName</p>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">Last Name</label>
+                                    <p class="form-control-plaintext">@Model.User.LastName</p>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">Email</label>
+                                    <p class="form-control-plaintext">@Model.User.Email</p>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">Phone</label>
+                                    <p class="form-control-plaintext">@(Model.User.Phone ?? "-")</p>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">Department</label>
+                                    <p class="form-control-plaintext">@(Model.User.Department ?? "-")</p>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-bold">Job Title</label>
+                                    <p class="form-control-plaintext">@(Model.User.JobTitle ?? "-")</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="bi bi-shield-check"></i> Permissions</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <strong>Tenant Admin:</strong>
+                                @if (Model.User.IsTenantAdmin)
+                                {
+                                    <span class="badge bg-warning">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">No</span>
+                                }
+                            </div>
+                            <div>
+                                <strong>Status:</strong>
+                                @if (Model.User.IsActive)
+                                {
+                                    <span class="badge bg-success">Active</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">Inactive</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white">
+                            <h6 class="mb-0"><i class="bi bi-info-circle"></i> Metadata</h6>
+                        </div>
+                        <div class="card-body small">
+                            <p class="mb-2">
+                                <strong>Created:</strong><br />
+                                @Model.User.CreatedAtUtc.ToString("MMM dd, yyyy h:mm tt")
+                            </p>
+                            <p class="mb-0">
+                                <strong>Last Login:</strong><br />
+                                @(Model.User.LastLoginUtc?.ToString("MMM dd, yyyy h:mm tt") ?? "Never")
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Roles Tab -->
+        <div class="tab-pane fade" id="roles">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center" 
+                     style="background-color: #007bff; color: white;">
+                    <h5 class="mb-0"><i class="bi bi-person-badge"></i> Assigned Roles</h5>
+                    <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#assignRolesModal">
+                        <i class="bi bi-plus-circle"></i> Assign Roles
+                    </button>
+                </div>
+                <div class="card-body">
+                    @if (Model.User.Roles.Any())
+                    {
+                        <div class="row">
+                            @foreach (var role in Model.User.Roles)
+                            {
+                                <div class="col-md-6 mb-3">
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <h6 class="card-title" style="color: #007bff;">
+                                                <i class="bi bi-shield-check"></i> @role
+                                            </h6>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted text-center py-4">No roles assigned</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Tab -->
+        <div class="tab-pane fade" id="activity">
+            <div class="card">
+                <div class="card-header" style="background-color: #007bff; color: white;">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Activity History</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Activity tracking coming soon...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Roles Modal -->
+<div class="modal fade" id="assignRolesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" asp-page-handler="AssignRoles">
+                <input type="hidden" name="tenantId" value="@Model.TenantId" />
+                <input type="hidden" name="userId" value="@Model.Id" />
+                
+                <div class="modal-header" style="background-color: #007bff; color: white;">
+                    <h5 class="modal-title"><i class="bi bi-person-badge"></i> Assign Roles</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (Model.AvailableRoles.Any())
+                    {
+                        @foreach (var role in Model.AvailableRoles)
+                        {
+                            <div class="form-check mb-2">
+                                <input type="checkbox" class="form-check-input" 
+                                       name="roleIds" value="@role.Id"
+                                       checked="@Model.User.Roles.Contains(role.DisplayName)" />
+                                <label class="form-check-label">
+                                    <strong>@role.DisplayName</strong>
+                                    <small class="text-muted d-block">@role.Name</small>
+                                </label>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">No roles available</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Roles
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

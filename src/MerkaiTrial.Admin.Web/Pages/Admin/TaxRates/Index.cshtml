@@ -1,0 +1,383 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.TaxRates.IndexModel
+@{
+    ViewData["Title"] = "Tax Rates Management";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-receipt text-primary"></i> Tax Rates</h2>
+            <p class="text-muted mb-0">Manage tax rates and taxation rules</p>
+        </div>
+        <div>
+            <a asp-page="./Create" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add Tax Rate</span>
+            </a>
+        </div>
+    </div>
+
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Statistics Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6 col-sm-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #2563eb);">
+                                <i class="bi bi-receipt text-white fs-4"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1 small">Total Tax Rates</h6>
+                            <h3 class="mb-0">@Model.Stats.TotalRates</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 col-sm-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669);">
+                                <i class="bi bi-globe text-white fs-4"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1 small">Active Countries</h6>
+                            <h3 class="mb-0">@Model.Stats.ActiveCountries</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 col-sm-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b, #d97706);">
+                                <i class="bi bi-star-fill text-white fs-4"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1 small">Default Rates</h6>
+                            <h3 class="mb-0">@Model.Stats.DefaultRates</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 col-sm-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                                <i class="bi bi-shield-check text-white fs-4"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <h6 class="text-muted mb-1 small">System Rates</h6>
+                            <h3 class="mb-0">@Model.Stats.SystemRates</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search & Filter -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="PageSize" value="@Model.PageSize" />
+
+                <div class="col-lg-5 col-md-6 col-sm-12">
+                    <label class="form-label small fw-semibold">
+                        <i class="bi bi-search me-1"></i>Search
+                    </label>
+                    <input type="text" class="form-control" name="SearchTerm" 
+                           value="@Model.SearchTerm" placeholder="Search by name or type..." />
+                </div>
+
+                <div class="col-lg-4 col-md-6 col-sm-12">
+                    <label class="form-label small fw-semibold">
+                        <i class="bi bi-globe me-1"></i>Country
+                    </label>
+                    <select class="form-select" name="CountryFilter" asp-items="Model.GetCountryFilterOptions()">
+                    </select>
+                </div>
+
+                <div class="col-lg-3 col-md-12 col-sm-12">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">
+                            <i class="bi bi-search d-md-none"></i>
+                            <span class="d-none d-md-inline">Search</span>
+                        </button>
+                        <a asp-page="./Index" asp-route-pagesize="@Model.PageSize" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-clockwise"></i>
+                            <span class="d-none d-sm-inline">Clear</span>
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Desktop Table -->
+    <div class="card border-0 shadow-sm d-none d-md-block">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul me-2"></i>Tax Rates List
+                    <span class="badge bg-white text-primary ms-2">@Model.PaginatedTaxRates.TotalCount</span>
+                </h5>
+                <span class="badge bg-light text-dark">
+                    Page @Model.Page of @Model.PaginatedTaxRates.TotalPages
+                </span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Country</th>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Rate</th>
+                            <th>Default</th>
+                            <th class="text-end pe-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var rate in Model.PaginatedTaxRates.Items)
+                        {
+                            <tr>
+                                <td class="ps-3">
+                                    <strong>@rate.CountryCode</strong>
+                                    <br />
+                                    <small class="text-muted">@Model.GetCountryName(rate.CountryCode)</small>
+                                </td>
+                                <td><strong>@rate.Name</strong></td>
+                                <td><span class="badge bg-info">@rate.TaxType</span></td>
+                                <td><strong>@rate.Rate.ToString("0.##")%</strong></td>
+                                <td>
+                                    @if (rate.IsDefault)
+                                    {
+                                        <span class="badge bg-warning">Default</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a asp-page="./Detail" asp-route-id="@rate.Id" 
+                                           class="btn btn-outline-primary" title="View Details">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <a asp-page="./Edit" asp-route-id="@rate.Id" 
+                                           class="btn btn-outline-warning" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <button type="button" class="btn btn-outline-danger" 
+                                                onclick="confirmDelete('@rate.Id', '@rate.Name')" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Cards -->
+    <div class="d-md-none">
+        @foreach (var rate in Model.PaginatedTaxRates.Items)
+        {
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="mb-1">@rate.Name</h5>
+                            <small class="text-muted">
+                                <i class="bi bi-globe me-1"></i>@Model.GetCountryName(rate.CountryCode)
+                            </small>
+                        </div>
+                        @if (rate.IsDefault)
+                        {
+                            <span class="badge bg-warning">Default</span>
+                        }
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <small class="text-muted">Type</small>
+                            <div><span class="badge bg-info">@rate.TaxType</span></div>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">Rate</small>
+                            <div><strong class="text-primary">@rate.Rate.ToString("0.##")%</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <a asp-page="./Detail" asp-route-id="@rate.Id" class="btn btn-primary btn-sm">
+                            <i class="bi bi-eye me-1"></i>View Details
+                        </a>
+                        <div class="btn-group">
+                            <a asp-page="./Edit" asp-route-id="@rate.Id" class="btn btn-outline-warning btn-sm">
+                                <i class="bi bi-pencil me-1"></i>Edit
+                            </a>
+                            <button type="button" class="btn btn-outline-danger btn-sm" 
+                                    onclick="confirmDelete('@rate.Id', '@rate.Name')">
+                                <i class="bi bi-trash me-1"></i>Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!Model.PaginatedTaxRates.Items.Any())
+    {
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                <p class="text-muted mb-0">No tax rates found.</p>
+            </div>
+        </div>
+    }
+
+    <!-- Pagination -->
+    @if (Model.PaginatedTaxRates.Items.Any())
+    {
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <form method="get" class="d-flex align-items-center gap-2">
+                        <input type="hidden" name="SearchTerm" value="@Model.SearchTerm" />
+                        <input type="hidden" name="CountryFilter" value="@Model.CountryFilter" />
+                        <input type="hidden" name="Page" value="1" />
+                        
+                        <label class="col-form-label small mb-0">Items per page:</label>
+                        <select name="PageSize" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
+                            <option value="5" selected="@(Model.PageSize == 5)">5</option>
+                            <option value="10" selected="@(Model.PageSize == 10)">10</option>
+                            <option value="25" selected="@(Model.PageSize == 25)">25</option>
+                            <option value="50" selected="@(Model.PageSize == 50)">50</option>
+                            <option value="100" selected="@(Model.PageSize == 100)">100</option>
+                        </select>
+                    </form>
+                    
+                    <span class="text-muted small">
+                        Showing @((Model.Page - 1) * Model.PageSize + 1) 
+                        to @Math.Min(Model.Page * Model.PageSize, Model.PaginatedTaxRates.TotalCount) 
+                        of @Model.PaginatedTaxRates.TotalCount items
+                    </span>
+                </div>
+
+                <nav>
+                    <ul class="pagination pagination-sm justify-content-center mb-0">
+                        <li class="page-item @(!Model.PaginatedTaxRates.HasPrevious ? "disabled" : "")">
+                            <a class="page-link" 
+                               asp-page="./Index" 
+                               asp-route-page="@(Model.Page - 1)"
+                               asp-route-pagesize="@Model.PageSize"
+                               asp-route-searchterm="@Model.SearchTerm"
+                               asp-route-countryfilter="@Model.CountryFilter">
+                                <i class="bi bi-chevron-left"></i> Previous
+                            </a>
+                        </li>
+
+                        @{
+                            var startPage = Math.Max(1, Model.Page - 2);
+                            var endPage = Math.Min(Model.PaginatedTaxRates.TotalPages, Model.Page + 2);
+
+                            for (int i = startPage; i <= endPage; i++)
+                            {
+                                <li class="page-item @(i == Model.Page ? "active" : "")">
+                                    <a class="page-link" 
+                                       asp-page="./Index" 
+                                       asp-route-page="@i"
+                                       asp-route-pagesize="@Model.PageSize"
+                                       asp-route-searchterm="@Model.SearchTerm"
+                                       asp-route-countryfilter="@Model.CountryFilter">
+                                        @i
+                                    </a>
+                                </li>
+                            }
+                        }
+
+                        <li class="page-item @(!Model.PaginatedTaxRates.HasNext ? "disabled" : "")">
+                            <a class="page-link" 
+                               asp-page="./Index" 
+                               asp-route-page="@(Model.Page + 1)"
+                               asp-route-pagesize="@Model.PageSize"
+                               asp-route-searchterm="@Model.SearchTerm"
+                               asp-route-countryfilter="@Model.CountryFilter">
+                                Next <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    }
+</div>
+
+<form method="post" id="deleteForm">
+    <input type="hidden" name="id" id="deleteId" />
+</form>
+
+@section Scripts {
+    <script>
+        setTimeout(function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+
+        function confirmDelete(id, name) {
+            if (confirm(`Are you sure you want to delete tax rate "${name}"?\n\nThis action cannot be undone.`)) {
+                document.getElementById('deleteId').value = id;
+                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
+                document.getElementById('deleteForm').submit();
+            }
+        }
+    </script>
+}

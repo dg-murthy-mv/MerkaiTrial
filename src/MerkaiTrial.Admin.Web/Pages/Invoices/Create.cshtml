@@ -1,0 +1,576 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Invoices.CreateModel
+@{
+    ViewData["Title"] = Model.Mode == "FromQuote" ? "Create Invoice from Quote" : "Create Invoice";
+}
+
+<div class="page-header mb-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 12px;">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="mb-2">
+                <i class="bi bi-receipt-cutoff me-2"></i>@ViewData["Title"]
+            </h2>
+            @if (Model.Mode == "FromQuote" && Model.Quote != null)
+            {
+                <p class="mb-0 opacity-75">
+                    <i class="bi bi-file-earmark-text me-2"></i>Quote: @Model.Quote.Number
+                    <span class="mx-2">|</span>
+                    <i class="bi bi-building me-2"></i>@Model.Quote.CompanyName
+                </p>
+            }
+            else if (Model.Deal != null)
+            {
+                <p class="mb-0 opacity-75">
+                    <i class="bi bi-briefcase me-2"></i>Deal: @Model.Deal.Title
+                    <span class="mx-2">|</span>
+                    <i class="bi bi-building me-2"></i>@Model.Deal.CompanyName
+                </p>
+            }
+        </div>
+        <div>
+            <a href="@(Model.QuoteId.HasValue ? $"/Quotes/Detail?id={Model.QuoteId}" : "/Pipeline")" class="btn btn-light">
+                <i class="bi bi-arrow-left me-2"></i>Back
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Invoice Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Issue Date *</label>
+                        <input type="date" class="form-control" name="IssueDate" id="IssueDate" value="@Model.IssueDate.ToString("yyyy-MM-dd")" required />
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Due Date *</label>
+                        <input type="date" class="form-control" name="DueDate" id="DueDate" value="@Model.DueDate.ToString("yyyy-MM-dd")" required />
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDueDays(30)">Net 30</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDueDays(60)">Net 60</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDueDays(90)">Net 90</button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Currency</label>
+                        @* ✅ BUGFIX: every <option> previously carried selected="@(...)", which
+                           renders the literal string "False" — and in HTML `selected` is a
+                           BOOLEAN attribute, so selected="False" still selects. All six options
+                           were selected and the browser fell back to the first (USD), showing
+                           "USD - US Dollar" on an AED tenant. Same bug on disabled="@(...)",
+                           which left the field disabled in Manual mode too.
+                           The hardcoded 6-currency list also had no AED at all.
+                           Now: exactly one option — the tenant/quote currency — so the wrong
+                           currency cannot be displayed or posted. Uses Razor conditional
+                           rendering for `disabled` rather than an interpolated attribute. *@
+                        @{
+                            var invoiceCurrency = !string.IsNullOrWhiteSpace(Model.Currency)
+                                ? Model.Currency
+                                : Model.TenantCurrencyCode;
+                            var currencyLabel = string.IsNullOrWhiteSpace(Model.TenantCurrencySymbol)
+                                ? invoiceCurrency
+                                : $"{invoiceCurrency} ({Model.TenantCurrencySymbol})";
+                        }
+                        @if (Model.Mode == "FromQuote")
+                        {
+                            <select class="form-select" name="Currency" id="Currency" disabled>
+                                <option value="@invoiceCurrency" selected>@currencyLabel</option>
+                            </select>
+                            @* NOTE: these Invoice Details fields sit OUTSIDE both post forms.
+                               Each form in the sidebar carries its own hidden mirrors
+                               (IssueDateHidden / DueDateHidden / NotesHidden). Currency is
+                               not posted on the FromQuote path at all — the API takes it
+                               from the quote — so no hidden mirror is needed here. *@
+                            <div class="form-text">Set by the quote and cannot be changed.</div>
+                        }
+                        else
+                        {
+                            <select class="form-select" name="Currency" id="Currency">
+                                <option value="@invoiceCurrency" selected>@currencyLabel</option>
+                            </select>
+                        }
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Notes (Optional)</label>
+                        <textarea class="form-control" name="Notes" rows="3" placeholder="Add any notes or payment instructions...">@Model.Notes</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (Model.Mode == "FromQuote" && Model.Quote != null)
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Invoice Items
+                        <span class="badge bg-primary ms-2">@Model.Quote.Items.Count items</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @foreach (var item in Model.Quote.Items)
+                    {
+                        <div class="border rounded p-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <h6 class="mb-1">@item.Name</h6>
+                                    @if (!string.IsNullOrEmpty(item.Description))
+                                    {
+                                        <small class="text-muted">@item.Description</small>
+                                    }
+                                </div>
+                                <div class="text-end">
+                                    <div class="fw-bold text-primary" style="font-size: 1.1rem;">
+                                        @Model.FormatCurrency(item.LineGrandTotal)
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row text-muted small">
+                                <div class="col">
+                                    <strong>Qty:</strong> @item.Quantity
+                                </div>
+                                <div class="col">
+                                    <strong>Unit Price:</strong> @Model.FormatCurrency(item.UnitPrice)
+                                </div>
+                                @if (item.LineDiscount > 0)
+                                {
+                                    <div class="col">
+                                        <strong>Discount:</strong> -@Model.FormatCurrency(item.LineDiscount)
+                                    </div>
+                                }
+                                <div class="col">
+                                    <strong>Tax:</strong> @((item.TaxRate * 100).ToString("N0"))% (@Model.FormatCurrency(item.LineTax))
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>Invoice Items
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (Model.Products.Count > 0)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Add from Product Catalog</label>
+                            <div class="input-group">
+                                <select id="productSelector" class="form-select">
+                                    <option value="">-- Select a product --</option>
+                                    @foreach (var product in Model.Products)
+                                    {
+                                        <option value="@product.Id" 
+                                                data-name="@product.Name" 
+                                                data-price="@product.ListPrice" 
+                                                data-tax="@product.TaxRate">
+                                            @product.Name - @Model.FormatCurrency(product.ListPrice)
+                                        </option>
+                                    }
+                                </select>
+                                <button type="button" class="btn btn-primary" onclick="addProductToInvoice()">
+                                    <i class="bi bi-plus-circle me-2"></i>Add Product
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-outline-secondary" onclick="addCustomItem()">
+                            <i class="bi bi-plus-circle me-2"></i>Add Custom Item
+                        </button>
+                    </div>
+
+                    <div id="lineItemsContainer"></div>
+
+                    <div id="emptyState" class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                        <p class="mt-3">No items added yet. Add products or custom items above.</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4 position-sticky" style="top: 20px;">
+            <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h5 class="mb-0">
+                    <i class="bi bi-calculator me-2"></i>Invoice Summary
+                </h5>
+            </div>
+            <div class="card-body">
+                @if (Model.Mode == "FromQuote" && Model.Quote != null)
+                {
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Subtotal:</span>
+                        <span class="fw-bold">@Model.FormatCurrency(Model.Quote.Subtotal)</span>
+                    </div>
+                    @if (Model.Quote.DiscountTotal > 0)
+                    {
+                        <div class="d-flex justify-content-between mb-2 text-success">
+                            <span>Discount:</span>
+                            <span class="fw-bold">-@Model.FormatCurrency(Model.Quote.DiscountTotal)</span>
+                        </div>
+                    }
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Tax:</span>
+                        <span class="fw-bold">@Model.FormatCurrency(Model.Quote.TaxTotal)</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <span class="fs-5 fw-bold">Grand Total:</span>
+                        <span class="fs-4 fw-bold text-primary">@Model.FormatCurrency(Model.Quote.GrandTotal)</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Subtotal:</span>
+                        <span class="fw-bold" id="subtotalDisplay">@Model.FormatCurrency(0)</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2 text-success" id="discountRow" style="display: none;">
+                        <span>Discount:</span>
+                        <span class="fw-bold" id="discountDisplay">@Model.FormatCurrency(0)</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Tax:</span>
+                        <span class="fw-bold" id="taxDisplay">@Model.FormatCurrency(0)</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <span class="fs-5 fw-bold">Grand Total:</span>
+                        <span class="fs-4 fw-bold text-primary" id="grandTotalDisplay">@Model.FormatCurrency(0)</span>
+                    </div>
+                }
+            </div>
+
+            <div class="card-footer bg-light">
+                @if (Model.Mode == "FromQuote")
+                {
+                    @* ✅ id added — the script below used to select this form by
+                       [asp-page-handler], a TAG HELPER attribute that Razor consumes
+                       and strips at render time. It never exists in the DOM, so the
+                       selector always returned null and the submit hook never bound. *@
+                    <form method="post" asp-page-handler="CreateFromQuote" id="fromQuoteInvoiceForm">
+                        <input type="hidden" name="QuoteId" value="@Model.QuoteId" />
+                        <input type="hidden" name="IssueDate" id="IssueDateHidden" value="@Model.IssueDate.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="DueDate" id="DueDateHidden" value="@Model.DueDate.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="Notes" id="NotesHidden" value="@Model.Notes" />
+                        
+                        <button type="submit" name="sendImmediately" value="false" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-save me-2"></i>Save as Draft
+                        </button>
+                        <button type="submit" name="sendImmediately" value="true" class="btn btn-success w-100">
+                            <i class="bi bi-send me-2"></i>Create & Send Invoice
+                        </button>
+                    </form>
+                }
+                else
+                {
+                    <form method="post" asp-page-handler="CreateManual" id="manualInvoiceForm" onsubmit="return validateForm()">
+                        <input type="hidden" name="DealId" value="@Model.DealId" />
+                        <input type="hidden" name="IssueDate" id="IssueDateHidden2" value="@Model.IssueDate.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="DueDate" id="DueDateHidden2" value="@Model.DueDate.ToString("yyyy-MM-dd")" />
+                        <input type="hidden" name="Currency" value="@Model.Currency" />
+                        <input type="hidden" name="Notes" id="NotesHidden2" value="@Model.Notes" />
+                        <input type="hidden" name="itemsJson" id="itemsJson" />
+                        
+                        <button type="submit" name="sendImmediately" value="false" class="btn btn-outline-primary w-100 mb-2">
+                            <i class="bi bi-save me-2"></i>Save as Draft
+                        </button>
+                        <button type="submit" name="sendImmediately" value="true" class="btn btn-success w-100">
+                            <i class="bi bi-send me-2"></i>Create & Send Invoice
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+@if (Model.Mode == "Manual")
+{
+<script>
+    let lineItems = [];
+    let itemCounter = 0;
+    // ✅ was: const currency = '...'  +  `${currency} ${x.toFixed(2)}`
+    //    toFixed() does NO grouping, so client-computed totals rendered
+    //    ungrouped ("255000.00") while the server rendered "฿255,000.00".
+    //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
+    //    culture, so client and server now agree by construction.
+    const fmtMoney = (x) => window.MerkaiCurrency.format(x);
+
+    function setDueDays(days) {
+        const issueDate = new Date(document.getElementById('IssueDate').value || new Date());
+        const dueDate = new Date(issueDate);
+        dueDate.setDate(dueDate.getDate() + days);
+        document.getElementById('DueDate').value = dueDate.toISOString().split('T')[0];
+        document.getElementById('DueDateHidden2').value = dueDate.toISOString().split('T')[0];
+    }
+
+    function addProductToInvoice() {
+        const selector = document.getElementById('productSelector');
+        const option = selector.options[selector.selectedIndex];
+        
+        if (!option.value) {
+            alert('Please select a product');
+            return;
+        }
+
+        const item = {
+            id: ++itemCounter,
+            productId: option.value,
+            name: option.dataset.name,
+            description: '',
+            unitPrice: parseFloat(option.dataset.price),
+            quantity: 1,
+            lineDiscount: 0,
+            taxRate: parseFloat(option.dataset.tax) * 100
+        };
+
+        lineItems.push(item);
+        renderLineItems();
+        calculateTotals();
+        selector.selectedIndex = 0;
+    }
+
+    function addCustomItem() {
+        const item = {
+            id: ++itemCounter,
+            productId: null,
+            name: 'Custom Item',
+            description: '',
+            unitPrice: 0,
+            quantity: 1,
+            lineDiscount: 0,
+            taxRate: 18
+        };
+
+        lineItems.push(item);
+        renderLineItems();
+        calculateTotals();
+    }
+
+    function removeItem(itemId) {
+        lineItems = lineItems.filter(i => i.id !== itemId);
+        renderLineItems();
+        calculateTotals();
+    }
+
+    function updateItem(itemId, field, value) {
+        const item = lineItems.find(i => i.id === itemId);
+        if (item) {
+            if (field === 'quantity' || field === 'unitPrice' || field === 'lineDiscount' || field === 'taxRate') {
+                item[field] = parseFloat(value) || 0;
+            } else {
+                item[field] = value;
+            }
+            calculateTotals();
+            updateLineItemTotal(itemId);
+        }
+    }
+
+    function calculateLineItemTotal(item) {
+        const subtotal = item.unitPrice * item.quantity;
+        const afterDiscount = subtotal - item.lineDiscount;
+        const tax = afterDiscount * (item.taxRate / 100);
+        const total = afterDiscount + tax;
+        return { subtotal, afterDiscount, tax, total };
+    }
+
+    function updateLineItemTotal(itemId) {
+        const item = lineItems.find(i => i.id === itemId);
+        if (item) {
+            const calc = calculateLineItemTotal(item);
+            const element = document.getElementById(`line-total-${itemId}`);
+            if (element) {
+                element.textContent = fmtMoney(calc.total);
+            }
+        }
+    }
+
+    function calculateTotals() {
+        let subtotal = 0;
+        let discountTotal = 0;
+        let taxTotal = 0;
+
+        lineItems.forEach(item => {
+            const calc = calculateLineItemTotal(item);
+            subtotal += calc.subtotal;
+            discountTotal += item.lineDiscount;
+            taxTotal += calc.tax;
+        });
+
+        const grandTotal = subtotal + taxTotal - discountTotal;
+
+        document.getElementById('subtotalDisplay').textContent = fmtMoney(subtotal);
+        document.getElementById('discountDisplay').textContent = '-' + fmtMoney(discountTotal);
+        document.getElementById('taxDisplay').textContent = fmtMoney(taxTotal);
+        document.getElementById('grandTotalDisplay').textContent = fmtMoney(grandTotal);
+
+        document.getElementById('discountRow').style.display = discountTotal > 0 ? 'flex' : 'none';
+    }
+
+    function renderLineItems() {
+        const container = document.getElementById('lineItemsContainer');
+        const emptyState = document.getElementById('emptyState');
+
+        if (lineItems.length === 0) {
+            container.innerHTML = '';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+
+        container.innerHTML = lineItems.map(item => {
+            const calc = calculateLineItemTotal(item);
+            return `
+                <div class="border rounded p-3 mb-3" style="background: #f8f9fa;">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <h6 class="mb-0">${item.name}</h6>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(${item.id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="row g-2 mb-2">
+                        <div class="col-12">
+                            <label class="form-label small">Item Name</label>
+                            <input type="text" class="form-control form-control-sm" value="${item.name}" 
+                                   onchange="updateItem(${item.id}, 'name', this.value)" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Description (Optional)</label>
+                            <input type="text" class="form-control form-control-sm" value="${item.description}" 
+                                   onchange="updateItem(${item.id}, 'description', this.value)" placeholder="Optional description" />
+                        </div>
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">Unit Price</label>
+                            <input type="number" class="form-control form-control-sm" value="${item.unitPrice}" 
+                                   step="0.01" min="0" onchange="updateItem(${item.id}, 'unitPrice', this.value)" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">Quantity</label>
+                            <input type="number" class="form-control form-control-sm" value="${item.quantity}" 
+                                   min="1" onchange="updateItem(${item.id}, 'quantity', this.value)" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">Discount</label>
+                            <input type="number" class="form-control form-control-sm" value="${item.lineDiscount}" 
+                                   step="0.01" min="0" onchange="updateItem(${item.id}, 'lineDiscount', this.value)" />
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">Tax %</label>
+                            <input type="number" class="form-control form-control-sm" value="${item.taxRate}" 
+                                   step="0.01" min="0" max="100" onchange="updateItem(${item.id}, 'taxRate', this.value)" />
+                        </div>
+                    </div>
+                    
+                    <div class="text-end mt-2">
+                        <strong>Line Total: </strong>
+                        <span class="text-primary fs-5" id="line-total-${item.id}">${fmtMoney(calc.total)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function validateForm() {
+        if (lineItems.length === 0) {
+            alert('Please add at least one item to the invoice');
+            return false;
+        }
+
+        for (let item of lineItems) {
+            if (!item.name || item.name.trim() === '') {
+                alert('All items must have a name');
+                return false;
+            }
+            if (item.quantity < 1) {
+                alert('Quantity must be at least 1');
+                return false;
+            }
+            if (item.unitPrice < 0) {
+                alert('Unit price cannot be negative');
+                return false;
+            }
+        }
+
+        document.getElementById('itemsJson').value = JSON.stringify(lineItems);
+        
+        document.getElementById('IssueDateHidden2').value = document.getElementById('IssueDate').value;
+        document.getElementById('DueDateHidden2').value = document.getElementById('DueDate').value;
+        document.getElementById('NotesHidden2').value = document.querySelector('textarea[name="Notes"]').value;
+        
+        return true;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        renderLineItems();
+        calculateTotals();
+    });
+</script>
+}
+@if (Model.Mode == "FromQuote")
+{
+<script>
+    function setDueDays(days) {
+        const issueDate = new Date(document.getElementById('IssueDate').value || new Date());
+        const dueDate = new Date(issueDate);
+        dueDate.setDate(dueDate.getDate() + days);
+        document.getElementById('DueDate').value = dueDate.toISOString().split('T')[0];
+        document.getElementById('DueDateHidden').value = dueDate.toISOString().split('T')[0];
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // ✅ BUGFIX: was document.querySelector('form[asp-page-handler="CreateFromQuote"]').
+        // asp-page-handler is a Razor TAG HELPER attribute — the server consumes it to
+        // build the form action and REMOVES it from the rendered HTML. The selector
+        // therefore matched nothing, `form` was always null, and this submit handler
+        // was never attached.
+        //
+        // Consequence: IssueDateHidden / DueDateHidden / NotesHidden kept whatever the
+        // server rendered on page load. Editing the issue date, due date or notes and
+        // submitting silently posted the ORIGINAL values — no error, wrong data saved.
+        // (setDueDays() above happened to write DueDateHidden directly, so the quick
+        // +15/+30/+60 buttons worked while typing a date by hand did not. That is why
+        // this went unnoticed.)
+        const form = document.getElementById('fromQuoteInvoiceForm');
+        if (form) {
+            form.addEventListener('submit', function() {
+                const issue = document.getElementById('IssueDate');
+                const due   = document.getElementById('DueDate');
+                const notes = document.querySelector('textarea[name="Notes"]');
+
+                if (issue) document.getElementById('IssueDateHidden').value = issue.value;
+                if (due)   document.getElementById('DueDateHidden').value   = due.value;
+                if (notes) document.getElementById('NotesHidden').value     = notes.value;
+            });
+        } else {
+            console.warn('fromQuoteInvoiceForm not found — invoice hidden fields will not sync.');
+        }
+    });
+</script>
+}
+}

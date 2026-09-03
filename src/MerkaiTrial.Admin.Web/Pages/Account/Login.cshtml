@@ -1,0 +1,70 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Account.LoginModel
+@{
+    Layout = "_AuthLayout";
+    ViewData["Title"] = "Sign in";
+}
+
+@*
+    FILE: MerkaiTrial.Admin.Web/Pages/Account/Login.cshtml
+
+    Layout is set explicitly because Pages/_ViewStart.cshtml applies the CRM
+    layout to everything, and that layout resolves tenant context. There is
+    no tenant claim on this page, so it must not run.
+
+    The <form method="post"> tag helper emits the antiforgery token
+    automatically — do not remove it or add a manual token.
+*@
+
+<h1>Sign in</h1>
+<p class="auth-sub">Enter the email address your workspace was set up with.</p>
+
+@if (Model.PasswordSet)
+{
+    <div class="alert alert-ok" role="status">
+        Your password is set. Sign in to continue.
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    @* One uniform message for wrong password, unknown email, and no password
+       set. Distinguishing them tells an attacker which emails are real. *@
+    <div class="alert alert-error" role="alert">
+        @Model.ErrorMessage
+    </div>
+}
+
+<form method="post">
+    <div class="field">
+        <label asp-for="Email">Email address</label>
+        <input asp-for="Email" type="email" autocomplete="username"
+               autofocus spellcheck="false" placeholder="you@company.com" />
+        <span asp-validation-for="Email" class="validation-message"></span>
+    </div>
+
+    <div class="field">
+        <label asp-for="Password">Password</label>
+        <input asp-for="Password" type="password" autocomplete="current-password" />
+        <span asp-validation-for="Password" class="validation-message"></span>
+    </div>
+
+    <div class="field-check">
+        <input asp-for="RememberMe" type="checkbox" id="RememberMe" />
+        <label for="RememberMe" style="margin:0;font-weight:500;">Keep me signed in on this device</label>
+    </div>
+
+    <button type="submit" class="btn-primary">Sign in</button>
+</form>
+
+<div class="auth-foot">
+    Forgotten your password? <a asp-page="/Account/ForgotPassword">Request a reset link</a>
+    <br />
+    <span style="display:inline-block;margin-top:.5rem;">
+        Trial not set up yet? Contact your MadeeVision account contact.
+    </span>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

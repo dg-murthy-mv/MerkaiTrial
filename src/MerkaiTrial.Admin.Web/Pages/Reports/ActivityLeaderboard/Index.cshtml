@@ -1,0 +1,95 @@
+@* FILE: Pages/Reports/ActivityLeaderboard/Index.cshtml *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.ActivityLeaderboard.IndexModel
+@{ ViewData["Title"] = "Activity Leaderboard"; }
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-list-check me-2 text-info"></i>Activity Leaderboard</h2>
+            <p class="text-muted mb-0 small">Notes, activities and reminders logged per sales rep</p>
+        </div>
+    </div>
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+    @if (Model.Data != null && Model.Data.Reps.Any())
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-primary">@d.TotalNotes</div><div class="text-muted small">Total Notes</div></div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-success">@d.TotalActivities</div><div class="text-muted small">Total Activities</div></div></div>
+            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-warning">@d.TotalReminders</div><div class="text-muted small">Total Reminders</div></div></div>
+        </div>
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-bar-chart me-1 text-info"></i>Activity Breakdown by Rep</div>
+                    <div class="card-body"><canvas id="activityChart" height="140"></canvas></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom fw-semibold small"><i class="bi bi-trophy me-1 text-warning"></i>Leaderboard</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr><th>#</th><th>Rep</th><th class="text-center">Notes</th><th class="text-center">Activities</th><th class="text-center">Reminders</th><th class="text-end">Total</th></tr>
+                            </thead>
+                            <tbody>
+                                @{ int rank = 1; }
+                                @foreach (var r in d.Reps)
+                                {
+                                    <tr>
+                                        <td class="small">
+                                            @if (rank == 1) { <span class="badge bg-warning text-dark">1st</span> }
+                                            else if (rank == 2) { <span class="badge bg-secondary">2nd</span> }
+                                            else if (rank == 3) { <span class="badge" style="background:#cd7f32;color:#fff;">3rd</span> }
+                                            else { <span class="text-muted small">@rank</span> }
+                                        </td>
+                                        <td class="small fw-semibold">@r.OwnerName</td>
+                                        <td class="text-center small">@r.Notes</td>
+                                        <td class="text-center small">@r.Activities</td>
+                                        <td class="text-center small">@r.Reminders</td>
+                                        <td class="text-end small fw-bold text-primary">@r.Total</td>
+                                    </tr>
+                                    rank++;
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-list-check fs-1 d-block mb-3"></i>
+            <p>No activity data yet for selected period.</p>
+            <p class="small">Activities will appear here as your team logs notes, calls, and reminders on deals.</p>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const d = @Html.Raw(Model.DataJson);
+if (d && d.reps && d.reps.length) {
+    new Chart(document.getElementById('activityChart'), {
+        type: 'bar',
+        data: {
+            labels: d.reps.map(r => r.ownerName),
+            datasets: [
+                { label: 'Notes',      data: d.reps.map(r => r.notes),      backgroundColor: '#3b82f6', borderRadius: 4 },
+                { label: 'Activities', data: d.reps.map(r => r.activities),  backgroundColor: '#16a34a', borderRadius: 4 },
+                { label: 'Reminders',  data: d.reps.map(r => r.reminders),   backgroundColor: '#f59e0b', borderRadius: 4 }
+            ]
+        },
+        options: { plugins: { legend: { position: 'top' } }, scales: { x: { stacked: false }, y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+    });
+}
+</script>
+}

@@ -1,0 +1,516 @@
+@page
+@using MerkaiTrial.Admin.Web.Pages
+@model MerkaiTrial.Admin.Web.Pages.Leads.IndexModel
+@{
+    ViewData["Title"] = "Leads";
+}
+
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1">
+            <i class="bi bi-funnel me-2"></i>Leads
+        </h2>
+        <p class="text-muted mb-0">Track and manage your sales leads</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+
+        @* ✅ Plan badge *@
+        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
+            @Model.PlanDisplayName
+        </span>
+
+        @* ✅ Add Lead — quota + permission aware *@
+        @if (!AuthorizedPageModel.IsAtLimit(Model.Stats.TotalLeads, Model.MaxLeads) && Model.CanCreate)
+        {
+            <a asp-page="./Create" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>Add Lead
+            </a>
+        }
+        else if (AuthorizedPageModel.IsAtLimit(Model.Stats.TotalLeads, Model.MaxLeads))
+        {
+            <button class="btn btn-outline-secondary" disabled
+                    title="Lead limit reached. @Model.UpgradePrompt">
+                <i class="bi bi-lock me-1"></i>Lead Limit Reached
+            </button>
+        }
+        @* No else — if no create permission, button is simply hidden *@
+
+    </div>
+</div>
+
+<!-- Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. -->
+
+<!-- Statistics Cards -->
+<div class="row g-3 mb-3">
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">Total</p>
+                        <h3 class="mb-0">@Model.Stats.TotalLeads</h3>
+                    </div>
+                    <div class="bg-primary bg-opacity-10 rounded p-3">
+                        <i class="bi bi-funnel text-primary fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">New</p>
+                        <h3 class="mb-0">@Model.Stats.NewLeads</h3>
+                    </div>
+                    <div class="bg-info bg-opacity-10 rounded p-3">
+                        <i class="bi bi-star text-info fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">Working</p>
+                        <h3 class="mb-0">@Model.Stats.WorkingLeads</h3>
+                    </div>
+                    <div class="bg-warning bg-opacity-10 rounded p-3">
+                        <i class="bi bi-hourglass text-warning fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">Qualified</p>
+                        <h3 class="mb-0">@Model.Stats.QualifiedLeads</h3>
+                    </div>
+                    <div class="bg-success bg-opacity-10 rounded p-3">
+                        <i class="bi bi-check-circle text-success fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">Converted</p>
+                        <h3 class="mb-0">@Model.Stats.ConvertedLeads</h3>
+                    </div>
+                    <div class="bg-success bg-opacity-10 rounded p-3">
+                        <i class="bi bi-trophy text-success fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <p class="text-muted small mb-1">Page</p>
+                        <h3 class="mb-0">@Model.PageNumber</h3>
+                    </div>
+                    <div class="bg-secondary bg-opacity-10 rounded p-3">
+                        <i class="bi bi-file-text text-secondary fs-4"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ✅ Plan quota progress bar *@
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-2">
+        <div class="row align-items-center g-2">
+            <div class="col-auto">
+                <small class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
+                    Lead Quota
+                </small>
+            </div>
+            <div class="col">
+                @{
+                    var leadPct = AuthorizedPageModel.QuotaPercent(Model.Stats.TotalLeads, Model.MaxLeads);
+                    var barClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.TotalLeads, Model.MaxLeads);
+                }
+                <div class="progress" style="height:8px;">
+                    <div class="progress-bar @barClass"
+                         role="progressbar"
+                         style="width:@leadPct%"
+                         aria-valuenow="@Model.Stats.TotalLeads"
+                         aria-valuemin="0"
+                         aria-valuemax="@Model.MaxLeads">
+                    </div>
+                </div>
+            </div>
+            <div class="col-auto">
+                <small class="@(leadPct >= 90 ? "text-danger fw-bold" : "text-muted")">
+                    @Model.Stats.TotalLeads / @Model.MaxLeads used
+                </small>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+            {
+                <div class="col-auto">
+                    <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
+                        <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
+                    </a>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Filters Card -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Search</label>
+                <input type="text"
+                       class="form-control"
+                       name="SearchTerm"
+                       value="@Model.SearchTerm"
+                       placeholder="Name, email, phone, company...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="StatusFilter">
+                    <option value="">All Status</option>
+                    @foreach (var item in Model.StatusOptions)
+                    {
+                        <option value="@item.Value" selected="@item.Selected">@item.Text</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Assigned To</label>
+                <input type="text"
+                       class="form-control"
+                       name="AssignedToFilter"
+                       value="@Model.AssignedToFilter"
+                       placeholder="User ID or name">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <div class="btn-group w-100">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-funnel me-1"></i>Filter
+                    </button>
+                    <a asp-page="./Index" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Leads Table -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        @if (Model.PaginatedLeads.Items.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Lead</th>
+                            <th>Contact Info</th>
+                            <th>Channel</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            @* ✅ Score column header — locked for plans without lead_scoring *@
+                            @if (Model.HasFeature("lead_scoring"))
+                            {
+                                <th>Score</th>
+                            }
+                            else
+                            {
+                                <th class="text-muted">
+                                    Score
+                                    <i class="bi bi-lock-fill text-secondary ms-1"
+                                       title="@Model.UpgradePrompt to unlock lead scoring"
+                                       style="font-size:11px;"></i>
+                                </th>
+                            }
+                            <th>Value</th>
+                            <th>Created</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var lead in Model.PaginatedLeads.Items)
+                        {
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-primary bg-opacity-10 rounded-circle p-2 me-3">
+                                            <i class="bi bi-person text-primary"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold">@lead.FullName</div>
+                                            @if (!string.IsNullOrEmpty(lead.OwnerName))
+                                            {
+                                                <small class="text-muted">Owner: @lead.OwnerName</small>
+                                            }
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(lead.Email))
+                                    {
+                                        <div>
+                                            <a href="mailto:@lead.Email" class="text-decoration-none small">
+                                                <i class="bi bi-envelope me-1"></i>@lead.Email
+                                            </a>
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(lead.Phone))
+                                    {
+                                        <div>
+                                            <a href="tel:@lead.Phone" class="text-decoration-none small">
+                                                <i class="bi bi-telephone me-1"></i>@lead.Phone
+                                            </a>
+                                        </div>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">@lead.Channel</span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">@lead.Source</small>
+                                </td>
+                                <td>
+                                    <span class="badge @Model.GetStatusBadgeClass(lead.Status)">
+                                        @lead.Status
+                                    </span>
+                                </td>
+
+                                @* ✅ Score cell — full for Pro/Enterprise, locked badge for Starter *@
+                                @if (Model.HasFeature("lead_scoring"))
+                                {
+                                    <td>
+                                        <div class="progress" style="width:60px;height:20px;">
+                                            <div class="progress-bar"
+                                                 role="progressbar"
+                                                 style="width:@lead.Score%"
+                                                 aria-valuenow="@lead.Score"
+                                                 aria-valuemin="0"
+                                                 aria-valuemax="100">
+                                                @lead.Score
+                                            </div>
+                                        </div>
+                                    </td>
+                                }
+                                else
+                                {
+                                    <td>
+                                        <span class="badge bg-light text-muted border"
+                                              title="@Model.UpgradePrompt to unlock lead scoring">
+                                            <i class="bi bi-lock-fill me-1"></i>Pro
+                                        </span>
+                                    </td>
+                                }
+
+                                <td>
+                                    @if (lead.EstimatedValue > 0)
+                                    {
+                                        <span class="fw-semibold">
+                                            @* ✅ Was: @@lead.Currency @@lead.EstimatedValue.ToString("N0")
+                                               Two problems. (1) It printed the ISO CODE ("INR 1,40,000")
+                                               where every other screen shows the symbol (₹1,40,000).
+                                               (2) ToString("N0") with no culture uses the SERVER's
+                                               CurrentCulture — the same en-IN leak that put lakh
+                                               grouping on Thai tenants in Pipeline/Index. *@
+                                            @Model.FormatCurrency(lead.EstimatedValue, 0)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
+                                </td>
+                                <td>
+                                    @* ✅ Use tenant-aware date formatting *@
+                                    <small class="text-muted">
+                                        @Model.FormatDate(lead.CreatedAtUtc)
+                                    </small>
+                                </td>
+
+                                @* ✅ Actions — role-based permission + record locking *@
+                                <td class="text-end">
+                                    <div class="btn-group btn-group-sm">
+
+                                        @* View — always visible *@
+                                        <a asp-page="./Detail"
+                                           asp-route-id="@lead.Id"
+                                           class="btn btn-outline-primary"
+                                           title="View Details">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+
+                                        @* Edit — not Converted + has update permission *@
+                                        @if (lead.Status != "Converted" && Model.CanUpdate)
+                                        {
+                                            <a asp-page="./Edit"
+                                               asp-route-id="@lead.Id"
+                                               class="btn btn-outline-secondary"
+                                               title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        }
+
+                                        @* Delete — not Converted + has delete permission *@
+                                        @if (lead.Status != "Converted" && Model.CanDelete)
+                                        {
+                                            <button type="button"
+                                                    class="btn btn-outline-danger"
+                                                    onclick="confirmDelete('@lead.Id', '@lead.FullName')"
+                                                    title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        }
+
+                                        @* Converted — show lock icon regardless of role *@
+                                        @if (lead.Status == "Converted")
+                                        {
+                                            <span class="btn btn-outline-success disabled pe-none"
+                                                  title="Converted — managed via Deal">
+                                                <i class="bi bi-check2-circle"></i>
+                                            </span>
+                                        }
+
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Footer -->
+            <div class="card-footer bg-white border-top-0">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="text-muted small">
+                        Showing @((Model.PaginatedLeads.Page - 1) * Model.PaginatedLeads.PageSize + 1)
+                        to @Math.Min(Model.PaginatedLeads.Page * Model.PaginatedLeads.PageSize, Model.PaginatedLeads.TotalCount)
+                        of @Model.PaginatedLeads.TotalCount results
+                    </div>
+                    <nav>
+                        <ul class="pagination pagination-sm mb-0">
+                            @if (Model.PaginatedLeads.Page > 1)
+                            {
+                                <li class="page-item">
+                                    <a class="page-link"
+                                       asp-page="./Index"
+                                       asp-route-pageNumber="@(Model.PaginatedLeads.Page - 1)"
+                                       asp-route-searchTerm="@Model.SearchTerm"
+                                       asp-route-statusFilter="@Model.StatusFilter"
+                                       asp-route-assignedToFilter="@Model.AssignedToFilter">
+                                        <i class="bi bi-chevron-left"></i>
+                                    </a>
+                                </li>
+                            }
+                            @for (int i = 1; i <= Model.PaginatedLeads.TotalPages; i++)
+                            {
+                                if (i == 1 ||
+                                i == Model.PaginatedLeads.TotalPages ||
+                                (i >= Model.PaginatedLeads.Page - 2 && i <= Model.PaginatedLeads.Page + 2))
+                                {
+                                    <li class="page-item @(i == Model.PaginatedLeads.Page ? "active" : "")">
+                                        <a class="page-link"
+                                           asp-page="./Index"
+                                           asp-route-pageNumber="@i"
+                                           asp-route-searchTerm="@Model.SearchTerm"
+                                           asp-route-statusFilter="@Model.StatusFilter"
+                                           asp-route-assignedToFilter="@Model.AssignedToFilter">
+                                            @i
+                                        </a>
+                                    </li>
+                                }
+                                else if (i == Model.PaginatedLeads.Page - 3 || i == Model.PaginatedLeads.Page + 3)
+                                {
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                }
+                            }
+                            @if (Model.PaginatedLeads.Page < Model.PaginatedLeads.TotalPages)
+                            {
+                                <li class="page-item">
+                                    <a class="page-link"
+                                       asp-page="./Index"
+                                       asp-route-pageNumber="@(Model.PaginatedLeads.Page + 1)"
+                                       asp-route-searchTerm="@Model.SearchTerm"
+                                       asp-route-statusFilter="@Model.StatusFilter"
+                                       asp-route-assignedToFilter="@Model.AssignedToFilter">
+                                        <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* ✅ Empty state — also permission-aware *@
+            <div class="text-center py-5">
+                <i class="bi bi-funnel fs-1 text-muted d-block mb-3"></i>
+                <h5 class="text-muted">No leads found</h5>
+                <p class="text-muted mb-4">
+                    @if (!string.IsNullOrEmpty(Model.SearchTerm) || !string.IsNullOrEmpty(Model.StatusFilter))
+                    {
+                        <span>Try adjusting your filters or</span>
+                    }
+                    else
+                    {
+                        <span>Get started by adding your first lead</span>
+                    }
+                </p>
+                @if (Model.CanCreate && !AuthorizedPageModel.IsAtLimit(Model.Stats.TotalLeads, Model.MaxLeads))
+                {
+                    <a asp-page="./Create" class="btn btn-primary">
+                        <i class="bi bi-plus-circle me-1"></i>Add Lead
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Delete Form (Hidden) -->
+<form method="post" id="deleteForm">
+    <input type="hidden" name="id" id="deleteId" />
+</form>
+
+@section Scripts {
+    <script>
+        // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+
+        // Delete confirmation
+        function confirmDelete(id, name) {
+            if (confirm(`Are you sure you want to delete lead "${name}"? This action cannot be undone.`)) {
+                document.getElementById('deleteId').value = id;
+                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
+                document.getElementById('deleteForm').submit();
+            }
+        }
+    </script>
+}

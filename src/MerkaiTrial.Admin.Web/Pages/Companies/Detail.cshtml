@@ -1,0 +1,256 @@
+@page "/Companies/Detail/{id}"
+@model MerkaiTrial.Admin.Web.Pages.Companies.DetailModel
+@{
+    ViewData["Title"] = "Company Details";
+}
+
+<div class="container-fluid py-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div class="d-flex align-items-center">
+            <div class="rounded-circle d-flex align-items-center justify-content-center me-3"
+                 style="width:80px;height:80px;background:linear-gradient(135deg,#3b82f6,#2563eb);">
+                <i class="bi bi-building text-white" style="font-size:2.5rem;"></i>
+            </div>
+            <div>
+                <h2 class="mb-1">@Model.Company.Name</h2>
+                <p class="text-muted mb-0">
+                    <i class="bi bi-globe me-1"></i>@Model.CountryName
+                    •
+                    <span class="badge bg-info">@Model.Company.Vertical</span>
+                </p>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            @* ✅ Edit — only if has update permission *@
+            @if (Model.CanUpdate)
+            {
+                <a asp-page="./Edit" asp-route-id="@Model.Company.Id" class="btn btn-warning">
+                    <i class="bi bi-pencil"></i>
+                    <span class="d-none d-sm-inline"> Edit</span>
+                </a>
+            }
+            @* ✅ Delete — only if has delete permission (was missing from original!) *@
+            @if (Model.CanDelete)
+            {
+                <button type="button" class="btn btn-outline-danger" onclick="confirmDelete()">
+                    <i class="bi bi-trash"></i>
+                    <span class="d-none d-sm-inline"> Delete</span>
+                </button>
+            }
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i>
+                <span class="d-none d-sm-inline"> Back</span>
+            </a>
+        </div>
+    </div>
+
+    @* ✅ Alert messages — added (were completely missing) *@
+    @if (TempData["SuccessMessage"] is string successMsg)
+    {
+        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
+            <i class="bi bi-check-circle-fill"></i>
+            <span>@successMsg</span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] is string errorMsg)
+    {
+        <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
+            <i class="bi bi-exclamation-circle-fill"></i>
+            <span>@errorMsg</span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#overview">
+                <i class="bi bi-info-circle"></i> Overview
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#contacts">
+                <i class="bi bi-people"></i> Contacts
+                <span class="badge bg-secondary">@Model.Contacts.Count</span>
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+
+        <!-- Overview Tab -->
+        <div class="tab-pane fade show active" id="overview">
+            <div class="row g-4">
+                <div class="col-lg-8">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-building me-2"></i>Company Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Company Name</label>
+                                    <div class="fw-semibold">@Model.Company.Name</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Vertical</label>
+                                    <div><span class="badge bg-info fs-6">@Model.Company.Vertical</span></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Country</label>
+                                    <div class="fw-semibold">@Model.CountryName</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Tax ID</label>
+                                    <div class="fw-semibold">@(Model.Company.TaxId ?? "Not provided")</div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="text-muted small">Created</label>
+                                    @* ✅ Use tenant-aware date format instead of hardcoded ToString *@
+                                    <div class="small">@Model.FormatDate(Model.Company.CreatedAtUtc)</div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(Model.Company.CreatedBy))
+                                {
+                                    <div class="col-md-6">
+                                        <label class="text-muted small">Created By</label>
+                                        <div class="small">@Model.Company.CreatedBy</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Statistics</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="text-muted small">Contacts</label>
+                                <div class="fs-4 fw-bold text-primary">@Model.Company.ContactCount</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="text-muted small">Deals</label>
+                                <div class="fs-4 fw-bold text-success">@Model.Company.DealCount</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="text-muted small">Primary Contacts</label>
+                                <div class="fs-4 fw-bold text-warning">@Model.Company.PrimaryContactCount</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contacts Tab -->
+        <div class="tab-pane fade" id="contacts">
+            @if (Model.Contacts.Any())
+            {
+                <div class="row g-3">
+                    @foreach (var contact in Model.Contacts)
+                    {
+                        <div class="col-md-6">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">@contact.FullName</h6>
+                                            @if (!string.IsNullOrEmpty(contact.JobTitle))
+                                            {
+                                                <small class="text-muted d-block">@contact.JobTitle</small>
+                                            }
+                                            <small class="text-muted">
+                                                <i class="bi bi-envelope me-1"></i>@(contact.Email ?? "No email")
+                                            </small>
+                                        </div>
+                                        <div class="d-flex flex-column gap-1">
+                                            @if (contact.IsPrimary)
+                                            {
+                                                <span class="badge bg-warning text-dark">Primary</span>
+                                            }
+                                            <a asp-page="/Contacts/Detail"
+                                               asp-route-id="@contact.Id"
+                                               class="btn btn-sm btn-outline-primary">View</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center py-5">
+                        <i class="bi bi-people fs-1 text-muted d-block mb-3"></i>
+                        <p class="text-muted mb-0">No contacts found for this company.</p>
+                        @* ✅ Add Contact link — only if has create permission *@
+                        @if (Model.UserCanCreate("Contacts"))
+                        {
+                            <a asp-page="/Contacts/Create"
+                               asp-route-companyId="@Model.Company.Id"
+                               class="btn btn-primary mt-3">
+                                <i class="bi bi-plus-circle me-1"></i>Add Contact
+                            </a>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal (was missing entirely) -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Delete Company
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong>@Model.Company.Name</strong>?</p>
+                @if (Model.Company.ContactCount > 0 || Model.Company.DealCount > 0)
+                {
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        This company has <strong>@Model.Company.ContactCount contact(s)</strong>
+                        and <strong>@Model.Company.DealCount deal(s)</strong> linked to it.
+                    </div>
+                }
+                <p class="text-danger mb-0"><strong>This action cannot be undone.</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Company.Id" class="d-inline">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-2"></i>Delete Company
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        setTimeout(function () {
+            document.querySelectorAll('.alert-dismissible').forEach(function (el) {
+                bootstrap.Alert.getOrCreateInstance(el).close();
+            });
+        }, 5000);
+
+        function confirmDelete() {
+            new bootstrap.Modal(document.getElementById('deleteModal')).show();
+        }
+    </script>
+}

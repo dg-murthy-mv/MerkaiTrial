@@ -1,0 +1,176 @@
+@* =====================================================================
+   _ChangePlanPartial.cshtml
+   Location: MerkaiTrial.Web/Pages/Admin/Tenants/_ChangePlanPartial.cshtml
+   
+   Drop this partial inside your Tenant Detail page.
+   Usage: <partial name="_ChangePlanPartial" model="@Model.ChangePlanModel" />
+   ===================================================================== *@
+
+@model MerkaiTrial.Web.Pages.Admin.Tenants.ChangePlanViewModel
+
+<!-- ── Change Plan Card ─────────────────────────────────────────── -->
+<div class="card">
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <h6 class="card-title mb-0">
+            <i class="bi bi-diagram-3 me-2 text-primary"></i>Subscription Plan
+        </h6>
+        <button type="button"
+                class="btn btn-sm btn-outline-primary"
+                data-bs-toggle="collapse"
+                data-bs-target="#changePlanCollapse"
+                aria-expanded="false">
+            <i class="bi bi-arrow-left-right me-1"></i>Change Plan
+        </button>
+    </div>
+    <div class="card-body">
+
+        <!-- Current plan display -->
+        <div class="current-plan-display mb-3">
+            <div class="d-flex align-items-center gap-3">
+                <div class="plan-badge-icon @Model.PlanColorClass">
+                    <i class="bi bi-diagram-3"></i>
+                </div>
+                <div>
+                    <div class="fw-bold fs-5">@Model.CurrentPlanDisplayName</div>
+                    <code class="text-muted small">@Model.CurrentPlanName</code>
+                </div>
+                <div class="ms-auto text-end">
+                    <div class="small text-muted">Monthly</div>
+                    <div class="fw-bold text-success">
+                        @(Model.CurrentPlanPrice == 0 ? "Free" : $"${Model.CurrentPlanPrice:N0}/mo")
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Applied limits snapshot -->
+        <div class="limits-snapshot">
+            <div class="row g-2 text-center">
+                <div class="col-4">
+                    <div class="limit-chip">
+                        <i class="bi bi-people text-primary"></i>
+                        <div class="limit-chip__value">@Model.MaxUsers</div>
+                        <div class="limit-chip__label">Users</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="limit-chip">
+                        <i class="bi bi-person-lines-fill text-success"></i>
+                        <div class="limit-chip__value">@Model.MaxLeads.ToString("N0")</div>
+                        <div class="limit-chip__label">Leads</div>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="limit-chip">
+                        <i class="bi bi-briefcase text-warning"></i>
+                        <div class="limit-chip__value">@Model.MaxDeals.ToString("N0")</div>
+                        <div class="limit-chip__label">Deals</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collapsible change plan form -->
+        <div class="collapse mt-3" id="changePlanCollapse">
+            <hr />
+            <form method="post" asp-page-handler="ChangePlan">
+                <input type="hidden" name="tenantId" value="@Model.TenantId" />
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Select New Plan</label>
+                    <select name="newPlanName" class="form-select" id="planSelector"
+                            onchange="updatePlanPreview(this)">
+                        @foreach (var plan in Model.AvailablePlans)
+                        {
+                            var selected = plan.Name == Model.CurrentPlanName ? "selected" : null;
+                            <option value="@plan.Name"
+                                    data-users="@plan.MaxUsers"
+                                    data-leads="@plan.MaxLeads"
+                                    data-deals="@plan.MaxDeals"
+                                    data-storage="@plan.StorageLimitDisplay"
+                                    data-price="@plan.MonthlyPrice"
+                                    selected="@(selected)">
+                                @plan.DisplayName — @(plan.MonthlyPrice == 0 ? "Free" : $"${plan.MonthlyPrice:N0}/mo")
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <!-- New plan limits preview -->
+                <div class="alert alert-info py-2 mb-3 d-none" id="newPlanPreview">
+                    <div class="small fw-semibold mb-1">
+                        <i class="bi bi-info-circle me-1"></i>New plan limits:
+                    </div>
+                    <div class="d-flex gap-3 small">
+                        <span><i class="bi bi-people me-1"></i><strong id="np_users">—</strong> users</span>
+                        <span><i class="bi bi-person-lines-fill me-1"></i><strong id="np_leads">—</strong> leads</span>
+                        <span><i class="bi bi-briefcase me-1"></i><strong id="np_deals">—</strong> deals</span>
+                        <span><i class="bi bi-hdd me-1"></i><strong id="np_storage">—</strong></span>
+                    </div>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="form-check-input"
+                           id="applyLimits" name="applyLimitsImmediately" value="true" checked />
+                    <label class="form-check-label" for="applyLimits">
+                        <strong>Apply new plan limits immediately</strong>
+                        <div class="text-muted small">
+                            Updates TenantSettings to match the new plan's limits.
+                            Uncheck to keep current custom limits.
+                        </div>
+                    </label>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-check-circle me-1"></i>Confirm Plan Change
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#changePlanCollapse">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+<style>
+.plan-badge-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; color: #fff; flex-shrink: 0;
+}
+.limits-snapshot { background: #f8fafc; border-radius: 10px; padding: .75rem; }
+.limit-chip { padding: .4rem; }
+.limit-chip i { font-size: 1.1rem; display: block; margin-bottom: .2rem; }
+.limit-chip__value { font-weight: 700; font-size: .95rem; color: #1e293b; }
+.limit-chip__label { font-size: .7rem; color: #94a3b8; text-transform: uppercase; }
+</style>
+
+<script>
+function updatePlanPreview(sel) {
+    const opt     = sel.options[sel.selectedIndex];
+    const preview = document.getElementById('newPlanPreview');
+    const current = '@Model.CurrentPlanName';
+
+    if (opt.value === current) {
+        preview.classList.add('d-none');
+        return;
+    }
+
+    document.getElementById('np_users').textContent   = parseInt(opt.dataset.users).toLocaleString();
+    document.getElementById('np_leads').textContent   = parseInt(opt.dataset.leads).toLocaleString();
+    document.getElementById('np_deals').textContent   = parseInt(opt.dataset.deals).toLocaleString();
+    document.getElementById('np_storage').textContent = opt.dataset.storage;
+    preview.classList.remove('d-none');
+}
+// Run on load so if page reloads with a selected plan it shows
+document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('planSelector');
+    if (sel) updatePlanPreview(sel);
+});
+</script>

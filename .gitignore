@@ -1,0 +1,15 @@
+﻿# Visual Studio / IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.sln.docstates
+
+# Build output
+bin/
+obj/
+
+# Misc
+[Bb]uild/
+[Ll]og/
+TestResult*/

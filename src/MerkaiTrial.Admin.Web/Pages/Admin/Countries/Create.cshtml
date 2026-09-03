@@ -1,0 +1,123 @@
+@* =====================================================================
+   COUNTRY CREATE PAGE
+   ===================================================================== *@
+@page "/Admin/Countries/Create"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Countries.CreateModel
+@{
+    ViewData["Title"] = "Create Country";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> Create New Country</h2>
+            <p class="text-muted mb-0">Add a new country to the system</p>
+        </div>
+        <div>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back to Countries</span>
+            </a>
+        </div>
+    </div>
+
+    <form method="post">
+        <div class="row g-4">
+            <!-- Main Form -->
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Country Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Input.Code" class="form-label">Country Code <span class="text-danger">*</span></label>
+                                <input asp-for="Input.Code" class="form-control" placeholder="e.g., US, GB, TH" maxlength="3" />
+                                <span asp-validation-for="Input.Code" class="text-danger small"></span>
+                                <small class="text-muted">ISO 3166 2 or 3 letter code</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.Name" class="form-label">Country Name <span class="text-danger">*</span></label>
+                                <input asp-for="Input.Name" class="form-control" placeholder="e.g., United States" />
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.DialCode" class="form-label">Dial Code</label>
+                                <input asp-for="Input.DialCode" class="form-control" placeholder="e.g., +1, +44, +66" />
+                                <span asp-validation-for="Input.DialCode" class="text-danger small"></span>
+                                <small class="text-muted">Include the + prefix</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.CurrencyCode" class="form-label">Currency Code</label>
+                                <input asp-for="Input.CurrencyCode" class="form-control" placeholder="e.g., USD, GBP, THB" maxlength="3" />
+                                <span asp-validation-for="Input.CurrencyCode" class="text-danger small"></span>
+                                <small class="text-muted">ISO 4217 3-letter code</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tax Settings -->
+                <div class="card border-0 shadow-sm mt-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-percent"></i> Tax Settings</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Input.TaxLabel" class="form-label">Tax Label</label>
+                                <input asp-for="Input.TaxLabel" class="form-control" placeholder="e.g., VAT, GST, Sales Tax" />
+                                <span asp-validation-for="Input.TaxLabel" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.DefaultTaxRate" class="form-label">Default Tax Rate (%)</label>
+                                <input asp-for="Input.DefaultTaxRate" type="number" step="0.01" min="0" max="100" class="form-control" placeholder="e.g., 7.5" />
+                                <span asp-validation-for="Input.DefaultTaxRate" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-4">
+                <!-- Actions -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save"></i> Create Country
+                            </button>
+                            <a asp-page="./Index" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Tips -->
+                <div class="card border-0 shadow-sm mt-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            <li class="mb-2">Country code must be unique (2-3 letters)</li>
+                            <li class="mb-2">Use standard ISO codes for consistency</li>
+                            <li class="mb-2">Tax settings can be added later if not known</li>
+                            <li>New countries are active by default</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

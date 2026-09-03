@@ -1,0 +1,543 @@
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@using System.Linq
+
+@{
+    var currentPage = (string)(ViewContext.RouteData.Values.ContainsKey("page")
+        ? ViewContext.RouteData.Values["page"] : "/Admin/Index") ?? "/Admin/Index";
+
+    var userEmail   = Context.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                      ?? Context.User.FindFirst("Email")?.Value
+                      ?? "admin@madeevision.com";
+
+    var _emailLocal  = (userEmail).Split('@')[0];
+    var _parts       = _emailLocal.Split('.');
+    var userInitials = _parts.Length >= 2
+        ? $"{char.ToUpper(_parts[0][0])}{char.ToUpper(_parts[1][0])}"
+        : _emailLocal.Length >= 2 ? _emailLocal[..2].ToUpper() : "MV";
+    var displayName  = _parts.Length >= 2
+        ? $"{char.ToUpper(_parts[0][0])}{_parts[0][1..]} {char.ToUpper(_parts[1][0])}{_parts[1][1..]}"
+        : _emailLocal;
+}
+
+@functions {
+    bool IsActive(string page) =>
+        ((string)(ViewContext.RouteData.Values.ContainsKey("page")
+            ? ViewContext.RouteData.Values["page"] : "/Admin/Index") ?? "/Admin/Index")
+            .StartsWith(page, StringComparison.OrdinalIgnoreCase);
+
+    bool IsActiveSingle(string page) =>
+        string.Equals(
+            (string)(ViewContext.RouteData.Values.ContainsKey("page")
+                ? ViewContext.RouteData.Values["page"] : "/Admin/Index") ?? "/Admin/Index",
+            page, StringComparison.OrdinalIgnoreCase);
+}
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>@ViewData["Title"] — MadeeVision Admin</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* ── MadeeVision SuperAdmin Variables ─────────────────────── */
+        :root {
+            --sidebar-w:             260px;
+            --sidebar-bg:            #080c16;
+            --sidebar-hover:         rgba(34,211,238,.07);
+            --sidebar-active:        rgba(34,211,238,.14);
+            --sidebar-active-border: #22d3ee;
+            --sidebar-text:          #64748b;
+            --sidebar-text-hov:      #e2e8f0;
+            --sidebar-text-act:      #22d3ee;
+            --sidebar-section:       #334155;
+            --topbar-h:              56px;
+            --topbar-bg:             #0d1526;
+            --topbar-border:         rgba(34,211,238,.12);
+            --accent:                #22d3ee;
+            --accent-purple:         #8b5cf6;
+            --accent-soft:           rgba(34,211,238,.1);
+            --body-bg:               #0f1c2e;
+            --card-bg:               #0d1933;
+            --font-body:             'Inter', system-ui, sans-serif;
+            --font-display:          'Plus Jakarta Sans', system-ui, sans-serif;
+        }
+
+        /* ── Reset & base ─────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: var(--font-body);
+            background: var(--body-bg);
+            color: #e2e8f0;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* ── Shell ────────────────────────────────────────────────── */
+        .sa-shell { display: flex; min-height: 100vh; }
+
+        /* ── Sidebar ──────────────────────────────────────────────── */
+        .sa-sidebar {
+            position: fixed; top: 0; left: 0;
+            width: var(--sidebar-w); height: 100vh;
+            background: var(--sidebar-bg);
+            display: flex; flex-direction: column;
+            z-index: 1030;
+            transition: transform .28s cubic-bezier(.4,0,.2,1);
+            overflow-y: auto; overflow-x: hidden;
+            border-right: 1px solid rgba(34,211,238,.08);
+        }
+        .sa-sidebar::-webkit-scrollbar { width: 4px; }
+        .sa-sidebar::-webkit-scrollbar-thumb { background: rgba(34,211,238,.15); border-radius: 4px; }
+        .sa-sidebar { scrollbar-width: thin; scrollbar-color: rgba(34,211,238,.15) transparent; }
+
+        /* Brand */
+        .sa-brand {
+            display: flex; align-items: center; gap: 10px;
+            padding: 18px 20px 16px;
+            border-bottom: 1px solid rgba(34,211,238,.08);
+            text-decoration: none; flex-shrink: 0;
+        }
+        .sa-brand-icon {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; color: #fff; font-weight: 700; flex-shrink: 0;
+        }
+        .sa-brand-name {
+            font-family: var(--font-display);
+            font-size: 15px; font-weight: 700;
+            color: #fff; line-height: 1.1;
+        }
+        .sa-brand-sub {
+            font-size: 9px; color: var(--accent);
+            letter-spacing: .08em; text-transform: uppercase; font-weight: 600;
+        }
+
+        /* SuperAdmin badge below brand */
+        .sa-role-badge {
+            margin: 10px 12px 4px;
+            padding: 7px 12px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, rgba(34,211,238,.12) 0%, rgba(139,92,246,.10) 100%);
+            border: 1px solid rgba(34,211,238,.2);
+            display: flex; align-items: center; gap: 8px;
+            flex-shrink: 0;
+        }
+        .sa-role-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #22d3ee;
+            box-shadow: 0 0 0 3px rgba(34,211,238,.2);
+            flex-shrink: 0;
+        }
+        .sa-role-text {
+            font-size: 11px; font-weight: 600;
+            color: #22d3ee; letter-spacing: .03em;
+        }
+        .sa-role-sub {
+            font-size: 9.5px; color: #64748b;
+            margin-left: auto; font-weight: 500;
+        }
+
+        /* Nav */
+        .sa-nav { padding: 8px 0; flex: 1; }
+        .sa-nav-section {
+            padding: 14px 20px 4px;
+            font-size: 9.5px; font-weight: 600;
+            color: var(--sidebar-section);
+            letter-spacing: .1em; text-transform: uppercase;
+        }
+        .sa-nav-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 16px; margin: 1px 8px; border-radius: 8px;
+            color: var(--sidebar-text); text-decoration: none;
+            font-size: 13.5px; font-weight: 400;
+            transition: background .15s, color .15s;
+            border-left: 3px solid transparent; cursor: pointer;
+        }
+        .sa-nav-item:hover {
+            background: var(--sidebar-hover);
+            color: var(--sidebar-text-hov);
+        }
+        .sa-nav-item.active {
+            background: var(--sidebar-active);
+            color: var(--sidebar-text-act);
+            border-left-color: var(--sidebar-active-border);
+            font-weight: 500;
+        }
+        .sa-nav-item i { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+        .sa-nav-item .sa-badge {
+            margin-left: auto;
+            font-size: 10px; font-weight: 600;
+            padding: 1px 6px; border-radius: 10px;
+            background: rgba(34,211,238,.2); color: #22d3ee;
+        }
+
+        /* Sidebar footer — back to CRM link */
+        .sa-footer {
+            padding: 12px 16px;
+            border-top: 1px solid rgba(34,211,238,.08);
+            flex-shrink: 0;
+        }
+        .sa-back-btn {
+            display: flex; align-items: center; gap: 8px;
+            padding: 9px 12px; border-radius: 8px;
+            background: rgba(99,102,241,.1);
+            border: 1px solid rgba(99,102,241,.2);
+            color: #a5b4fc; text-decoration: none;
+            font-size: 12.5px; font-weight: 500;
+            transition: background .15s, color .15s;
+        }
+        .sa-back-btn:hover { background: rgba(99,102,241,.18); color: #c7d2fe; }
+
+        /* ── Topbar ───────────────────────────────────────────────── */
+        .sa-topbar {
+            position: fixed; top: 0;
+            left: var(--sidebar-w); right: 0;
+            height: var(--topbar-h);
+            background: var(--topbar-bg);
+            border-bottom: 1px solid var(--topbar-border);
+            display: flex; align-items: center;
+            padding: 0 20px 0 24px; gap: 12px;
+            z-index: 1020;
+        }
+
+        /* Page title breadcrumb */
+        .sa-topbar-title {
+            font-size: 14px; font-weight: 600;
+            color: #e2e8f0;
+        }
+        .sa-topbar-title .sa-breadcrumb {
+            font-size: 12px; color: #475569; font-weight: 400;
+        }
+        .sa-topbar-title .sa-breadcrumb::after {
+            content: " /"; margin-right: 6px;
+        }
+
+        /* Topbar search */
+        .sa-search {
+            flex: 1; max-width: 360px; position: relative;
+        }
+        .sa-search input {
+            width: 100%; height: 34px;
+            padding: 0 12px 0 34px;
+            border: 1px solid rgba(34,211,238,.15);
+            border-radius: 8px;
+            background: rgba(34,211,238,.05);
+            font-size: 13px; color: #e2e8f0;
+            outline: none;
+            transition: border .15s, background .15s;
+        }
+        .sa-search input:focus {
+            border-color: rgba(34,211,238,.4);
+            background: rgba(34,211,238,.08);
+        }
+        .sa-search input::placeholder { color: #475569; }
+        .sa-search-icon {
+            position: absolute; left: 10px; top: 50%;
+            transform: translateY(-50%);
+            color: #475569; font-size: 13px; pointer-events: none;
+        }
+
+        .sa-topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+        .sa-icon-btn {
+            width: 34px; height: 34px; border: none;
+            background: rgba(255,255,255,.04); border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            color: #64748b; font-size: 15px; cursor: pointer;
+            transition: background .15s, color .15s;
+        }
+        .sa-icon-btn:hover { background: rgba(34,211,238,.1); color: #22d3ee; }
+
+        .sa-user-btn {
+            display: flex; align-items: center; gap: 8px;
+            padding: 4px 10px 4px 4px;
+            border: 1px solid rgba(34,211,238,.15);
+            border-radius: 8px; background: transparent; cursor: pointer;
+            transition: background .15s;
+        }
+        .sa-user-btn:hover { background: rgba(34,211,238,.06); }
+
+        .sa-avatar {
+            width: 28px; height: 28px; border-radius: 7px;
+            background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+            color: #fff; font-size: 11px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .sa-user-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
+        .sa-user-role { font-size: 10px; color: #22d3ee; font-weight: 600; }
+
+        /* Hamburger */
+        .sa-hamburger {
+            display: none; width: 34px; height: 34px;
+            border: none; background: transparent; border-radius: 8px;
+            cursor: pointer; align-items: center; justify-content: center;
+            color: #64748b; font-size: 18px;
+        }
+
+        /* ── Main content ─────────────────────────────────────────── */
+        .sa-main {
+            margin-left: var(--sidebar-w);
+            margin-top: var(--topbar-h);
+            min-height: calc(100vh - var(--topbar-h));
+            padding: 24px 28px;
+            width: calc(100% - var(--sidebar-w));
+            box-sizing: border-box;
+        }
+
+        /* Mobile overlay */
+        .sa-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,.6); z-index: 1025;
+        }
+        .sa-overlay.open { display: block; }
+
+        @@media (max-width: 991.98px) {
+            .sa-sidebar { transform: translateX(-100%); }
+            .sa-sidebar.open { transform: translateX(0); }
+            .sa-topbar { left: 0; }
+            .sa-main { margin-left: 0; width: 100%; }
+            .sa-hamburger { display: flex; }
+        }
+
+        /* ── Cards & content in dark theme ───────────────────────── */
+        .sa-main .card {
+            background: var(--card-bg);
+            border-color: rgba(34,211,238,.1);
+            color: #e2e8f0;
+        }
+        .sa-main .card-header {
+            background: rgba(34,211,238,.06);
+            border-color: rgba(34,211,238,.1);
+        }
+        .sa-main .table {
+            color: #cbd5e1;
+        }
+        .sa-main .table thead th {
+            color: #64748b;
+            border-color: rgba(34,211,238,.1);
+        }
+        .sa-main .table tbody td {
+            border-color: rgba(255,255,255,.04);
+        }
+        .sa-main .form-control,
+        .sa-main .form-select {
+            background: rgba(255,255,255,.04);
+            border-color: rgba(34,211,238,.15);
+            color: #e2e8f0;
+        }
+        .sa-main .form-control:focus,
+        .sa-main .form-select:focus {
+            background: rgba(34,211,238,.06);
+            border-color: rgba(34,211,238,.4);
+            color: #e2e8f0;
+            box-shadow: 0 0 0 3px rgba(34,211,238,.12);
+        }
+        .sa-main .form-label { color: #94a3b8; }
+        .sa-main .btn-primary {
+            background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+            border: none;
+        }
+        .sa-main .btn-primary:hover { opacity: .9; }
+        .sa-main .btn-outline-primary {
+            color: #22d3ee; border-color: #22d3ee;
+        }
+        .sa-main .btn-outline-primary:hover {
+            background: rgba(34,211,238,.1); color: #22d3ee;
+        }
+        .sa-main h1, .sa-main h2, .sa-main h3,
+        .sa-main h4, .sa-main h5 { color: #f1f5f9; }
+        .sa-main .text-muted { color: #475569 !important; }
+        .sa-main .alert-info {
+            background: rgba(34,211,238,.08);
+            border-color: rgba(34,211,238,.2);
+            color: #67e8f9;
+        }
+    </style>
+</head>
+<body>
+<div class="sa-shell">
+    <div class="sa-overlay" id="saOverlay" onclick="closeSidebar()"></div>
+
+    <!-- ── SIDEBAR ──────────────────────────────────────────────────── -->
+    <aside class="sa-sidebar" id="saSidebar">
+
+        <!-- Brand -->
+        <a class="sa-brand" href="/Admin">
+            <div class="sa-brand-icon">MV</div>
+            <div>
+                <div class="sa-brand-name">MadeeVision</div>
+                <div class="sa-brand-sub">Super Admin</div>
+            </div>
+        </a>
+
+        <!-- SuperAdmin role badge -->
+        <div class="sa-role-badge">
+            <div class="sa-role-dot"></div>
+            <span class="sa-role-text">System Administrator</span>
+            <span class="sa-role-sub">All Access</span>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="sa-nav">
+
+            <!-- Overview -->
+            <div class="sa-nav-section">Overview</div>
+            <a class="sa-nav-item @(IsActiveSingle("/Admin/Index") || IsActiveSingle("/Admin") ? "active" : "")"
+               asp-page="/Admin/Index">
+                <i class="bi bi-grid-1x2"></i> Dashboard
+            </a>
+
+            <!-- Tenants -->
+            <div class="sa-nav-section">Tenants</div>
+            <a class="sa-nav-item @(IsActive("/Admin/Tenants") ? "active" : "")"
+               asp-page="/Admin/Tenants/Index">
+                <i class="bi bi-buildings"></i> All Tenants
+            </a>
+            <a class="sa-nav-item @(IsActive("/Admin/Plans") ? "active" : "")"
+               asp-page="/Admin/Plans/Index">
+                <i class="bi bi-layers"></i> Plans
+            </a>
+
+            <!-- Configuration -->
+            <div class="sa-nav-section">Configuration</div>
+            <a class="sa-nav-item @(IsActive("/Admin/Countries") ? "active" : "")"
+               asp-page="/Admin/Countries/Index">
+                <i class="bi bi-globe-asia-australia"></i> Countries
+            </a>
+            <a class="sa-nav-item @(IsActive("/Admin/Verticals") ? "active" : "")"
+               asp-page="/Admin/Verticals/Index">
+                <i class="bi bi-diagram-3"></i> Company Verticals
+            </a>
+            <a class="sa-nav-item @(IsActive("/Admin/TaxRates") ? "active" : "")"
+               asp-page="/Admin/TaxRates/Index">
+                <i class="bi bi-calculator"></i> Tax Rates
+            </a>
+
+            <!-- Access Control -->
+            <div class="sa-nav-section">Access Control</div>
+            <a class="sa-nav-item @(IsActive("/Admin/Roles") ? "active" : "")"
+               asp-page="/Admin/Roles/Index">
+                <i class="bi bi-shield-check"></i> Roles
+            </a>
+            <a class="sa-nav-item @(IsActive("/Admin/Users") ? "active" : "")"
+               asp-page="/Admin/Users/Index">
+                <i class="bi bi-people"></i> Users
+            </a>
+
+            <!-- System -->
+            <div class="sa-nav-section">System</div>
+            <a class="sa-nav-item @(IsActive("/Admin/Settings") ? "active" : "")"
+               asp-page="/Admin/Settings">
+                <i class="bi bi-gear"></i> Settings
+            </a>
+            <a class="sa-nav-item @(IsActive("/Admin/AuditLogs") ? "active" : "")"
+               asp-page="/Admin/AuditLogs/Index">
+                <i class="bi bi-journal-text"></i> Audit Logs
+                <span class="sa-badge">Soon</span>
+            </a>
+
+        </nav>
+
+        <!-- Footer — back to tenant CRM -->
+        <div class="sa-footer">
+            <a class="sa-back-btn" href="/Dashboard">
+                <i class="bi bi-arrow-left-circle"></i>
+                Back to CRM
+            </a>
+        </div>
+
+    </aside>
+
+    <!-- ── TOPBAR ──────────────────────────────────────────────────── -->
+    <header class="sa-topbar">
+        <button class="sa-hamburger" id="saHamburger" onclick="openSidebar()" aria-label="Open menu">
+            <i class="bi bi-list"></i>
+        </button>
+
+        <div class="sa-topbar-title">
+            <span class="sa-breadcrumb">MadeeVision</span>
+            @(ViewData["Title"]?.ToString() ?? "Admin")
+        </div>
+
+        <div class="sa-search">
+            <i class="bi bi-search sa-search-icon"></i>
+            <input type="search" placeholder="Search tenants, plans, settings..." />
+        </div>
+
+        <div class="sa-topbar-actions">
+
+            <!-- Notifications -->
+            <button class="sa-icon-btn" aria-label="Notifications">
+                <i class="bi bi-bell"></i>
+            </button>
+
+            <!-- User menu -->
+            <div class="dropdown">
+                <button class="sa-user-btn" data-bs-toggle="dropdown">
+                    <div class="sa-avatar">@userInitials</div>
+                    <div>
+                        <div class="sa-user-name">@displayName</div>
+                        <div class="sa-user-role">Super Admin</div>
+                    </div>
+                    <i class="bi bi-chevron-down" style="font-size:10px;color:#475569;margin-left:4px;"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" style="font-size:13px;min-width:180px;background:#0d1933;border-color:rgba(34,211,238,.15);">
+                    <li><a class="dropdown-item" style="color:#cbd5e1;" asp-page="/Admin/Profile">
+                        <i class="bi bi-person me-2"></i>Profile</a></li>
+                    <li><a class="dropdown-item" style="color:#cbd5e1;" asp-page="/Admin/Settings">
+                        <i class="bi bi-gear me-2"></i>Settings</a></li>
+                    <li><hr class="dropdown-divider" style="border-color:rgba(34,211,238,.1);"></li>
+                    <li><a class="dropdown-item text-danger" asp-page="/Admin/Logout">
+                        <i class="bi bi-box-arrow-right me-2"></i>Sign out</a></li>
+                </ul>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── MAIN CONTENT ────────────────────────────────────────────── -->
+    <main class="sa-main">
+
+        @* Flash messages *@
+        @if (TempData["SuccessMessage"] is string successMsg)
+        {
+            <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
+                <i class="bi bi-check-circle-fill"></i>
+                <span>@successMsg</span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+        @if (TempData["ErrorMessage"] is string errorMsg)
+        {
+            <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
+                <i class="bi bi-exclamation-circle-fill"></i>
+                <span>@errorMsg</span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+
+        @RenderBody()
+    </main>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function openSidebar()  { document.getElementById('saSidebar').classList.add('open'); document.getElementById('saOverlay').classList.add('open'); }
+    function closeSidebar() { document.getElementById('saSidebar').classList.remove('open'); document.getElementById('saOverlay').classList.remove('open'); }
+    document.querySelectorAll('.sa-nav-item').forEach(el => {
+        el.addEventListener('click', () => { if (window.innerWidth < 992) closeSidebar(); });
+    });
+</script>
+
+@* ✅ Page-level styles and scripts *@
+@await RenderSectionAsync("Styles", required: false)
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

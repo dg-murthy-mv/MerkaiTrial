@@ -1,0 +1,218 @@
+@page "/Admin/Verticals/Create"
+@model MerkaiTrial.Admin.Web.Pages.Verticals.CreateModel
+@{
+    ViewData["Title"] = "Create Vertical";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> Create New Vertical</h2>
+            <p class="text-muted mb-0">Add a system or custom vertical</p>
+        </div>
+        <div>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back to List</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Error Alert -->
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <form method="post">
+        <div class="row g-4">
+            <!-- Main Form -->
+            <div class="col-lg-8">
+                <!-- Vertical Type Selection -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-tag"></i> Vertical Type</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check p-3 border rounded" style="cursor: pointer;">
+                                    <input class="form-check-input" type="radio" name="Input.VerticalType" 
+                                           id="typeSystem" value="System" checked onchange="toggleTenantField()">
+                                    <label class="form-check-label w-100" for="typeSystem" style="cursor: pointer;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <i class="bi bi-star-fill text-primary fs-4 me-2"></i>
+                                            <strong>System Vertical</strong>
+                                        </div>
+                                        <small class="text-muted">Shared across all tenants</small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check p-3 border rounded" style="cursor: pointer;">
+                                    <input class="form-check-input" type="radio" name="Input.VerticalType" 
+                                           id="typeCustom" value="Custom" onchange="toggleTenantField()">
+                                    <label class="form-check-label w-100" for="typeCustom" style="cursor: pointer;">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <i class="bi bi-building text-warning fs-4 me-2"></i>
+                                            <strong>Custom Vertical</strong>
+                                        </div>
+                                        <small class="text-muted">Specific to one tenant</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <span asp-validation-for="Input.VerticalType" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <!-- Tenant Selection (for Custom) -->
+                <div class="card border-0 shadow-sm mb-4" id="tenantCard" style="display: none;">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-building"></i> Tenant Selection</h5>
+                    </div>
+                    <div class="card-body">
+                        <label asp-for="Input.TenantId" class="form-label">
+                            Select Tenant <span class="text-danger">*</span>
+                        </label>
+                        <select asp-for="Input.TenantId" asp-items="Model.TenantOptions" class="form-select">
+                            <option value="">-- Select Tenant --</option>
+                        </select>
+                        <span asp-validation-for="Input.TenantId" class="text-danger small"></span>
+                        <small class="text-muted">Choose which tenant this vertical belongs to</small>
+                    </div>
+                </div>
+
+                <!-- Basic Information -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label asp-for="Input.Name" class="form-label">
+                                Vertical Name <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.Name" class="form-control" 
+                                   placeholder="e.g., Healthcare, Manufacturing" oninput="updatePreview()" />
+                            <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Description" class="form-label">Description</label>
+                            <textarea asp-for="Input.Description" class="form-control" rows="3" 
+                                      placeholder="Brief description of this industry vertical"></textarea>
+                            <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Appearance -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-palette"></i> Appearance</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label asp-for="Input.Icon" class="form-label">
+                                    Icon <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Icon" asp-items="Model.IconOptions" 
+                                        class="form-select" onchange="updatePreview()">
+                                    <option value="">-- Select Icon --</option>
+                                </select>
+                                <span asp-validation-for="Input.Icon" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <label asp-for="Input.Color" class="form-label">
+                                    Color <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.Color" asp-items="Model.ColorOptions" 
+                                        class="form-select" onchange="updatePreview()">
+                                    <option value="">-- Select Color --</option>
+                                </select>
+                                <span asp-validation-for="Input.Color" class="text-danger small"></span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <label class="form-label">Preview</label>
+                            <div id="iconPreview" class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="bg-secondary bg-opacity-10 rounded p-3">
+                                    <i class="bi bi-briefcase text-secondary fs-4"></i>
+                                </div>
+                                <span class="ms-3 fw-semibold">Your Vertical Name</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-4">
+                <!-- Actions -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle"></i> Create Vertical
+                            </button>
+                            <a asp-page="./Index" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tips -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
+                    </div>
+                    <div class="card-body">
+                        <ul class="small mb-0 ps-3">
+                            <li class="mb-2"><strong>System verticals</strong> are shared across all tenants</li>
+                            <li class="mb-2"><strong>Custom verticals</strong> belong to a specific tenant</li>
+                            <li class="mb-2">Choose an icon that represents the industry</li>
+                            <li>Select a color for visual identification</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        function toggleTenantField() {
+            const isCustom = document.getElementById('typeCustom').checked;
+            document.getElementById('tenantCard').style.display = isCustom ? 'block' : 'none';
+        }
+
+        function updatePreview() {
+            const icon = document.querySelector('select[name="Input.Icon"]').value;
+            const color = document.querySelector('select[name="Input.Color"]').value;
+            const name = document.querySelector('input[name="Input.Name"]').value || 'Your Vertical Name';
+
+            const preview = document.getElementById('iconPreview');
+            preview.innerHTML = `
+                <div class="bg-${color || 'secondary'} bg-opacity-10 rounded p-3">
+                    <i class="bi bi-${icon || 'briefcase'} text-${color || 'secondary'} fs-4"></i>
+                </div>
+                <span class="ms-3 fw-semibold">${name}</span>
+            `;
+        }
+
+        toggleTenantField();
+    </script>
+}

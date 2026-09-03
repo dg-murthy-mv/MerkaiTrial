@@ -1,0 +1,324 @@
+@page "/Admin/ViewAs"
+@model MerkaiTrial.Admin.Web.Pages.Admin.ViewAs.IndexModel
+@{
+    ViewData["Title"] = "View As — MadeeVision";
+}
+
+<div class="page-content">
+    <div class="mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1">
+                <li class="breadcrumb-item">
+                    <a asp-page="/Admin/Plans/Index" class="text-decoration-none">MadeeVision</a>
+                </li>
+                <li class="breadcrumb-item active">View As</li>
+            </ol>
+        </nav>
+        <h1 class="page-title">
+            <i class="bi bi-eye me-2"></i>View As
+        </h1>
+        <p class="text-muted mb-0">
+            Preview the tenant CRM as a specific tenant and user — no config edits, no restart.
+        </p>
+    </div>
+
+    @if (Model.IsCurrentlyViewingAs)
+    {
+        <div class="alert alert-warning d-flex align-items-center justify-content-between mb-4">
+            <div>
+                <i class="bi bi-eye-fill me-2"></i>
+                You're currently viewing as a specific tenant/user.
+            </div>
+            <form method="post" asp-page-handler="Exit" class="mb-0">
+                <button type="submit" class="btn btn-sm btn-outline-dark">
+                    <i class="bi bi-box-arrow-left me-1"></i>Exit View As
+                </button>
+            </form>
+        </div>
+    }
+
+    <div class="card" style="max-width: 640px;">
+        <div class="card-header">
+            <h6 class="card-title mb-0"><i class="bi bi-people me-2"></i>Choose Tenant &amp; User</h6>
+        </div>
+        <div class="card-body">
+            <form method="post" asp-page-handler="Start" id="viewAsForm">
+                <input type="hidden" name="tenantId" id="tenantIdInput" />
+                <input type="hidden" name="userId" id="userIdInput" />
+
+                <!-- Tenant — custom dropdown. Native <select> popup lists
+                     render using OS/browser-controlled chrome that ignores
+                     page CSS (including color-scheme) inconsistently across
+                     Chrome versions — this sidesteps that entirely by
+                     building the list out of plain styled divs instead. -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Tenant</label>
+                    <div class="vdd" id="tenantDd">
+                        <button type="button" class="vdd-trigger" id="tenantTrigger">
+                            <span id="tenantTriggerText">Select a tenant…</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                        <div class="vdd-menu" id="tenantMenu">
+                            @foreach (var t in Model.Tenants)
+                            {
+                                <div class="vdd-option" data-value="@t.Id" data-label="@t.Name (@(t.CountryName ?? "No country set"))">
+                                    @t.Name (@(t.CountryName ?? "No country set"))
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">User</label>
+                    <div class="vdd vdd-disabled" id="userDd">
+                        <button type="button" class="vdd-trigger" id="userTrigger" disabled>
+                            <span id="userTriggerText">Select a tenant first…</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                        <div class="vdd-menu" id="userMenu"></div>
+                    </div>
+                    <div class="form-text">Roles/permissions are loaded live from the selected user's actual assignment — this shows exactly what they'd see.</div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="startBtn" disabled>
+                    <i class="bi bi-eye me-1"></i>Start Viewing As
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Styles {
+<style>
+    /* ── Custom dropdown (vdd = "view-dropdown") ─────────────────────
+       Built from plain divs instead of a native <select>, so it always
+       renders in the app's own dark palette regardless of browser/OS
+       dark-mode support quirks for native form-control popups. */
+    .vdd {
+        position: relative;
+    }
+    .vdd-trigger {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: #1e293b;
+        color: #e2e8f0;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: .5rem .85rem;
+        font-size: .95rem;
+        text-align: left;
+        cursor: pointer;
+    }
+    .vdd-trigger:hover:not(:disabled) {
+        border-color: #64748b;
+    }
+    .vdd-trigger:disabled {
+        opacity: .6;
+        cursor: not-allowed;
+    }
+    .vdd-trigger .bi-chevron-down {
+        font-size: .8rem;
+        color: #94a3b8;
+        transition: transform .15s;
+    }
+    .vdd.open .vdd-trigger .bi-chevron-down {
+        transform: rotate(180deg);
+    }
+    .vdd-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        max-height: 260px;
+        overflow-y: auto;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0,0,0,.4);
+        z-index: 1000;
+    }
+    .vdd.open .vdd-menu {
+        display: block;
+    }
+    .vdd-option {
+        padding: .55rem .85rem;
+        font-size: .9rem;
+        color: #e2e8f0;
+        cursor: pointer;
+    }
+    .vdd-option:hover {
+        background: #334155;
+    }
+    .vdd-option.selected {
+        background: #3b82f6;
+        color: #fff;
+        font-weight: 600;
+    }
+    .vdd-option.empty {
+        color: #94a3b8;
+        font-style: italic;
+        cursor: default;
+    }
+    .vdd-option.empty:hover {
+        background: transparent;
+    }
+</style>
+}
+
+@section Scripts {
+<script>
+const preselectTenantId = @Html.Raw(Model.CurrentTenantId.HasValue ? $"'{Model.CurrentTenantId}'" : "null");
+const preselectUserId   = @Html.Raw(Model.CurrentUserId.HasValue ? $"'{Model.CurrentUserId}'" : "null");
+
+const startBtn = document.getElementById('startBtn');
+
+// ── Generic dropdown wiring ──────────────────────────────────────────
+function setupDropdown(ddId, triggerId, textId, menuId, hiddenInputId, onSelect) {
+    const dd     = document.getElementById(ddId);
+    const trig   = document.getElementById(triggerId);
+    const text   = document.getElementById(textId);
+    const menu   = document.getElementById(menuId);
+    const hidden = document.getElementById(hiddenInputId);
+
+    trig.addEventListener('click', () => {
+        if (trig.disabled) return;
+        document.querySelectorAll('.vdd.open').forEach(o => { if (o !== dd) o.classList.remove('open'); });
+        dd.classList.toggle('open');
+    });
+
+    menu.addEventListener('click', (e) => {
+        const opt = e.target.closest('.vdd-option');
+        if (!opt || opt.classList.contains('empty')) return;
+        menu.querySelectorAll('.vdd-option').forEach(o => o.classList.remove('selected'));
+        opt.classList.add('selected');
+        text.textContent = opt.dataset.label;
+        hidden.value = opt.dataset.value;
+        dd.classList.remove('open');
+        onSelect?.(opt.dataset.value);
+    });
+
+    return { dd, trig, text, menu, hidden };
+}
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.vdd')) {
+        document.querySelectorAll('.vdd.open').forEach(o => o.classList.remove('open'));
+    }
+});
+
+// ── Tenant dropdown ───────────────────────────────────────────────────
+const tenantDd = setupDropdown('tenantDd', 'tenantTrigger', 'tenantTriggerText', 'tenantMenu', 'tenantIdInput',
+    (tenantId) => loadUsers(tenantId));
+
+// Pre-select tenant label if one was already active (edit-in-place case)
+if (preselectTenantId) {
+    const opt = tenantDd.menu.querySelector(`[data-value="${preselectTenantId}"]`);
+    if (opt) {
+        opt.classList.add('selected');
+        tenantDd.text.textContent = opt.dataset.label;
+        tenantDd.hidden.value = preselectTenantId;
+    }
+}
+
+// ── User dropdown (populated dynamically per tenant) ──────────────────
+const userTrig   = document.getElementById('userTrigger');
+const userText   = document.getElementById('userTriggerText');
+const userMenu   = document.getElementById('userMenu');
+const userHidden = document.getElementById('userIdInput');
+const userDdEl   = document.getElementById('userDd');
+
+function setUserMenuMessage(msg) {
+    userMenu.innerHTML = `<div class="vdd-option empty">${msg}</div>`;
+}
+
+async function loadUsers(tenantId) {
+    userHidden.value = '';
+    userText.textContent = 'Loading…';
+    userTrig.disabled = true;
+    startBtn.disabled = true;
+    setUserMenuMessage('Loading…');
+
+    if (!tenantId) {
+        userText.textContent = 'Select a tenant first…';
+        setUserMenuMessage('Select a tenant first…');
+        return;
+    }
+
+    try {
+        const res = await fetch(`?handler=UsersForTenant&tenantId=${tenantId}`);
+        const users = await res.json();
+
+        if (!users.length) {
+            userText.textContent = 'No users found for this tenant';
+            setUserMenuMessage('No users found for this tenant');
+            return;
+        }
+
+        userMenu.innerHTML = users.map(u => {
+            const label = u.roleDisplayName ? `${u.displayName} (${u.roleDisplayName})` : u.displayName;
+            return `<div class="vdd-option" data-value="${u.id}" data-label="${label}">${label}</div>`;
+        }).join('');
+
+        userText.textContent = 'Select a user…';
+        userTrig.disabled = false;
+
+        // Re-wire clicks on the freshly rendered options (innerHTML replaced them)
+        userMenu.querySelectorAll('.vdd-option').forEach(opt => {
+            opt.addEventListener('click', () => {
+                userMenu.querySelectorAll('.vdd-option').forEach(o => o.classList.remove('selected'));
+                opt.classList.add('selected');
+                userText.textContent = opt.dataset.label;
+                userHidden.value = opt.dataset.value;
+                userDdEl.classList.remove('open');
+                startBtn.disabled = false;
+            });
+        });
+
+        // Pre-select if this tenant is the one currently being viewed
+        if (preselectUserId) {
+            const opt = userMenu.querySelector(`[data-value="${preselectUserId}"]`);
+            if (opt) {
+                opt.classList.add('selected');
+                userText.textContent = opt.dataset.label;
+                userHidden.value = preselectUserId;
+                startBtn.disabled = false;
+            }
+        }
+    } catch (err) {
+        userText.textContent = 'Failed to load users';
+        setUserMenuMessage('Failed to load users');
+        console.error(err);
+    }
+}
+
+userTrig.addEventListener('click', () => {
+    if (userTrig.disabled) return;
+    document.querySelectorAll('.vdd.open').forEach(o => { if (o !== userDdEl) o.classList.remove('open'); });
+    userDdEl.classList.toggle('open');
+});
+
+// Loading state on submit — the actual navigation can take several
+// seconds (Dashboard fans out to multiple WebApi calls), so without this
+// the button just sits there looking unresponsive after a click.
+document.getElementById('viewAsForm').addEventListener('submit', (e) => {
+    // Hidden inputs don't get native "required" validation from the
+    // browser, so this has to be checked manually here.
+    if (!document.getElementById('tenantIdInput').value || !document.getElementById('userIdInput').value) {
+        e.preventDefault();
+        alert('Please select both a tenant and a user.');
+        return;
+    }
+    startBtn.disabled = true;
+    startBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Loading tenant workspace…';
+});
+
+// Pre-populate users on load if a tenant is already selected (currently viewing as)
+if (preselectTenantId) {
+    loadUsers(preselectTenantId);
+}
+</script>
+}

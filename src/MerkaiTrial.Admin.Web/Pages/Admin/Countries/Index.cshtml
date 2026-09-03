@@ -1,0 +1,329 @@
+@* =====================================================================
+   COUNTRIES INDEX - Mobile Optimized with Uniform Design
+   ===================================================================== *@
+@page "/Admin/Countries"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Countries.IndexModel
+@{
+    ViewData["Title"] = "Countries";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-globe text-primary"></i> Country Management</h2>
+            <p class="text-muted mb-0">Manage countries, currencies, and tax rates</p>
+        </div>
+        <div>
+            <a asp-page="./Create" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add New Country</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Alerts -->
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Statistics Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 12px;">
+                        <i class="bi bi-globe text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
+                    </div>
+                    <h3 class="mb-1">@Model.Stats.TotalCountries</h3>
+                    <p class="text-muted mb-0 small fw-semibold">Total Countries</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 12px;">
+                        <i class="bi bi-check-circle text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
+                    </div>
+                    <h3 class="mb-1">@Model.Stats.ActiveCountries</h3>
+                    <p class="text-muted mb-0 small fw-semibold">Active Countries</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 12px;">
+                        <i class="bi bi-pause-circle text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
+                    </div>
+                    <h3 class="mb-1">@Model.Stats.InactiveCountries</h3>
+                    <p class="text-muted mb-0 small fw-semibold">Inactive Countries</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 12px;">
+                        <i class="bi bi-currency-exchange text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
+                    </div>
+                    <h3 class="mb-1">@Model.Stats.TotalCurrencies</h3>
+                    <p class="text-muted mb-0 small fw-semibold">Unique Currencies</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search & Filter -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <input type="hidden" name="PageSize" value="@Model.PageSize" />
+                <div class="col-md-6">
+                    <label class="form-label"><i class="bi bi-search"></i> Search</label>
+                    <input type="text" name="SearchTerm" value="@Model.SearchTerm" 
+                           class="form-control" placeholder="Search by name, code, currency, or dial code...">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="bi bi-funnel"></i> Status</label>
+                    <select name="ShowInactiveOnly" class="form-select">
+                        <option value="false" selected="@(!Model.ShowInactiveOnly)">Active Only</option>
+                        <option value="true" selected="@Model.ShowInactiveOnly">Inactive Only</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary flex-fill">
+                        <i class="bi bi-search"></i> <span class="d-none d-sm-inline">Search</span>
+                    </button>
+                    <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary flex-fill">
+                        <i class="bi bi-x-circle"></i> <span class="d-none d-sm-inline">Clear</span>
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Countries List -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-list"></i> Countries List
+                <span class="badge bg-light text-dark ms-2">@Model.PaginatedCountries.TotalCount</span>
+            </h5>
+            @if (Model.PaginatedCountries.TotalPages > 1)
+            {
+                <span class="badge bg-light text-dark">Page @Model.PageNumber of @Model.PaginatedCountries.TotalPages</span>
+            }
+        </div>
+
+        @if (!Model.PaginatedCountries.Items.Any())
+        {
+            <div class="card-body text-center py-5">
+                <i class="bi bi-inbox display-1 text-muted"></i>
+                <p class="text-muted mt-3 mb-0">No countries found</p>
+                @if (!string.IsNullOrEmpty(Model.SearchTerm) || Model.ShowInactiveOnly)
+                {
+                    <p class="text-muted small">Try adjusting your search or filters</p>
+                    <a href="?PageSize=@Model.PageSize" class="btn btn-outline-primary mt-2">Clear Filters</a>
+                }
+                else
+                {
+                    <a asp-page="./Create" class="btn btn-primary mt-2">
+                        <i class="bi bi-plus-circle"></i> Add First Country
+                    </a>
+                }
+            </div>
+        }
+        else
+        {
+            <!-- DESKTOP VIEW: Table -->
+            <div class="d-none d-md-block">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Country</th>
+                                <th>Code</th>
+                                <th>Dial Code</th>
+                                <th>Currency</th>
+                                <th>Tax</th>
+                                <th class="text-center">Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var country in Model.PaginatedCountries.Items)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm me-2">
+                                                @(country.Name.Length >= 2 ? country.Name.Substring(0, 2).ToUpper() : country.Name.ToUpper())
+                                            </div>
+                                            <div>
+                                                <div class="fw-semibold">@country.Name</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark">@country.Code</span>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(country.DialCode))
+                                        {
+                                            <span class="text-muted">@country.DialCode</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(country.CurrencyCode))
+                                        {
+                                            <span class="badge bg-info">@country.CurrencyCode</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(country.TaxLabel) && country.DefaultTaxRate.HasValue)
+                                        {
+                                            <div>@country.TaxLabel</div>
+                                            <small class="text-muted">@country.DefaultTaxRate.Value%</small>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-center">
+                                        @if (country.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger">Inactive</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <a asp-page="./Detail" asp-route-code="@country.Code" 
+                                           class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>
+                                        <a asp-page="./Edit" asp-route-code="@country.Code" 
+                                           class="btn btn-sm btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- MOBILE VIEW: Cards -->
+            <div class="d-md-none">
+                @foreach (var country in Model.PaginatedCountries.Items)
+                {
+                    <div class="card m-3 border">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start mb-3">
+                                <div class="avatar-md me-3">
+                                    @(country.Name.Length >= 2 ? country.Name.Substring(0, 2).ToUpper() : country.Name.ToUpper())
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">@country.Name</h6>
+                                    <small class="text-muted d-block mb-2">Code: @country.Code</small>
+                                    <div>
+                                        @if (country.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger">Inactive</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(country.DialCode))
+                            {
+                                <div class="small mb-2">
+                                    <i class="bi bi-telephone text-muted"></i> @country.DialCode
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(country.CurrencyCode))
+                            {
+                                <div class="small mb-2">
+                                    <i class="bi bi-currency-exchange text-muted"></i> @country.CurrencyCode
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(country.TaxLabel) && country.DefaultTaxRate.HasValue)
+                            {
+                                <div class="small mb-3">
+                                    <i class="bi bi-percent text-muted"></i> @country.TaxLabel (@country.DefaultTaxRate.Value%)
+                                </div>
+                            }
+
+                            <div class="d-grid gap-2">
+                                <a asp-page="./Detail" asp-route-code="@country.Code" 
+                                   class="btn btn-sm btn-primary">
+                                    <i class="bi bi-eye"></i> View Details
+                                </a>
+                                <a asp-page="./Edit" asp-route-code="@country.Code" 
+                                   class="btn btn-sm btn-outline-warning">
+                                    <i class="bi bi-pencil"></i> Edit Country
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Shared Pagination Component -->
+            <partial name="_Pagination" model="Model.PaginatedCountries" />
+        }
+    </div>
+</div>
+
+<style>
+    /* Avatar Styles */
+    .avatar-sm {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+
+    .avatar-md {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 1rem;
+    }
+</style>

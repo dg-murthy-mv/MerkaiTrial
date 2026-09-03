@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+	<data name="App_Title">
+		<value>MerkaiTrial สำหรับผู้ดูแล (เริ่มต้น)</value>
+	</data>
+	<data name="Nav_Contacts">
+		<value>ผู้ติดต่อ</value>
+	</data>
+	<data name="Nav_Leads">
+		<value>ลูกค้านำ</value>
+	</data>
+	<data name="Nav_Pipelines">
+		<value>ไปป์ไลน์</value>
+	</data>
+	<data name="Nav_Journeys">
+		<value>การเดินทาง</value>
+	</data>
+	<data name="Nav_Inbox">
+		<value>กล่องข้อความ</value>
+	</data>
+	<data name="Nav_Widget">
+		<value>วิดเจ็ต</value>
+	</data>
+	<data name="Lang">
+		<value>ภาษา</value>
+	</data>
+	<data name="Footer_Disclaimer">
+		<value>ข้อมูลทั้งหมดเป็นตัวอย่างเพื่อสาธิตเท่านั้น</value>
+	</data>
+</root>

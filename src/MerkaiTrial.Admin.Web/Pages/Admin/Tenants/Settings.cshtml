@@ -1,0 +1,314 @@
+@* =====================================================================
+   TENANT SETTINGS PAGE - Frontend (REFACTORED)
+   Location: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Settings.cshtml
+   
+   CHANGE 1: Plan info alert shows Limits.DisplayName (from DB) not raw Plan string
+   CHANGE 2: Input max attributes use Limits.* (same as before, now DB-sourced)
+   CHANGE 3: Super Admin bypass checkbox added before Save button
+   CHANGE 4: Client-side JS uses Limits.* values — still works with DB-sourced data
+   Everything else is identical to original.
+   ===================================================================== *@
+
+@page "/Admin/Tenants/Settings/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.SettingsModel
+@{
+    ViewData["Title"] = "Tenant Settings";
+}
+
+<div class="container-fluid py-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-gear"></i> Tenant Settings
+            </h2>
+            <p class="text-muted mb-0">@Model.Tenant.Name - Configure resource limits</p>
+        </div>
+        <div>
+            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-eye"></i> View Details
+            </a>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    <form method="post">
+
+        @* CHANGE 3: hidden bypass field — toggled by the checkbox below *@
+        <input type="hidden" asp-for="BypassPlanLimits" id="bypassHidden" value="false" />
+
+        <div class="row">
+
+            <!-- Settings Form -->
+            <div class="col-lg-8">
+
+                @* CHANGE 1: alert uses Limits.DisplayName (from DB) not raw Tenant.Plan *@
+                <div class="alert @(Model.BypassPlanLimits ? "alert-warning" : "alert-info") mb-4">
+                    <h5 class="alert-heading">
+                        <i class="bi bi-info-circle"></i>
+                        Current Plan: <strong>@Model.Limits.DisplayName</strong>
+                    </h5>
+                    <hr>
+                    <p class="mb-0">
+                        <strong>Plan Limits:</strong>
+                        @Model.Limits.MaxUsers users •
+                        @Model.Limits.MaxLeads leads •
+                        @Model.Limits.MaxDeals deals •
+                        @Model.Limits.StorageLimitGB GB storage
+                    </p>
+                </div>
+
+                <!-- Resource Limits -->
+                <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-sliders"></i> Resource Limits</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+
+                            <!-- Max Users -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.MaxUsers" class="form-label">
+                                    <i class="bi bi-people"></i> Maximum Users
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.MaxUsers" type="number" class="form-control"
+                                       min="1" max="@Model.Limits.MaxUsers" />
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    Plan limit: <strong>@Model.Limits.MaxUsers</strong> users
+                                </div>
+                                <span asp-validation-for="Input.MaxUsers" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Max Leads -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.MaxLeads" class="form-label">
+                                    <i class="bi bi-funnel"></i> Maximum Leads
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.MaxLeads" type="number" class="form-control"
+                                       min="1" max="@Model.Limits.MaxLeads" />
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    Plan limit: <strong>@Model.Limits.MaxLeads</strong> leads
+                                </div>
+                                <span asp-validation-for="Input.MaxLeads" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Max Deals -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.MaxDeals" class="form-label">
+                                    <i class="bi bi-briefcase"></i> Maximum Deals
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.MaxDeals" type="number" class="form-control"
+                                       min="1" max="@Model.Limits.MaxDeals" />
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    Plan limit: <strong>@Model.Limits.MaxDeals</strong> deals
+                                </div>
+                                <span asp-validation-for="Input.MaxDeals" class="text-danger small"></span>
+                            </div>
+
+                            <!-- Storage Limit -->
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.StorageLimitGB" class="form-label">
+                                    <i class="bi bi-hdd"></i> Storage Limit (GB)
+                                    <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.StorageLimitGB" type="number" step="0.1"
+                                       class="form-control" min="0.1"
+                                       max="@Model.Limits.StorageLimitGB" />
+                                <div class="form-text">
+                                    <i class="bi bi-info-circle"></i>
+                                    Plan limit: <strong>@Model.Limits.StorageLimitGB GB</strong>
+                                </div>
+                                <span asp-validation-for="Input.StorageLimitGB" class="text-danger small"></span>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature Flags -->
+                <div class="card mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="bi bi-toggles"></i> Feature Flags (JSON)</h5>
+                    </div>
+                    <div class="card-body">
+                        <label asp-for="Input.FeatureFlags" class="form-label">
+                            Feature Flags Configuration
+                        </label>
+                        <textarea asp-for="Input.FeatureFlags" class="form-control font-monospace"
+                                  rows="5"
+                                  placeholder='{"feature1": true, "feature2": false}'></textarea>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i>
+                            Enter JSON object for feature flags (optional)
+                        </div>
+                        <span asp-validation-for="Input.FeatureFlags" class="text-danger small"></span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Side Panel -->
+            <div class="col-lg-4">
+
+                <!-- Actions Card -->
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+
+                        @* CHANGE 3: Super Admin bypass toggle *@
+                        <div class="form-check form-switch mb-3 p-3 bg-light rounded border">
+                            <input class="form-check-input" type="checkbox" role="switch"
+                                   id="bypassToggle" onchange="toggleBypass(this)" />
+                            <label class="form-check-label" for="bypassToggle">
+                                <strong>Super Admin Override</strong>
+                                <div class="text-muted small">
+                                    Allow settings above plan limits for custom enterprise deals.
+                                </div>
+                            </label>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100 mb-2">
+                            <i class="bi bi-save"></i> Save Settings
+                        </button>
+                        <a asp-page="./Detail" asp-route-id="@Model.Id"
+                           class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Plan Limits Reference -->
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-card-checklist"></i> Plan Limits</h5>
+                    </div>
+                    <div class="card-body">
+                        @* CHANGE 1: DisplayName from DB, not raw Tenant.Plan *@
+                        <h6 class="mb-3"><strong>@Model.Limits.DisplayName Plan</strong></h6>
+                        <ul class="list-unstyled mb-0">
+                            <li class="mb-2">
+                                <i class="bi bi-people text-primary"></i>
+                                <strong>@Model.Limits.MaxUsers</strong> users
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-funnel text-success"></i>
+                                <strong>@Model.Limits.MaxLeads</strong> leads
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-briefcase text-warning"></i>
+                                <strong>@Model.Limits.MaxDeals</strong> deals
+                            </li>
+                            <li class="mb-0">
+                                <i class="bi bi-hdd text-info"></i>
+                                <strong>@Model.Limits.StorageLimitGB GB</strong> storage
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Warning Card -->
+                <div class="card border-warning">
+                    <div class="card-header bg-warning text-dark">
+                        <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Important</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0 small">
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                Settings validated against plan limits
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                Limits sourced live from Plans table
+                            </li>
+                            <li class="mb-0">
+                                <i class="bi bi-exclamation-circle text-danger"></i>
+                                Changes take effect immediately
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Validation Summary -->
+        <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div>
+
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        // ── Super Admin bypass toggle ─────────────────────────────────
+        function toggleBypass(cb) {
+            document.getElementById('bypassHidden').value = cb.checked ? 'true' : 'false';
+
+            // When bypass is on, remove the max attribute from all inputs
+            // so the browser doesn't block values above the plan ceiling
+            const inputs = ['Input.MaxUsers', 'Input.MaxLeads',
+                            'Input.MaxDeals', 'Input.StorageLimitGB'];
+            inputs.forEach(name => {
+                const el = document.querySelector(`[name="${name}"]`);
+                if (el) {
+                    if (cb.checked) el.removeAttribute('max');
+                    else {
+                        const limits = {
+                            'Input.MaxUsers':       @Model.Limits.MaxUsers,
+                            'Input.MaxLeads':       @Model.Limits.MaxLeads,
+                            'Input.MaxDeals':       @Model.Limits.MaxDeals,
+                            'Input.StorageLimitGB': @Model.Limits.StorageLimitGB
+                        };
+                        el.setAttribute('max', limits[name]);
+                    }
+                }
+            });
+        }
+
+        // ── Client-side plan limit validation (skipped if bypass is on) ──
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const bypass = document.getElementById('bypassHidden').value === 'true';
+            if (bypass) return; // Super Admin override — skip client validation
+
+            const errors = [];
+            const maxUsers   = parseInt(document.querySelector('[name="Input.MaxUsers"]').value);
+            const maxLeads   = parseInt(document.querySelector('[name="Input.MaxLeads"]').value);
+            const maxDeals   = parseInt(document.querySelector('[name="Input.MaxDeals"]').value);
+            const storageGB  = parseFloat(document.querySelector('[name="Input.StorageLimitGB"]').value);
+
+            const limits = {
+                maxUsers:   @Model.Limits.MaxUsers,
+                maxLeads:   @Model.Limits.MaxLeads,
+                maxDeals:   @Model.Limits.MaxDeals,
+                storageGB:  @Model.Limits.StorageLimitGB
+            };
+
+            if (maxUsers  > limits.maxUsers)
+                errors.push(`Max users (${maxUsers}) exceeds plan limit (${limits.maxUsers})`);
+            if (maxLeads  > limits.maxLeads)
+                errors.push(`Max leads (${maxLeads}) exceeds plan limit (${limits.maxLeads})`);
+            if (maxDeals  > limits.maxDeals)
+                errors.push(`Max deals (${maxDeals}) exceeds plan limit (${limits.maxDeals})`);
+            if (storageGB > limits.storageGB)
+                errors.push(`Storage (${storageGB} GB) exceeds plan limit (${limits.storageGB} GB)`);
+
+            if (errors.length > 0) {
+                e.preventDefault();
+                alert('Plan Limit Exceeded:\n\n' + errors.join('\n'));
+                return false;
+            }
+        });
+    </script>
+}

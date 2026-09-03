@@ -1,0 +1,628 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Quotes.EditModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = $"Edit Quote - {Model.ExistingQuote?.Number}";
+    
+    // ✅ Prepare items for JavaScript (safe serialization)
+    var itemsForJson = Model.ExistingQuote?.Items ?? new List<MerkaiTrial.Application.DTOs.QuoteItemDto>();
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin: -1rem -1rem 2rem -1rem;
+        border-radius: 0 0 1rem 1rem;
+    }
+
+    .form-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 2rem;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .quote-info-box {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-left: 4px solid #667eea;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .line-items-table thead {
+        background: #f8f9fa;
+    }
+
+    .line-items-table th {
+        font-weight: 600;
+        color: #495057;
+        padding: 1rem 0.75rem;
+        border-bottom: 2px solid #dee2e6;
+    }
+
+    .totals-section {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .total-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+    }
+
+    .total-row.grand-total {
+        border-top: 2px solid #dee2e6;
+        margin-top: 0.5rem;
+        padding-top: 1rem;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #667eea;
+    }
+
+    .btn-remove-item {
+        color: #dc3545;
+        cursor: pointer;
+    }
+
+    .form-control.is-invalid {
+        border-color: #dc3545 !important;
+    }
+
+    @@media (max-width: 767.98px) {
+        .form-container {
+            padding: 1rem;
+        }
+        
+        .page-header {
+            padding: 1.5rem 0;
+        }
+        
+        .table {
+            font-size: 0.875rem;
+        }
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div class="mb-3 mb-md-0">
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-pencil-square me-2"></i>Edit Quote
+                    </h1>
+                    <p class="mb-0 opacity-75">@Model.ExistingQuote?.Number</p>
+                </div>
+                <div>
+                    <a href="/Quotes/Detail?id=@Model.Id" class="btn btn-outline-light me-2">
+                        <i class="bi bi-arrow-left me-2"></i>Back
+                    </a>
+                    <a href="/Quotes/Index" class="btn btn-outline-light">
+                        <i class="bi bi-list me-2"></i>All Quotes
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-container">
+
+        @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here.
+           Model.ErrorMessage is [TempData]-backed, so rendering it here produced a second banner. *@
+
+        @if (!Model.IsEditable && !string.IsNullOrEmpty(Model.StatusWarning))
+        {
+            <div class="alert alert-warning">
+                <h5><i class="bi bi-exclamation-triangle me-2"></i>Quote Status: @Model.ExistingQuote?.Status</h5>
+                <p class="mb-0">@Model.StatusWarning</p>
+            </div>
+        }
+
+        @if (Model.ExistingQuote != null)
+        {
+            <div class="quote-info-box">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5 class="mb-3"><i class="bi bi-info-circle me-2"></i>Current Quote Information</h5>
+                        <p class="mb-2"><strong>Number:</strong> @Model.ExistingQuote.Number</p>
+                        <p class="mb-2"><strong>Deal:</strong> @Model.ExistingQuote.DealTitle</p>
+                        <p class="mb-0">
+                            <strong>Status:</strong>
+                            <span class="badge bg-@(Model.ExistingQuote.Status == "Draft" ? "secondary" : "primary")">
+                                @Model.ExistingQuote.Status
+                            </span>
+                        </p>
+                    </div>
+                    <div class="col-md-6 mt-3 mt-md-0">
+                        <p class="mb-2"><strong>Current Value:</strong> @Model.FormatCurrency(Model.ExistingQuote.GrandTotal)</p>
+                        <p class="mb-2"><strong>Created:</strong> @Model.FormatDate(Model.ExistingQuote.CreatedAtUtc)</p>
+                        <p class="mb-0"><strong>Items:</strong> @Model.ExistingQuote.Items.Count</p>
+                    </div>
+                </div>
+            </div>
+
+            <form method="post" id="editQuoteForm">
+                <input type="hidden" name="itemsJson" id="itemsJson" />
+
+                <!-- Deal Selection -->
+                <div class="mb-4">
+                    <label asp-for="Input.DealId" class="form-label">
+                        <i class="bi bi-briefcase me-2"></i>Deal <span class="text-danger">*</span>
+                    </label>
+                    <select asp-for="Input.DealId" class="form-select" id="dealSelect">
+                        <option value="">-- Select Deal --</option>
+                        @foreach (var deal in Model.AvailableDeals)
+                        {
+                            <option value="@deal.Value" selected="@deal.Selected">@deal.Text</option>
+                        }
+                    </select>
+                    <span asp-validation-for="Input.DealId" class="text-danger"></span>
+                    <small class="text-muted">You can change the deal for this quote</small>
+                </div>
+
+                <!-- Dates & Currency -->
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <label asp-for="Input.IssueDate" class="form-label">
+                            Issue Date <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.IssueDate" type="date" class="form-control" />
+                        <span asp-validation-for="Input.IssueDate" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Input.ExpiryDate" class="form-label">
+                            Expiry Date <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.ExpiryDate" type="date" class="form-control" />
+                        <span asp-validation-for="Input.ExpiryDate" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Input.Currency" class="form-label">
+                            Currency <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Input.Currency" type="text" class="form-control" readonly 
+                               style="background-color: #e9ecef;" />
+                        <small class="text-muted">Currency cannot be changed</small>
+                    </div>
+                </div>
+
+                <hr class="my-4" />
+
+                <!-- Line Items -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5><i class="bi bi-list-ul me-2"></i>Line Items</h5>
+                    <div>
+                        <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="showAddFromCatalog()">
+                            <i class="bi bi-plus-circle me-2"></i>Add from Catalog
+                        </button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="addCustomItem()">
+                            <i class="bi bi-plus-circle me-2"></i>Add Custom Item
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered line-items-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 25%;">Item Name</th>
+                                <th style="width: 25%;">Description</th>
+                                <th style="width: 8%;">Qty</th>
+                                <th style="width: 12%;">Unit Price</th>
+                                <th style="width: 8%;">Tax %</th>
+                                <th style="width: 12%;">Discount</th>
+                                <th style="width: 8%;">Total</th>
+                                <th style="width: 2%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="lineItemsBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="emptyState" class="text-center py-4 text-muted" style="display: none;">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">No items added yet. Click "Add Custom Item" or "Add from Catalog" to get started.</p>
+                </div>
+
+                <!-- Totals -->
+                <div class="row">
+                    <div class="col-md-6 offset-md-6">
+                        <div class="totals-section">
+                            <div class="total-row">
+                                <span>Subtotal:</span>
+                                <strong><span id="subtotalDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
+                            </div>
+                            <div class="total-row">
+                                <span>Discount:</span>
+                                <strong><span id="discountDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
+                            </div>
+                            <div class="total-row">
+                                <span>Tax:</span>
+                                <strong><span id="taxDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
+                            </div>
+                            <div class="total-row grand-total">
+                                <span>Grand Total:</span>
+                                <strong><span id="grandTotalDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="d-flex flex-wrap justify-content-between gap-2 mt-4">
+                    <a href="/Quotes/Detail?id=@Model.Id" class="btn btn-secondary">
+                        <i class="bi bi-x-circle me-2"></i>Cancel
+                    </a>
+                    <button type="button" class="btn btn-success btn-lg" onclick="submitQuote()">
+                        <i class="bi bi-save me-2"></i>Update Quote
+                    </button>
+                </div>
+            </form>
+        }
+    </div>
+</div>
+
+<!-- Add from Catalog Modal -->
+<div class="modal fade" id="catalogModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add from Product Catalog</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="productSearch" 
+                           placeholder="Search products..." onkeyup="filterProducts()" />
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;" id="productList">
+                    @foreach (var product in Model.Products)
+                    {
+                        <div class="product-item border-bottom py-2" data-name="@product.Name.ToLower()">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>@product.Name</strong>
+                                    <div class="text-muted small">@product.Description</div>
+                                    <div class="small">Price: @Model.FormatCurrency(product.ListPrice)</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary"
+                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice)">
+                                    <i class="bi bi-plus"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Bootstrap JS is already loaded once by _Layout.cshtml — do not load it again here. *@
+<script>
+    // ==================== GLOBAL STATE ====================
+    let lineItems = [];
+    let nextId = 1;
+    // ✅ was: const currency = '...'  +  `${currency} ${x.toFixed(2)}`
+    //    toFixed() does NO grouping, so client-computed totals rendered
+    //    ungrouped ("255000.00") while the server rendered "฿255,000.00".
+    //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
+    //    culture, so client and server now agree by construction.
+    const fmtMoney = (x) => window.MerkaiCurrency.format(x);
+    const defaultTaxRate = 18;
+
+    // ✅ Safe tax normalize:
+    // - if backend gives 0.18 => 18
+    // - if backend gives 18 => 18
+    function normalizeTaxRate(value) {
+        let v = parseFloat(value);
+        if (Number.isNaN(v)) return defaultTaxRate;
+
+        // if value is decimal like 0.18 -> convert to 18
+        if (v > 0 && v <= 1) return v * 100;
+
+        // if value looks like percent already
+        return v;
+    }
+
+    // ==================== LOAD EXISTING ITEMS ====================
+    console.log('=== Loading Existing Items ===');
+
+    // ✅ Keep this - serialization is correct
+    const existingItemsJson = @Html.Raw(JsonSerializer.Serialize(itemsForJson));
+    console.log('Existing items from server:', existingItemsJson);
+    console.log('Items count:', existingItemsJson ? existingItemsJson.length : 0);
+
+    // ✅ IMPORTANT FIX: support PascalCase + camelCase keys
+    if (existingItemsJson && Array.isArray(existingItemsJson) && existingItemsJson.length > 0) {
+        existingItemsJson.forEach(item => {
+            const id = item.id ?? item.Id ?? null;
+            const productId = item.productId ?? item.ProductId ?? null;
+            const name = item.name ?? item.Name ?? '';
+            const description = item.description ?? item.Description ?? '';
+            const quantity = item.quantity ?? item.Quantity ?? 1;
+            const unitPrice = item.unitPrice ?? item.UnitPrice ?? 0;
+            const lineDiscount = item.lineDiscount ?? item.LineDiscount ?? 0;
+            const taxRateRaw = item.taxRate ?? item.TaxRate ?? defaultTaxRate;
+
+            lineItems.push({
+                id: nextId++,     // UI id (always number)
+                itemId: id,       // DB id (Guid or null)
+                productId: productId,
+                name: name,
+                description: description,
+                quantity: quantity,
+                unitPrice: unitPrice,
+                lineDiscount: lineDiscount,
+                taxRate: normalizeTaxRate(taxRateRaw)
+            });
+        });
+
+        console.log('✅ Loaded lineItems:', lineItems);
+    } else {
+        console.warn('⚠️ No existing items found - adding one empty item');
+        addCustomItem();
+    }
+
+    // ==================== ADD ITEMS ====================
+    function addCustomItem() {
+        lineItems.push({
+            id: nextId++,
+            itemId: null,
+            productId: null,
+            name: '',
+            description: '',
+            quantity: 1,
+            unitPrice: 0,
+            lineDiscount: 0,
+            taxRate: defaultTaxRate
+        });
+        renderLineItems();
+    }
+
+    function addProductFromCatalog(productId, name, description, price) {
+        lineItems.push({
+            id: nextId++,
+            itemId: null,
+            productId: productId,
+            name: name,
+            description: description || '',
+            quantity: 1,
+            unitPrice: parseFloat(price) || 0,
+            lineDiscount: 0,
+            taxRate: defaultTaxRate
+        });
+
+        renderLineItems();
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('catalogModal'));
+        if (modal) modal.hide();
+    }
+
+    function showAddFromCatalog() {
+        const modalEl = document.getElementById('catalogModal');
+        if (!modalEl) return;
+        new bootstrap.Modal(modalEl).show();
+    }
+
+    function filterProducts() {
+        const search = (document.getElementById('productSearch')?.value || '').toLowerCase();
+        document.querySelectorAll('.product-item').forEach(item => {
+            const name = item.getAttribute('data-name') || '';
+            item.style.display = name.includes(search) ? 'block' : 'none';
+        });
+    }
+
+    // ==================== UPDATE/REMOVE ITEMS ====================
+    function removeItem(index) {
+        lineItems.splice(index, 1);
+        renderLineItems();
+    }
+
+    function updateItem(index, field, value) {
+        if (!lineItems[index]) return;
+
+        if (['quantity', 'unitPrice', 'lineDiscount', 'taxRate'].includes(field)) {
+            value = parseFloat(value);
+            if (Number.isNaN(value)) value = 0;
+        }
+
+        lineItems[index][field] = value;
+
+        if (field === 'name') {
+            const nameInput = document.getElementById(`name-${lineItems[index].id}`);
+            if (nameInput && value && value.toString().trim().length > 0) {
+                nameInput.classList.remove('is-invalid');
+            }
+        }
+
+        updateItemTotal(index);
+        calculateTotals();
+    }
+
+    // ==================== CALCULATIONS ====================
+    function calculateItemTotal(item) {
+        const qty = parseFloat(item.quantity) || 0;
+        const unit = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.lineDiscount) || 0;
+        const rate = parseFloat(item.taxRate) || 0;
+
+        const subtotal = qty * unit;
+        const afterDiscount = Math.max(0, subtotal - disc);
+        const tax = afterDiscount * (rate / 100);
+        return afterDiscount + tax;
+    }
+
+    function updateItemTotal(index) {
+        const item = lineItems[index];
+        if (!item) return;
+
+        const total = calculateItemTotal(item);
+        const el = document.getElementById(`total-${item.id}`);
+        if (el) el.textContent = fmtMoney(total);
+    }
+
+    function calculateTotals() {
+        let subtotal = 0, discount = 0, tax = 0;
+
+        lineItems.forEach(item => {
+            const qty = parseFloat(item.quantity) || 0;
+            const unit = parseFloat(item.unitPrice) || 0;
+            const disc = parseFloat(item.lineDiscount) || 0;
+            const rate = parseFloat(item.taxRate) || 0;
+
+            const itemSubtotal = qty * unit;
+            subtotal += itemSubtotal;
+            discount += disc;
+
+            const afterDiscount = Math.max(0, itemSubtotal - disc);
+            tax += afterDiscount * (rate / 100);
+        });
+
+        const grandTotal = Math.max(0, subtotal - discount + tax);
+
+        document.getElementById('subtotalDisplay').textContent = fmtMoney(subtotal);
+        document.getElementById('discountDisplay').textContent = fmtMoney(discount);
+        document.getElementById('taxDisplay').textContent = fmtMoney(tax);
+        document.getElementById('grandTotalDisplay').textContent = fmtMoney(grandTotal);
+    }
+
+    // ==================== RENDER UI ====================
+    function escapeHtml(str) {
+        return (str ?? '')
+            .toString()
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function renderLineItems() {
+        const tbody = document.getElementById('lineItemsBody');
+        const emptyState = document.getElementById('emptyState');
+        if (!tbody || !emptyState) return;
+
+        if (lineItems.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.style.display = 'block';
+            calculateTotals();
+            return;
+        }
+
+        emptyState.style.display = 'none';
+
+        tbody.innerHTML = lineItems.map((item, index) => `
+            <tr>
+                <td>
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           id="name-${item.id}"
+                           value="${escapeHtml(item.name)}"
+                           oninput="updateItem(${index}, 'name', this.value)"
+                           placeholder="Item name" required />
+                </td>
+                <td>
+                    <input type="text"
+                           class="form-control form-control-sm"
+                           value="${escapeHtml(item.description)}"
+                           oninput="updateItem(${index}, 'description', this.value)"
+                           placeholder="Description" />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.quantity}"
+                           oninput="updateItem(${index}, 'quantity', this.value)"
+                           min="1" required />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.unitPrice}"
+                           oninput="updateItem(${index}, 'unitPrice', this.value)"
+                           step="0.01" min="0" required />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.taxRate}"
+                           oninput="updateItem(${index}, 'taxRate', this.value)"
+                           step="0.01" min="0" max="100" />
+                </td>
+                <td>
+                    <input type="number"
+                           class="form-control form-control-sm"
+                           value="${item.lineDiscount}"
+                           oninput="updateItem(${index}, 'lineDiscount', this.value)"
+                           step="0.01" min="0" />
+                </td>
+                <td class="text-end">
+                    <strong id="total-${item.id}">
+                        ${fmtMoney(calculateItemTotal(item))}
+                    </strong>
+                </td>
+                <td class="text-center">
+                    <i class="bi bi-trash btn-remove-item"
+                       onclick="removeItem(${index})"
+                       title="Remove"></i>
+                </td>
+            </tr>
+        `).join('');
+
+        calculateTotals();
+    }
+
+    // ==================== FORM SUBMISSION ====================
+    function submitQuote() {
+        if (lineItems.length === 0) {
+            alert('⚠️ Please add at least one item to the quote.');
+            return;
+        }
+
+        const invalid = lineItems.filter(i => !i.name || i.name.trim() === '');
+        if (invalid.length > 0) {
+            alert(`⚠️ All items must have a name.\n\n${invalid.length} item(s) missing names.`);
+            invalid.forEach(item => document.getElementById(`name-${item.id}`)?.classList.add('is-invalid'));
+            document.querySelector('.is-invalid')?.focus();
+            return;
+        }
+
+        // ✅ IMPORTANT: send taxRate as percentage (EditModel expects percentage; server divides by 100m)
+        const payload = lineItems.map(i => ({
+            id: i.itemId,
+            productId: i.productId,
+            name: i.name,
+            description: i.description,
+            unitPrice: parseFloat(i.unitPrice) || 0,
+            quantity: parseInt(i.quantity) || 0,
+            lineDiscount: parseFloat(i.lineDiscount) || 0,
+            taxRate: parseFloat(i.taxRate) || 0
+        }));
+
+        document.getElementById('itemsJson').value = JSON.stringify(payload);
+        document.getElementById('editQuoteForm').submit();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        renderLineItems();
+    });
+</script>
+
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

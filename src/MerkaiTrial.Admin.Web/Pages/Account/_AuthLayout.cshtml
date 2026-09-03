@@ -1,0 +1,288 @@
+@*
+    FILE: MerkaiTrial.Admin.Web/Pages/Account/_AuthLayout.cshtml
+
+    A layout for PRE-AUTHENTICATION pages only.
+
+    WHY THIS EXISTS RATHER THAN REUSING _Layout:
+    The CRM layout resolves tenant context — tenant name, currency, plan
+    badge, navigation — through ICurrentTenantService. Every one of those
+    calls goes through GetTenantId(), which reads the TenantId claim and
+    throws UnauthorizedAccessException when there isn't one. On the login
+    page there isn't one, by definition. Reusing _Layout gives you a 500
+    on the page whose whole job is to let people in.
+
+    Nothing here reads a service. Styles are inline so the page renders
+    even if the stylesheet pipeline is misconfigured — a login screen has
+    to work on the worst day, not just the good one.
+*@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>@ViewData["Title"] — Merkai CRM</title>
+    <style>
+        :root {
+            --ink:        #0E1030;
+            --ink-soft:   #3A3F63;
+            --muted:      #6B7186;
+            --edge:       #E3E5EF;
+            --paper:      #FFFFFF;
+            --wash:       #F6F7FB;
+            --brand:      #5B4BE8;
+            --brand-deep: #3D2FC7;
+            --accent:     #22D3EE;
+            --danger:     #C42B3F;
+            --danger-bg:  #FDF2F3;
+            --ok:         #0E7A5F;
+            --ok-bg:      #EFF9F5;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            color: var(--ink);
+            background: var(--wash);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .auth-shell {
+            display: grid;
+            grid-template-columns: 1.05fr 1fr;
+            min-height: 100vh;
+        }
+
+        /* ── Left: brand panel ─────────────────────────────────────── */
+        .auth-brand {
+            position: relative;
+            overflow: hidden;
+            padding: 3.5rem 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            background: linear-gradient(150deg, var(--ink) 0%, var(--brand-deep) 100%);
+            color: #fff;
+        }
+
+        .auth-brand::after {
+            content: "";
+            position: absolute;
+            inset: auto -20% -35% auto;
+            width: 34rem; height: 34rem;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(34,211,238,.22), transparent 68%);
+            pointer-events: none;
+        }
+
+        .brand-mark {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: -.03em;
+        }
+
+        .brand-tag {
+            margin-top: .35rem;
+            font-size: .72rem;
+            font-weight: 600;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,.62);
+        }
+
+        .brand-lede {
+            position: relative;
+            font-size: clamp(1.7rem, 2.6vw, 2.5rem);
+            font-weight: 600;
+            line-height: 1.22;
+            letter-spacing: -.025em;
+            max-width: 22ch;
+            margin: 0;
+        }
+
+        /* Signature: the four markets this CRM actually prices in.
+           Structural, not decorative — it states what the product is. */
+        .markets {
+            position: relative;
+            display: flex;
+            gap: 2.25rem;
+            padding-top: 1.75rem;
+            border-top: 1px solid rgba(255,255,255,.16);
+        }
+        .market { display: flex; flex-direction: column; gap: .3rem; }
+        .market-glyph {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent);
+            line-height: 1;
+        }
+        .market-name {
+            font-size: .68rem;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,.55);
+        }
+
+        /* ── Right: form panel ─────────────────────────────────────── */
+        .auth-panel {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem 1.5rem;
+            background: var(--paper);
+        }
+
+        .auth-card { width: 100%; max-width: 25rem; }
+
+        .auth-card h1 {
+            margin: 0 0 .4rem;
+            font-size: 1.55rem;
+            font-weight: 650;
+            letter-spacing: -.022em;
+        }
+
+        .auth-sub {
+            margin: 0 0 1.85rem;
+            color: var(--muted);
+            font-size: .92rem;
+            line-height: 1.5;
+        }
+
+        .field { margin-bottom: 1.05rem; }
+
+        .field label {
+            display: block;
+            margin-bottom: .38rem;
+            font-size: .82rem;
+            font-weight: 600;
+            color: var(--ink-soft);
+        }
+
+        .field input[type=text],
+        .field input[type=email],
+        .field input[type=password] {
+            width: 100%;
+            padding: .72rem .85rem;
+            font-size: .95rem;
+            font-family: inherit;
+            color: var(--ink);
+            background: var(--paper);
+            border: 1px solid var(--edge);
+            border-radius: .5rem;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+
+        .field input:focus-visible {
+            outline: none;
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px rgba(91,75,232,.16);
+        }
+
+        .field-hint {
+            margin-top: .38rem;
+            font-size: .78rem;
+            color: var(--muted);
+        }
+
+        .field-check {
+            display: flex;
+            align-items: center;
+            gap: .55rem;
+            margin: 1.15rem 0 1.5rem;
+            font-size: .88rem;
+            color: var(--ink-soft);
+        }
+        .field-check input { width: 1rem; height: 1rem; accent-color: var(--brand); }
+
+        .btn-primary {
+            width: 100%;
+            padding: .8rem 1rem;
+            font-family: inherit;
+            font-size: .95rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--brand);
+            border: 0;
+            border-radius: .5rem;
+            cursor: pointer;
+            transition: background .15s ease, transform .08s ease;
+        }
+        .btn-primary:hover  { background: var(--brand-deep); }
+        .btn-primary:active { transform: translateY(1px); }
+        .btn-primary:focus-visible {
+            outline: 2px solid var(--brand-deep);
+            outline-offset: 2px;
+        }
+
+        .alert {
+            padding: .78rem .9rem;
+            margin-bottom: 1.35rem;
+            font-size: .88rem;
+            line-height: 1.45;
+            border-radius: .5rem;
+            border: 1px solid transparent;
+        }
+        .alert-error { color: var(--danger); background: var(--danger-bg); border-color: #F3D2D7; }
+        .alert-ok    { color: var(--ok);     background: var(--ok-bg);     border-color: #CDE9DE; }
+
+        .auth-foot {
+            margin-top: 1.75rem;
+            padding-top: 1.35rem;
+            border-top: 1px solid var(--edge);
+            font-size: .84rem;
+            color: var(--muted);
+        }
+        .auth-foot a { color: var(--brand); text-decoration: none; font-weight: 600; }
+        .auth-foot a:hover { text-decoration: underline; }
+
+        .validation-message { display: block; margin-top: .35rem; font-size: .8rem; color: var(--danger); }
+
+        @@media (max-width: 900px) {
+            .auth-shell { grid-template-columns: 1fr; }
+            .auth-brand { display: none; }
+            .auth-panel { background: var(--wash); align-items: flex-start; padding-top: 3rem; }
+            .auth-card {
+                background: var(--paper);
+                padding: 1.85rem 1.5rem;
+                border-radius: .85rem;
+                border: 1px solid var(--edge);
+            }
+        }
+
+        @@media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; animation: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-shell">
+        <aside class="auth-brand">
+            <div>
+                <div class="brand-mark">merkai</div>
+                <div class="brand-tag">CRM for every market</div>
+            </div>
+
+            <p class="brand-lede">One pipeline, priced and taxed the way each market expects.</p>
+
+            <div class="markets">
+                <div class="market"><span class="market-glyph">₹</span><span class="market-name">India</span></div>
+                <div class="market"><span class="market-glyph">฿</span><span class="market-name">Thailand</span></div>
+                <div class="market"><span class="market-glyph">₱</span><span class="market-name">Philippines</span></div>
+                <div class="market"><span class="market-glyph">AED</span><span class="market-name">UAE</span></div>
+            </div>
+        </aside>
+
+        <main class="auth-panel">
+            <div class="auth-card">
+                @RenderBody()
+            </div>
+        </main>
+    </div>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

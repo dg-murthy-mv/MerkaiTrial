@@ -1,0 +1,618 @@
+@page
+@using MerkaiTrial.Admin.Web.Pages
+@model MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<style>
+    .dash-header {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        color: white;
+        padding: 1.75rem 1.5rem;
+        margin: -24px -28px 24px;
+        border-radius: 0 0 16px 16px;
+    }
+
+    @@media (max-width: 767px) {
+        .dash-header {
+            margin: -16px -16px 16px;
+            border-radius: 0;
+        }
+    }
+
+    .kpi-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.25rem;
+        border: 1px solid #e2e8f0;
+        height: 100%;
+        transition: box-shadow .2s;
+    }
+
+        .kpi-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,.08);
+        }
+
+    .kpi-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .kpi-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.1;
+        margin: 6px 0 2px;
+    }
+
+    .kpi-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        color: #64748b;
+    }
+
+    .kpi-sub {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 2px;
+    }
+
+    .section-title {
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: #64748b;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 16px;
+    }
+
+    .dash-card {
+        background: white;
+        border-radius: 12px;
+        border: 1px solid #e2e8f0;
+        overflow: hidden;
+    }
+
+    .dash-card-header {
+        padding: 14px 18px;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .dash-card-body {
+        padding: 0;
+    }
+
+    .deal-row {
+        display: flex;
+        align-items: center;
+        padding: 11px 18px;
+        border-bottom: 1px solid #f8fafc;
+        gap: 12px;
+        transition: background .12s;
+    }
+
+        .deal-row:last-child {
+            border-bottom: none;
+        }
+
+        .deal-row:hover {
+            background: #f8fafc;
+        }
+
+    .deal-title {
+        font-size: 13px;
+        font-weight: 500;
+        color: #0f172a;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .deal-company {
+        font-size: 11px;
+        color: #94a3b8;
+    }
+
+    .deal-value {
+        font-size: 13px;
+        font-weight: 600;
+        color: #4f46e5;
+        white-space: nowrap;
+    }
+
+    .prob-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: #e2e8f0;
+        overflow: hidden;
+        margin-top: 4px;
+    }
+
+    .prob-fill {
+        height: 100%;
+        background: #4f46e5;
+        border-radius: 2px;
+    }
+
+    .quote-row {
+        display: flex;
+        align-items: center;
+        padding: 10px 18px;
+        border-bottom: 1px solid #f8fafc;
+        gap: 10px;
+    }
+
+        .quote-row:last-child {
+            border-bottom: none;
+        }
+
+    .activity-row {
+        display: flex;
+        align-items: center;
+        padding: 10px 18px;
+        border-bottom: 1px solid #f8fafc;
+        gap: 10px;
+    }
+
+        .activity-row:last-child {
+            border-bottom: none;
+        }
+
+    .funnel-bar {
+        height: 8px;
+        border-radius: 4px;
+        background: #e2e8f0;
+        overflow: hidden;
+    }
+
+    .funnel-fill {
+        height: 100%;
+        border-radius: 4px;
+    }
+
+    .lead-bar {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        display: flex;
+    }
+
+    .lead-seg {
+        height: 100%;
+    }
+
+    /* ✅ Quota bar styles */
+    .quota-card {
+        background: rgba(255,255,255,.12);
+        border: 1px solid rgba(255,255,255,.2);
+        border-radius: 10px;
+        padding: 10px 14px;
+    }
+
+    .quota-label {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        opacity: .8;
+        margin-bottom: 6px;
+    }
+
+    .quota-bar-bg {
+        height: 6px;
+        border-radius: 3px;
+        background: rgba(255,255,255,.2);
+        overflow: hidden;
+    }
+
+    .quota-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width .5s ease;
+    }
+
+    .quota-text {
+        font-size: 11px;
+        opacity: .75;
+        margin-top: 5px;
+    }
+</style>
+
+@* Flash messages *@
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show d-flex gap-2 align-items-center mb-3">
+        <i class="bi bi-exclamation-circle-fill"></i>@Model.ErrorMessage
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@* ── HEADER ──────────────────────────────────────────────────────────── *@
+<div class="dash-header">
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-3">
+        <div>
+            <h4 class="mb-1 fw-700" style="font-size:1.4rem;">
+                <i class="bi bi-speedometer2 me-2"></i>Sales Dashboard
+            </h4>
+            <p class="mb-0 opacity-75" style="font-size:13px;">
+                @Model.TenantName &nbsp;·&nbsp; @Model.CurrencyCode (@Model.CurrencySymbol) &nbsp;·&nbsp; @Model.TaxLabel applied
+            </p>
+        </div>
+
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+
+            @* ✅ Plan badge in dashboard header *@
+            <span class="badge fs-6 px-3 py-2"
+                  style="background:rgba(255,255,255,.2);color:#fff;font-size:11px!important;">
+                @Model.PlanDisplayName Plan
+            </span>
+
+            @* ✅ Add Lead — hidden for roles without create permission *@
+            @if (Model.UserCanCreate("leads"))
+            {
+                @if (!AuthorizedPageModel.IsAtLimit(Model.TotalLeads, Model.MaxLeads))
+                {
+                    <a href="/Leads/Create" class="btn btn-light btn-sm fw-500">
+                        <i class="bi bi-plus-circle me-1"></i>Add Lead
+                    </a>
+                }
+                else
+                {
+                    <button class="btn btn-outline-light btn-sm" disabled
+                            title="Lead limit reached. @Model.UpgradePrompt">
+                        <i class="bi bi-lock me-1"></i>Lead Limit Reached
+                    </button>
+                }
+            }
+            @* Viewer — button hidden entirely *@
+        </div>
+    </div>
+
+    @* ✅ Quota bars — shown in header so always visible on Dashboard *@
+    <div class="row g-2 mt-3">
+        @{
+            var leadPct = AuthorizedPageModel.QuotaPercent(Model.TotalLeads, Model.MaxLeads);
+            var dealPct = AuthorizedPageModel.QuotaPercent(Model.ActiveDeals, Model.MaxDeals);
+            var leadColor = leadPct >= 90 ? "#ef4444" : leadPct >= 70 ? "#f59e0b" : "#10b981";
+            var dealColor = dealPct >= 90 ? "#ef4444" : dealPct >= 70 ? "#f59e0b" : "#10b981";
+        }
+        <div class="col-sm-6">
+            <div class="quota-card">
+                <div class="quota-label">Lead Quota</div>
+                <div class="quota-bar-bg">
+                    <div class="quota-bar-fill"
+                         style="width:@leadPct%;background:@leadColor;"></div>
+                </div>
+                <div class="quota-text">
+                    @Model.TotalLeads / @Model.MaxLeads leads used
+                    @if (leadPct >= 90)
+                    {
+                        <span class="ms-1" style="color:#fca5a5;font-weight:600;">
+                            — @Model.UpgradePrompt
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6">
+            <div class="quota-card">
+                <div class="quota-label">Deal Quota</div>
+                <div class="quota-bar-bg">
+                    <div class="quota-bar-fill"
+                         style="width:@dealPct%;background:@dealColor;"></div>
+                </div>
+                <div class="quota-text">
+                    @Model.ActiveDeals / @Model.MaxDeals deals used
+                    @if (dealPct >= 90)
+                    {
+                        <span class="ms-1" style="color:#fca5a5;font-weight:600;">
+                            — @Model.UpgradePrompt
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ── ROW 1: Pipeline KPIs ─────────────────────────────────────────── *@
+<div class="section-title"><i class="bi bi-funnel me-2"></i>Pipeline overview</div>
+
+<div class="row g-3 mb-4">
+
+    <div class="col-6 col-md-3">
+        <div class="kpi-card">
+            <div class="d-flex align-items-start gap-3">
+                <div class="kpi-icon" style="background:#eff6ff;color:#3b82f6;">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <div class="flex-grow-1 min-width-0">
+                    <div class="kpi-label">Total Leads</div>
+                    <div class="kpi-value">@Model.TotalLeads</div>
+                    <div class="kpi-sub">@Model.ConversionRate conversion rate</div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <div class="d-flex justify-content-between" style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+                    <span>New @Model.NewLeads</span>
+                    <span>Working @Model.WorkingLeads</span>
+                    <span>Qualified @Model.QualifiedLeads</span>
+                    <span>Converted @Model.ConvertedLeads</span>
+                </div>
+                @if (Model.TotalLeads > 0)
+                {
+                    <div class="lead-bar">
+                        <div class="lead-seg" style="width:@Model.NewPct%;background:#94a3b8;"></div>
+                        <div class="lead-seg" style="width:@Model.WorkingPct%;background:#3b82f6;"></div>
+                        <div class="lead-seg" style="width:@Model.QualifiedPct%;background:#0ea5e9;"></div>
+                        <div class="lead-seg" style="width:@Model.ConvertedPct%;background:#16a34a;"></div>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1" style="font-size:10px;color:#cbd5e1;">
+                        <span style="color:#94a3b8;">New</span>
+                        <span style="color:#3b82f6;">Working</span>
+                        <span style="color:#0ea5e9;">Qualified</span>
+                        <span style="color:#16a34a;">Converted</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+        <div class="kpi-card">
+            <div class="d-flex align-items-start gap-3">
+                <div class="kpi-icon" style="background:#eef2ff;color:#6366f1;">
+                    <i class="bi bi-kanban-fill"></i>
+                </div>
+                <div>
+                    <div class="kpi-label">Active Deals</div>
+                    <div class="kpi-value">@Model.ActiveDeals</div>
+                    <div class="kpi-sub">@Model.FormatCurrency(Model.PipelineValue) pipeline</div>
+                </div>
+            </div>
+            <div class="mt-3" style="font-size:12px;color:#64748b;">
+                <span class="badge bg-success me-1">@Model.DealsWon won</span>
+                <span class="badge bg-danger">@Model.DealsLost lost</span>
+                <span class="ms-2 fw-600 text-success">@Model.WinRate win rate</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+        <div class="kpi-card">
+            <div class="d-flex align-items-start gap-3">
+                <div class="kpi-icon" style="background:#f0fdf4;color:#16a34a;">
+                    <i class="bi bi-file-earmark-check-fill"></i>
+                </div>
+                <div>
+                    <div class="kpi-label">Quotes</div>
+                    <div class="kpi-value">@Model.TotalQuotes</div>
+                    <div class="kpi-sub">@Model.QuotesSent sent · @Model.QuotesAccepted accepted</div>
+                </div>
+            </div>
+            <div class="mt-3" style="font-size:12px;color:#64748b;">
+                Pending: <strong class="text-warning">@Model.FormatCurrency(Model.QuotesPendingValue)</strong>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+        <div class="kpi-card">
+            <div class="d-flex align-items-start gap-3">
+                <div class="kpi-icon" style="background:#fff7ed;color:#ea580c;">
+                    <i class="bi bi-receipt-cutoff"></i>
+                </div>
+                <div>
+                    <div class="kpi-label">Invoices</div>
+                    <div class="kpi-value">@Model.TotalInvoices</div>
+                    <div class="kpi-sub">
+                        @Model.PaidInvoices paid
+                        @if (Model.OverdueInvoices > 0)
+                        {
+                            <span class="text-danger fw-600"> · @Model.OverdueInvoices overdue</span>
+                        }
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3" style="font-size:12px;color:#64748b;">
+                Unpaid: <strong class="@(Model.UnpaidAmount > 0 ? "text-danger" : "text-success")">
+                    @Model.FormatCurrency(Model.UnpaidAmount)
+                </strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ── ROW 2: Revenue KPIs ─────────────────────────────────────────── *@
+<div class="section-title"><i class="bi bi-cash-stack me-2"></i>Revenue — @Model.CurrencyCode</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-md-3">
+        <div class="kpi-card" style="border-left:3px solid #6366f1;">
+            <div class="kpi-label">Pipeline Value</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#6366f1;">@Model.FormatCurrency(Model.PipelineValue)</div>
+            <div class="kpi-sub">Active deals expected</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+        <div class="kpi-card" style="border-left:3px solid #16a34a;">
+            <div class="kpi-label">Closed Deal Value</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#16a34a;">@Model.FormatCurrency(Model.WonValue)</div>
+            <div class="kpi-sub">Expected value at close · @Model.DealsWon deals</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+        <div class="kpi-card" style="border-left:3px solid #0ea5e9;">
+            <div class="kpi-label">Total Invoiced</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#0ea5e9;">@Model.FormatCurrency(Model.TotalInvoiced)</div>
+            <div class="kpi-sub">@Model.FormatCurrency(Model.PaidAmount) actually collected</div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-md-3">
+        <div class="kpi-card" style="border-left:3px solid #f59e0b;">
+            <div class="kpi-label">Outstanding</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#f59e0b;">@Model.FormatCurrency(Model.UnpaidAmount)</div>
+            <div class="kpi-sub">Pending collection</div>
+        </div>
+    </div>
+</div>
+
+@* ── ROW 3: Top Deals + Recent Quotes + Activities ────────────────── *@
+<div class="row g-3">
+
+    @* Top Active Deals *@
+    <div class="col-lg-5">
+        <div class="dash-card">
+            <div class="dash-card-header">
+                <span><i class="bi bi-briefcase me-2 text-primary"></i>Top Active Deals</span>
+                @* ✅ Only show "View all" if user can read Deals *@
+                @if (Model.UserCanRead("deals"))
+                {
+                    <a href="/Pipeline" class="text-primary" style="font-size:12px;">View all →</a>
+                }
+            </div>
+            <div class="dash-card-body">
+                @if (!Model.TopDeals.Any())
+                {
+                    <div class="text-center text-muted py-4" style="font-size:13px;">
+                        <i class="bi bi-inbox d-block mb-2" style="font-size:2rem;"></i>No active deals yet
+                    </div>
+                }
+                else
+                {
+                    @foreach (var deal in Model.TopDeals)
+                    {
+                        <div class="deal-row">
+                            <div class="flex-grow-1 min-width-0">
+                                <div class="deal-title">@deal.Title</div>
+                                <div class="deal-company">@(deal.CompanyName ?? "—") · @deal.OwnerName</div>
+                                <div class="prob-bar mt-1">
+                                    <div class="prob-fill" style="width:@deal.Probability%;"></div>
+                                </div>
+                            </div>
+                            <div class="text-end flex-shrink-0">
+                                <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue)</div>
+                                <span class="badge @Model.GetStageClass(deal.Stage)" style="font-size:10px;">@deal.Stage</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Recent Quotes *@
+    <div class="col-lg-4">
+        <div class="dash-card">
+            <div class="dash-card-header">
+                <span><i class="bi bi-file-earmark-text me-2 text-success"></i>Recent Quotes</span>
+                @* ✅ Only show "View all" if user can read Deals (Quotes are tied to Deals) *@
+                @if (Model.UserCanRead("deals"))
+                {
+                    <a href="/Quotes" class="text-primary" style="font-size:12px;">View all →</a>
+                }
+            </div>
+            <div class="dash-card-body">
+                @if (!Model.RecentQuotes.Any())
+                {
+                    <div class="text-center text-muted py-4" style="font-size:13px;">
+                        <i class="bi bi-file-earmark d-block mb-2" style="font-size:2rem;"></i>No quotes yet
+                    </div>
+                }
+                else
+                {
+                    @foreach (var q in Model.RecentQuotes)
+                    {
+                        <div class="quote-row">
+                            <div class="flex-grow-1 min-width-0">
+                                <div style="font-size:13px;font-weight:500;color:#0f172a;">@q.Number</div>
+                                <div style="font-size:11px;color:#94a3b8;">@q.CompanyName · @Model.GetRelativeTime(q.IssueDateUtc)</div>
+                            </div>
+                            <div class="text-end flex-shrink-0">
+                                <div style="font-size:13px;font-weight:600;color:#4f46e5;">@Model.FormatCurrency(q.GrandTotal)</div>
+                                <span class="badge @Model.GetQuoteStatusClass(q.Status)" style="font-size:10px;">@q.Status</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Activity Summary *@
+    <div class="col-lg-3">
+        <div class="dash-card h-100">
+            <div class="dash-card-header">
+                <span><i class="bi bi-bell me-2 text-warning"></i>Activity Summary</span>
+                @if (Model.UserCanRead("leads"))
+                {
+                    <a href="/Leads" class="text-primary" style="font-size:12px;">View leads →</a>
+                }
+            </div>
+            <div class="dash-card-body">
+                <div class="activity-row">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#f0fdf4;color:#16a34a;border-radius:8px;font-size:1rem;">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-size:13px;font-weight:500;color:#0f172a;">Lead conversion</div>
+                        <div style="font-size:11px;color:#94a3b8;">@Model.ConvertedLeads of @Model.TotalLeads leads</div>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:#16a34a;">@Model.ConversionRate</div>
+                </div>
+                <div class="activity-row">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#fff7ed;color:#ea580c;border-radius:8px;font-size:1rem;">
+                        <i class="bi bi-alarm-fill"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-size:13px;font-weight:500;color:#0f172a;">Overdue reminders</div>
+                        <div style="font-size:11px;color:#94a3b8;">Requires attention</div>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:@(Model.OverdueReminders > 0 ? "#ea580c" : "#16a34a");">
+                        @Model.OverdueReminders
+                    </div>
+                </div>
+                <div class="activity-row">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#eff6ff;color:#3b82f6;border-radius:8px;font-size:1rem;">
+                        <i class="bi bi-calendar-check"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-size:13px;font-weight:500;color:#0f172a;">Today's activities</div>
+                        <div style="font-size:11px;color:#94a3b8;">Scheduled for today</div>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:#3b82f6;">@Model.TodayActivities</div>
+                </div>
+                <div class="activity-row">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#eef2ff;color:#6366f1;border-radius:8px;font-size:1rem;">
+                        <i class="bi bi-trophy-fill"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div style="font-size:13px;font-weight:500;color:#0f172a;">Win rate</div>
+                        <div style="font-size:11px;color:#94a3b8;">@Model.DealsWon won · @Model.DealsLost lost</div>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:#6366f1;">@Model.WinRate</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>

@@ -1,0 +1,443 @@
+@* =====================================================================
+   TENANT DETAIL PAGE - Frontend (REFACTORED)
+   Location: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Detail.cshtml
+   
+   CHANGE 1 (line ~24): Plan badge now shows Model.ChangePlanModel.CurrentPlanDisplayName
+                         instead of raw Model.Tenant.Plan string
+   CHANGE 2 (line ~162): <partial name="_ChangePlanPartial"> added before Danger Zone
+   CHANGE 3: TempData alert block added at top (SuccessMessage / ErrorMessage)
+   Everything else is identical to original.
+   ===================================================================== *@
+
+@page "/Admin/Tenants/Detail/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.DetailModel
+@{
+    ViewData["Title"] = $"{Model.Tenant.Name} - Tenant Details";
+}
+
+<div class="container-fluid py-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-building"></i> @Model.Tenant.Name
+            </h2>
+            <p class="text-muted mb-0">
+                <span class="badge @(Model.Tenant.IsActive ? "bg-success" : "bg-danger")">
+                    @(Model.Tenant.IsActive ? "Active" : "Inactive")
+                </span>
+                @* CHANGE 1: show DisplayName from Plans table, not raw Tenant.Plan string *@
+                <span class="badge bg-primary ms-2">
+                    @Model.ChangePlanModel.CurrentPlanDisplayName
+                </span>
+            </p>
+        </div>
+        <div class="btn-group">
+            <a asp-page="./Edit"     asp-route-id="@Model.Id" class="btn btn-primary">
+                <i class="bi bi-pencil"></i> Edit
+            </a>
+            <a asp-page="./Settings" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-gear"></i> Settings
+            </a>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    @* CHANGE 3: TempData alerts (plan change success/error appear here) *@
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <!-- Tabs Navigation -->
+    <ul class="nav nav-tabs mb-4" id="tenantTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="overview-tab" data-bs-toggle="tab"
+                    data-bs-target="#overview" type="button" role="tab" aria-selected="true">
+                <i class="bi bi-info-circle"></i> Overview
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="users-tab" data-bs-toggle="tab"
+                    data-bs-target="#users" type="button" role="tab" aria-selected="false">
+                <i class="bi bi-people"></i> Users
+                <span class="badge bg-secondary ms-1">@Model.Stats.TotalUsers</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="statistics-tab" data-bs-toggle="tab"
+                    data-bs-target="#statistics" type="button" role="tab" aria-selected="false">
+                <i class="bi bi-graph-up"></i> Statistics
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="tenantTabsContent">
+
+        <!-- ==================== OVERVIEW TAB ==================== -->
+        <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
+            <div class="row">
+
+                <!-- Basic Information Card -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-building"></i> Basic Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Tenant Name:</div>
+                                <div class="col-7">@Model.Tenant.Name</div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Email:</div>
+                                <div class="col-7">
+                                    <a href="mailto:@Model.Tenant.FromEmail">@Model.Tenant.FromEmail</a>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Phone:</div>
+                                <div class="col-7">@(Model.Tenant.Phone ?? "Not provided")</div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Status:</div>
+                                <div class="col-7">
+                                    <span class="badge @(Model.Tenant.IsActive ? "bg-success" : "bg-danger")">
+                                        @(Model.Tenant.IsActive ? "Active" : "Inactive")
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Plan:</div>
+                                <div class="col-7">
+                                    <span class="badge bg-primary">
+                                        @Model.ChangePlanModel.CurrentPlanDisplayName
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Location & Settings Card -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-globe"></i> Location & Settings</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Country:</div>
+                                <div class="col-7">
+                                    @if (!string.IsNullOrEmpty(Model.Tenant.CountryName))
+                                    {
+                                        <i class="bi bi-flag"></i> @Model.Tenant.CountryName
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">Not specified</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Currency:</div>
+                                <div class="col-7">
+                                    <i class="bi bi-currency-exchange"></i> @Model.Tenant.DefaultCurrency
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Timezone:</div>
+                                <div class="col-7">
+                                    <i class="bi bi-clock"></i> @Model.Tenant.TimeZone
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Created:</div>
+                                <div class="col-7">@Model.Tenant.CreatedAtUtc.ToString("MMM dd, yyyy")</div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-5 fw-bold">Last Updated:</div>
+                                <div class="col-7">@Model.Tenant.UpdatedAtUtc.ToString("MMM dd, yyyy")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Statistics Card -->
+                <div class="col-12 mb-4">
+                    <div class="card">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="bi bi-graph-up"></i> Quick Statistics</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-md-3 col-6 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-primary">@Model.Stats.TotalUsers</div>
+                                        <div class="text-muted">Total Users</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-success">@Model.Stats.ActiveUsers</div>
+                                        <div class="text-muted">Active Users</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-info">@Model.Stats.TotalLeads</div>
+                                        <div class="text-muted">Total Leads</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-warning">@Model.Stats.TotalDeals</div>
+                                        <div class="text-muted">Total Deals</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @* ── CHANGE 2: Change Plan partial ──────────────────────────────
+                   Placed here so Super Admin can change plan from the Detail page.
+                   Feeds from Model.ChangePlanModel — populated in LoadChangePlanModelAsync().
+                   Form posts to OnPostChangePlanAsync via asp-page-handler="ChangePlan".
+                ──────────────────────────────────────────────────────────────── *@
+                <div class="col-12 mb-4">
+                    <partial name="_ChangePlanPartial" model="@Model.ChangePlanModel" />
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="col-12 mb-4">
+                    <div class="card border-danger">
+                        <div class="card-header bg-danger text-white">
+                            <h5 class="mb-0">
+                                <i class="bi bi-exclamation-triangle"></i> Danger Zone
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row align-items-center mb-3">
+                                <div class="col-md-8">
+                                    <h6>Toggle Tenant Status</h6>
+                                    <p class="text-muted mb-0 small">
+                                        @(Model.Tenant.IsActive
+                                            ? "Deactivating will prevent all users of this tenant from logging in."
+                                            : "Activating will restore access for all users of this tenant.")
+                                    </p>
+                                </div>
+                                <div class="col-md-4 text-end">
+                                    <form method="post" asp-page-handler="ToggleStatus"
+                                          onsubmit="return confirm('Are you sure?')">
+                                        <input type="hidden" name="id"       value="@Model.Id" />
+                                        <input type="hidden" name="isActive" value="@(!Model.Tenant.IsActive)" />
+                                        <button type="submit"
+                                                class="btn @(Model.Tenant.IsActive ? "btn-warning" : "btn-success")">
+                                            <i class="bi bi-@(Model.Tenant.IsActive ? "pause-circle" : "play-circle")"></i>
+                                            @(Model.Tenant.IsActive ? "Deactivate" : "Activate")
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            <hr />
+                            <div class="row align-items-center">
+                                <div class="col-md-8">
+                                    <h6 class="text-danger">Delete Tenant</h6>
+                                    <p class="text-muted mb-0 small">
+                                        Soft-deletes the tenant. Data is retained but inaccessible.
+                                    </p>
+                                </div>
+                                <div class="col-md-4 text-end">
+                                    <form method="post" asp-page-handler="Delete"
+                                          onsubmit="return confirm('Delete this tenant? This cannot be undone.')">
+                                        <input type="hidden" name="id" value="@Model.Id" />
+                                        <button type="submit" class="btn btn-danger">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ==================== USERS TAB ==================== -->
+        <div class="tab-pane fade" id="users" role="tabpanel" aria-labelledby="users-tab">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> Users</h5>
+                </div>
+                <div class="card-body">
+                    <div id="usersLoading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading users...</span>
+                        </div>
+                        <p class="mt-3">Loading users...</p>
+                    </div>
+
+                    <div id="usersContent" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Email</th>
+                                        <th>Phone</th>
+                                        <th>Department</th>
+                                        <th>Job Title</th>
+                                        <th>Status</th>
+                                        <th>Admin</th>
+                                        <th>Last Login</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTableBody">
+                                    <!-- Loaded via AJAX -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="noUsers" style="display: none;" class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> No users found for this tenant.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== STATISTICS TAB ==================== -->
+        <div class="tab-pane fade" id="statistics" role="tabpanel" aria-labelledby="statistics-tab">
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-people"></i> Users Statistics</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6 mb-4">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-primary">@Model.Stats.TotalUsers</div>
+                                        <div class="text-muted">Total Users</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 mb-4">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-success">@Model.Stats.ActiveUsers</div>
+                                        <div class="text-muted">Active</div>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <div class="border rounded p-3 bg-light">
+                                        <div class="display-6 text-danger">@Model.Stats.InactiveUsers</div>
+                                        <div class="text-muted">Inactive Users</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="bi bi-graph-up"></i> Sales Statistics</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6 mb-4">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-info">@Model.Stats.TotalLeads</div>
+                                        <div class="text-muted">Total Leads</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 mb-4">
+                                    <div class="border rounded p-3">
+                                        <div class="display-4 text-warning">@Model.Stats.TotalDeals</div>
+                                        <div class="text-muted">Total Deals</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Activity Overview</h5>
+                        </div>
+                        <div class="card-body text-center py-5">
+                            <i class="bi bi-bar-chart-line display-1 text-muted"></i>
+                            <p class="text-muted mt-3">Activity charts can be added here</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // Load users when Users tab is clicked — identical to original
+    document.getElementById('users-tab').addEventListener('shown.bs.tab', loadUsers);
+
+    async function loadUsers() {
+        const tenantId = '@Model.Id';
+        try {
+            const response = await fetch(`?handler=Users&id=${tenantId}`);
+            const users    = await response.json();
+
+            document.getElementById('usersLoading').style.display = 'none';
+            document.getElementById('usersContent').style.display = 'block';
+
+            if (users.length === 0) {
+                document.getElementById('noUsers').style.display = 'block';
+                return;
+            }
+
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.fullName}</td>
+                    <td><a href="mailto:${user.email}">${user.email}</a></td>
+                    <td>${user.phone || '-'}</td>
+                    <td>${user.department || '-'}</td>
+                    <td>${user.jobTitle || '-'}</td>
+                    <td>
+                        <span class="badge ${user.isActive ? 'bg-success' : 'bg-danger'}">
+                            ${user.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                    </td>
+                    <td>
+                        ${user.isTenantAdmin ? '<span class="badge bg-primary">Admin</span>' : '-'}
+                    </td>
+                    <td>${user.lastLoginUtc
+                        ? new Date(user.lastLoginUtc).toLocaleDateString()
+                        : 'Never'}</td>
+                </tr>
+            `).join('');
+        } catch (error) {
+            console.error('Error loading users:', error);
+            document.getElementById('usersLoading').innerHTML =
+                '<div class="alert alert-danger">Failed to load users</div>';
+        }
+    }
+</script>
+}

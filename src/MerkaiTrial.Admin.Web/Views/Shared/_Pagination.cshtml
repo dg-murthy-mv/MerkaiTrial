@@ -1,0 +1,149 @@
+@* =====================================================================
+   SHARED PAGINATION COMPONENT - FIXED VERSION
+   Usage: <partial name="_Pagination" model="Model.Users" />
+   ===================================================================== *@
+@model dynamic
+
+@{
+    // Extract properties from the paginated response
+    int totalCount = Model.TotalCount;
+    int page = Model.Page;
+    int pageSize = Model.PageSize;
+    int totalPages = Model.TotalPages;
+    
+    // Get current query parameters
+    var queryParams = Context.Request.Query.ToDictionary(x => x.Key, x => x.Value.ToString());
+    
+    // Calculate pagination
+    int startItem = totalCount == 0 ? 0 : (page - 1) * pageSize + 1;
+    int endItem = Math.Min(page * pageSize, totalCount);
+    
+    // Page size options
+    int[] pageSizeOptions = new[] { 5, 10, 25, 50, 100 };
+    
+    // Helper function to build URL with query params
+    string BuildUrl(int newPage, int? newPageSize = null)
+    {
+        var urlParams = new Dictionary<string, string>(queryParams);
+        urlParams["Page"] = newPage.ToString();
+        if (newPageSize.HasValue)
+        {
+            urlParams["PageSize"] = newPageSize.Value.ToString();
+        }
+        return "?" + string.Join("&", urlParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
+    }
+}
+
+@if (totalCount > 0)
+{
+    <div class="card-footer bg-white border-top">
+        <div class="row align-items-center g-3">
+            <!-- Page Size Selector (Left) -->
+            <div class="col-md-3 col-sm-6">
+                <form method="get" class="d-flex align-items-center gap-2" id="pageSizeForm">
+                    @foreach (var param in queryParams)
+                    {
+                        if (param.Key != "PageSize" && param.Key != "Page")
+                        {
+                            <input type="hidden" name="@param.Key" value="@param.Value" />
+                        }
+                    }
+                    <input type="hidden" name="Page" value="1" />
+                    <label class="text-muted small mb-0 text-nowrap">Items per page:</label>
+                    <select name="PageSize" class="form-select form-select-sm" onchange="this.form.submit()" style="width: auto;">
+                        @foreach (var size in pageSizeOptions)
+                        {
+                            <option value="@size" selected="@(size == pageSize)">@size</option>
+                        }
+                    </select>
+                </form>
+            </div>
+
+            <!-- Pagination Info & Controls (Center/Right) -->
+            <div class="col-md-9 col-sm-6">
+                @if (totalPages > 1)
+                {
+                    <nav aria-label="Page navigation">
+                        <ul class="pagination pagination-sm justify-content-end mb-0">
+                            <!-- Previous Button -->
+                            <li class="page-item @(page <= 1 ? "disabled" : "")">
+                                <a class="page-link" href="@(page <= 1 ? "#" : BuildUrl(page - 1))" aria-label="Previous">
+                                    <i class="bi bi-chevron-left"></i> Previous
+                                </a>
+                            </li>
+
+                            @{
+                                // Smart pagination: Show max 7 page numbers
+                                int startPage = Math.Max(1, page - 3);
+                                int endPage = Math.Min(totalPages, page + 3);
+                                
+                                // Adjust if at boundaries
+                                if (page <= 4) endPage = Math.Min(7, totalPages);
+                                if (page > totalPages - 4) startPage = Math.Max(1, totalPages - 6);
+                            }
+
+                            <!-- First Page -->
+                            @if (startPage > 1)
+                            {
+                                <li class="page-item">
+                                    <a class="page-link" href="@BuildUrl(1)">1</a>
+                                </li>
+                                @if (startPage > 2)
+                                {
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                }
+                            }
+
+                            <!-- Page Numbers -->
+                            @for (int i = startPage; i <= endPage; i++)
+                            {
+                                <li class="page-item @(i == page ? "active" : "")">
+                                    <a class="page-link" href="@BuildUrl(i)">@i</a>
+                                </li>
+                            }
+
+                            <!-- Last Page -->
+                            @if (endPage < totalPages)
+                            {
+                                @if (endPage < totalPages - 1)
+                                {
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                }
+                                <li class="page-item">
+                                    <a class="page-link" href="@BuildUrl(totalPages)">@totalPages</a>
+                                </li>
+                            }
+
+                            <!-- Next Button -->
+                            <li class="page-item @(page >= totalPages ? "disabled" : "")">
+                                <a class="page-link" href="@(page >= totalPages ? "#" : BuildUrl(page + 1))" aria-label="Next">
+                                    Next <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                }
+                else
+                {
+                    <!-- Single page - just show count -->
+                    <p class="text-end text-muted small mb-0">
+                        Showing @startItem to @endItem of @totalCount items
+                    </p>
+                }
+            </div>
+        </div>
+
+        <!-- Mobile: Showing X to Y info -->
+        <div class="row mt-2 d-md-none">
+            <div class="col-12 text-center">
+                <small class="text-muted">
+                    Showing @startItem to @endItem of @totalCount items
+                </small>
+            </div>
+        </div>
+    </div>
+}
