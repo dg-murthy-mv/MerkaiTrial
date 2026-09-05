@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="EPPlus" Version="8.5.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.30" />
     <PackageReference Include="OfficeOpenXml.Core.ExcelPackage" Version="1.0.0" />
     <PackageReference Include="OpenXmlTools" Version="2.0.0" />
     <PackageReference Include="QuestPDF" Version="2026.2.3" />
@@ -26,5 +27,6 @@
   <ItemGroup>
     <Folder Include="Authorization\" />
     <Folder Include="Middleware\" />
+    <Folder Include="Startup\" />
   </ItemGroup>
 </Project>

@@ -359,8 +359,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
         {
             var quote = await _db.Quotes
-                .FirstOrDefaultAsync(q =>
-                    q.Id == quoteId && q.TenantId == tenantId && !q.IsDeleted);
+                   .IgnoreQueryFilters()
+                   .FirstOrDefaultAsync(q =>
+                       q.Id == quoteId && q.TenantId == tenantId && !q.IsDeleted);
 
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found");
@@ -438,11 +439,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
             {
                 var tenantIdStr = tenantId.ToString();
                 var deal = await _db.Deals
-                    .FirstOrDefaultAsync(d =>
-                        d.Id == dealId &&
-                        (d.TenantId == tenantId ||
-                         d.TenantId.ToString() == tenantIdStr) &&
-                        !d.IsDeleted);
+                   .IgnoreQueryFilters()
+                   .FirstOrDefaultAsync(d =>
+                       d.Id == dealId && d.TenantId == tenantId && !d.IsDeleted);
 
                 if (deal == null)
                 {
@@ -481,6 +480,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 {
                     Id = Guid.NewGuid(),
                     DealId = dealId,
+                    TenantId = tenantId,
                     FromStage = fromStage,
                     ToStage = toStage,
                     ChangedAtUtc = DateTime.UtcNow,
@@ -618,7 +618,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
         public GetQuoteByTokenHandler(FlowDbContext db) => _db = db;
 
         /// <summary>
-        /// Loads a quote by its public token — no tenant/auth required.
+        /// Loads a quote by its public token — no tenant or auth required.
         /// Called by the public /q/{token} page.
         /// Also auto-updates status from Sent → Viewed on first open.
         /// </summary>
@@ -626,8 +626,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
         {
             if (string.IsNullOrWhiteSpace(token)) return null;
 
+            // ── IgnoreQueryFilters #1 ────────────────────────────────────
+            // Anonymous customer, no tenant claim. Without this the filter
+            // compares TenantId against Guid.Empty and the quote is never
+            // found — every public link would 404.
+            //
+            // The Include chain matters too: Deal, Contact and Vertical are
+            // all filtered entities, so they would come back null and the
+            // rendered quote would show "Unknown" for the customer name with
+            // no error anywhere.
             var quote = await _db.Quotes
                 .AsNoTracking()
+                .IgnoreQueryFilters()
                 .Where(q => q.PublicLinkToken == token && !q.IsDeleted)
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Contact)
@@ -638,12 +648,16 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             if (quote == null) return null;
 
-            // ── Auto-set Viewed when customer opens link ──────────────────
+            // ── Auto-set Viewed when the customer opens the link ─────────
             if (quote.Status == QuoteStatus.Sent)
             {
-                // Need tracked instance to update
+                // ── IgnoreQueryFilters #2 ────────────────────────────────
+                // Same reason — this tracked re-fetch would find nothing and
+                // the status would silently never advance past Sent.
                 var tracked = await _db.Quotes
+                    .IgnoreQueryFilters()
                     .FirstOrDefaultAsync(q => q.PublicLinkToken == token && !q.IsDeleted, ct);
+
                 if (tracked != null)
                 {
                     tracked.Status = QuoteStatus.Viewed;
@@ -669,7 +683,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 ExpiresAtUtc = quote.ExpiresAtUtc,
                 Currency = quote.Currency,
                 Status = quote.Status == QuoteStatus.Sent
-                                 ? QuoteStatus.Viewed.ToString()  // reflect auto-view
+                                 ? QuoteStatus.Viewed.ToString()
                                  : quote.Status.ToString(),
                 Subtotal = quote.Subtotal,
                 DiscountTotal = quote.DiscountTotal,

@@ -17,6 +17,8 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             builder.HasKey(c => c.Id);
             builder.HasIndex(c => c.Name).IsUnique();           
             builder.Property(c => c.Name).IsRequired().HasMaxLength(100);
+            builder.Property(t => t.Rate).HasPrecision(9, 4);
+           
         }
     }
 }

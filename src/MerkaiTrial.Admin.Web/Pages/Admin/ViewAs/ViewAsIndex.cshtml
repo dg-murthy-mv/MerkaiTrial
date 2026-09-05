@@ -3,7 +3,10 @@
 @{
     ViewData["Title"] = "View As — MadeeVision";
 }
-
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
 <div class="page-content">
     <div class="mb-4">
         <nav aria-label="breadcrumb">

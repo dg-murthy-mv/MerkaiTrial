@@ -1,12 +1,12 @@
-﻿@* Pages/_ViewStart.cshtml
-   ONE place that decides which layout every page uses.
-   Admin pages → _SuperAdminLayout
-   All other pages → _Layout
-*@
-@{
-    var page = ViewContext.RouteData.Values["page"]?.ToString() ?? "";
+﻿@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/_ViewStart.cshtml   (SIMPLIFIED)
 
-    Layout = page.StartsWith("/Admin", StringComparison.OrdinalIgnoreCase)
-        ? "_SuperAdminLayout"
-        : "_Layout";
+   Was: a route-path check selecting between two layouts. That duplicated
+   what Pages/Admin/_ViewStart.cshtml already does — Razor runs _ViewStart
+   files root-to-leaf and the deepest one wins, so the Admin folder's file
+   was always the effective setting and the path test never changed an
+   outcome. One rule, one place.
+   ===================================================================== *@
+@{
+    Layout = "_Layout";
 }

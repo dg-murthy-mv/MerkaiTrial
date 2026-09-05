@@ -1,0 +1,44 @@
+﻿@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/TrialExpired.cshtml
+
+   Uses the normal tenant layout on purpose. The client is still signed in
+   and their data is still there and readable — this is an explanation of a
+   refused save, not a lockout screen.
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.TrialExpiredModel
+@{
+    ViewData["Title"] = "Trial ended";
+}
+
+<div class="container py-5" style="max-width: 42rem;">
+    <h1 class="h3 mb-3">Your trial has ended</h1>
+
+    <p class="text-muted">
+        @if (Model.ExpiredOn.HasValue)
+        {
+            <text>
+                The trial for <strong>@Model.TenantName</strong> ended on
+                @Model.ExpiredOn.Value.ToString("d MMMM yyyy").
+            </text>
+        }
+        else
+        {
+            <text>The trial for <strong>@Model.TenantName</strong> has ended.</text>
+        }
+    </p>
+
+    <div class="alert alert-info">
+        <strong>Your data is safe.</strong>
+        You can still sign in, browse everything you entered, and export it.
+        Only creating and editing is paused.
+    </div>
+
+    <p>
+        To continue where you left off, contact your MadeeVision account
+        contact. Moving to a paid plan restores full access immediately —
+        nothing needs to be re-entered.
+    </p>
+
+    <a class="btn btn-primary" asp-page="/Dashboard">Back to dashboard</a>
+</div>

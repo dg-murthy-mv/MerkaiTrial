@@ -1,3 +1,35 @@
+// =====================================================================
+// FILE: MerkaiTrial.Admin.Web/Program.cs   — COMPLETE, corrected
+//
+// FIXES APPLIED
+//   1. Pipeline no longer runs twice. UseMerkaiAuthPipeline() already
+//      does UseHsts + UseHttpsRedirection + UseRouting + UseAuthentication
+//      + UseAuthorization; the three duplicate calls after it are gone.
+//      Two UseRouting() calls means endpoint matching runs twice and the
+//      authorization between the first pair applies to an endpoint the
+//      second pass re-resolves.
+//   2. Duplicate AddAuthorization block removed. AddMerkaiAuthentication
+//      registers TenantAccess, SuperAdmin AND the FallbackPolicy. Two
+//      calls both apply (configure delegates accumulate), so it worked by
+//      accident — authorization should be defined in one place.
+//   3. ClaimsTransformer registration removed. SignInService already
+//      writes TenantId, UserId, IsTenantAdmin and permissions_loaded, so
+//      the transformer early-exits having done nothing on every request.
+//   4. TenantContextForwardingHandler → ApiTokenForwardingHandler.
+//      The old handler put the tenant id in a plain header the API
+//      trusted; the new one sends a signed JWT.
+//   5. IApiTokenService registered (the JWT issuer).
+//   6. AccountStatePageFilter registered.
+//   7. Unused devCtx variable and the DevelopmentTenantContext binding
+//      removed — nothing reads them now.
+//
+// PREREQUISITES — comment the line out if the file is not in yet:
+//   ApiTokenForwardingHandler.cs   (Services/Core)
+//   AccountStatePageFilter.cs      (Filters)
+//   ITenantProvider.cs             (Infrastructure/Tenancy)
+// =====================================================================
+
+using MerkaiTrial.Admin.Web.Filters;
 using MerkaiTrial.Admin.Web.Services;
 using MerkaiTrial.Admin.Web.Services.Activities;
 using MerkaiTrial.Admin.Web.Services.Companies;
@@ -22,21 +54,16 @@ using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Plans;
 using MerkaiTrial.Application.Commands.Quotes;
 using MerkaiTrial.Application.Commands.Users;
-using MerkaiTrial.Application.Configuration;
+using MerkaiTrial.Application.Queries;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Storage;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Infrastructure.Persistence;
 using MerkaiTrial.Infrastructure.Tenancy;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Extensions.FileProviders;
 using Serilog;
-using System.Data.Common;
-using System.Globalization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,69 +73,60 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 builder.Host.UseSerilog();
 
-var devCtx = builder.Configuration.GetSection("DevelopmentTenantContext");
+// ---------------- Authentication ----------------
+// Registers cookie auth, IPasswordService, IUserTokenService,
+// ISignInService, both policies AND the FallbackPolicy. Also refuses to
+// boot if demo auth is enabled outside Development/Demo.
 builder.AddMerkaiAuthentication();
 
-// ---------------- Services ----------------
-builder.Services.AddScoped<NavigationService>();
-builder.Services.AddScoped<IClaimsTransformation, ClaimsTransformer>();
-
-builder.Services.AddAuthorization(options =>
-{
-    // Any authenticated tenant user
-    options.AddPolicy("TenantAccess", policy =>
-        policy.RequireAuthenticatedUser());
-
-    // MadeeVision SuperAdmin — add IsSuperAdmin claim to DemoAuth for staff
-    // In production this comes from JWT. For demo, we check IsTenantAdmin on
-    // the hardcoded admin users, or add a separate appsettings flag.
-    options.AddPolicy("SuperAdmin", policy =>
-    policy.RequireClaim("IsSuperAdmin", "true")); // ← tighten to RequireClaim("IsSuperAdmin","true") post-demo
-
-    // ✅ REMOVED: four stale module policies (Leads.Read/Create, Deals.Read/Create).
-    // PermissionPolicyProvider parses ANY "module.action" policy name at runtime
-    // and builds the requirement on demand, so these four were dead weight —
-    // and actively misleading, since only 4 of ~28 module/action pairs were
-    // listed, implying the others were unregistered. Adding a module needs NO
-    // change to this file.
-    //
-    // Note the casing they used ("Leads.Read") differed from the requirement
-    // they built (new PermissionRequirement("Leads", "read")). That mismatch is
-    // the same class of bug that silently denied every non-admin role before
-    // PermissionHandler was made case-insensitive.
-});
-
+// ---------------- Authorization plumbing ----------------
+// PermissionPolicyProvider builds any "module.action" policy at runtime,
+// so adding a module needs no change here.
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
 
-
-
-// Simple Razor Pages registration (no localization)
+// ---------------- Razor Pages ----------------
 builder.Services.AddRazorPages(options =>
 {
-    // Blocks non-SuperAdmin from accessing /Admin/* — returns 403
+    // Blocks non-SuperAdmin from /Admin/*.
     options.Conventions.AuthorizeFolder("/Admin", "SuperAdmin");
+})
+.AddMvcOptions(options =>
+{
+    // Super admins stay on the admin side unless in ViewAs;
+    // MustChangePassword is enforced; expired trials go read-only.
+    options.Filters.Add<AccountStatePageFilter>();
 });
 
 // ---------------- Config / Tenancy ----------------
 builder.Configuration.AddJsonFile("appsettings.tenants.json", optional: true, reloadOnChange: true);
 
-builder.Services.AddScoped<ITenantUiService, TenantUiService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
-builder.Services.AddTransient<TenantContextForwardingHandler>();
+
+// Feeds the global query filters in FlowDbContext. Must be registered
+// BEFORE AddDbContext resolves a context.
+builder.Services.AddScoped<ITenantProvider, HttpTenantProvider>();
+
+builder.Services.AddScoped<ITenantUiService, TenantUiService>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 
-// ---------------- EF Core + SQL session context ----------------
-
-
+// ---------------- EF Core ----------------
 builder.Services.AddDbContext<FlowDbContext>((sp, o) =>
 {
     var connStr = builder.Configuration.GetConnectionString("Default")
                  ?? throw new Exception("ConnectionStrings:Default missing.");
     o.UseSqlServer(connStr);
-   
 });
+
+// ---------------- API token forwarding ----------------
+// Replaces TenantContextForwardingHandler. That handler sent the tenant
+// id as a plain header the API believed; anyone could curl the API with
+// any tenant id. This mints a short-lived signed JWT from the CURRENT
+// authenticated principal instead.
+builder.Services.AddScoped<IApiTokenService, ApiTokenService>();
+builder.Services.AddTransient<ApiTokenForwardingHandler>();
 
 // ========== BASE API SERVICE ==========
 var apiBaseUrl = builder.Configuration["WebApi:BaseUrl"] ?? "https://localhost:61091/";
@@ -117,13 +135,11 @@ builder.Services.AddHttpClient<IApiService, ApiService>(client =>
     client.BaseAddress = new Uri(apiBaseUrl);
     client.Timeout = TimeSpan.FromMinutes(30);
 })
-.AddHttpMessageHandler<TenantContextForwardingHandler>();
-builder.Services.Configure<MerkaiTrial.Application.Configuration.DevelopmentTenantContext>(
-    builder.Configuration.GetSection(
-        MerkaiTrial.Application.Configuration.DevelopmentTenantContext.SectionName));
+.AddHttpMessageHandler<ApiTokenForwardingHandler>();
 
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
 // ========== MODULAR SERVICES ==========
 builder.Services.AddScoped<ILeadService, LeadService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -141,11 +157,10 @@ builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IMetaService, MetaService>();
 builder.Services.AddScoped<IReportService, ReportService>();
-
-
+builder.Services.AddScoped<IRoleScope, RoleScope>();
+builder.Services.AddScoped<NavigationService>();
 
 //-----Admin Module---
-
 builder.Services.AddScoped<ICountryService, CountryService>();
 builder.Services.AddScoped<ICompanyVerticalService, CompanyVerticalService>();
 builder.Services.AddScoped<ITaxRateService, TaxRateService>();
@@ -172,7 +187,6 @@ builder.Services.AddHttpClient<ApiClient>((sp, http) =>
                   ?? throw new Exception("Set WebApi:BaseUrl (or ApiBaseUrl).");
     http.BaseAddress = new Uri(baseUrl);
     http.Timeout = TimeSpan.FromMinutes(5);
-    // Headers
     http.DefaultRequestHeaders.Add("Accept", "application/json");
     http.DefaultRequestHeaders.Add("User-Agent", "MerkaiTrial-Admin-Web");
 })
@@ -183,34 +197,30 @@ builder.Services.AddHttpClient<ApiClient>((sp, http) =>
         AllowAutoRedirect = false
     })
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))
-    .AddHttpMessageHandler<TenantContextForwardingHandler>()
+    .AddHttpMessageHandler<ApiTokenForwardingHandler>()
     .AddHttpMessageHandler<HttpLoggingHandler>();
 
-
-// ----------------------------------------------------
+// =====================================================================
 var app = builder.Build();
-// ── Static files (no auth needed) ────────────────────────────────
+
 await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
     .WarmUpAsync(app.Services, "Admin.Web");
-app.UseStaticFiles();                        // wwwroot
 
+// wwwroot only. The /Uploads PhysicalFileProvider is correctly gone — it
+// ran before authentication and served every tenant's attachments to
+// anyone. File downloads need an authenticated endpoint (phase 1 task).
+app.UseStaticFiles();
 
-// ── Exception handling ────────────────────────────────────────────
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 
-// ── Routing FIRST ────────────────────────────────────────────────
 app.UseSerilogRequestLogging();
+
+// UseHsts + UseHttpsRedirection + UseRouting + UseAuthentication +
+// UseAuthorization, in that order. Nothing else needed — calling any of
+// them again below would run the pipeline twice.
 app.UseMerkaiAuthPipeline();
-app.UseRouting();
 
-
-// ── Auth AFTER routing ───────────────────────────────────────────
-app.UseAuthentication();
-app.UseAuthorization();    // ✅ NOW between UseRouting and MapRazorPages
-
-
-// ── Endpoints ────────────────────────────────────────────────────
 app.MapRazorPages();
 
 app.MapGet("/", context =>
@@ -220,8 +230,20 @@ app.MapGet("/", context =>
     return Task.CompletedTask;
 });
 
+
 app.Run();
 
-// ✅ REMOVED: a second app.Run() sat below a commented-out MapGet block.
-// app.Run() blocks until shutdown, so it was unreachable code.
+/* =====================================================================
+   PAGES NEEDING [AllowAnonymous] under the FallbackPolicy
 
+     Account/Login, Account/SetPassword, Account/ForgotPassword,
+     Account/Denied           ✅ already have it
+     Pages/Error.cshtml.cs    ⚠️  ADD IT — otherwise an exception on an
+                                  unauthenticated request redirects the
+                                  error page to login, which can itself
+                                  error: a loop exactly when you need to
+                                  read the error.
+     The public quote page    ⚠️  CHECK IT — customers have no account.
+
+   Find the rest by browsing the app signed out.
+   ===================================================================== */

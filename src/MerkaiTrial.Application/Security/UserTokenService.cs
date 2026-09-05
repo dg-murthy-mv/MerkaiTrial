@@ -10,11 +10,8 @@ using System.Threading.Tasks;
 
 namespace MerkaiTrial.Application.Security
 {
-
     public interface IUserTokenService
     {
-        /// <summary>Creates a token and returns the RAW value — the only time it
-        /// exists. Put it in the link; it is not recoverable afterwards.</summary>
         Task<string> IssueAsync(Guid userId, Guid tenantId, string purpose,
                                 TimeSpan lifetime, string? createdBy, CancellationToken ct = default);
 
@@ -22,8 +19,6 @@ namespace MerkaiTrial.Application.Security
 
         Task ConsumeAsync(UserToken token, CancellationToken ct = default);
 
-        /// <summary>Invalidate outstanding tokens of a purpose — call after a
-        /// successful password set so an old emailed link stops working.</summary>
         Task RevokeAllAsync(Guid userId, string purpose, CancellationToken ct = default);
     }
 
@@ -63,7 +58,16 @@ namespace MerkaiTrial.Application.Security
 
             var hash = HashToken(rawToken);
 
+            // ── IgnoreQueryFilters ───────────────────────────────────────
+            // The caller is anonymous by design. The token hash is unique and
+            // unguessable (256 bits), so it authorises this lookup on its own
+            // — the tenant is then read FROM the token record rather than
+            // being required to find it.
+            //
+            // Include(t => t.User) also needs the filter off, or the User
+            // navigation comes back null once Users is filtered.
             var token = await _db.Set<UserToken>()
+                .IgnoreQueryFilters()
                 .Include(t => t.User)
                 .FirstOrDefaultAsync(t => t.TokenHash == hash && t.Purpose == purpose, ct);
 
@@ -79,6 +83,7 @@ namespace MerkaiTrial.Application.Security
         public async Task RevokeAllAsync(Guid userId, string purpose, CancellationToken ct = default)
         {
             await _db.Set<UserToken>()
+                .IgnoreQueryFilters()
                 .Where(t => t.UserId == userId && t.Purpose == purpose && t.ConsumedAtUtc == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(t => t.ConsumedAtUtc, DateTime.UtcNow), ct);
         }

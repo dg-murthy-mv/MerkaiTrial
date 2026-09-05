@@ -69,7 +69,8 @@ public class SetPasswordModel : PageModel
         var (ok, error) = _passwords.ValidateStrength(NewPassword);
         if (!ok) { ErrorMessage = error; return Page(); }
 
-        var user = await _db.Users.FirstAsync(u => u.Id == token.UserId);
+        var user = await _db.Users.IgnoreQueryFilters()
+          .FirstAsync(u => u.Id == token.UserId);
 
         user.PasswordHash = _passwords.Hash(NewPassword);
         user.SecurityStamp = Guid.NewGuid().ToString("N");  // invalidates existing sessions

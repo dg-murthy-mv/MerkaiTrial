@@ -1,27 +1,14 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Security/SignInService.cs
 //
-// REPLACES DemoAuthenticationHandler as the source of identity.
+// UPDATED for global query filters. Three queries here run BEFORE the
+// user is signed in, so the tenant claim does not exist yet and the
+// filter would compare TenantId against Guid.Empty and match nothing.
+// Each is marked below.
 //
-// THE VULNERABILITY THIS CLOSES
-// -----------------------------
-// DemoAuthenticationHandler derived identity from request state:
-//
-//     var cookieTenantId = Context.Request.Cookies["ViewAs_TenantId"];
-//     ...
-//     var effectiveIsSuperAdmin = isViewingAs ? true : Options.IsSuperAdmin;
-//
-// Presenting two cookies put you in ViewAs mode, and being in ViewAs mode
-// granted IsSuperAdmin=true. HttpOnly stops JavaScript from READING a
-// cookie; it does not stop a person CREATING one in DevTools. Any trial
-// client could therefore mint themselves super-admin and reach /Admin,
-// every tenant's data, and the ViewAs picker. The same held for the
-// X-Tenant-Id / X-User-Id headers on the API, settable by any curl.
-//
-// THE RULE NOW: claims are built ONCE, server-side, from a verified
-// password (or from a verified super-admin's impersonation request) and
-// sealed into an encrypted auth cookie. Nothing the browser sends is ever
-// a source of identity.
+// (Unchanged: this class replaces DemoAuthenticationHandler as the source
+// of identity. Claims are built once, server-side, from a verified
+// password — never from a cookie or header the browser can set.)
 // =====================================================================
 
 using System.Security.Claims;
@@ -44,11 +31,7 @@ public interface ISignInService
 {
     Task<SignInResult> PasswordSignInAsync(string email, string password, bool rememberMe, CancellationToken ct = default);
     Task SignOutAsync();
-
-    /// <summary>Enter ViewAs. Throws unless the CURRENT principal is a real
-    /// super-admin who is not already impersonating.</summary>
     Task StartViewAsAsync(Guid targetUserId, Guid targetTenantId, CancellationToken ct = default);
-
     Task ExitViewAsAsync(CancellationToken ct = default);
 }
 
@@ -56,22 +39,18 @@ public class SignInService : ISignInService
 {
     public const string Scheme = CookieAuthenticationDefaults.AuthenticationScheme;
 
-    // Claim names kept identical to the old handler so PermissionHandler,
-    // ClaimsTransformer, CurrentUserService and CurrentTenantService keep
-    // working unchanged.
-    public const string ClaimTenantId      = "TenantId";
-    public const string ClaimUserId        = "UserId";
-    public const string ClaimIsTenantAdmin = "IsTenantAdmin";
-    public const string ClaimIsSuperAdmin  = "IsSuperAdmin";
-    public const string ClaimPermission    = "permission";
-    public const string ClaimPlan          = "Plan";
-    public const string ClaimSecurityStamp = "SecurityStamp";
+    public const string ClaimTenantId           = "TenantId";
+    public const string ClaimUserId             = "UserId";
+    public const string ClaimIsTenantAdmin      = "IsTenantAdmin";
+    public const string ClaimIsSuperAdmin       = "IsSuperAdmin";
+    public const string ClaimPermission         = "permission";
+    public const string ClaimPlan               = "Plan";
+    public const string ClaimSecurityStamp      = "SecurityStamp";
+    public const string ClaimMustChangePassword = "MustChangePassword";
 
-    // ViewAs bookkeeping — DERIVED from a verified session, never read from
-    // the request. RealUserId is what ExitViewAs restores.
-    public const string ClaimViewingAs     = "ViewingAs";
-    public const string ClaimRealUserId    = "RealUserId";
-    public const string ClaimRealTenantId  = "RealTenantId";
+    public const string ClaimViewingAs    = "ViewingAs";
+    public const string ClaimRealUserId   = "RealUserId";
+    public const string ClaimRealTenantId = "RealTenantId";
 
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -91,17 +70,24 @@ public class SignInService : ISignInService
     public async Task<SignInResult> PasswordSignInAsync(string email, string password,
         bool rememberMe, CancellationToken ct = default)
     {
+        // ── IgnoreQueryFilters #1 ────────────────────────────────────
+        // The user has typed an email and nothing else. There is no
+        // tenant claim yet — working out which tenant they belong to is
+        // the whole job of this method. With the filter active, EF would
+        // add "WHERE TenantId = '00000000-...'" and find nobody, so
+        // EVERY login would fail with "email or password is incorrect".
+        //
+        // Users is not filtered today, but this makes the intent explicit
+        // and keeps working if anyone filters it later.
         var user = await _db.Users
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted, ct);
 
-        // Uniform failure message throughout: never reveal whether an account
-        // exists, is locked, or simply has the wrong password. An attacker
-        // learning "that email exists" is a free enumeration oracle.
         const string generic = "Email or password is incorrect.";
 
         if (user is null)
         {
-            // Equalise timing so a missing user isn't measurably faster.
+            // Equalise timing so a missing account is not measurably faster.
             _passwords.Verify("AQAAAAIAAYagAAAAEK5t0000000000000000000000000000000000000000000000000000==", password);
             return new SignInResult(SignInOutcome.InvalidCredentials, null, generic);
         }
@@ -131,10 +117,12 @@ public class SignInService : ISignInService
             return new SignInResult(SignInOutcome.InvalidCredentials, null, generic);
         }
 
-        // Tenant-level gate: a suspended or hard-expired tenant cannot sign in
-        // at all. (Soft trial expiry is read-only and handled in middleware —
-        // the client must still be able to log in to export their data.)
-        var tenant = await _db.Tenants.AsNoTracking()
+        // ── IgnoreQueryFilters #1b ───────────────────────────────────
+        // Tenants has no TenantId column so it is not filtered, but this
+        // lookup also happens pre-authentication. Left unfiltered and
+        // called out so nobody adds a filter to Tenants without seeing
+        // this line.
+        var tenant = await _db.Tenants.AsNoTracking().IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == user.TenantId && !t.IsDeleted, ct);
 
         if (tenant is null || !tenant.IsActive)
@@ -170,8 +158,6 @@ public class SignInService : ISignInService
     {
         var current = _http.HttpContext!.User;
 
-        // THE CHECK THAT WAS MISSING. Super-admin status must come from the
-        // already-authenticated session, never from the act of impersonating.
         var isSuperAdmin = current.HasClaim(ClaimIsSuperAdmin, "true");
         var alreadyViewing = current.HasClaim(ClaimViewingAs, "true");
 
@@ -184,17 +170,22 @@ public class SignInService : ISignInService
 
         var realUserId   = Guid.Parse(current.FindFirst(ClaimUserId)!.Value);
         var realTenantId = Guid.Parse(current.FindFirst(ClaimTenantId)!.Value);
-        var realUser     = await _db.Users.AsNoTracking().FirstAsync(u => u.Id == realUserId, ct);
 
-        var target = await _db.Users.AsNoTracking()
+        // ── IgnoreQueryFilters #2 ────────────────────────────────────
+        // Cross-tenant BY DEFINITION. The current claim says the super
+        // admin's own tenant; the target user belongs to a different one,
+        // so the filter would hide exactly the row being looked up.
+        // Safe because the super-admin check above has already passed.
+        var realUser = await _db.Users.AsNoTracking().IgnoreQueryFilters()
+            .FirstAsync(u => u.Id == realUserId, ct);
+
+        var target = await _db.Users.AsNoTracking().IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Id == targetUserId && u.TenantId == targetTenantId && !u.IsDeleted, ct)
             ?? throw new InvalidOperationException("Target user not found.");
 
-        var tenant = await _db.Tenants.AsNoTracking()
+        var tenant = await _db.Tenants.AsNoTracking().IgnoreQueryFilters()
             .FirstAsync(t => t.Id == targetTenantId && !t.IsDeleted, ct);
 
-        // Impersonation is an audit event. Log actor, target and time — with
-        // real client data in these tenants, this is the record you will want.
         _logger.LogWarning("VIEW-AS START: superadmin {RealUserId} impersonating {TargetUserId} in tenant {TenantId}",
             realUserId, targetUserId, targetTenantId);
 
@@ -213,8 +204,13 @@ public class SignInService : ISignInService
             return;
         }
 
-        var realUser = await _db.Users.AsNoTracking().FirstAsync(u => u.Id == realUserId, ct);
-        var tenant   = await _db.Tenants.AsNoTracking().FirstAsync(t => t.Id == realUser.TenantId, ct);
+        // Cross-tenant for the same reason as above: the active claim is
+        // the impersonated tenant, the row wanted is the super admin's.
+        var realUser = await _db.Users.AsNoTracking().IgnoreQueryFilters()
+            .FirstAsync(u => u.Id == realUserId, ct);
+
+        var tenant = await _db.Tenants.AsNoTracking().IgnoreQueryFilters()
+            .FirstAsync(t => t.Id == realUser.TenantId, ct);
 
         _logger.LogWarning("VIEW-AS EXIT: superadmin {RealUserId} returned to own identity", realUserId);
 
@@ -223,10 +219,6 @@ public class SignInService : ISignInService
     }
 
     // ── PRINCIPAL CONSTRUCTION ────────────────────────────────────────
-    /// <param name="realUser">Non-null only while impersonating. The
-    /// impersonated user's OWN permissions govern what is visible inside the
-    /// tenant; the real user's super-admin status governs access back to
-    /// /Admin and the Exit control.</param>
     private async Task<ClaimsPrincipal> BuildPrincipalAsync(
         User user, Tenant tenant, User? realUser, CancellationToken ct)
     {
@@ -240,10 +232,9 @@ public class SignInService : ISignInService
             new(ClaimIsTenantAdmin, user.IsTenantAdmin.ToString().ToLowerInvariant()),
             new(ClaimSecurityStamp, user.SecurityStamp ?? string.Empty),
             new(ClaimPlan, tenant.Plan ?? "starter"),
+            new(ClaimMustChangePassword, user.MustChangePassword.ToString().ToLowerInvariant()),
         };
 
-        // Super-admin comes from the ROW, and while impersonating it is the
-        // REAL user's row that counts — never inferred from ViewAs itself.
         var effectiveSuperAdmin = realUser?.IsSuperAdmin ?? user.IsSuperAdmin;
         claims.Add(new Claim(ClaimIsSuperAdmin, effectiveSuperAdmin.ToString().ToLowerInvariant()));
 
@@ -254,15 +245,25 @@ public class SignInService : ISignInService
             claims.Add(new Claim(ClaimRealTenantId, realUser.TenantId.ToString()));
         }
 
-        // Roles + permissions, scoped to this tenant's own roles plus system roles.
-        var roleIds = await _db.UserRoles.AsNoTracking()
+        // ── IgnoreQueryFilters #3 — THE ONE THAT MATTERS MOST ────────
+        // This runs DURING sign-in. The tenant claim is being built right
+        // now and is not on HttpContext.User yet, so the filter would
+        // compare against Guid.Empty, return no roles, and the user would
+        // sign in successfully with ZERO permissions — every page denied,
+        // no error anywhere, and it would look like the permission system
+        // was broken rather than the query.
+        //
+        // Safe because the Where clause below already restricts to this
+        // user's own tenant plus system roles (TenantId == null). Ignoring
+        // the automatic filter does not widen what is returned.
+        var roleIds = await _db.UserRoles.AsNoTracking().IgnoreQueryFilters()
             .Where(ur => ur.UserId == user.Id)
             .Select(ur => ur.RoleId)
             .ToListAsync(ct);
 
         if (roleIds.Count > 0)
         {
-            var roles = await _db.Roles.AsNoTracking()
+            var roles = await _db.Roles.AsNoTracking().IgnoreQueryFilters()
                 .Where(r => roleIds.Contains(r.Id)
                          && !r.IsDeleted
                          && (r.TenantId == null || r.TenantId == user.TenantId))
@@ -285,9 +286,9 @@ public class SignInService : ISignInService
                 }
                 catch (JsonException ex)
                 {
-                    // Fail CLOSED. The old code granted a tenant admin every
-                    // permission when their role JSON was corrupt — convenient
-                    // in a demo, wrong when the row belongs to a client.
+                    // Fail CLOSED. Granting a tenant admin everything when
+                    // their role JSON is corrupt was fine in a demo and is
+                    // an accidental privilege grant with client data.
                     _logger.LogError(ex,
                         "Role {RoleId} ({RoleName}) has invalid Permissions JSON — granting NO permissions from it.",
                         role.Id, role.Name);

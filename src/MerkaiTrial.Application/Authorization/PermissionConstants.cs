@@ -1,4 +1,25 @@
+// =====================================================================
 // FILE: MerkaiTrial.Application/Authorization/PermissionConstants.cs
+//
+// STEP 3 CHANGE: a "roles" module is added.
+//
+// WHY: RolesController had no [Authorize] attributes at all. Under the new
+// fallback policy it is no longer anonymous, but ANY authenticated user
+// could still reach it — a Viewer could edit permissions.
+//
+// Reusing users.* was the alternative. Rejected: "can manage people" and
+// "can change what people are allowed to do" are different powers, and the
+// second is the one that matters. A sales manager who can add a colleague
+// should not thereby be able to grant that colleague delete rights on
+// invoices.
+//
+// PermissionPolicyProvider builds "module.action" policies at runtime, so
+// nothing needs registering — adding the constants below is enough.
+//
+// NOTE: PermissionHandler grants a blanket bypass on IsTenantAdmin == true,
+// so a tenant admin passes these checks regardless. That is intended: the
+// client's admin is meant to manage their own tenant's roles.
+// =====================================================================
 
 namespace MerkaiTrial.Application.Authorization
 {
@@ -12,6 +33,7 @@ namespace MerkaiTrial.Application.Authorization
         public const string Quotes = "quotes";
         public const string Invoices = "invoices";
         public const string Users = "users";
+        public const string Roles = "roles";        // ← STEP 3: added
         public const string Tenants = "tenants";
         public const string Reports = "reports";
     }
@@ -73,6 +95,12 @@ namespace MerkaiTrial.Application.Authorization
         public const string UsersRead = "users.read";
         public const string UsersUpdate = "users.update";
         public const string UsersDelete = "users.delete";
+
+        // Roles  ← STEP 3: added
+        public const string RolesCreate = "roles.create";
+        public const string RolesRead = "roles.read";
+        public const string RolesUpdate = "roles.update";
+        public const string RolesDelete = "roles.delete";
 
         // Tenants
         public const string TenantsCreate = "tenants.create";

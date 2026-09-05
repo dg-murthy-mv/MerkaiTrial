@@ -25,6 +25,7 @@
     <PackageReference Include="OpenXmlTools" Version="2.0.0" />
     <PackageReference Include="QuestPDF" Version="2026.2.3" />
     <PackageReference Include="Scrutor" Version="7.0.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
   </ItemGroup>
 
 </Project>
