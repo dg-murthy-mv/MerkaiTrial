@@ -1,0 +1,438 @@
+@page "/Companies"
+@model MerkaiTrial.Admin.Web.Pages.Companies.IndexModel
+@{
+    ViewData["Title"] = "Companies";
+}
+
+@*
+    FILE: MerkaiTrial.Admin.Web/Pages/Companies/Index.cshtml
+
+    Rebuilt from the page model. Follows the Products layout, plus the
+    plan badge and quota bar from Contacts.
+
+    Two things Contacts does that are NOT repeated here:
+      - it renders its own TempData alert blocks, which _Layout already
+        renders globally, so every message appears twice
+      - it has its own 5-second alert auto-dismiss on top of the layout's,
+        and it selects .alert rather than .alert-dismissible, so it also
+        closes the trial banner
+*@
+
+<div class="container-fluid py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-building text-primary"></i> Companies</h2>
+            <p class="text-muted mb-0">Accounts you sell to in @Model.TenantCountryName</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+
+            <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">@Model.PlanDisplayName</span>
+
+            @* Create is gated on BOTH quota and permission. A button that
+               always fails is worse than no button. *@
+            @if (!AuthorizedPageModel.IsAtLimit(Model.Stats.TotalCompanies, Model.MaxCompanies) && Model.CanCreate)
+            {
+                <a asp-page="./Create" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i>
+                    <span class="d-none d-sm-inline"> Add Company</span>
+                </a>
+            }
+            else if (AuthorizedPageModel.IsAtLimit(Model.Stats.TotalCompanies, Model.MaxCompanies))
+            {
+                <button class="btn btn-outline-secondary" disabled
+                        title="Company limit reached. @Model.UpgradePrompt">
+                    <i class="bi bi-lock me-1"></i>Company Limit Reached
+                </button>
+            }
+        </div>
+    </div>
+
+    @* Alerts are rendered once, globally, by _Layout.cshtml. *@
+
+    <!-- Stats -->
+    <div class="row g-3 mb-3">
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:60px;height:60px;background:linear-gradient(135deg,#3b82f6,#2563eb);">
+                            <i class="bi bi-building text-white fs-4"></i>
+                        </div>
+                        <div class="ms-3">
+                            <h6 class="text-muted mb-1 small">Total Companies</h6>
+                            <h3 class="mb-0">@Model.Stats.TotalCompanies</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:60px;height:60px;background:linear-gradient(135deg,#10b981,#059669);">
+                            <i class="bi bi-people text-white fs-4"></i>
+                        </div>
+                        <div class="ms-3">
+                            <h6 class="text-muted mb-1 small">Contacts</h6>
+                            <h3 class="mb-0">@Model.Stats.TotalContacts</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:60px;height:60px;background:linear-gradient(135deg,#f59e0b,#d97706);">
+                            <i class="bi bi-briefcase text-white fs-4"></i>
+                        </div>
+                        <div class="ms-3">
+                            <h6 class="text-muted mb-1 small">Deals</h6>
+                            <h3 class="mb-0">@Model.Stats.TotalDeals</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
+                             style="width:60px;height:60px;background:linear-gradient(135deg,#8b5cf6,#7c3aed);">
+                            <i class="bi bi-grid text-white fs-4"></i>
+                        </div>
+                        <div class="ms-3">
+                            <h6 class="text-muted mb-1 small">Verticals</h6>
+                            <h3 class="mb-0">@Model.Stats.ActiveVerticals</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company quota -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-2">
+            <div class="row align-items-center g-2">
+                <div class="col-auto">
+                    <small class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
+                        Company Quota
+                    </small>
+                </div>
+                <div class="col">
+                    @{
+                        var companyPct = AuthorizedPageModel.QuotaPercent(Model.Stats.TotalCompanies, Model.MaxCompanies);
+                        var companyBarClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.TotalCompanies, Model.MaxCompanies);
+                    }
+                    <div class="progress" style="height:8px;">
+                        <div class="progress-bar @companyBarClass" role="progressbar"
+                             style="width:@companyPct%"
+                             aria-valuenow="@Model.Stats.TotalCompanies"
+                             aria-valuemin="0" aria-valuemax="@Model.MaxCompanies"></div>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <small class="@(companyPct >= 90 ? "text-danger fw-bold" : "text-muted")">
+                        @Model.Stats.TotalCompanies / @Model.MaxCompanies used
+                    </small>
+                </div>
+                @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+                {
+                    <div class="col-auto">
+                        <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
+                            <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Search -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="PageSize" value="@Model.PageSize" />
+                <div class="col-lg-4 col-md-6">
+                    <label class="form-label small fw-semibold"><i class="bi bi-search me-1"></i>Search</label>
+                    <input type="text" class="form-control" name="SearchTerm"
+                           value="@Model.SearchTerm" placeholder="Company name, tax ID..." />
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label small fw-semibold"><i class="bi bi-grid me-1"></i>Vertical</label>
+                    <select class="form-select" name="VerticalFilter" asp-items="Model.GetVerticalFilterOptions()"></select>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label small fw-semibold"><i class="bi bi-globe me-1"></i>Country</label>
+                    <select class="form-select" name="CountryFilter" asp-items="Model.GetCountryFilterOptions()"></select>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">
+                            <i class="bi bi-search d-md-none"></i><span class="d-none d-md-inline">Search</span>
+                        </button>
+                        <a asp-page="./Index" asp-route-pagesize="@Model.PageSize" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Desktop table -->
+    <div class="card border-0 shadow-sm d-none d-md-block">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="bi bi-list-ul me-2"></i>Companies List
+                <span class="badge bg-white text-primary ms-2">@Model.PaginatedCompanies.TotalCount</span>
+            </h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Company</th>
+                        <th>Vertical</th>
+                        <th>Country</th>
+                        <th>Tax ID</th>
+                        <th>Contacts</th>
+                        <th>Deals</th>
+                        <th>Added</th>
+                        <th class="text-end pe-3">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var company in Model.PaginatedCompanies.Items)
+                    {
+                        <tr>
+                            <td class="ps-3">
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-primary bg-opacity-10 rounded-circle p-2 me-3"
+                                         style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+                                        <span class="fw-bold text-primary">
+                                            @(string.IsNullOrEmpty(company.Name) ? "?" : company.Name[0].ToString().ToUpper())
+                                        </span>
+                                    </div>
+                                    <strong>@company.Name</strong>
+                                </div>
+                            </td>
+                            <td><span class="badge bg-info">@company.Vertical</span></td>
+                            <td>@Model.GetCountryName(company.Country)</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(company.TaxId))
+                                {
+                                    <code>@company.TaxId</code>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td><span class="badge bg-secondary">@company.ContactCount</span></td>
+                            <td><span class="badge bg-secondary">@company.DealCount</span></td>
+                            @* Tenant timezone and date format, not the server's. *@
+                            <td><small class="text-muted">@Model.FormatDate(company.CreatedAtUtc)</small></td>
+                            <td class="text-end pe-3">
+                                <div class="btn-group btn-group-sm">
+                                    <a asp-page="./Detail" asp-route-id="@company.Id" class="btn btn-outline-primary" title="View">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <a asp-page="./Edit" asp-route-id="@company.Id" class="btn btn-outline-warning" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    }
+                                    @if (Model.CanDelete)
+                                    {
+                                        <button type="button" class="btn btn-outline-danger"
+                                                onclick="confirmDelete('@company.Id', '@company.Name')" title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Mobile cards -->
+    <div class="d-md-none">
+        @foreach (var company in Model.PaginatedCompanies.Items)
+        {
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="bg-primary bg-opacity-10 rounded-circle p-2 me-3"
+                             style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;">
+                            <span class="fw-bold text-primary">
+                                @(string.IsNullOrEmpty(company.Name) ? "?" : company.Name[0].ToString().ToUpper())
+                            </span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">@company.Name</h6>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <span class="badge bg-info">@company.Vertical</span>
+                                <span class="badge bg-light text-dark">@Model.GetCountryName(company.Country)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <small class="text-muted">Contacts</small>
+                            <div><strong>@company.ContactCount</strong></div>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Deals</small>
+                            <div><strong>@company.DealCount</strong></div>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Tax ID</small>
+                            <div><code>@(company.TaxId ?? "-")</code></div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <a asp-page="./Detail" asp-route-id="@company.Id" class="btn btn-primary btn-sm">
+                            <i class="bi bi-eye me-1"></i>View Details
+                        </a>
+                        @if (Model.CanUpdate || Model.CanDelete)
+                        {
+                            <div class="btn-group">
+                                @if (Model.CanUpdate)
+                                {
+                                    <a asp-page="./Edit" asp-route-id="@company.Id" class="btn btn-outline-warning btn-sm">
+                                        <i class="bi bi-pencil me-1"></i>Edit
+                                    </a>
+                                }
+                                @if (Model.CanDelete)
+                                {
+                                    <button type="button" class="btn btn-outline-danger btn-sm"
+                                            onclick="confirmDelete('@company.Id', '@company.Name')">
+                                        <i class="bi bi-trash me-1"></i>Delete
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (!Model.PaginatedCompanies.Items.Any())
+    {
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                <p class="text-muted mb-3">No companies found.</p>
+                @if (Model.CanCreate && !AuthorizedPageModel.IsAtLimit(Model.Stats.TotalCompanies, Model.MaxCompanies))
+                {
+                    <a asp-page="./Create" class="btn btn-primary">
+                        <i class="bi bi-plus-circle me-1"></i>Add First Company
+                    </a>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Pagination -->
+    @if (Model.PaginatedCompanies.Items.Any())
+    {
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <form method="get" class="d-flex align-items-center gap-2">
+                        <input type="hidden" name="SearchTerm" value="@Model.SearchTerm" />
+                        <input type="hidden" name="VerticalFilter" value="@Model.VerticalFilter" />
+                        <input type="hidden" name="CountryFilter" value="@Model.CountryFilter" />
+                        <input type="hidden" name="Page" value="1" />
+                        <label class="col-form-label small mb-0">Items per page:</label>
+                        <select name="PageSize" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                            <option value="5" selected="@(Model.PageSize == 5)">5</option>
+                            <option value="10" selected="@(Model.PageSize == 10)">10</option>
+                            <option value="25" selected="@(Model.PageSize == 25)">25</option>
+                            <option value="50" selected="@(Model.PageSize == 50)">50</option>
+                            <option value="100" selected="@(Model.PageSize == 100)">100</option>
+                        </select>
+                    </form>
+                    <span class="text-muted small">
+                        Showing @((Model.Page - 1) * Model.PageSize + 1)
+                        to @Math.Min(Model.Page * Model.PageSize, Model.PaginatedCompanies.TotalCount)
+                        of @Model.PaginatedCompanies.TotalCount
+                    </span>
+                </div>
+                <nav>
+                    <ul class="pagination pagination-sm justify-content-center mb-0">
+                        <li class="page-item @(!Model.PaginatedCompanies.HasPrevious ? "disabled" : "")">
+                            <a class="page-link" asp-page="./Index"
+                               asp-route-page="@(Model.Page - 1)"
+                               asp-route-pagesize="@Model.PageSize"
+                               asp-route-searchterm="@Model.SearchTerm"
+                               asp-route-verticalfilter="@Model.VerticalFilter"
+                               asp-route-countryfilter="@Model.CountryFilter">
+                                <i class="bi bi-chevron-left"></i> Previous
+                            </a>
+                        </li>
+                        @{
+                            var start = Math.Max(1, Model.Page - 2);
+                            var end = Math.Min(Model.PaginatedCompanies.TotalPages, Model.Page + 2);
+                            for (int i = start; i <= end; i++)
+                            {
+                                <li class="page-item @(i == Model.Page ? "active" : "")">
+                                    <a class="page-link" asp-page="./Index"
+                                       asp-route-page="@i"
+                                       asp-route-pagesize="@Model.PageSize"
+                                       asp-route-searchterm="@Model.SearchTerm"
+                                       asp-route-verticalfilter="@Model.VerticalFilter"
+                                       asp-route-countryfilter="@Model.CountryFilter">@i</a>
+                                </li>
+                            }
+                        }
+                        <li class="page-item @(!Model.PaginatedCompanies.HasNext ? "disabled" : "")">
+                            <a class="page-link" asp-page="./Index"
+                               asp-route-page="@(Model.Page + 1)"
+                               asp-route-pagesize="@Model.PageSize"
+                               asp-route-searchterm="@Model.SearchTerm"
+                               asp-route-verticalfilter="@Model.VerticalFilter"
+                               asp-route-countryfilter="@Model.CountryFilter">
+                                Next <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    }
+</div>
+
+@* The form tag helper adds the antiforgery token automatically. *@
+<form method="post" id="deleteForm">
+    <input type="hidden" name="id" id="deleteId" />
+</form>
+
+@section Scripts {
+    <script>
+        // Alert auto-dismiss is handled globally by _Layout.cshtml.
+        function confirmDelete(id, name) {
+            if (confirm(`Delete "${name}"? Contacts and deals linked to it will be affected.`)) {
+                document.getElementById('deleteId').value = id;
+                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
+                document.getElementById('deleteForm').submit();
+            }
+        }
+    </script>
+}

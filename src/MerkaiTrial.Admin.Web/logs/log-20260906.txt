@@ -1,0 +1,881 @@
+2026-09-06 18:20:00.361 +05:30 [WRN] The entity type 'Journey' was first mapped explicitly and then ignored. Consider not mapping the entity type in the first place.
+2026-09-06 18:20:00.504 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'ChannelMessage'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:20:00.509 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'Consent'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:20:00.512 +05:30 [WRN] Entity 'Role' has a global query filter defined and is the required end of a relationship with the entity 'UserRole'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:20:00.592 +05:30 [WRN] No store type was specified for the decimal property 'DefaultTaxRate' on entity type 'Country'. This will cause values to be silently truncated if they do not fit in the default precision and scale. Explicitly specify the SQL server column type that can accommodate all the values in 'OnModelCreating' using 'HasColumnType', specify precision and scale using 'HasPrecision', or configure a value converter using 'HasConversion'.
+2026-09-06 18:20:01.498 +05:30 [INF] Executed DbCommand (23ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT 1
+2026-09-06 18:20:01.606 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:20:01.769 +05:30 [INF] Executed DbCommand (59ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id]
+FROM [dbo].[Tenants] AS [t]
+2026-09-06 18:20:01.785 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:20:01.810 +05:30 [INF] Executed DbCommand (20ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id]
+FROM [Users] AS [u]
+2026-09-06 18:20:01.813 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:20:01.823 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[UserId]
+FROM [UserRoles] AS [u]
+2026-09-06 18:20:01.904 +05:30 [INF] Executed DbCommand (45ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [r].[Id]
+FROM [Roles] AS [r]
+WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+2026-09-06 18:20:01.909 +05:30 [INF] DatabaseWarmup [Admin.Web]: EF model built and connection pool primed in 2259ms. First user request will not pay this cost.
+2026-09-06 18:20:02.037 +05:30 [INF] User profile is available. Using 'C:\Users\dgmur\AppData\Local\ASP.NET\DataProtection-Keys' as key repository and Windows DPAPI to encrypt keys at rest.
+2026-09-06 18:20:02.471 +05:30 [INF] Now listening on: https://localhost:61093
+2026-09-06 18:20:02.474 +05:30 [INF] Now listening on: http://localhost:61092
+2026-09-06 18:20:02.560 +05:30 [INF] Application started. Press Ctrl+C to shut down.
+2026-09-06 18:20:02.561 +05:30 [INF] Hosting environment: Development
+2026-09-06 18:20:02.561 +05:30 [INF] Content root path: C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web
+2026-09-06 18:20:05.570 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-06 18:20:05.808 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-06 18:20:05.830 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-06 18:20:05.833 +05:30 [INF] HTTP GET / responded 302 in 82.4238 ms
+2026-09-06 18:20:05.840 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 272.7382ms
+2026-09-06 18:20:05.850 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - null null
+2026-09-06 18:20:05.865 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:20:05.907 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:20:05.943 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-06 18:20:05.943 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:20:05.946 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:20:05.946 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:06.179 +05:30 [INF] Executed page /Account/Login in 263.4791ms
+2026-09-06 18:20:06.182 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:06.183 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:06.183 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:20:06.194 +05:30 [INF] HTTP GET /Account/Login responded 200 in 338.5347 ms
+2026-09-06 18:20:06.197 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 15.3007ms
+2026-09-06 18:20:06.212 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - 200 null text/html; charset=utf-8 362.0417ms
+2026-09-06 18:20:06.264 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 81.4543ms
+2026-09-06 18:20:06.359 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-06 18:20:06.377 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-06 18:20:06.378 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-06 18:20:06.378 +05:30 [INF] HTTP GET /favicon.ico responded 302 in 13.7761 ms
+2026-09-06 18:20:06.378 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 302 0 null 19.4632ms
+2026-09-06 18:20:06.382 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - null null
+2026-09-06 18:20:06.384 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:20:06.384 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:20:06.387 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-06 18:20:06.390 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:20:06.391 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:20:06.391 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:06.403 +05:30 [INF] Executed page /Account/Login in 18.3349ms
+2026-09-06 18:20:06.403 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:20:06.403 +05:30 [INF] HTTP GET /Account/Login responded 200 in 21.1571 ms
+2026-09-06 18:20:06.404 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - 200 null text/html; charset=utf-8 21.7426ms
+2026-09-06 18:20:21.684 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - application/x-www-form-urlencoded 255
+2026-09-06 18:20:21.699 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:20:21.700 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:20:21.754 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnPostAsync - ModelState is "Valid"
+2026-09-06 18:20:21.994 +05:30 [INF] Executed DbCommand (74ms) [Parameters=[@__email_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Email] = @__email_0 AND [u].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:22.308 +05:30 [INF] Executed DbCommand (36ms) [Parameters=[@__user_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__user_TenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:22.456 +05:30 [INF] Executed DbCommand (39ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SET IMPLICIT_TRANSACTIONS OFF;
+SET NOCOUNT ON;
+UPDATE [Users] SET [LastLoginUtc] = @p0
+OUTPUT 1
+WHERE [Id] = @p1;
+2026-09-06 18:20:22.520 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__user_Id_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[RoleId]
+FROM [UserRoles] AS [u]
+WHERE [u].[UserId] = @__user_Id_0
+2026-09-06 18:20:22.527 +05:30 [INF] AuthenticationScheme: Cookies signed in.
+2026-09-06 18:20:22.527 +05:30 [INF] Sign-in succeeded for user "aa000000-dd00-0000-0000-000000000001" in tenant "aa000000-aaaa-0000-0000-000000000000"
+2026-09-06 18:20:22.529 +05:30 [INF] Executed handler method OnPostAsync, returned result Microsoft.AspNetCore.Mvc.RedirectResult.
+2026-09-06 18:20:22.531 +05:30 [INF] Executing RedirectResult, redirecting to /.
+2026-09-06 18:20:22.532 +05:30 [INF] Executed page /Account/Login in 831.8316ms
+2026-09-06 18:20:22.532 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:20:22.532 +05:30 [INF] HTTP POST /Account/Login responded 302 in 834.6484 ms
+2026-09-06 18:20:22.536 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - 302 0 null 851.1216ms
+2026-09-06 18:20:22.539 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-06 18:20:22.638 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:22.643 +05:30 [INF] Executing endpoint 'HTTP: GET /'
+2026-09-06 18:20:22.643 +05:30 [INF] Executed endpoint 'HTTP: GET /'
+2026-09-06 18:20:22.644 +05:30 [INF] HTTP GET / responded 302 in 101.6598 ms
+2026-09-06 18:20:22.644 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 104.6064ms
+2026-09-06 18:20:22.647 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Admin - null null
+2026-09-06 18:20:22.657 +05:30 [INF] Executed DbCommand (2ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:22.662 +05:30 [INF] Executing endpoint '/Admin/Index'
+2026-09-06 18:20:22.669 +05:30 [INF] Route matched with {page = "/Admin/Index"}. Executing page /Admin/Index
+2026-09-06 18:20:22.670 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Admin.IndexModel.OnGet - ModelState is "Valid"
+2026-09-06 18:20:22.670 +05:30 [INF] Admin dashboard accessed
+2026-09-06 18:20:22.670 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:20:22.670 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:20:22.671 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:22.737 +05:30 [INF] Executed page /Admin/Index in 67.5521ms
+2026-09-06 18:20:22.737 +05:30 [INF] Executed endpoint '/Admin/Index'
+2026-09-06 18:20:22.737 +05:30 [INF] HTTP GET /Admin responded 200 in 86.8769 ms
+2026-09-06 18:20:22.738 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Admin - 200 null text/html; charset=utf-8 90.5338ms
+2026-09-06 18:20:22.791 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:22.793 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:22.805 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 31.3398ms
+2026-09-06 18:20:22.879 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 87.2418ms
+2026-09-06 18:20:23.059 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-06 18:20:23.089 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:23.090 +05:30 [INF] HTTP GET /favicon.ico responded 404 in 26.6569 ms
+2026-09-06 18:20:23.091 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 404 0 null 31.2792ms
+2026-09-06 18:20:23.092 +05:30 [INF] Request reached the end of the middleware pipeline without being handled by application code. Request path: GET https://localhost:61093/favicon.ico, Response status code: 404
+2026-09-06 18:20:34.758 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Admin/Viewas - null null
+2026-09-06 18:20:34.803 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:34.804 +05:30 [INF] Executing endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:34.812 +05:30 [INF] Route matched with {page = "/Admin/ViewAs/ViewAsIndex"}. Executing page /Admin/ViewAs/ViewAsIndex
+2026-09-06 18:20:34.813 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Admin.ViewAs.IndexModel.OnGetAsync - ModelState is "Valid"
+2026-09-06 18:20:34.944 +05:30 [INF] Executed DbCommand (48ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[Name], [c].[Name], [t].[Plan]
+FROM [dbo].[Tenants] AS [t]
+LEFT JOIN [Countries] AS [c] ON [t].[CountryId] = [c].[Id]
+WHERE [t].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [t].[Name]
+2026-09-06 18:20:34.949 +05:30 [INF] Executed handler method OnGetAsync, returned result .
+2026-09-06 18:20:34.950 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:20:34.950 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:35.020 +05:30 [INF] Executed page /Admin/ViewAs/ViewAsIndex in 208.7213ms
+2026-09-06 18:20:35.021 +05:30 [INF] Executed endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:35.021 +05:30 [INF] HTTP GET /Admin/Viewas responded 200 in 247.1549 ms
+2026-09-06 18:20:35.021 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Admin/Viewas - 200 null text/html; charset=utf-8 263.2686ms
+2026-09-06 18:20:35.039 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:35.037 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:35.043 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 5.4061ms
+2026-09-06 18:20:35.096 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 56.426ms
+2026-09-06 18:20:40.207 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Admin/Viewas?handler=UsersForTenant&tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-06 18:20:40.222 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:40.223 +05:30 [INF] Executing endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:40.224 +05:30 [INF] Route matched with {page = "/Admin/ViewAs/ViewAsIndex"}. Executing page /Admin/ViewAs/ViewAsIndex
+2026-09-06 18:20:40.224 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Admin.ViewAs.IndexModel.OnGetUsersForTenantAsync - ModelState is "Valid"
+2026-09-06 18:20:40.274 +05:30 [INF] Executed DbCommand (37ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[TenantId] = @__tenantId_0 AND [u].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [u].[FirstName], [u].[LastName]
+2026-09-06 18:20:40.455 +05:30 [INF] Executed DbCommand (78ms) [Parameters=[@__userIds_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[UserId], [t].[DisplayName]
+FROM [UserRoles] AS [u]
+INNER JOIN (
+    SELECT [r].[Id], [r].[DisplayName]
+    FROM [Roles] AS [r]
+    WHERE [r].[IsDeleted] = CAST(0 AS bit)
+) AS [t] ON [u].[RoleId] = [t].[Id]
+WHERE [u].[UserId] IN (
+    SELECT [u0].[value]
+    FROM OPENJSON(@__userIds_0) WITH ([value] uniqueidentifier '$') AS [u0]
+)
+2026-09-06 18:20:40.462 +05:30 [INF] Executed handler method OnGetUsersForTenantAsync, returned result Microsoft.AspNetCore.Mvc.JsonResult.
+2026-09-06 18:20:40.464 +05:30 [INF] Executing JsonResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Admin.Web.Pages.Admin.ViewAs.UserOption, MerkaiTrial.Admin.Web, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-06 18:20:40.480 +05:30 [INF] Executed page /Admin/ViewAs/ViewAsIndex in 256.7617ms
+2026-09-06 18:20:40.480 +05:30 [INF] Executed endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:40.481 +05:30 [INF] HTTP GET /Admin/Viewas responded 200 in 273.2671 ms
+2026-09-06 18:20:40.481 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Admin/Viewas?handler=UsersForTenant&tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 273.7516ms
+2026-09-06 18:20:45.973 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Admin/ViewAs?handler=Start - application/x-www-form-urlencoded 315
+2026-09-06 18:20:45.991 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:45.992 +05:30 [INF] Executing endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:45.993 +05:30 [INF] Route matched with {page = "/Admin/ViewAs/ViewAsIndex"}. Executing page /Admin/ViewAs/ViewAsIndex
+2026-09-06 18:20:45.995 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Admin.ViewAs.IndexModel.OnPostStartAsync - ModelState is "Valid"
+2026-09-06 18:20:46.025 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__realUserId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__realUserId_0
+2026-09-06 18:20:46.043 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__targetUserId_0='?' (DbType = Guid), @__targetTenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__targetUserId_0 AND [u].[TenantId] = @__targetTenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:46.059 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__targetTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__targetTenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:46.060 +05:30 [WRN] VIEW-AS START: superadmin "aa000000-dd00-0000-0000-000000000001" impersonating "dd100002-dd00-0000-0000-000000000002" in tenant "bb100002-aaaa-0000-0000-000000000002"
+2026-09-06 18:20:46.068 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__user_Id_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[RoleId]
+FROM [UserRoles] AS [u]
+WHERE [u].[UserId] = @__user_Id_0
+2026-09-06 18:20:46.103 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__roleIds_0='?' (Size = 4000), @__user_TenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+FROM [Roles] AS [r]
+WHERE [r].[Id] IN (
+    SELECT [r0].[value]
+    FROM OPENJSON(@__roleIds_0) WITH ([value] uniqueidentifier '$') AS [r0]
+) AND [r].[IsDeleted] = CAST(0 AS bit) AND ([r].[TenantId] IS NULL OR [r].[TenantId] = @__user_TenantId_1)
+2026-09-06 18:20:46.118 +05:30 [INF] AuthenticationScheme: Cookies signed in.
+2026-09-06 18:20:46.119 +05:30 [INF] Executed handler method OnPostStartAsync, returned result Microsoft.AspNetCore.Mvc.RedirectToPageResult.
+2026-09-06 18:20:46.120 +05:30 [INF] Executing RedirectToPageResult, redirecting to /Dashboard/Index.
+2026-09-06 18:20:46.122 +05:30 [INF] Executed page /Admin/ViewAs/ViewAsIndex in 128.8933ms
+2026-09-06 18:20:46.122 +05:30 [INF] Executed endpoint '/Admin/ViewAs/ViewAsIndex'
+2026-09-06 18:20:46.122 +05:30 [INF] HTTP POST /Admin/ViewAs responded 302 in 141.7411 ms
+2026-09-06 18:20:46.122 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Admin/ViewAs?handler=Start - 302 0 null 149.8292ms
+2026-09-06 18:20:46.128 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Dashboard - null null
+2026-09-06 18:20:46.134 +05:30 [INF] Executed DbCommand (1ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:46.134 +05:30 [INF] Executing endpoint '/Dashboard/Index'
+2026-09-06 18:20:46.142 +05:30 [INF] Route matched with {page = "/Dashboard/Index"}. Executing page /Dashboard/Index
+2026-09-06 18:20:46.229 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel.OnGet - ModelState is "Valid"
+2026-09-06 18:20:46.251 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:46.268 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:46.291 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:20:46.318 +05:30 [INF] Executed DbCommand (17ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:46.331 +05:30 [INF] Loading dashboard for tenant "bb100002-aaaa-0000-0000-000000000002" (THB)
+2026-09-06 18:20:46.350 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:20:46.484 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:20:46.503 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:20:46.506 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:20:46.522 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:46.522 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:46.542 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:46.542 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:46.548 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:46.548 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:48.079 +05:30 [INF] Received HTTP response headers after 1553.2509ms - 200
+2026-09-06 18:20:48.079 +05:30 [INF] Received HTTP response headers after 1533.2368ms - 200
+2026-09-06 18:20:48.080 +05:30 [INF] End processing HTTP request after 1558.2156ms - 200
+2026-09-06 18:20:48.080 +05:30 [INF] End processing HTTP request after 1537.8473ms - 200
+2026-09-06 18:20:48.126 +05:30 [INF] Received HTTP response headers after 1641.7714ms - 200
+2026-09-06 18:20:48.126 +05:30 [INF] End processing HTTP request after 1779.3495ms - 200
+2026-09-06 18:20:48.483 +05:30 [INF] Received HTTP response headers after 1934.9483ms - 200
+2026-09-06 18:20:48.484 +05:30 [INF] End processing HTTP request after 1935.7601ms - 200
+2026-09-06 18:20:48.536 +05:30 [INF] Received HTTP response headers after 2026.9048ms - 200
+2026-09-06 18:20:48.537 +05:30 [INF] End processing HTTP request after 2033.9454ms - 200
+2026-09-06 18:20:48.566 +05:30 [INF] Executed handler method OnGet, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:48.694 +05:30 [INF] Executed page /Dashboard/Index in 2551.981ms
+2026-09-06 18:20:48.694 +05:30 [INF] Executed endpoint '/Dashboard/Index'
+2026-09-06 18:20:48.694 +05:30 [INF] HTTP GET /Dashboard responded 200 in 2564.1386 ms
+2026-09-06 18:20:48.695 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Dashboard - 200 null text/html; charset=utf-8 2566.2542ms
+2026-09-06 18:20:48.836 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:48.838 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:48.853 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 15.3153ms
+2026-09-06 18:20:48.962 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 126.1646ms
+2026-09-06 18:20:53.024 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Companies - null null
+2026-09-06 18:20:53.043 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:53.043 +05:30 [INF] Executing endpoint '/Companies/Index'
+2026-09-06 18:20:53.058 +05:30 [INF] Route matched with {page = "/Companies/Index"}. Executing page /Companies/Index
+2026-09-06 18:20:53.073 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Companies.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-06 18:20:53.077 +05:30 [INF] 🔐 Checking permission: companies.read for user admin@sathornprestige.co.th
+2026-09-06 18:20:53.078 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:20:53.091 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:53.096 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:53.101 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:20:53.108 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:53.111 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:53.112 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:20:53.368 +05:30 [INF] Received HTTP response headers after 256.6475ms - 200
+2026-09-06 18:20:53.369 +05:30 [INF] End processing HTTP request after 258.0076ms - 200
+2026-09-06 18:20:53.376 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-06 18:20:53.377 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-06 18:20:53.505 +05:30 [INF] Received HTTP response headers after 128.274ms - 200
+2026-09-06 18:20:53.505 +05:30 [INF] End processing HTTP request after 129.1426ms - 200
+2026-09-06 18:20:53.512 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-06 18:20:53.513 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-06 18:20:53.582 +05:30 [INF] Received HTTP response headers after 69.1117ms - 200
+2026-09-06 18:20:53.582 +05:30 [INF] End processing HTTP request after 69.6766ms - 200
+2026-09-06 18:20:53.594 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-06 18:20:53.595 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-06 18:20:53.635 +05:30 [INF] Received HTTP response headers after 40.1273ms - 200
+2026-09-06 18:20:53.635 +05:30 [INF] End processing HTTP request after 40.6403ms - 200
+2026-09-06 18:20:53.643 +05:30 [INF] Loaded page 1 with 5 companies (Total: 5)
+2026-09-06 18:20:53.643 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:53.712 +05:30 [INF] Executed page /Companies/Index in 653.355ms
+2026-09-06 18:20:53.712 +05:30 [INF] Executed endpoint '/Companies/Index'
+2026-09-06 18:20:53.713 +05:30 [INF] HTTP GET /Companies responded 200 in 681.3373 ms
+2026-09-06 18:20:53.713 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Companies - 200 null text/html; charset=utf-8 688.7768ms
+2026-09-06 18:20:53.724 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:53.724 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:53.726 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 2.6168ms
+2026-09-06 18:20:53.888 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 163.5256ms
+2026-09-06 18:20:58.245 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Contacts - null null
+2026-09-06 18:20:58.268 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:58.269 +05:30 [INF] Executing endpoint '/Contacts/Index'
+2026-09-06 18:20:58.278 +05:30 [INF] Route matched with {page = "/Contacts/Index"}. Executing page /Contacts/Index
+2026-09-06 18:20:58.287 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Contacts.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-06 18:20:58.292 +05:30 [INF] 🔐 Checking permission: contacts.read for user admin@sathornprestige.co.th
+2026-09-06 18:20:58.292 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:20:58.302 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:20:58.307 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:58.313 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:20:58.320 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:20:58.322 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/contacts/stats
+2026-09-06 18:20:58.323 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/contacts/stats
+2026-09-06 18:20:58.487 +05:30 [INF] Received HTTP response headers after 163.9663ms - 200
+2026-09-06 18:20:58.487 +05:30 [INF] End processing HTTP request after 165.009ms - 200
+2026-09-06 18:20:58.497 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/contacts?pageNumber=1&pageSize=25
+2026-09-06 18:20:58.497 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/contacts?pageNumber=1&pageSize=25
+2026-09-06 18:20:58.599 +05:30 [INF] Received HTTP response headers after 101.7034ms - 200
+2026-09-06 18:20:58.599 +05:30 [INF] End processing HTTP request after 102.346ms - 200
+2026-09-06 18:20:58.606 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/contacts/companies-lookup
+2026-09-06 18:20:58.606 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/contacts/companies-lookup
+2026-09-06 18:20:58.632 +05:30 [INF] Received HTTP response headers after 26.2708ms - 200
+2026-09-06 18:20:58.632 +05:30 [INF] End processing HTTP request after 26.7448ms - 200
+2026-09-06 18:20:58.635 +05:30 [INF] Loaded page 1 with 5 contacts (Total: 5)
+2026-09-06 18:20:58.635 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:20:58.675 +05:30 [INF] Executed page /Contacts/Index in 396.9726ms
+2026-09-06 18:20:58.675 +05:30 [INF] Executed endpoint '/Contacts/Index'
+2026-09-06 18:20:58.675 +05:30 [INF] HTTP GET /Contacts responded 200 in 424.6945 ms
+2026-09-06 18:20:58.676 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Contacts - 200 null text/html; charset=utf-8 430.8223ms
+2026-09-06 18:20:58.700 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:20:58.700 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:20:58.720 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 19.7741ms
+2026-09-06 18:20:58.856 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 156.2378ms
+2026-09-06 18:21:00.285 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Products - null null
+2026-09-06 18:21:00.303 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:00.303 +05:30 [INF] Executing endpoint '/Products/Index'
+2026-09-06 18:21:00.315 +05:30 [INF] Route matched with {page = "/Products/Index"}. Executing page /Products/Index
+2026-09-06 18:21:00.317 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Products.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-06 18:21:00.324 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:21:00.330 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:00.335 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:21:00.348 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:00.351 +05:30 [INF] 🔐 Checking permission: products.read for user admin@sathornprestige.co.th
+2026-09-06 18:21:00.352 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:21:00.354 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/products/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:21:00.355 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/products/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:21:00.482 +05:30 [INF] Received HTTP response headers after 127.0119ms - 200
+2026-09-06 18:21:00.482 +05:30 [INF] End processing HTTP request after 127.816ms - 200
+2026-09-06 18:21:00.489 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/products?tenantId=bb100002-aaaa-0000-0000-000000000002&pageNumber=1&pageSize=25
+2026-09-06 18:21:00.490 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/products?tenantId=bb100002-aaaa-0000-0000-000000000002&pageNumber=1&pageSize=25
+2026-09-06 18:21:00.605 +05:30 [INF] Received HTTP response headers after 114.529ms - 200
+2026-09-06 18:21:00.605 +05:30 [INF] End processing HTTP request after 115.5065ms - 200
+2026-09-06 18:21:00.613 +05:30 [INF] Loaded page 1 with 6 products
+2026-09-06 18:21:00.613 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:21:00.714 +05:30 [INF] Executed page /Products/Index in 398.8931ms
+2026-09-06 18:21:00.714 +05:30 [INF] Executed endpoint '/Products/Index'
+2026-09-06 18:21:00.714 +05:30 [INF] HTTP GET /Products responded 200 in 425.3316 ms
+2026-09-06 18:21:00.714 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Products - 200 null text/html; charset=utf-8 429.3883ms
+2026-09-06 18:21:00.765 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:21:00.798 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:21:00.834 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 69.0887ms
+2026-09-06 18:21:00.881 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 83.5033ms
+2026-09-06 18:21:12.399 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads - null null
+2026-09-06 18:21:12.431 +05:30 [INF] Executed DbCommand (17ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:12.432 +05:30 [INF] Executing endpoint '/Leads/Index'
+2026-09-06 18:21:12.458 +05:30 [INF] Route matched with {page = "/Leads/Index"}. Executing page /Leads/Index
+2026-09-06 18:21:12.461 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.OnGetAsync - ModelState is "Valid"
+2026-09-06 18:21:12.463 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-06 18:21:12.463 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:21:12.471 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:21:12.476 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:12.480 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:21:12.487 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:12.489 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads?pageNumber=1&pageSize=10
+2026-09-06 18:21:12.490 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads?pageNumber=1&pageSize=10
+2026-09-06 18:21:12.652 +05:30 [INF] Received HTTP response headers after 161.4781ms - 200
+2026-09-06 18:21:12.652 +05:30 [INF] End processing HTTP request after 162.6408ms - 200
+2026-09-06 18:21:12.659 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:21:12.660 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:21:12.710 +05:30 [INF] Received HTTP response headers after 50.3562ms - 200
+2026-09-06 18:21:12.710 +05:30 [INF] End processing HTTP request after 51.1208ms - 200
+2026-09-06 18:21:12.712 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:21:12.763 +05:30 [INF] Executed page /Leads/Index in 304.7978ms
+2026-09-06 18:21:12.763 +05:30 [INF] Executed endpoint '/Leads/Index'
+2026-09-06 18:21:12.763 +05:30 [INF] HTTP GET /Leads responded 200 in 356.0093 ms
+2026-09-06 18:21:12.764 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads - 200 null text/html; charset=utf-8 365.0494ms
+2026-09-06 18:21:12.777 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:21:12.777 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:21:12.778 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 1.6001ms
+2026-09-06 18:21:12.959 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 182.4585ms
+2026-09-06 18:21:33.224 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Logout - null null
+2026-09-06 18:21:33.245 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:33.246 +05:30 [INF] Executing endpoint '/Account/Logout'
+2026-09-06 18:21:33.256 +05:30 [INF] Route matched with {page = "/Account/Logout"}. Executing page /Account/Logout
+2026-09-06 18:21:33.256 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LogoutModel.OnGet - ModelState is "Valid"
+2026-09-06 18:21:33.256 +05:30 [INF] Executed handler method OnGet, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:21:33.263 +05:30 [INF] Executed page /Account/Logout in 7.389ms
+2026-09-06 18:21:33.263 +05:30 [INF] Executed endpoint '/Account/Logout'
+2026-09-06 18:21:33.263 +05:30 [INF] HTTP GET /Account/Logout responded 200 in 35.1399 ms
+2026-09-06 18:21:33.274 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Logout - 200 null text/html; charset=utf-8 47.6885ms
+2026-09-06 18:21:33.292 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:21:33.292 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:21:33.293 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 1.0803ms
+2026-09-06 18:21:33.325 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 32.6983ms
+2026-09-06 18:21:35.693 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Account/Logout - application/x-www-form-urlencoded 225
+2026-09-06 18:21:35.707 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:21:35.707 +05:30 [INF] Executing endpoint '/Account/Logout'
+2026-09-06 18:21:35.707 +05:30 [INF] Route matched with {page = "/Account/Logout"}. Executing page /Account/Logout
+2026-09-06 18:21:35.708 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LogoutModel.OnPostAsync - ModelState is "Valid"
+2026-09-06 18:21:35.710 +05:30 [INF] AuthenticationScheme: Cookies signed out.
+2026-09-06 18:21:35.711 +05:30 [INF] Executed handler method OnPostAsync, returned result Microsoft.AspNetCore.Mvc.RedirectToPageResult.
+2026-09-06 18:21:35.711 +05:30 [INF] Executing RedirectToPageResult, redirecting to /Account/Login.
+2026-09-06 18:21:35.711 +05:30 [INF] Executed page /Account/Logout in 3.3727ms
+2026-09-06 18:21:35.711 +05:30 [INF] Executed endpoint '/Account/Logout'
+2026-09-06 18:21:35.711 +05:30 [INF] HTTP POST /Account/Logout responded 302 in 11.6341 ms
+2026-09-06 18:21:35.711 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Account/Logout - 302 0 null 17.6547ms
+2026-09-06 18:21:35.715 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login - null null
+2026-09-06 18:21:35.720 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:21:35.720 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:21:35.721 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-06 18:21:35.721 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:21:35.721 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:21:35.721 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:21:35.725 +05:30 [INF] Executed page /Account/Login in 4.0023ms
+2026-09-06 18:21:35.725 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:21:35.725 +05:30 [INF] HTTP GET /Account/Login responded 200 in 4.7433 ms
+2026-09-06 18:21:35.725 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login - 200 null text/html; charset=utf-8 10.1685ms
+2026-09-06 18:21:35.754 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:21:35.754 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:21:35.770 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 16.2206ms
+2026-09-06 18:21:35.840 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 85.2603ms
+2026-09-06 18:22:28.204 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Account/Login - application/x-www-form-urlencoded 261
+2026-09-06 18:22:28.221 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:22:28.221 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:22:28.228 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnPostAsync - ModelState is "Valid"
+2026-09-06 18:22:28.241 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__email_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Email] = @__email_0 AND [u].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:22:28.332 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__user_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__user_TenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:22:28.344 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SET IMPLICIT_TRANSACTIONS OFF;
+SET NOCOUNT ON;
+UPDATE [Users] SET [LastLoginUtc] = @p0
+OUTPUT 1
+WHERE [Id] = @p1;
+2026-09-06 18:22:28.349 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__user_Id_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[RoleId]
+FROM [UserRoles] AS [u]
+WHERE [u].[UserId] = @__user_Id_0
+2026-09-06 18:22:28.362 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__roleIds_0='?' (Size = 4000), @__user_TenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+FROM [Roles] AS [r]
+WHERE [r].[Id] IN (
+    SELECT [r0].[value]
+    FROM OPENJSON(@__roleIds_0) WITH ([value] uniqueidentifier '$') AS [r0]
+) AND [r].[IsDeleted] = CAST(0 AS bit) AND ([r].[TenantId] IS NULL OR [r].[TenantId] = @__user_TenantId_1)
+2026-09-06 18:22:28.364 +05:30 [INF] AuthenticationScheme: Cookies signed in.
+2026-09-06 18:22:28.364 +05:30 [INF] Sign-in succeeded for user "dd100002-dd00-0000-0000-000000000002" in tenant "bb100002-aaaa-0000-0000-000000000002"
+2026-09-06 18:22:28.365 +05:30 [INF] Executed handler method OnPostAsync, returned result Microsoft.AspNetCore.Mvc.RedirectResult.
+2026-09-06 18:22:28.365 +05:30 [INF] Executing RedirectResult, redirecting to /Dashboard.
+2026-09-06 18:22:28.365 +05:30 [INF] Executed page /Account/Login in 143.8718ms
+2026-09-06 18:22:28.365 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:22:28.365 +05:30 [INF] HTTP POST /Account/Login responded 302 in 144.5888 ms
+2026-09-06 18:22:28.366 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Account/Login - 302 0 null 161.3903ms
+2026-09-06 18:22:28.375 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Dashboard - null null
+2026-09-06 18:22:28.393 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:22:28.394 +05:30 [INF] Executing endpoint '/Dashboard/Index'
+2026-09-06 18:22:28.395 +05:30 [INF] Route matched with {page = "/Dashboard/Index"}. Executing page /Dashboard/Index
+2026-09-06 18:22:28.397 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel.OnGet - ModelState is "Valid"
+2026-09-06 18:22:28.404 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:22:28.409 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:22:28.414 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:22:28.419 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:22:28.419 +05:30 [INF] Loading dashboard for tenant "bb100002-aaaa-0000-0000-000000000002" (THB)
+2026-09-06 18:22:28.419 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:22:28.419 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:22:28.423 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:22:28.424 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:22:28.426 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.427 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.490 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.491 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.573 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.573 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:22:28.641 +05:30 [INF] Received HTTP response headers after 221.4172ms - 200
+2026-09-06 18:22:28.641 +05:30 [INF] End processing HTTP request after 222.0395ms - 200
+2026-09-06 18:22:28.717 +05:30 [INF] Received HTTP response headers after 290.1027ms - 200
+2026-09-06 18:22:28.717 +05:30 [INF] End processing HTTP request after 290.8233ms - 200
+2026-09-06 18:22:28.719 +05:30 [INF] Received HTTP response headers after 227.6603ms - 200
+2026-09-06 18:22:28.719 +05:30 [INF] End processing HTTP request after 229.2691ms - 200
+2026-09-06 18:22:28.731 +05:30 [INF] Received HTTP response headers after 307.2623ms - 200
+2026-09-06 18:22:28.731 +05:30 [INF] End processing HTTP request after 308.2648ms - 200
+2026-09-06 18:22:28.732 +05:30 [INF] Received HTTP response headers after 158.4648ms - 200
+2026-09-06 18:22:28.732 +05:30 [INF] End processing HTTP request after 158.9318ms - 200
+2026-09-06 18:22:28.733 +05:30 [INF] Executed handler method OnGet, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:22:28.739 +05:30 [INF] Executed page /Dashboard/Index in 344.0091ms
+2026-09-06 18:22:28.739 +05:30 [INF] Executed endpoint '/Dashboard/Index'
+2026-09-06 18:22:28.739 +05:30 [INF] HTTP GET /Dashboard responded 200 in 360.3883 ms
+2026-09-06 18:22:28.739 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Dashboard - 200 null text/html; charset=utf-8 364.0548ms
+2026-09-06 18:22:28.754 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:22:28.755 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:22:28.756 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 2.4945ms
+2026-09-06 18:22:28.832 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 77.2359ms
+2026-09-06 18:57:57.846 +05:30 [WRN] The entity type 'Journey' was first mapped explicitly and then ignored. Consider not mapping the entity type in the first place.
+2026-09-06 18:57:57.975 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'ChannelMessage'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:57:57.980 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'Consent'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:57:57.984 +05:30 [WRN] Entity 'Role' has a global query filter defined and is the required end of a relationship with the entity 'UserRole'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-06 18:57:58.067 +05:30 [WRN] No store type was specified for the decimal property 'DefaultTaxRate' on entity type 'Country'. This will cause values to be silently truncated if they do not fit in the default precision and scale. Explicitly specify the SQL server column type that can accommodate all the values in 'OnModelCreating' using 'HasColumnType', specify precision and scale using 'HasPrecision', or configure a value converter using 'HasConversion'.
+2026-09-06 18:57:58.565 +05:30 [INF] Executed DbCommand (27ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT 1
+2026-09-06 18:57:58.667 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:57:58.743 +05:30 [INF] Executed DbCommand (22ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id]
+FROM [dbo].[Tenants] AS [t]
+2026-09-06 18:57:58.755 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:57:58.764 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id]
+FROM [Users] AS [u]
+2026-09-06 18:57:58.766 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-06 18:57:58.772 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[UserId]
+FROM [UserRoles] AS [u]
+2026-09-06 18:57:58.842 +05:30 [INF] Executed DbCommand (35ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [r].[Id]
+FROM [Roles] AS [r]
+WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+2026-09-06 18:57:58.845 +05:30 [INF] DatabaseWarmup [Admin.Web]: EF model built and connection pool primed in 1581ms. First user request will not pay this cost.
+2026-09-06 18:57:58.947 +05:30 [INF] User profile is available. Using 'C:\Users\dgmur\AppData\Local\ASP.NET\DataProtection-Keys' as key repository and Windows DPAPI to encrypt keys at rest.
+2026-09-06 18:57:59.373 +05:30 [INF] Now listening on: https://localhost:61093
+2026-09-06 18:57:59.373 +05:30 [INF] Now listening on: http://localhost:61092
+2026-09-06 18:57:59.429 +05:30 [INF] Application started. Press Ctrl+C to shut down.
+2026-09-06 18:57:59.429 +05:30 [INF] Hosting environment: Development
+2026-09-06 18:57:59.429 +05:30 [INF] Content root path: C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web
+2026-09-06 18:58:01.932 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-06 18:58:02.294 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-06 18:58:02.323 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-06 18:58:02.326 +05:30 [INF] HTTP GET / responded 302 in 107.8437 ms
+2026-09-06 18:58:02.333 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 404.7451ms
+2026-09-06 18:58:02.346 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - null null
+2026-09-06 18:58:02.363 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:58:02.416 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:58:02.495 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-06 18:58:02.496 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:58:02.499 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:58:02.501 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:58:02.818 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:58:02.829 +05:30 [INF] Executed page /Account/Login in 394.3691ms
+2026-09-06 18:58:02.846 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:58:02.858 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:58:02.878 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 58.9553ms
+2026-09-06 18:58:02.878 +05:30 [INF] HTTP GET /Account/Login responded 200 in 524.7114 ms
+2026-09-06 18:58:02.935 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - 200 null text/html; charset=utf-8 589.0696ms
+2026-09-06 18:58:03.065 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 219.6067ms
+2026-09-06 18:58:03.110 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-06 18:58:03.129 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-06 18:58:03.130 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-06 18:58:03.130 +05:30 [INF] HTTP GET /favicon.ico responded 302 in 13.8786 ms
+2026-09-06 18:58:03.131 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 302 0 null 20.9094ms
+2026-09-06 18:58:03.140 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - null null
+2026-09-06 18:58:03.142 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:58:03.143 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:58:03.145 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-06 18:58:03.145 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-06 18:58:03.145 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-06 18:58:03.146 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:58:03.161 +05:30 [INF] Executed page /Account/Login in 17.9941ms
+2026-09-06 18:58:03.161 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:58:03.161 +05:30 [INF] HTTP GET /Account/Login responded 200 in 21.4164 ms
+2026-09-06 18:58:03.162 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - 200 null text/html; charset=utf-8 22.1096ms
+2026-09-06 18:58:26.594 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - application/x-www-form-urlencoded 261
+2026-09-06 18:58:26.599 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-06 18:58:26.600 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-06 18:58:26.625 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnPostAsync - ModelState is "Valid"
+2026-09-06 18:58:26.797 +05:30 [INF] Executed DbCommand (57ms) [Parameters=[@__email_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Email] = @__email_0 AND [u].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:58:27.095 +05:30 [INF] Executed DbCommand (19ms) [Parameters=[@__user_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__user_TenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:58:27.327 +05:30 [INF] Executed DbCommand (39ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SET IMPLICIT_TRANSACTIONS OFF;
+SET NOCOUNT ON;
+UPDATE [Users] SET [LastLoginUtc] = @p0
+OUTPUT 1
+WHERE [Id] = @p1;
+2026-09-06 18:58:27.360 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__user_Id_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[RoleId]
+FROM [UserRoles] AS [u]
+WHERE [u].[UserId] = @__user_Id_0
+2026-09-06 18:58:27.569 +05:30 [INF] Executed DbCommand (100ms) [Parameters=[@__roleIds_0='?' (Size = 4000), @__user_TenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+FROM [Roles] AS [r]
+WHERE [r].[Id] IN (
+    SELECT [r0].[value]
+    FROM OPENJSON(@__roleIds_0) WITH ([value] uniqueidentifier '$') AS [r0]
+) AND [r].[IsDeleted] = CAST(0 AS bit) AND ([r].[TenantId] IS NULL OR [r].[TenantId] = @__user_TenantId_1)
+2026-09-06 18:58:27.589 +05:30 [INF] AuthenticationScheme: Cookies signed in.
+2026-09-06 18:58:27.590 +05:30 [INF] Sign-in succeeded for user "dd100002-dd00-0000-0000-000000000002" in tenant "bb100002-aaaa-0000-0000-000000000002"
+2026-09-06 18:58:27.593 +05:30 [INF] Executed handler method OnPostAsync, returned result Microsoft.AspNetCore.Mvc.RedirectResult.
+2026-09-06 18:58:27.595 +05:30 [INF] Executing RedirectResult, redirecting to /.
+2026-09-06 18:58:27.596 +05:30 [INF] Executed page /Account/Login in 995.6867ms
+2026-09-06 18:58:27.597 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-06 18:58:27.597 +05:30 [INF] HTTP POST /Account/Login responded 302 in 998.4186 ms
+2026-09-06 18:58:27.601 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - 302 0 null 1007.4517ms
+2026-09-06 18:58:27.605 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-06 18:58:27.708 +05:30 [INF] Executed DbCommand (20ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:27.712 +05:30 [INF] Executing endpoint 'HTTP: GET /'
+2026-09-06 18:58:27.712 +05:30 [INF] Executed endpoint 'HTTP: GET /'
+2026-09-06 18:58:27.712 +05:30 [INF] HTTP GET / responded 302 in 104.5866 ms
+2026-09-06 18:58:27.713 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 107.3139ms
+2026-09-06 18:58:27.719 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Dashboard - null null
+2026-09-06 18:58:27.734 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:27.735 +05:30 [INF] Executing endpoint '/Dashboard/Index'
+2026-09-06 18:58:27.742 +05:30 [INF] Route matched with {page = "/Dashboard/Index"}. Executing page /Dashboard/Index
+2026-09-06 18:58:27.803 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel.OnGet - ModelState is "Valid"
+2026-09-06 18:58:27.828 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:58:27.854 +05:30 [INF] Executed DbCommand (16ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:27.875 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:58:27.901 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:27.904 +05:30 [INF] Loading dashboard for tenant "bb100002-aaaa-0000-0000-000000000002" (THB)
+2026-09-06 18:58:27.913 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:58:28.052 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-06 18:58:28.067 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:58:28.080 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-06 18:58:28.090 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:28.091 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:28.109 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:28.117 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:28.145 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:28.145 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:29.301 +05:30 [INF] Received HTTP response headers after 1207.0704ms - 200
+2026-09-06 18:58:29.301 +05:30 [INF] Received HTTP response headers after 1175.9885ms - 200
+2026-09-06 18:58:29.302 +05:30 [INF] End processing HTTP request after 1194.4563ms - 200
+2026-09-06 18:58:29.302 +05:30 [INF] End processing HTTP request after 1212.6117ms - 200
+2026-09-06 18:58:29.332 +05:30 [INF] Received HTTP response headers after 1279.6412ms - 200
+2026-09-06 18:58:29.332 +05:30 [INF] End processing HTTP request after 1421.6964ms - 200
+2026-09-06 18:58:29.652 +05:30 [INF] Received HTTP response headers after 1503.6818ms - 200
+2026-09-06 18:58:29.652 +05:30 [INF] End processing HTTP request after 1507.1282ms - 200
+2026-09-06 18:58:29.687 +05:30 [INF] Received HTTP response headers after 1606.7703ms - 200
+2026-09-06 18:58:29.687 +05:30 [INF] End processing HTTP request after 1620.4831ms - 200
+2026-09-06 18:58:29.710 +05:30 [INF] Executed handler method OnGet, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:58:29.816 +05:30 [INF] Executed page /Dashboard/Index in 2073.7167ms
+2026-09-06 18:58:29.816 +05:30 [INF] Executed endpoint '/Dashboard/Index'
+2026-09-06 18:58:29.817 +05:30 [INF] HTTP GET /Dashboard responded 200 in 2094.0604 ms
+2026-09-06 18:58:29.818 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Dashboard - 200 null text/html; charset=utf-8 2098.607ms
+2026-09-06 18:58:29.839 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:58:29.844 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:58:29.859 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 22.5721ms
+2026-09-06 18:58:29.920 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 75.6461ms
+2026-09-06 18:58:30.193 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-06 18:58:30.254 +05:30 [INF] Executed DbCommand (37ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:30.256 +05:30 [INF] HTTP GET /favicon.ico responded 404 in 59.7175 ms
+2026-09-06 18:58:30.257 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 404 0 null 63.9015ms
+2026-09-06 18:58:30.261 +05:30 [INF] Request reached the end of the middleware pipeline without being handled by application code. Request path: GET https://localhost:61093/favicon.ico, Response status code: 404
+2026-09-06 18:58:37.597 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Products - null null
+2026-09-06 18:58:37.611 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:37.611 +05:30 [INF] Executing endpoint '/Products/Index'
+2026-09-06 18:58:37.618 +05:30 [INF] Route matched with {page = "/Products/Index"}. Executing page /Products/Index
+2026-09-06 18:58:37.634 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Products.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-06 18:58:37.648 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:58:37.654 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:37.660 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:58:37.666 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:58:37.670 +05:30 [INF] 🔐 Checking permission: products.read for user admin@sathornprestige.co.th
+2026-09-06 18:58:37.670 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:58:37.680 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/products/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:37.680 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/products/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:58:37.879 +05:30 [INF] Received HTTP response headers after 198.9698ms - 200
+2026-09-06 18:58:37.879 +05:30 [INF] End processing HTTP request after 199.5276ms - 200
+2026-09-06 18:58:37.885 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/products?tenantId=bb100002-aaaa-0000-0000-000000000002&pageNumber=1&pageSize=25
+2026-09-06 18:58:37.886 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/products?tenantId=bb100002-aaaa-0000-0000-000000000002&pageNumber=1&pageSize=25
+2026-09-06 18:58:38.028 +05:30 [INF] Received HTTP response headers after 142.2259ms - 200
+2026-09-06 18:58:38.028 +05:30 [INF] End processing HTTP request after 142.729ms - 200
+2026-09-06 18:58:38.042 +05:30 [INF] Loaded page 1 with 6 products
+2026-09-06 18:58:38.042 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:58:38.127 +05:30 [INF] Executed page /Products/Index in 508.6348ms
+2026-09-06 18:58:38.127 +05:30 [INF] Executed endpoint '/Products/Index'
+2026-09-06 18:58:38.128 +05:30 [INF] HTTP GET /Products responded 200 in 526.9783 ms
+2026-09-06 18:58:38.128 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Products - 200 null text/html; charset=utf-8 531.3996ms
+2026-09-06 18:58:38.204 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:58:38.220 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:58:38.228 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 18.8802ms
+2026-09-06 18:58:38.350 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 130.5544ms
+2026-09-06 18:59:21.069 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Companies - null null
+2026-09-06 18:59:21.161 +05:30 [INF] Executed DbCommand (37ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:59:21.162 +05:30 [INF] Executing endpoint '/Companies/Index'
+2026-09-06 18:59:21.167 +05:30 [INF] Route matched with {page = "/Companies/Index"}. Executing page /Companies/Index
+2026-09-06 18:59:21.172 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Companies.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-06 18:59:21.176 +05:30 [INF] 🔐 Checking permission: companies.read for user admin@sathornprestige.co.th
+2026-09-06 18:59:21.177 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-06 18:59:21.193 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-06 18:59:21.201 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:59:21.208 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-06 18:59:21.217 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-06 18:59:21.221 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:59:21.222 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-06 18:59:21.423 +05:30 [INF] Received HTTP response headers after 200.8827ms - 200
+2026-09-06 18:59:21.423 +05:30 [INF] End processing HTTP request after 202.0879ms - 200
+2026-09-06 18:59:21.430 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-06 18:59:21.430 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-06 18:59:21.524 +05:30 [INF] Received HTTP response headers after 93.0877ms - 200
+2026-09-06 18:59:21.524 +05:30 [INF] End processing HTTP request after 93.6365ms - 200
+2026-09-06 18:59:21.537 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-06 18:59:21.537 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-06 18:59:21.640 +05:30 [INF] Received HTTP response headers after 102.5769ms - 200
+2026-09-06 18:59:21.640 +05:30 [INF] End processing HTTP request after 103.5465ms - 200
+2026-09-06 18:59:21.648 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-06 18:59:21.648 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-06 18:59:21.691 +05:30 [INF] Received HTTP response headers after 42.6863ms - 200
+2026-09-06 18:59:21.691 +05:30 [INF] End processing HTTP request after 43.1934ms - 200
+2026-09-06 18:59:21.696 +05:30 [INF] Loaded page 1 with 5 companies (Total: 5)
+2026-09-06 18:59:21.696 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-06 18:59:21.759 +05:30 [INF] Executed page /Companies/Index in 591.8713ms
+2026-09-06 18:59:21.759 +05:30 [INF] Executed endpoint '/Companies/Index'
+2026-09-06 18:59:21.759 +05:30 [INF] HTTP GET /Companies responded 200 in 639.8932 ms
+2026-09-06 18:59:21.759 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Companies - 200 null text/html; charset=utf-8 690.2756ms
+2026-09-06 18:59:21.786 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-06 18:59:21.787 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-06 18:59:21.789 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 2.3785ms
+2026-09-06 18:59:21.835 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 48.8866ms

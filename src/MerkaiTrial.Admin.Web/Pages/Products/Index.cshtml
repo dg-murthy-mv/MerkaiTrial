@@ -10,11 +10,16 @@
             <h2 class="mb-1"><i class="bi bi-box-seam text-primary"></i> Products</h2>
             <p class="text-muted mb-0">Manage your product catalog</p>
         </div>
+        @* ✅ Plan badge *@
+        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
+            @Model.PlanDisplayName
+        </span>
         @if (Model.CanCreate)
         {
             <a asp-page="./Create" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add Product</span>
+                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add Product</span>                
             </a>
+
         }
     </div>
 

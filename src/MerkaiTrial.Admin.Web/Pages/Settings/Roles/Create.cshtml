@@ -1,0 +1,168 @@
+@* =====================================================================
+   ROLE CREATE PAGE
+   ===================================================================== *@
+@page "/Settings/Roles/Create"
+@model MerkaiTrial.Admin.Web.Pages.Settings.Roles.CreateModel
+@{
+    ViewData["Title"] = "Create New Role";
+}
+
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-plus-circle" style="color: #ff6b35;"></i> Create New Role</h2>
+            <p class="text-muted mb-0">Add a new role with custom permissions</p>
+        </div>
+        <div>
+            <a asp-page="./Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    <!-- Alerts -->
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+    <form method="post">
+        <div class="row">
+            <!-- Basic Info -->
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header" style="background-color: #ff6b35; color: white;">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Basic Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.Name" class="form-label">
+                                    Role Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.Name" class="form-control" placeholder="sales-rep" />
+                                <small class="form-text text-muted">Unique identifier (lowercase, no spaces)</small>
+                                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label asp-for="Input.DisplayName" class="form-label">
+                                    Display Name <span class="text-danger">*</span>
+                                </label>
+                                <input asp-for="Input.DisplayName" class="form-control" placeholder="Sales Representative" />
+                                <small class="form-text text-muted">Friendly name shown to users</small>
+                                <span asp-validation-for="Input.DisplayName" class="text-danger small"></span>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label asp-for="Input.Description" class="form-label">Description</label>
+                                <textarea asp-for="Input.Description" class="form-control" rows="3" 
+                                          placeholder="Describe the role's purpose and responsibilities..."></textarea>
+                                <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Permissions -->
+                <div class="card mb-4">
+                    <div class="card-header" style="background-color: #ff6b35; color: white;">
+                        <h5 class="mb-0"><i class="bi bi-key"></i> Permissions</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">Select which actions this role can perform in each module</p>
+                        <div class="row g-3">
+                            @foreach (var module in Model.AvailableModules)
+                            {
+                                <div class="col-md-6">
+                                    <div class="border rounded p-3">
+                                        <h6 style="color: #ff6b35;">
+                                            <i class="bi bi-@module.Icon"></i> @module.DisplayName
+                                        </h6>
+                                        <div class="mt-2">
+                                            @foreach (var permission in module.Permissions)
+                                            {
+                                                var fieldName = $"Permissions_{module.Name}_{permission}";
+                                                
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input" 
+                                                           name="@fieldName" value="true" />
+                                                    <label class="form-check-label">
+                                                        @permission.ToUpper()
+                                                    </label>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panel -->
+            <div class="col-lg-4">
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Actions</h5>
+                    </div>
+                    <div class="card-body">
+                        <button type="submit" class="btn btn-primary w-100 mb-2">
+                            <i class="bi bi-plus-circle"></i> Create Role
+                        </button>
+                        <a asp-page="./Index" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header" style="background-color: #ff6b35; color: white;">
+                        <h5 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-unstyled mb-0 small">
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                <strong>Role Name:</strong> Use lowercase with hyphens (e.g., sales-manager)
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                <strong>Display Name:</strong> Use proper capitalization (e.g., Sales Manager)
+                            </li>
+                            <li class="mb-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                                <strong>Permissions:</strong> Grant only necessary access
+                            </li>
+                            <li class="mb-0">
+                                <i class="bi bi-check-circle text-success"></i>
+                                <strong>Description:</strong> Help users understand the role's purpose
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Permission Types</h6>
+                    </div>
+                    <div class="card-body small">
+                        <p class="mb-2"><strong>CREATE:</strong> Add new records</p>
+                        <p class="mb-2"><strong>READ:</strong> View records</p>
+                        <p class="mb-2"><strong>UPDATE:</strong> Modify existing records</p>
+                        <p class="mb-0"><strong>DELETE:</strong> Remove records</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

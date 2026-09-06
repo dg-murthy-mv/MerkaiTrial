@@ -49,6 +49,7 @@ using MerkaiTrial.Infrastructure.Payments;
 using MerkaiTrial.Infrastructure.Persistence;
 using MerkaiTrial.Infrastructure.Tax;
 using MerkaiTrial.Infrastructure.Tenancy;
+using MerkaiTrial.WebApi.Filters;
 using MerkaiTrial.WebApi.Middleware;
 using MerkaiTrial.WebApi.Services;
 using MerkaiTrial.WebApi.Startup;
@@ -70,7 +71,10 @@ Log.Logger = new LoggerConfiguration()
 builder.Host.UseSerilog();
 
 // ---------------- Controllers & JSON ----------------
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<TrialActiveActionFilter>();
+})
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());

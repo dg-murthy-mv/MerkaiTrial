@@ -72,7 +72,7 @@ public class RoleScope : IRoleScope
             if (user is null) return false;
 
             var isSuperAdmin = user.HasClaim(SignInService.ClaimIsSuperAdmin, "true");
-            var isViewingAs  = user.HasClaim(SignInService.ClaimViewingAs, "true");
+            var isViewingAs = user.HasClaim(SignInService.ClaimViewingAs, "true");
 
             // While impersonating, a super admin sees what the impersonated
             // user sees — otherwise ViewAs would show a tenant admin every
@@ -83,7 +83,15 @@ public class RoleScope : IRoleScope
 
     public IQueryable<Role> Visible(FlowDbContext db)
     {
-        var q = db.Roles.Where(r => !r.IsDeleted);
+        // IgnoreQueryFilters is REQUIRED here. Without it the global
+        // filter in FlowDbContext is applied underneath whatever this
+        // method returns, and a super admin's "all tenants" branch is
+        // silently narrowed back to their own tenant — 200 OK, one row,
+        // no error anywhere.
+        //
+        // Turning the automatic filter off does not widen anything: the
+        // scope is re-applied explicitly below, and it is the same rule.
+        var q = db.Roles.IgnoreQueryFilters().Where(r => !r.IsDeleted);
 
         if (SeesAllTenants) return q;
 

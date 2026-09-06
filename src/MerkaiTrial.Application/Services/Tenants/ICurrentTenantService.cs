@@ -427,13 +427,15 @@ public class CurrentTenantService : ICurrentTenantService
         return (tenant.Plan ?? "starter").ToLowerInvariant();
     }
 
-    public string GetPlanDisplayName() => GetPlanName() switch
+    public string GetPlanDisplayName()
     {
-        "starter" => "Starter",
-        "professional" => "Professional",
-        "enterprise" => "Enterprise",
-        _ => "Starter"
-    };
+        if (!_loaded) Load();
+        // Read from the Plans table rather than a hardcoded switch. The switch
+        // had no "trial" case and fell through to "Starter", so a trial tenant
+        // displayed as Starter everywhere — including on the badge a prospect
+        // sees every day of their evaluation.
+        return _plan?.DisplayName ?? GetPlanName();
+    }
 
     public bool HasFeature(string featureKey)
     {
