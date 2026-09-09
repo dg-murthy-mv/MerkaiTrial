@@ -298,11 +298,12 @@ public record ChangeTenantPlanCommand(
 
 // ── Result for plan change ────────────────────────────────────────────
 public record ChangeTenantPlanResult(
-    Guid   TenantId,
-    string OldPlan,
-    string NewPlan,
-    bool   LimitsApplied
-);
+           Guid TenantId,
+           string OldPlan,
+           string NewPlan,
+           bool LimitsApplied,
+           bool WasTrialConverted = false,
+           IReadOnlyList<string>? Warnings = null);
 
 // ── Summary for dashboard widget ─────────────────────────────────────
 public record PlanSummaryDto(

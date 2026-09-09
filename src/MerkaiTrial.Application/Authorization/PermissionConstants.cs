@@ -48,68 +48,53 @@ namespace MerkaiTrial.Application.Authorization
 
     public static class Policies
     {
-        // Products
-        public const string ProductsCreate = "products.create";
-        public const string ProductsRead = "products.read";
-        public const string ProductsUpdate = "products.update";
-        public const string ProductsDelete = "products.delete";
-
-        // Contacts
-        public const string ContactsCreate = "contacts.create";
-        public const string ContactsRead = "contacts.read";
-        public const string ContactsUpdate = "contacts.update";
-        public const string ContactsDelete = "contacts.delete";
-
-        // Companies
-        public const string CompaniesCreate = "companies.create";
         public const string CompaniesRead = "companies.read";
+        public const string CompaniesCreate = "companies.create";
         public const string CompaniesUpdate = "companies.update";
         public const string CompaniesDelete = "companies.delete";
 
-        // Leads
-        public const string LeadsCreate = "leads.create";
+        public const string ContactsRead = "contacts.read";
+        public const string ContactsCreate = "contacts.create";
+        public const string ContactsUpdate = "contacts.update";
+        public const string ContactsDelete = "contacts.delete";
+
+        public const string ProductsRead = "products.read";
+        public const string ProductsCreate = "products.create";
+        public const string ProductsUpdate = "products.update";
+        public const string ProductsDelete = "products.delete";
+
         public const string LeadsRead = "leads.read";
+        public const string LeadsCreate = "leads.create";
         public const string LeadsUpdate = "leads.update";
         public const string LeadsDelete = "leads.delete";
 
-        // Deals
-        public const string DealsCreate = "deals.create";
         public const string DealsRead = "deals.read";
+        public const string DealsCreate = "deals.create";
         public const string DealsUpdate = "deals.update";
         public const string DealsDelete = "deals.delete";
 
-        // Quotes
-        public const string QuotesCreate = "quotes.create";
         public const string QuotesRead = "quotes.read";
+        public const string QuotesCreate = "quotes.create";
         public const string QuotesUpdate = "quotes.update";
         public const string QuotesDelete = "quotes.delete";
 
-        // Invoices
-        public const string InvoicesCreate = "invoices.create";
         public const string InvoicesRead = "invoices.read";
+        public const string InvoicesCreate = "invoices.create";
         public const string InvoicesUpdate = "invoices.update";
         public const string InvoicesDelete = "invoices.delete";
 
-        // Users
-        public const string UsersCreate = "users.create";
+        // READ ONLY — was missing entirely, while ReportsCreate and
+        // ReportsDelete existed and were never used.
+        public const string ReportsRead = "reports.read";
+
         public const string UsersRead = "users.read";
+        public const string UsersCreate = "users.create";
         public const string UsersUpdate = "users.update";
         public const string UsersDelete = "users.delete";
 
-        // Roles  ← STEP 3: added
-        public const string RolesCreate = "roles.create";
         public const string RolesRead = "roles.read";
+        public const string RolesCreate = "roles.create";
         public const string RolesUpdate = "roles.update";
         public const string RolesDelete = "roles.delete";
-
-        // Tenants
-        public const string TenantsCreate = "tenants.create";
-        public const string TenantsRead = "tenants.read";
-        public const string TenantsUpdate = "tenants.update";
-        public const string TenantsDelete = "tenants.delete";
-
-        // Reports
-        public const string ReportsCreate = "reports.create";
-        public const string ReportsDelete = "reports.delete";
     }
 }

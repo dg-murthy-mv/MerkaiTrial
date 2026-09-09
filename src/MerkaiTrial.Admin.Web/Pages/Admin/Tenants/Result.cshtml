@@ -1,0 +1,115 @@
+﻿@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Result.cshtml
+   ===================================================================== *@
+@page "/Admin/Tenants/Result"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.ResultModel
+@{
+    ViewData["Title"] = "Workspace created";
+}
+
+<div class="container-fluid py-4" style="max-width: 60rem;">
+
+    <div class="alert alert-success d-flex align-items-center gap-2">
+        <i class="bi bi-check-circle-fill fs-4"></i>
+        <div>
+            <strong>@Model.TenantName is ready.</strong>
+            @if (Model.TrialExpiresUtc.HasValue)
+            {
+                <span> Trial runs until @Model.TrialExpiresUtc.Value.ToString("d MMMM yyyy").</span>
+            }
+        </div>
+    </div>
+
+    @* THE POINT OF THIS PAGE. The raw token exists nowhere else — only
+       its SHA-256 hash is stored — so if this is closed without copying
+       the link, the only recovery is a password reset for the admin. *@
+    <div class="card border-primary mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="bi bi-link-45deg"></i> Invite link — copy it now</h5>
+        </div>
+        <div class="card-body">
+            <p class="mb-2">
+                Send this to <strong>@Model.AdminEmail</strong>. It expires
+                @if (Model.InviteExpiresUtc.HasValue)
+                {
+                    <text>on @Model.InviteExpiresUtc.Value.ToString("d MMMM yyyy 'at' HH:mm") UTC</text>
+                }
+                else
+                {
+                    <text>in 72 hours</text>
+                }
+                and can be used once.
+            </p>
+
+            <div class="input-group mb-2">
+                <input type="text" id="inviteUrl" class="form-control font-monospace"
+                       value="@Model.InviteUrl" readonly onclick="this.select();" />
+                <button class="btn btn-primary" type="button" onclick="copyInvite()">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+            </div>
+            <div id="copyConfirm" class="text-success small" style="display:none;">
+                <i class="bi bi-check-circle"></i> Copied.
+            </div>
+
+            <div class="alert alert-warning mt-3 mb-0 small">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                This link is shown once and is not stored anywhere. If you lose it, issue a
+                password reset for the administrator instead.
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h6 class="mb-0"><i class="bi bi-envelope"></i> Suggested message</h6>
+        </div>
+        <div class="card-body">
+            @* No SMTP, so this is sent by hand — through whatever channel you
+               already use with the client. *@
+            <textarea class="form-control font-monospace" rows="9" id="messageText" readonly>Hi,
+
+Your Merkai workspace for @Model.TenantName is ready.
+
+Set your password here (the link works once and expires in 72 hours):
+@Model.InviteUrl
+
+Sign in afterwards with: @Model.AdminEmail
+@if (Model.TrialExpiresUtc.HasValue)
+{
+@:
+@:Your trial runs until @Model.TrialExpiresUtc.Value.ToString("d MMMM yyyy"). Everything stays readable and exportable after that; only editing pauses.
+}
+
+Any questions, just reply.</textarea>
+            <button class="btn btn-outline-secondary btn-sm mt-2" type="button" onclick="copyMessage()">
+                <i class="bi bi-clipboard"></i> Copy message
+            </button>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a asp-page="./Detail" asp-route-id="@Model.TenantId" class="btn btn-primary">
+            <i class="bi bi-eye"></i> Open workspace
+        </a>
+        <a asp-page="./Index" class="btn btn-outline-secondary">Back to tenants</a>
+        <a asp-page="./Create" class="btn btn-outline-secondary">Create another</a>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function copyInvite() {
+            const el = document.getElementById('inviteUrl');
+            el.select();
+            navigator.clipboard.writeText(el.value).then(() => {
+                document.getElementById('copyConfirm').style.display = 'block';
+            });
+        }
+        function copyMessage() {
+            const el = document.getElementById('messageText');
+            el.select();
+            navigator.clipboard.writeText(el.value);
+        }
+    </script>
+}

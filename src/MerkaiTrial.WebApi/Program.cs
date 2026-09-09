@@ -38,6 +38,7 @@
 using MerkaiTrial.Admin.Web.Services.UserManagement;
 using MerkaiTrial.Application;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
@@ -148,6 +149,7 @@ builder.Services.AddScoped<ILeadScoringService, LeadScoringService>();
 builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
 builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+
 
 // Required by the tenant-scoped role handlers, which run in THIS host.
 builder.Services.AddScoped<IRoleScope, RoleScope>();

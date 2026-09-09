@@ -82,4 +82,18 @@ public class Tenant
             return Math.Max(0, (int)(TrialExpiresAt.Value - DateTime.UtcNow).TotalDays);
         }
     }
+
+    // ── Trial lifecycle (migration 002) ───────────────────────────────
+    /// <summary>Active | Expired | Converted | Suspended. Set at
+    /// provisioning; the read-only enforcement uses TrialExpiresAt, so
+    /// this is a status label rather than the thing being checked.</summary>
+    public string? TrialStatus { get; set; }
+
+    /// <summary>Manual cut-off, independent of the trial clock. Lets a
+    /// workspace be stopped immediately without touching TrialExpiresAt.</summary>
+    public bool IsSuspended { get; set; }
+
+    /// <summary>Plan name they moved to when the trial converted, kept for
+    /// history — Plan itself changes to the new value.</summary>
+    public string? ConvertedToPlan { get; set; }
 }

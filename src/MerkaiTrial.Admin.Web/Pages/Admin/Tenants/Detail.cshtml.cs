@@ -92,9 +92,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
 
                 var result = await _changePlan.Handle(cmd);
 
-                TempData["SuccessMessage"] =
-                    $"Plan changed from '{result.OldPlan}' → '{result.NewPlan}'" +
-                    (result.LimitsApplied ? " — limits updated." : " — limits unchanged (custom deal).");
+                if (result.WasTrialConverted)
+                {
+                    TempData["SuccessMessage"] =
+                        $"Trial converted to {result.NewPlan}. Limits and features applied.";
+                }
+                else
+                {
+                    TempData["SuccessMessage"] =
+                        $"Plan changed from '{result.OldPlan}' to '{result.NewPlan}'" +
+                        (result.LimitsApplied ? " — limits and features updated." : " — limits unchanged (custom deal).");
+                }
+
+                if (result.Warnings is { Count: > 0 })
+                    TempData["ErrorMessage"] = string.Join(" ", result.Warnings);
             }
             catch (InvalidOperationException ex)
             {

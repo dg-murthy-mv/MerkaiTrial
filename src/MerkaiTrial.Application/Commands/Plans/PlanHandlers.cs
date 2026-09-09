@@ -7,6 +7,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -543,11 +544,16 @@ public class UpdatePlanHandler : ICommandHandler
 public class ChangeTenantPlanHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
+    private readonly IAuditService _audit;
     private readonly ILogger<ChangeTenantPlanHandler> _logger;
 
-    public ChangeTenantPlanHandler(FlowDbContext db, ILogger<ChangeTenantPlanHandler> logger)
+    public ChangeTenantPlanHandler(
+        FlowDbContext db,
+        IAuditService audit,
+        ILogger<ChangeTenantPlanHandler> logger)
     {
-        _db     = db;
+        _db = db;
+        _audit = audit;
         _logger = logger;
     }
 
@@ -565,15 +571,73 @@ public class ChangeTenantPlanHandler : ICommandHandler
                 .FirstOrDefaultAsync(p => p.Name == cmd.NewPlanName.ToLower() && p.IsActive, ct)
                 ?? throw new InvalidOperationException($"Plan '{cmd.NewPlanName}' not found or inactive");
 
-            var oldPlanName = tenant.Plan;
-            tenant.Plan        = newPlan.Name;
-            tenant.UpdatedAtUtc = DateTime.UtcNow;
-            tenant.UpdatedBy   = cmd.ChangedBy;
+            var oldPlanName = tenant.Plan ?? "unknown";
 
-            // Optionally sync TenantSettings snapshot with new plan limits
-            if (cmd.ApplyLimitsImmediately)
+            if (string.Equals(oldPlanName, newPlan.Name, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"This workspace is already on the '{newPlan.DisplayName}' plan.");
+
+            // Was this a trial before the change? Read from the OLD plan
+            // rather than assuming the name is "trial" — you may add other
+            // trial-flagged plans later.
+            var oldPlan = await _db.Plans.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Name == oldPlanName.ToLower(), ct);
+
+            var wasOnTrial = oldPlan?.IsTrial == true;
+            var isConversion = wasOnTrial && !newPlan.IsTrial;
+
+            // ── LIMITS ARE FORCED ON A CONVERSION ────────────────────
+            // ApplyLimitsImmediately = false exists for custom enterprise
+            // deals where the negotiated limits differ from the plan. It
+            // must NOT apply to a trial conversion: the client would pay
+            // for Professional and stay capped at trial limits, which you
+            // would discover from a complaint rather than a test.
+            var applyLimits = cmd.ApplyLimitsImmediately || isConversion;
+
+            // ── DOWNGRADE CHECK ──────────────────────────────────────
+            // Warnings, not a block. Downgrading a client who is over the
+            // new limit is sometimes the agreed outcome — but it should be
+            // a decision, and existing records are never deleted.
+            var warnings = applyLimits
+                ? await CheckUsageAgainstPlanAsync(cmd.TenantId, newPlan, ct)
+                : new List<string>();
+
+            tenant.Plan = newPlan.Name;
+            tenant.UpdatedAtUtc = DateTime.UtcNow;
+            tenant.UpdatedBy = cmd.ChangedBy;
+
+            if (isConversion)
+            {
+                // The paying-customer moment. TrialExpiresAt is cleared:
+                // Plan is no longer a trial so IsTrialExpired() cannot fire
+                // anyway, and NULL states plainly that no trial is running.
+                // TrialStartedAt is KEPT — it is the record of when they
+                // began, which is what you want when counting how long
+                // conversions take.
+                tenant.TrialExpiresAt = null;
+                tenant.TrialStatus = "Converted";
+                tenant.ConvertedToPlan = newPlan.Name;
+                tenant.IsSuspended = false;   // a paying client is never suspended by a trial clock
+            }
+            else if (!wasOnTrial && newPlan.IsTrial)
+            {
+                // Moving a paying tenant ONTO a trial. Unusual, but it is
+                // what "put them back on trial while they decide about
+                // renewal" looks like. Set the dates, or the trial never
+                // expires — the same NULL trap provisioning had.
+                var now = DateTime.UtcNow;
+                tenant.TrialStartedAt = now;
+                tenant.TrialExpiresAt = now.AddDays(newPlan.TrialDurationDays > 0
+                                                      ? newPlan.TrialDurationDays : 30);
+                tenant.TrialActivatedBy = cmd.ChangedBy;
+                tenant.TrialStatus = "Active";
+            }
+
+            // ── TENANT SETTINGS ──────────────────────────────────────
+            if (applyLimits)
             {
                 var settings = await _db.Set<TenantSettings>()
+                    .IgnoreQueryFilters()
                     .FirstOrDefaultAsync(s => s.TenantId == cmd.TenantId, ct);
 
                 if (settings == null)
@@ -582,26 +646,48 @@ public class ChangeTenantPlanHandler : ICommandHandler
                     _db.Set<TenantSettings>().Add(settings);
                 }
 
-                settings.MaxUsers     = newPlan.MaxUsers;
-                settings.MaxLeads     = newPlan.MaxLeads;
-                settings.MaxDeals     = newPlan.MaxDeals;
+                settings.MaxUsers = newPlan.MaxUsers;
+                settings.MaxLeads = newPlan.MaxLeads;
+                settings.MaxDeals = newPlan.MaxDeals;
                 settings.StorageLimit = newPlan.StorageLimitBytes;
+
+                // THE LINE THAT WAS MISSING. Without it the client gets the
+                // new plan's limits and the old plan's features.
+                settings.FeatureFlags = newPlan.Features;
+
                 settings.UpdatedAtUtc = DateTime.UtcNow;
-                settings.UpdatedBy    = cmd.ChangedBy;
+                settings.UpdatedBy = cmd.ChangedBy;
             }
 
             await _db.SaveChangesAsync(ct);
 
             _logger.LogInformation(
-                "Tenant {TenantId} plan changed {OldPlan} → {NewPlan} by {ChangedBy}",
-                cmd.TenantId, oldPlanName, newPlan.Name, cmd.ChangedBy);
+                "Tenant {TenantId} plan {OldPlan} → {NewPlan} by {ChangedBy}. Conversion={IsConversion}, LimitsApplied={Applied}",
+                cmd.TenantId, oldPlanName, newPlan.Name, cmd.ChangedBy, isConversion, applyLimits);
+
+            // A trial converting to a paying plan is a different event from
+            // an upgrade between paid plans, and it is the one you will want
+            // to count. Reusing TenantPlanChanged for both would bury it.
+            await _audit.WriteAsync(
+                isConversion ? AuditAction.TrialConverted : AuditAction.TenantPlanChanged,
+                "Tenant", cmd.TenantId, cmd.TenantId,
+                new
+                {
+                    OldPlan = oldPlanName,
+                    NewPlan = newPlan.Name,
+                    LimitsApplied = applyLimits,
+                    FeaturesApplied = applyLimits,
+                    Warnings = warnings,
+                    ChangedBy = cmd.ChangedBy
+                }, ct);
 
             return new ChangeTenantPlanResult(
-                TenantId:      cmd.TenantId,
-                OldPlan:       oldPlanName ?? "unknown",
-                NewPlan:       newPlan.Name,
-                LimitsApplied: cmd.ApplyLimitsImmediately
-            );
+                TenantId: cmd.TenantId,
+                OldPlan: oldPlanName,
+                NewPlan: newPlan.Name,
+                LimitsApplied: applyLimits,
+                WasTrialConverted: isConversion,
+                Warnings: warnings);
         }
         catch (KeyNotFoundException) { throw; }
         catch (InvalidOperationException) { throw; }
@@ -610,6 +696,46 @@ public class ChangeTenantPlanHandler : ICommandHandler
             _logger.LogError(ex, "Error changing plan for tenant {TenantId}", cmd.TenantId);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Compares what the tenant already holds against the new plan's caps.
+    ///
+    /// IgnoreQueryFilters is essential: the caller is a super admin whose
+    /// own tenant is MadeeVision, so without it every count comes back as
+    /// that tenant's, not this one's — silently reporting zero and passing
+    /// a downgrade that should have warned.
+    /// </summary>
+    private async Task<List<string>> CheckUsageAgainstPlanAsync(
+        Guid tenantId, Plan plan, CancellationToken ct)
+    {
+        var warnings = new List<string>();
+
+        var users = await _db.Users.IgnoreQueryFilters()
+            .CountAsync(u => u.TenantId == tenantId && !u.IsDeleted, ct);
+
+        var leads = await _db.Leads.IgnoreQueryFilters()
+            .CountAsync(l => l.TenantId == tenantId && !l.IsDeleted, ct);
+
+        var deals = await _db.Deals.IgnoreQueryFilters()
+            .CountAsync(d => d.TenantId == tenantId && !d.IsDeleted, ct);
+
+        if (users > plan.MaxUsers)
+            warnings.Add($"{users} users exceeds the plan limit of {plan.MaxUsers}.");
+
+        if (leads > plan.MaxLeads)
+            warnings.Add($"{leads:N0} leads exceeds the plan limit of {plan.MaxLeads:N0}.");
+
+        if (deals > plan.MaxDeals)
+            warnings.Add($"{deals:N0} deals exceeds the plan limit of {plan.MaxDeals:N0}.");
+
+        // Nothing is deleted. Existing records stay readable; the caps only
+        // stop new ones being created. Say so, because "over the limit"
+        // otherwise sounds like data loss.
+        if (warnings.Count > 0)
+            warnings.Add("Existing records are kept and stay visible — the limit only prevents adding more.");
+
+        return warnings;
     }
 }
 

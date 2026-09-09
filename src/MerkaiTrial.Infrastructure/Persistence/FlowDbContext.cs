@@ -44,6 +44,7 @@ public class FlowDbContext : DbContext
     /// compiled model — one model, correct for every tenant.
     /// </summary>
     private Guid CurrentTenantId => _tenantProvider.TenantId;
+    public DbSet<RoleTemplate> RoleTemplates => Set<RoleTemplate>();
 
     // ── DbSets ───────────────────────────────────────────────────────
     public DbSet<Attachment> Attachments { get; set; }

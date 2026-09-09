@@ -53,6 +53,7 @@ using MerkaiTrial.Admin.Web.Startup;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Plans;
 using MerkaiTrial.Application.Commands.Quotes;
+using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
@@ -111,6 +112,7 @@ builder.Services.AddScoped<ITenantProvider, HttpTenantProvider>();
 builder.Services.AddScoped<ITenantUiService, TenantUiService>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
 
 // ---------------- EF Core ----------------
 builder.Services.AddDbContext<FlowDbContext>((sp, o) =>

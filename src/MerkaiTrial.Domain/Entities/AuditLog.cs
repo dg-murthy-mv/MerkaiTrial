@@ -20,6 +20,7 @@ namespace MerkaiTrial.Domain.Entities
         public const string TrialSuspended = "TrialSuspended";
         public const string PermissionChanged = "PermissionChanged";
         public const string TenantPlanChanged = "TenantPlanChanged";
+        public const string TrialConverted = "TrialConverted";
     }
 
     public class AuditLog
