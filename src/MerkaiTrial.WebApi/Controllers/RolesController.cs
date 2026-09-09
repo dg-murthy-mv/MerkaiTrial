@@ -206,11 +206,27 @@ namespace MerkaiTrial.WebApi.Controllers
         /// <summary>Roles lookup for dropdowns.</summary>
         [HttpGet("lookup")]
         [Authorize(Policy = Policies.RolesRead)]
-        public async Task<ActionResult<List<RoleLookupDto>>> GetLookup()
+        public async Task<ActionResult<List<RoleLookupDto>>> GetLookup([FromQuery] Guid? tenantId = null)
         {
             try
             {
-                return Ok(await _getLookupHandler.Handle());
+                // Scoped the same way UsersController does it: a super admin may
+                // ask about any tenant, everyone else silently gets their own.
+                // Without this, a tenant admin could enumerate another tenant's
+                // role names — minor on its own, but it is the same door.
+                Guid? scoped = null;
+
+                if (tenantId.HasValue)
+                {
+                    var isSuperAdmin = User.HasClaim("IsSuperAdmin", "true")
+                                    && !User.HasClaim("ViewingAs", "true");
+
+                    scoped = isSuperAdmin
+                        ? tenantId
+                        : (Guid.TryParse(User.FindFirst("TenantId")?.Value, out var own) ? own : null);
+                }
+
+                return Ok(await _getLookupHandler.Handle(scoped));
             }
             catch (Exception ex)
             {

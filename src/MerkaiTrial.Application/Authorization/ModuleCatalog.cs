@@ -41,11 +41,11 @@ public static class ModuleCatalog
     /// </summary>
     public static readonly IReadOnlyList<ModuleInfo> All = new List<ModuleInfo>
     {
-        // ── Contacts & Accounts ──────────────────────────────────────
-        new("companies", "Companies", "bi-building",           "Contacts & Accounts", 10, Crud),
-        new("contacts",  "Contacts",  "bi-people",             "Contacts & Accounts", 11, Crud),
-        new("products",  "Products",  "bi-box-seam",           "Contacts & Accounts", 12, Crud),
-        new("leads",     "Leads",     "bi-funnel",             "Contacts & Accounts", 13, Crud),
+        // ── CUSTOMERS & SALES ──────────────────────────────────────
+        new("companies", "Companies", "bi-building",           "CUSTOMERS & SALES", 10, Crud),
+        new("contacts",  "Contacts",  "bi-people",             "CUSTOMERS & SALES", 11, Crud),
+        new("products",  "Products",  "bi-box-seam",           "CUSTOMERS & SALES", 12, Crud),
+        new("leads",     "Leads",     "bi-funnel",             "CUSTOMERS & SALES", 13, Crud),
 
         // ── Sales Pipeline ───────────────────────────────────────────
         new("deals",     "Pipeline",  "bi-kanban",             "Sales Pipeline", 20, Crud),

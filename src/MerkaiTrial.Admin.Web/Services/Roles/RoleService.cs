@@ -17,7 +17,7 @@ namespace MerkaiTrial.Admin.Web.Services.Roles
         Task<RoleDto> CreateAsync(CreateRoleCommand command);
         Task UpdateAsync(UpdateRoleCommand command);
         Task DeleteAsync(Guid roleId);
-        Task<List<RoleLookupDto>> GetLookupAsync();
+        Task<List<RoleLookupDto>> GetLookupAsync(Guid? tenantId = null);
         Task<List<UserLookupDto>> GetRoleUsersAsync(Guid roleId);
         Task<RoleStatsDto> GetStatsAsync();
         List<ModuleDefinition> GetAvailableModules();
@@ -75,9 +75,13 @@ namespace MerkaiTrial.Admin.Web.Services.Roles
             return _api.DeleteAsync($"api/roles/{roleId}");
         }
 
-        public Task<List<RoleLookupDto>> GetLookupAsync()
+        public Task<List<RoleLookupDto>> GetLookupAsync(Guid? tenantId = null)
         {
-            return _api.GetAsync<List<RoleLookupDto>>("api/roles/lookup");
+            var url = tenantId.HasValue
+                ? $"api/roles/lookup?tenantId={tenantId.Value}"
+                : "api/roles/lookup";
+
+            return _api.GetAsync<List<RoleLookupDto>>(url);
         }
 
         public Task<List<UserLookupDto>> GetRoleUsersAsync(Guid roleId)

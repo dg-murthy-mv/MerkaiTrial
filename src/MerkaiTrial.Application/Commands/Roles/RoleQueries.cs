@@ -242,13 +242,38 @@ public class GetRolesLookupHandler : ICommandHandler
         _db = db; _scope = scope;
     }
 
-    public async Task<List<RoleLookupDto>> Handle()
-        => await _scope.Visible(_db)
-            .OrderBy(r => r.DisplayName)
+    /// <summary>
+    /// Roles that can be assigned to a user.
+    ///
+    /// Pass forTenantId when the answer is "roles assignable to a user in
+    /// THIS tenant" — that tenant's own roles plus the global
+    /// tenant_admin. Exactly the set CreateUserHandler and
+    /// AssignUserRolesHandler accept, so the picker cannot offer
+    /// something the API will reject.
+    ///
+    /// Omit it for the caller's own scope: a tenant admin gets their own
+    /// roles, a super admin gets everything (which is what /Admin/Roles
+    /// wants).
+    /// </summary>
+    public async Task<List<RoleLookupDto>> Handle(Guid? forTenantId = null)
+    {
+        // IgnoreQueryFilters when a tenant is named: the global filter
+        // resolves to the CALLER's tenant, which for a super admin is
+        // MadeeVision — it would hide the very roles being asked for. The
+        // explicit Where below is the real scope.
+        var query = forTenantId.HasValue
+            ? _db.Roles.AsNoTracking().IgnoreQueryFilters()
+                  .Where(r => !r.IsDeleted
+                           && (r.TenantId == forTenantId.Value || r.TenantId == null))
+            : _scope.Visible(_db);
+
+        return await query
+            .OrderBy(r => r.TenantId == null ? 1 : 0)   // tenant's own roles first
+            .ThenBy(r => r.DisplayName)
             .Select(r => new RoleLookupDto(r.Id, r.Name, r.DisplayName))
             .ToListAsync();
+    }
 }
-
 // ==================== GET ROLE USERS ====================
 public class GetRoleUsersHandler : ICommandHandler
 {

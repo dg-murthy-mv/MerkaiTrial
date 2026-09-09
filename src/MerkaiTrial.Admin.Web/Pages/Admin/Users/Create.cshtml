@@ -1,13 +1,26 @@
 @* =====================================================================
    USER CREATE PAGE
+   File: MerkaiTrial.Admin.Web/Pages/Admin/Users/Create.cshtml
+
+   Complete file — replace yours with this one.
+
+   WHAT CHANGED
+     - Success panel showing the invite link, with a copy button
+     - The form is hidden once the user exists, so the same person cannot
+       be created twice by pressing the button again
+     - Quick Tips corrected: email is unique GLOBALLY, and a new user
+       cannot sign in until they use the invite
    ===================================================================== *@
+
 @page "/Admin/Users/Create"
 @model MerkaiTrial.Admin.Web.Pages.Admin.Users.CreateModel
 @{
     ViewData["Title"] = "Create User";
+    var userCreated = !string.IsNullOrEmpty(Model.InviteUrl) || Model.InviteFailed;
 }
 
 <div class="container-fluid py-4">
+
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
@@ -21,7 +34,9 @@
         </div>
     </div>
 
-    <!-- Error Alert -->
+    @* Validation failures and API rejections — over quota, duplicate email,
+       a role from another workspace. These now carry the real message from
+       the API rather than "please try again". *@
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
         <div class="alert alert-danger alert-dismissible fade show">
@@ -30,145 +45,239 @@
         </div>
     }
 
-    <form method="post">
-        <input type="hidden" asp-for="TenantId" />
-        
-        <div class="row">
-            <!-- Main Form -->
-            <div class="col-lg-8">
-                <!-- Basic Information -->
-                <div class="card mb-4">
-                    <div class="card-header" style="background-color: #007bff; color: white;">
-                        <h5 class="mb-0"><i class="bi bi-person"></i> Basic Information</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.FirstName" class="form-label">
-                                    First Name <span class="text-danger">*</span>
-                                </label>
-                                <input asp-for="Input.FirstName" class="form-control" />
-                                <span asp-validation-for="Input.FirstName" class="text-danger small"></span>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.LastName" class="form-label">
-                                    Last Name <span class="text-danger">*</span>
-                                </label>
-                                <input asp-for="Input.LastName" class="form-control" />
-                                <span asp-validation-for="Input.LastName" class="text-danger small"></span>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.Email" class="form-label">
-                                    Email <span class="text-danger">*</span>
-                                </label>
-                                <input asp-for="Input.Email" class="form-control" type="email" />
-                                <span asp-validation-for="Input.Email" class="text-danger small"></span>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.Phone" class="form-label">Phone</label>
-                                <input asp-for="Input.Phone" class="form-control" />
-                                <span asp-validation-for="Input.Phone" class="text-danger small"></span>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.Department" class="form-label">Department</label>
-                                <input asp-for="Input.Department" class="form-control" />
-                                <span asp-validation-for="Input.Department" class="text-danger small"></span>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label asp-for="Input.JobTitle" class="form-label">Job Title</label>
-                                <input asp-for="Input.JobTitle" class="form-control" />
-                                <span asp-validation-for="Input.JobTitle" class="text-danger small"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Roles & Permissions -->
-                <div class="card mb-4">
-                    <div class="card-header" style="background-color: #007bff; color: white;">
-                        <h5 class="mb-0"><i class="bi bi-shield-check"></i> Roles & Permissions</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <div class="form-check">
-                                <input asp-for="Input.IsTenantAdmin" class="form-check-input" />
-                                <label asp-for="Input.IsTenantAdmin" class="form-check-label">
-                                    Tenant Administrator
-                                </label>
-                                <small class="form-text text-muted d-block">
-                                    Admin users have full access to all features within this tenant
-                                </small>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Assign Roles</label>
-                            @if (Model.AvailableRoles.Any())
-                            {
-                                <div class="row">
-                                    @foreach (var role in Model.AvailableRoles)
-                                    {
-                                        <div class="col-md-6 mb-2">
-                                            <div class="form-check">
-                                                <input type="checkbox" class="form-check-input" 
-                                                       name="Input.RoleIds" value="@role.Id" />
-                                                <label class="form-check-label">
-                                                    <strong>@role.DisplayName</strong>
-                                                    <small class="text-muted d-block">@role.Name</small>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <p class="text-muted">No roles available</p>
-                            }
-                        </div>
-                    </div>
-                </div>
+    @* ── SUCCESS: the invite link ─────────────────────────────────────
+       The raw token exists only in this response — only its SHA-256 hash
+       is stored — so if this is closed without copying, the only way back
+       is a password reset. Hence the prominence and the warning. *@
+    @if (!string.IsNullOrEmpty(Model.InviteUrl))
+    {
+        <div class="card border-success mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-check-circle"></i>
+                    @Model.CreatedUserName created — send them this link
+                </h5>
             </div>
+            <div class="card-body">
+                <p class="mb-2">
+                    <strong>@Model.CreatedUserEmail</strong> has no password yet.
+                    This link lets them set one. It works once and expires in 72 hours.
+                </p>
 
-            <!-- Side Panel -->
-            <div class="col-lg-4">
-                <!-- Actions -->
-                <div class="card mb-4">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0"><i class="bi bi-check-circle"></i> Actions</h5>
-                    </div>
-                    <div class="card-body">
-                        <button type="submit" class="btn btn-primary w-100 mb-2">
-                            <i class="bi bi-person-plus"></i> Create User
-                        </button>
-                        <a asp-page="./Index" asp-route-tenantId="@Model.TenantId" 
-                           class="btn btn-outline-secondary w-100">
-                            <i class="bi bi-x-circle"></i> Cancel
-                        </a>
-                    </div>
+                <div class="input-group mb-2">
+                    <input type="text" id="inviteUrl" class="form-control font-monospace"
+                           value="@Model.InviteUrl" readonly onclick="this.select();" />
+                    <button class="btn btn-primary" type="button" onclick="copyInvite()">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+                <div id="copyConfirm" class="text-success small" style="display:none;">
+                    <i class="bi bi-check-circle"></i> Copied.
                 </div>
 
-                <!-- Tips -->
-                <div class="card">
-                    <div class="card-header" style="background-color: #007bff; color: white;">
-                        <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
-                    </div>
-                    <div class="card-body small">
-                        <ul class="mb-0">
-                            <li class="mb-2">Email must be unique within tenant</li>
-                            <li class="mb-2">Admin users can manage all tenant data</li>
-                            <li class="mb-2">Roles can be assigned now or later</li>
-                            <li class="mb-0">New users are active by default</li>
-                        </ul>
-                    </div>
+                <div class="alert alert-warning mt-3 mb-3 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Shown once and not stored anywhere. If you lose it, send a
+                    password reset for this user instead.
                 </div>
+
+                <a asp-page="./Index" asp-route-tenantId="@Model.TenantId"
+                   class="btn btn-outline-secondary">
+                    Done
+                </a>
+                <a asp-page="./Create" asp-route-tenantId="@Model.TenantId"
+                   class="btn btn-outline-secondary">
+                    Add another
+                </a>
             </div>
         </div>
-    </form>
+    }
+    else if (Model.InviteFailed)
+    {
+        @* The user WAS created and is correct — only the token failed. Saying
+           "failed" without that distinction would send you looking for a user
+           that already exists. *@
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>@Model.CreatedUserName was created, but the invite link could not be generated.</strong>
+            The account exists and is correct — send a password reset to
+            @Model.CreatedUserEmail so they can set a password.
+            <div class="mt-3">
+                <a asp-page="./Index" asp-route-tenantId="@Model.TenantId"
+                   class="btn btn-outline-secondary btn-sm">Back to Users</a>
+            </div>
+        </div>
+    }
+
+    @* The form disappears once the user exists. Left visible, the fields
+       would still be filled in and pressing Create again would attempt the
+       same person twice — failing on the duplicate email, which reads like
+       a bug rather than a double submit. *@
+    @if (!userCreated)
+    {
+        <form method="post">
+            <input type="hidden" asp-for="TenantId" />
+
+            <div class="row">
+                <!-- Main Form -->
+                <div class="col-lg-8">
+
+                    <!-- Basic Information -->
+                    <div class="card mb-4">
+                        <div class="card-header" style="background-color: #007bff; color: white;">
+                            <h5 class="mb-0"><i class="bi bi-person"></i> Basic Information</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.FirstName" class="form-label">
+                                        First Name <span class="text-danger">*</span>
+                                    </label>
+                                    <input asp-for="Input.FirstName" class="form-control" />
+                                    <span asp-validation-for="Input.FirstName" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.LastName" class="form-label">
+                                        Last Name <span class="text-danger">*</span>
+                                    </label>
+                                    <input asp-for="Input.LastName" class="form-control" />
+                                    <span asp-validation-for="Input.LastName" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.Email" class="form-label">
+                                        Email <span class="text-danger">*</span>
+                                    </label>
+                                    <input asp-for="Input.Email" class="form-control" type="email" />
+                                    <span asp-validation-for="Input.Email" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.Phone" class="form-label">Phone</label>
+                                    <input asp-for="Input.Phone" class="form-control" />
+                                    <span asp-validation-for="Input.Phone" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.Department" class="form-label">Department</label>
+                                    <input asp-for="Input.Department" class="form-control" />
+                                    <span asp-validation-for="Input.Department" class="text-danger small"></span>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label asp-for="Input.JobTitle" class="form-label">Job Title</label>
+                                    <input asp-for="Input.JobTitle" class="form-control" />
+                                    <span asp-validation-for="Input.JobTitle" class="text-danger small"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Roles & Permissions -->
+                    <div class="card mb-4">
+                        <div class="card-header" style="background-color: #007bff; color: white;">
+                            <h5 class="mb-0"><i class="bi bi-shield-check"></i> Roles &amp; Permissions</h5>
+                        </div>
+                        <div class="card-body">
+
+                            @* This checkbox sets User.IsTenantAdmin, which is what
+                               PermissionHandler reads for its blanket bypass. The
+                               tenant_admin ROLE is filtered out of the list below,
+                               so there is one control for one thing. *@
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input asp-for="Input.IsTenantAdmin" class="form-check-input" />
+                                    <label asp-for="Input.IsTenantAdmin" class="form-check-label">
+                                        Tenant Administrator
+                                    </label>
+                                    <small class="form-text text-muted d-block">
+                                        Full access to everything in this workspace, regardless of roles below.
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Assign Roles</label>
+                                @if (Model.AvailableRoles.Any())
+                                {
+                                    <div class="row">
+                                        @foreach (var role in Model.AvailableRoles)
+                                        {
+                                            <div class="col-md-6 mb-2">
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input"
+                                                           name="Input.RoleIds" value="@role.Id" />
+                                                    <label class="form-check-label">
+                                                        <strong>@role.DisplayName</strong>
+                                                        <small class="text-muted d-block">@role.Name</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-muted mb-0">
+                                        This workspace has no roles yet.
+                                        <a asp-page="/Admin/Roles/Index">Create one</a> first,
+                                        or make this person a Tenant Administrator.
+                                    </p>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Side Panel -->
+                <div class="col-lg-4">
+
+                    <div class="card mb-4">
+                        <div class="card-header bg-success text-white">
+                            <h5 class="mb-0"><i class="bi bi-check-circle"></i> Actions</h5>
+                        </div>
+                        <div class="card-body">
+                            <button type="submit" class="btn btn-primary w-100 mb-2">
+                                <i class="bi bi-person-plus"></i> Create User
+                            </button>
+                            <a asp-page="./Index" asp-route-tenantId="@Model.TenantId"
+                               class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header" style="background-color: #007bff; color: white;">
+                            <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Quick Tips</h6>
+                        </div>
+                        <div class="card-body small">
+                            <ul class="mb-0">
+                                @* Was "unique within tenant" — it is unique GLOBALLY
+                                   (UX_Users_Email_Live). One person, one workspace. *@
+                                <li class="mb-2">Email must be unique across all workspaces</li>
+                                <li class="mb-2">Tenant admins have full access to this workspace</li>
+                                <li class="mb-2">Roles can be assigned now or later</li>
+                                @* Was "active by default" — true but misleading. They
+                                   are active AND cannot sign in until they use the invite. *@
+                                <li class="mb-0">You'll get an invite link to send them</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    }
 </div>
 
 @section Scripts {
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.19.5/jquery.validate.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validation-unobtrusive/4.0.0/jquery.validate.unobtrusive.min.js"></script>
+
+    <script>
+        function copyInvite() {
+            const el = document.getElementById('inviteUrl');
+            el.select();
+            navigator.clipboard.writeText(el.value).then(() => {
+                document.getElementById('copyConfirm').style.display = 'block';
+            });
+        }
+    </script>
 }

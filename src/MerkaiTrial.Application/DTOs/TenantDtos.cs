@@ -140,16 +140,10 @@ namespace MerkaiTrial.Application.DTOs
     );
 
     public record CreateUserCommand(
-        Guid TenantId,
-        string FirstName,
-        string LastName,
-        string Email,
-        string? Phone,
-        string? Department,
-        string? JobTitle,
-        bool IsTenantAdmin,
-        List<Guid>? RoleIds
-    );
+           Guid TenantId, string FirstName, string LastName, string Email,
+           string? Phone, string? Department, string? JobTitle,
+           bool IsTenantAdmin, List<Guid> RoleIds,
+           string? CreatedBy = null);
 
     public record UpdateUserCommand(
         Guid TenantId,

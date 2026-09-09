@@ -1,5 +1,6 @@
 ﻿using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
 
 namespace MerkaiTrial.Admin.Web.Services.Core
@@ -68,6 +69,84 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                     $"{verb} {url} returned a body that deserialised to null.");
         }
 
+        private void ThrowForFailure(HttpResponseMessage response, string body, string verb, string url)
+        {
+            if (response.IsSuccessStatusCode) return;
+
+            if (response.StatusCode == HttpStatusCode.BadRequest)
+            {
+                var message = ExtractErrorMessage(body);
+
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    // Logged as a warning, not an error: the API worked exactly
+                    // as intended and refused something it should refuse.
+                    _logger.LogWarning("{Verb} {Url} rejected: {Message}", verb, url, message);
+                    throw new InvalidOperationException(message);
+                }
+            }
+
+            // 403 from TrialActiveActionFilter — the workspace is read-only.
+            // Worth its own message: "please try again" is actively misleading
+            // when trying again will never work.
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var message = ExtractErrorMessage(body) ?? ExtractProblemDetail(body);
+
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    _logger.LogWarning("{Verb} {Url} forbidden: {Message}", verb, url, message);
+                    throw new InvalidOperationException(message);
+                }
+            }
+
+            throw new HttpRequestException($"{verb} {url} failed: {response.StatusCode} - {body}");
+        }
+        private static string? ExtractErrorMessage(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return null;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("error", out var error)
+                    && error.ValueKind == JsonValueKind.String)
+                {
+                    return error.GetString();
+                }
+            }
+            catch (JsonException)
+            {
+                // Not JSON — a plain string body, or an HTML error page.
+                // Fall through rather than guessing.
+            }
+
+            return null;
+        }
+
+        /// <summary>Reads ProblemDetails.detail — what TrialActiveActionFilter returns.</summary>
+        private static string? ExtractProblemDetail(string body)
+        {
+            if (string.IsNullOrWhiteSpace(body)) return null;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("detail", out var detail)
+                    && detail.ValueKind == JsonValueKind.String)
+                {
+                    return detail.GetString();
+                }
+            }
+            catch (JsonException) { }
+
+            return null;
+        }
+
         public async Task<T> GetAsync<T>(string url)
         {
             try
@@ -76,9 +155,15 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"GET {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "GET", url);
 
                 return Deserialize<T>(body, "GET", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -95,9 +180,15 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"POST {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "POST", url);
 
                 return Deserialize<T>(body, "POST", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -121,9 +212,15 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"PUT {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "PUT", url);
 
                 return Deserialize<T>(body, "PUT", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -139,7 +236,13 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"POST {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "POST", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -156,7 +259,13 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"PUT {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "PUT", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -173,7 +282,13 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"PATCH {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "PATCH", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {
@@ -190,7 +305,13 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var body = await response.Content.ReadAsStringAsync();
                 
                 if (!response.IsSuccessStatusCode)
-                    throw new HttpRequestException($"DELETE {url} failed: {response.StatusCode} - {body}");
+                    ThrowForFailure(response, body, "DELETE", url);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already logged as a warning in ThrowForFailure. This is a
+                // rejected request, not a failure of the call.
+                throw;
             }
             catch (Exception ex)
             {

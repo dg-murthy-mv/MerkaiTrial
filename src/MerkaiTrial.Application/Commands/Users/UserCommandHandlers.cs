@@ -1,4 +1,4 @@
-// =====================================================================
+﻿// =====================================================================
 // USER COMMAND HANDLERS - Write operations
 // Location: MerkaiTrial.Application/Commands/UserCommandHandlers.cs
 // =====================================================================
@@ -18,14 +18,66 @@ namespace MerkaiTrial.Application.Commands.Users
 
         public async Task<UserDto> Handle(CreateUserCommand cmd)
         {
-            // Check if user with same email exists in this tenant
-            var exists = await _db.Users.AnyAsync(u =>
-                u.TenantId == cmd.TenantId &&
-                u.Email == cmd.Email &&
-                !u.IsDeleted);
+            // Email is unique GLOBALLY among live users (UX_Users_Email_Live),
+            // not per tenant — one person belongs to one workspace. The old
+            // check was scoped to the tenant, so a clash with another tenant's
+            // user passed here and failed at SaveChanges with a raw index
+            // violation the user could not act on.
+            var emailTaken = await _db.Users.IgnoreQueryFilters()
+                .AnyAsync(u => u.Email == cmd.Email && !u.IsDeleted);
 
-            if (exists)
-                throw new InvalidOperationException($"User with email '{cmd.Email}' already exists in this tenant");
+            if (emailTaken)
+                throw new InvalidOperationException(
+                    $"'{cmd.Email}' already belongs to an account. Each person can be in one workspace.");
+
+            // ── QUOTA ────────────────────────────────────────────────────
+            // The limit that actually binds during a trial. Checked here in
+            // the handler rather than in the page: the page is a courtesy, the
+            // handler is the rule.
+            var settings = await _db.Set<TenantSettings>().AsNoTracking().IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.TenantId == cmd.TenantId);
+
+            if (settings is not null)
+            {
+                var current = await _db.Users.IgnoreQueryFilters()
+                    .CountAsync(u => u.TenantId == cmd.TenantId && !u.IsDeleted);
+
+                if (current >= settings.MaxUsers)
+                    throw new InvalidOperationException(
+                        $"This workspace already has {current} of {settings.MaxUsers} users. " +
+                        "Deactivate someone, or upgrade the plan to add more.");
+            }
+            // If there is no settings row the quota cannot be evaluated. That is
+            // a provisioning failure, not a reason to block — MadeeVision itself
+            // has no row. It is logged by the caller rather than failing here.
+
+            // ── ROLES: validate BEFORE inserting anything ────────────────
+            // Resolved up front so a bad role id fails the whole operation
+            // rather than half-creating a user with no access.
+            var roleIds = cmd.RoleIds?.Distinct().ToList() ?? new List<Guid>();
+            var rolesToAssign = new List<Guid>();
+
+            if (roleIds.Count > 0)
+            {
+                // IgnoreQueryFilters, then an EXPLICIT ownership check. The
+                // filter would hide the tenant's own roles from a super admin;
+                // without the check, any tenant's role could be assigned.
+                var valid = await _db.Roles.AsNoTracking().IgnoreQueryFilters()
+                    .Where(r => roleIds.Contains(r.Id)
+                             && !r.IsDeleted
+                             && (r.TenantId == cmd.TenantId || r.TenantId == null))
+                    .Select(r => r.Id)
+                    .ToListAsync();
+
+                var rejected = roleIds.Except(valid).ToList();
+                if (rejected.Count > 0)
+                    throw new InvalidOperationException(
+                        "One or more selected roles do not belong to this workspace.");
+
+                rolesToAssign = valid;
+            }
+
+            var now = DateTime.UtcNow;
 
             var user = new User
             {
@@ -39,53 +91,47 @@ namespace MerkaiTrial.Application.Commands.Users
                 JobTitle = cmd.JobTitle?.Trim(),
                 IsActive = true,
                 IsTenantAdmin = cmd.IsTenantAdmin,
-                CreatedAtUtc = DateTime.UtcNow
+                IsSuperAdmin = false,
+
+                // No password. They set one from the invite link, which also
+                // proves the address. Same as provisioning's admin user.
+                PasswordHash = null,
+
+                // REQUIRED. OnValidatePrincipal compares this on every request;
+                // a null or empty stamp signs the user out on their first page
+                // load, which looks like a broken login rather than a bad insert.
+                SecurityStamp = Guid.NewGuid().ToString("N"),
+
+                MustChangePassword = false,
+                CreatedAtUtc = now,
+                CreatedBy = cmd.CreatedBy ?? "System",
             };
 
             _db.Users.Add(user);
 
-            // Assign roles if provided
-            if (cmd.RoleIds != null && cmd.RoleIds.Any())
+            foreach (var roleId in rolesToAssign)
             {
-                foreach (var roleId in cmd.RoleIds)
+                _db.UserRoles.Add(new UserRole
                 {
-                    var roleExists = await _db.Roles.AnyAsync(r => r.Id == roleId && !r.IsDeleted);
-                    if (roleExists)
-                    {
-                        _db.UserRoles.Add(new UserRole
-                        {
-                            UserId = user.Id,
-                            RoleId = roleId,
-                            AssignedAtUtc = DateTime.UtcNow
-                        });
-                    }
-                }
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    RoleId = roleId,
+                    AssignedAtUtc = now,
+                    AssignedBy = cmd.CreatedBy ?? "System",
+                });
             }
 
             await _db.SaveChangesAsync();
 
-            // Reload to get roles
-            var roles = await _db.UserRoles
-                .Include(ur => ur.Role)
-                .Where(ur => ur.UserId == user.Id)
+            var roleNames = await _db.UserRoles.IgnoreQueryFilters()
+                .Where(ur => ur.UserId == user.Id && ur.Role != null)
                 .Select(ur => ur.Role!.DisplayName)
                 .ToListAsync();
 
             return new UserDto(
-                user.Id,
-                user.TenantId,
-                user.FirstName,
-                user.LastName,
-                user.Email,
-                user.Phone,
-                user.Department,
-                user.JobTitle,
-                user.IsActive,
-                user.IsTenantAdmin,
-                user.LastLoginUtc,
-                user.CreatedAtUtc,
-                roles
-            );
+                user.Id, user.TenantId, user.FirstName, user.LastName, user.Email,
+                user.Phone, user.Department, user.JobTitle, user.IsActive,
+                user.IsTenantAdmin, user.LastLoginUtc, user.CreatedAtUtc, roleNames);
         }
     }
 
@@ -174,28 +220,48 @@ namespace MerkaiTrial.Application.Commands.Users
 
         public async Task Handle(AssignUserRolesCommand cmd)
         {
-            var user = await _db.Users
+            var user = await _db.Users.IgnoreQueryFilters()
                 .Include(u => u.UserRoles)
-                .FirstOrDefaultAsync(u => u.Id == cmd.UserId && u.TenantId == cmd.TenantId && !u.IsDeleted)
+                .FirstOrDefaultAsync(u => u.Id == cmd.UserId
+                                       && u.TenantId == cmd.TenantId
+                                       && !u.IsDeleted)
                 ?? throw new KeyNotFoundException($"User {cmd.UserId} not found");
 
-            // Remove existing roles
+            var roleIds = cmd.RoleIds?.Distinct().ToList() ?? new List<Guid>();
+            var valid = new List<Guid>();
+
+            if (roleIds.Count > 0)
+            {
+                valid = await _db.Roles.AsNoTracking().IgnoreQueryFilters()
+                    .Where(r => roleIds.Contains(r.Id)
+                             && !r.IsDeleted
+                             && (r.TenantId == cmd.TenantId || r.TenantId == null))
+                    .Select(r => r.Id)
+                    .ToListAsync();
+
+                if (roleIds.Except(valid).Any())
+                    throw new InvalidOperationException(
+                        "One or more selected roles do not belong to this workspace.");
+            }
+
             _db.UserRoles.RemoveRange(user.UserRoles);
 
-            // Add new roles
-            foreach (var roleId in cmd.RoleIds)
+            foreach (var roleId in valid)
             {
-                var roleExists = await _db.Roles.AnyAsync(r => r.Id == roleId && !r.IsDeleted);
-                if (roleExists)
+                _db.UserRoles.Add(new UserRole
                 {
-                    _db.UserRoles.Add(new UserRole
-                    {
-                        UserId = user.Id,
-                        RoleId = roleId,
-                        AssignedAtUtc = DateTime.UtcNow
-                    });
-                }
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    RoleId = roleId,
+                    AssignedAtUtc = DateTime.UtcNow,
+                });
             }
+
+            // Permissions live in the auth cookie from sign-in, so without a new
+            // stamp the change appears to do nothing until the cookie expires.
+            // Rotating it signs them out; they pick up the new roles next login.
+            user.SecurityStamp = Guid.NewGuid().ToString("N");
+            user.UpdatedAtUtc = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
         }

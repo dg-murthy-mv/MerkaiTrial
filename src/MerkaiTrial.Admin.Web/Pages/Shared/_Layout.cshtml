@@ -855,10 +855,19 @@
                     </a>
                 }
 
-                <!-- Contacts & Accounts -->
+                <!-- CUSTOMERS & SALES -->
                 @if (CanNav("Companies") || CanNav("Contacts") || CanNav("Products") || CanNav("Leads"))
                 {
-                    <div class="lf-nav-section">Contacts &amp; Accounts</div>
+                    <div class="lf-nav-section">CUSTOMERS &amp; SALES</div>
+
+                    @* ✅ Leads — gated by read permission *@
+                    @if (CanNav("Leads"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Leads") ? "active" : "")"
+                           asp-page="/Leads/Index">
+                            <i class="bi bi-funnel"></i> Leads
+                        </a>
+                    }
 
                     @* ✅ Companies — gated by read permission *@
                     @if (CanNav("Companies"))
@@ -887,14 +896,7 @@
                         </a>
                     }
 
-                    @* ✅ Leads — gated by read permission *@
-                    @if (CanNav("Leads"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Leads") ? "active" : "")"
-                           asp-page="/Leads/Index">
-                            <i class="bi bi-funnel"></i> Leads
-                        </a>
-                    }
+                   
                 }
 
                 <!-- Sales Pipeline -->

@@ -17,7 +17,9 @@ namespace MerkaiTrial.Application.Commands.Users
 
         public async Task<PaginatedUsersResponse> Handle(Guid tenantId, int page, int pageSize, string? searchTerm)
         {
-            var query = _db.Users.Where(u => u.TenantId == tenantId && !u.IsDeleted);
+            var query = _db.Users
+                 .IgnoreQueryFilters()
+                 .Where(u => u.TenantId == tenantId && !u.IsDeleted);
 
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
@@ -51,7 +53,10 @@ namespace MerkaiTrial.Application.Commands.Users
                 u.IsTenantAdmin,
                 u.LastLoginUtc,
                 u.CreatedAtUtc,
-                u.UserRoles.Where(ur => ur.Role != null).Select(ur => ur.Role!.DisplayName).ToList()
+                u.UserRoles
+                    .Where(ur => ur.Role != null && !ur.Role.IsDeleted)
+                    .Select(ur => ur.Role!.DisplayName)
+                    .ToList()
             )).ToList();
 
             return new PaginatedUsersResponse(items, totalCount, page, pageSize, totalPages);
@@ -66,7 +71,13 @@ namespace MerkaiTrial.Application.Commands.Users
 
         public async Task<UserDto> Handle(Guid tenantId, Guid userId)
         {
+            // IgnoreQueryFilters: the Roles filter resolves to the CALLER's
+            // tenant, so a super admin reading another tenant's user gets null
+            // for every tenant-scoped role and the Where below strips them —
+            // the Roles tab showed 0 for a user who clearly had one. The user
+            // is still scoped explicitly by tenantId, so nothing is widened.
             var user = await _db.Users
+                .IgnoreQueryFilters()
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
                 .FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId && !u.IsDeleted)
@@ -85,10 +96,16 @@ namespace MerkaiTrial.Application.Commands.Users
                 user.IsTenantAdmin,
                 user.LastLoginUtc,
                 user.CreatedAtUtc,
-                user.UserRoles.Where(ur => ur.Role != null).Select(ur => ur.Role!.DisplayName).ToList()
+                // !IsDeleted is now explicit: IgnoreQueryFilters also switched off
+                // the soft-delete filter on Roles, so a deleted role would reappear.
+                user.UserRoles
+                    .Where(ur => ur.Role != null && !ur.Role.IsDeleted)
+                    .Select(ur => ur.Role!.DisplayName)
+                    .ToList()
             );
         }
     }
+
 
     // ==================== GET USER ROLES ====================
     public class GetUserRolesHandler : ICommandHandler
@@ -99,9 +116,13 @@ namespace MerkaiTrial.Application.Commands.Users
         public async Task<List<UserRoleDto>> Handle(Guid tenantId, Guid userId)
         {
             var userRoles = await _db.UserRoles
+                .IgnoreQueryFilters()
                 .Include(ur => ur.Role)
-                .Where(ur => ur.UserId == userId)
-                .Join(_db.Users, ur => ur.UserId, u => u.Id, (ur, u) => new { ur, u })
+                .Where(ur => ur.UserId == userId
+                          && ur.Role != null
+                          && !ur.Role.IsDeleted)
+                .Join(_db.Users.IgnoreQueryFilters(),
+                      ur => ur.UserId, u => u.Id, (ur, u) => new { ur, u })
                 .Where(x => x.u.TenantId == tenantId && !x.u.IsDeleted)
                 .Select(x => new UserRoleDto(
                     x.ur.UserId,
