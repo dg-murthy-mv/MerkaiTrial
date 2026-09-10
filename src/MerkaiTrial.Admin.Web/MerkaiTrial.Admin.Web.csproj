@@ -12,6 +12,7 @@
   <ItemGroup>
     <Folder Include="Areas\Admin\Leads\" />
     <Folder Include="Filters\" />
+    <Folder Include="Pages\Settings\Users\" />
     <Folder Include="Startup\" />
     <Folder Include="Pages\Admin\ViewAs\" />
     <Folder Include="Pages\Admin\Plans\" />

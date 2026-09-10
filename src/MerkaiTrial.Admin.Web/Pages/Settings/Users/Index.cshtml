@@ -1,0 +1,345 @@
+@page "/Settings/Users"
+@model MerkaiTrial.Admin.Web.Pages.Settings.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+    var atLimit = AuthorizedPageModel.IsAtLimit(Model.Stats.TotalUsers, Model.MaxUsers);
+}
+
+@*
+    FILE: MerkaiTrial.Admin.Web/Pages/Settings/Users/Index.cshtml
+
+    Alerts are rendered globally by _Layout — not repeated here.
+*@
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">Users</h1>
+        <p class="text-muted mb-0" style="font-size:13.5px;">
+            Add colleagues to your workspace and control what they can do.
+        </p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">@Model.PlanDisplayName</span>
+
+        @if (Model.CanCreate && !atLimit)
+        {
+            <a asp-page="./Create" class="btn btn-primary">
+                <i class="bi bi-person-plus me-1"></i> Add person
+            </a>
+        }
+        else if (atLimit)
+        {
+            <button class="btn btn-outline-secondary" disabled
+                    title="User limit reached. @Model.UpgradePrompt">
+                <i class="bi bi-lock me-1"></i> User limit reached
+            </button>
+        }
+    </div>
+</div>
+
+@* An invite link, shown once after a resend. The raw token exists only in
+   this response — only its hash is stored — so it has to be copied now. *@
+@if (!string.IsNullOrEmpty(Model.InviteUrl))
+{
+    <div class="card border-success mb-4">
+        <div class="card-header bg-success text-white">
+            <i class="bi bi-link-45deg"></i> New invite link for @Model.InviteForEmail
+        </div>
+        <div class="card-body">
+            <p class="mb-2" style="font-size:13.5px;">
+                Send this to them. It works once and expires in 72 hours.
+            </p>
+            <div class="input-group mb-2">
+                <input type="text" id="inviteUrl" class="form-control font-monospace"
+                       value="@Model.InviteUrl" readonly onclick="this.select();" />
+                <button class="btn btn-primary" type="button" onclick="copyInvite()">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+            </div>
+            <div id="copyConfirm" class="text-success small" style="display:none;">
+                <i class="bi bi-check-circle"></i> Copied.
+            </div>
+            <div class="text-muted small mt-2">
+                Shown once and not stored. Any previous link they were sent still works until it expires.
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Quota -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <div class="row align-items-center g-2">
+            <div class="col-auto">
+                <small class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
+                    People
+                </small>
+            </div>
+            <div class="col">
+                @{
+                    var pct = AuthorizedPageModel.QuotaPercent(Model.Stats.TotalUsers, Model.MaxUsers);
+                    var barClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.TotalUsers, Model.MaxUsers);
+                }
+                <div class="progress" style="height:8px;">
+                    <div class="progress-bar @barClass" role="progressbar" style="width:@pct%"
+                         aria-valuenow="@Model.Stats.TotalUsers" aria-valuemin="0"
+                         aria-valuemax="@Model.MaxUsers"></div>
+                </div>
+            </div>
+            <div class="col-auto">
+                <small class="@(pct >= 90 ? "text-danger fw-bold" : "text-muted")">
+                    @Model.Stats.TotalUsers / @Model.MaxUsers used
+                </small>
+            </div>
+            @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+            {
+                <div class="col-auto">
+                    <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
+                        <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
+                    </a>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="card mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <input type="hidden" name="PageSize" value="@Model.PageSize" />
+            <div class="col-md-9">
+                <label class="form-label mb-1">Search</label>
+                <input type="text" name="SearchTerm" value="@Model.SearchTerm"
+                       class="form-control" placeholder="Name or email" />
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill">
+                    <i class="bi bi-search me-1"></i> Search
+                </button>
+                <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- List -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-people me-2"></i>People
+            <span class="badge bg-primary ms-1">@Model.Users.TotalCount</span>
+        </span>
+        @if (Model.Users.TotalPages > 1)
+        {
+            <span class="text-muted" style="font-size:12px;">Page @Model.Page of @Model.Users.TotalPages</span>
+        }
+    </div>
+
+    @if (!Model.Users.Items.Any())
+    {
+        <div class="card-body text-center py-5 text-muted">
+            <i class="bi bi-people" style="font-size:2rem;opacity:.4;"></i>
+            <p class="mt-3 mb-0">No one matches that search.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive d-none d-md-block">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Person</th>
+                        <th>Role</th>
+                        <th>Last signed in</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in Model.Users.Items)
+                    {
+                        var isSelf = user.Id == Model.CurrentUserId;
+                        <tr>
+                            <td>
+                                <div class="fw-semibold">
+                                    @user.FullName
+                                    @if (isSelf)
+                                    {
+                                        <span class="text-muted fw-normal">(you)</span>
+                                    }
+                                </div>
+                                <small class="text-muted">@user.Email</small>
+                            </td>
+                            <td>
+                                @if (user.IsTenantAdmin)
+                                {
+                                    <span class="badge bg-warning text-dark">Administrator</span>
+                                }
+                                else if (user.Roles.Any())
+                                {
+                                    @foreach (var role in user.Roles)
+                                    {
+                                        <span class="badge bg-secondary me-1">@role</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">No role — cannot see anything</span>
+                                }
+                            </td>
+                            <td>
+                                @if (user.LastLoginUtc.HasValue)
+                                {
+                                    <small class="text-muted">@user.LastLoginUtc.Value.ToString("d MMM yyyy")</small>
+                                }
+                                else
+                                {
+                                    @* No login yet almost always means the invite was
+                                       never used — which is why Resend sits right here. *@
+                                    <small class="text-warning">Not yet — invite pending</small>
+                                }
+                            </td>
+                            <td>
+                                @if (user.IsActive)
+                                {
+                                    <span class="badge bg-success">Active</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">Deactivated</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                @if (Model.CanUpdate)
+                                {
+                                    @if (!user.LastLoginUtc.HasValue && user.IsActive)
+                                    {
+                                        <form method="post" asp-page-handler="ResendInvite"
+                                              asp-route-userId="@user.Id" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary"
+                                                    title="Generate a new invite link">
+                                                <i class="bi bi-envelope"></i> Invite
+                                            </button>
+                                        </form>
+                                    }
+
+                                    @* No action on yourself: deactivating your own
+                                       account signs you out of a workspace you may be
+                                       the only administrator of. *@
+                                    @if (!isSelf)
+                                    {
+                                        <form method="post" asp-page-handler="ToggleStatus"
+                                              asp-route-userId="@user.Id"
+                                              asp-route-isActive="@(!user.IsActive)"
+                                              class="d-inline"
+                                              onsubmit="return confirm('@(user.IsActive ? $"Deactivate {user.FullName}? They will not be able to sign in. Their leads and deals are kept." : $"Reactivate {user.FullName}?")');">
+                                            <button type="submit"
+                                                    class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")"
+                                                    title="@(user.IsActive ? "Deactivate" : "Reactivate")">
+                                                <i class="bi @(user.IsActive ? "bi-person-dash" : "bi-person-check")"></i>
+                                                @(user.IsActive ? "Deactivate" : "Reactivate")
+                                            </button>
+                                        </form>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Mobile -->
+        <div class="d-md-none">
+            @foreach (var user in Model.Users.Items)
+            {
+                var isSelf = user.Id == Model.CurrentUserId;
+                <div class="border-bottom p-3">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <div class="fw-semibold">
+                                @user.FullName
+                                @if (isSelf)
+                                {
+                                    <span class="text-muted fw-normal">(you)</span>
+                                }
+                            </div>
+                            <small class="text-muted">@user.Email</small>
+                        </div>
+                        @if (user.IsActive)
+                        {
+                            <span class="badge bg-success">Active</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Deactivated</span>
+                        }
+                    </div>
+
+                    <div class="mb-2">
+                        @if (user.IsTenantAdmin)
+                        {
+                            <span class="badge bg-warning text-dark">Administrator</span>
+                        }
+                        else if (user.Roles.Any())
+                        {
+                            @foreach (var role in user.Roles)
+                            {
+                                <span class="badge bg-secondary me-1">@role</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted small">No role assigned</span>
+                        }
+                    </div>
+
+                    @if (!user.LastLoginUtc.HasValue)
+                    {
+                        <div class="small text-warning mb-2">Invite not yet used</div>
+                    }
+
+                    @if (Model.CanUpdate && !isSelf)
+                    {
+                        <div class="d-flex gap-2">
+                            @if (!user.LastLoginUtc.HasValue && user.IsActive)
+                            {
+                                <form method="post" asp-page-handler="ResendInvite"
+                                      asp-route-userId="@user.Id" class="flex-fill">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">
+                                        <i class="bi bi-envelope me-1"></i>Invite
+                                    </button>
+                                </form>
+                            }
+                            <form method="post" asp-page-handler="ToggleStatus"
+                                  asp-route-userId="@user.Id"
+                                  asp-route-isActive="@(!user.IsActive)"
+                                  class="flex-fill"
+                                  onsubmit="return confirm('@(user.IsActive ? "Deactivate this person?" : "Reactivate this person?")');">
+                                <button type="submit"
+                                        class="btn btn-sm w-100 @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")">
+                                    @(user.IsActive ? "Deactivate" : "Reactivate")
+                                </button>
+                            </form>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <partial name="_Pagination" model="Model.Users" />
+    }
+</div>
+
+@section Scripts {
+    <script>
+        function copyInvite() {
+            const el = document.getElementById('inviteUrl');
+            el.select();
+            navigator.clipboard.writeText(el.value).then(() => {
+                document.getElementById('copyConfirm').style.display = 'block';
+            });
+        }
+    </script>
+}

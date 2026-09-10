@@ -1004,14 +1004,25 @@
                         </div>
                     }
                 }
-                @if (CanNav("roles"))
+                @if (CanNav("roles") || CanNav("users"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
 
-                    <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
-                       asp-page="/Settings/Roles/Index">
-                        <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
-                    </a>
+                    @if (CanNav("users"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
+                           asp-page="/Settings/Users/Index">
+                            <i class="bi bi-people"></i> Users
+                        </a>
+                    }
+
+                    @if (CanNav("roles"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
+                           asp-page="/Settings/Roles/Index">
+                            <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+                        </a>
+                    }
                 }
 
                 @* ✅ SuperAdmin — visible to tenant admins only, links to SuperAdmin layout *@
@@ -1060,12 +1071,25 @@
                 </button>
 
                 @* ✅ Settings gear — only for tenant admins *@
-                @if (CanNav("roles"))
+                @if (CanNav("roles") || CanNav("users"))
                 {
-                <a class="lf-icon-btn" asp-page="/Settings/Roles/Index"
-                   aria-label="Workspace settings" title="Workspace settings">
-                    <i class="bi bi-gear"></i>
-                </a>
+                    <div class="lf-nav-section">Workspace Settings</div>
+
+                    @if (CanNav("users"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
+                           asp-page="/Settings/Users/Index">
+                            <i class="bi bi-people"></i> Users
+                        </a>
+                    }
+
+                    @if (CanNav("roles"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
+                           asp-page="/Settings/Roles/Index">
+                            <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+                        </a>
+                    }
                 }
 
                 @* ✅ Exit View As — quick way back to the SuperAdmin console
@@ -1128,14 +1152,25 @@
 
                         @* Roles reachable from here too — the sidebar section is
                            easy to miss on a first visit. *@
-                        @if (CanNav("roles"))
+                        @if (CanNav("roles") || CanNav("users"))
                         {
-                            <li>
-                                <a class="dropdown-item" asp-page="/Settings/Roles/Index">
-                                    <i class="bi bi-shield-lock me-2"></i>Roles &amp; Permissions
+                            <div class="lf-nav-section">Workspace Settings</div>
+
+                            @if (CanNav("users"))
+                            {
+                                <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
+                                   asp-page="/Settings/Users/Index">
+                                    <i class="bi bi-people"></i> Users
                                 </a>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
+                            }
+
+                            @if (CanNav("roles"))
+                            {
+                                <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
+                                   asp-page="/Settings/Roles/Index">
+                                    <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+                                </a>
+                            }
                         }
 
                         <li>
