@@ -1,0 +1,126 @@
+@* =====================================================================
+   INLINE EDIT FORM — shared by the Deal's Tasks and Activities tabs
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_EntryEditForm.cshtml
+
+   NEW FILE.
+
+   ⚠ Save this as  _EntryEditForm.cshtml  — ONE leading underscore.
+
+   Renders in place of a row when ?editId= names it. One form for both
+   kinds of entry: a task shows a due date and an assignee, a logged
+   activity shows when it happened and how long it took.
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+
+<form method="post" asp-page-handler="UpdateEntry" asp-route-id="@Model.Deal.Id">
+    <input type="hidden" asp-for="EditInput.ActivityId" />
+    <input type="hidden" asp-for="EditInput.IsTask" />
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">
+            <i class="bi bi-pencil me-2"></i>
+            @(Model.EditInput.IsTask ? "Edit task" : "Edit activity")
+        </h6>
+        <a class="btn btn-sm btn-outline-secondary"
+           asp-route-id="@Model.Deal.Id"
+           asp-fragment="@(Model.EditInput.IsTask ? "tasks" : "activities")">Cancel</a>
+    </div>
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label asp-for="EditInput.ActivityType" class="form-label">Type</label>
+            <select asp-for="EditInput.ActivityType" class="form-select">
+                @* A log can't become a to-do: "Task" is only offered when
+                   this entry is already a task. *@
+                @if (Model.EditInput.IsTask)
+                {
+                    <option value="Task">✅ To-do</option>
+                }
+                <option value="Call">📞 Call</option>
+                <option value="Email">📧 Email</option>
+                <option value="Meeting">🤝 Meeting</option>
+                <option value="WhatsApp">📱 WhatsApp</option>
+                <option value="LINE">💬 LINE</option>
+                <option value="SMS">✉️ SMS</option>
+            </select>
+            <span asp-validation-for="EditInput.ActivityType" class="text-danger"></span>
+        </div>
+
+        <div class="col-md-8">
+            <label asp-for="EditInput.Subject" class="form-label">
+                Subject <span class="text-danger">*</span>
+            </label>
+            <input asp-for="EditInput.Subject" class="form-control" required />
+            <span asp-validation-for="EditInput.Subject" class="text-danger"></span>
+        </div>
+
+        <div class="col-12">
+            <label asp-for="EditInput.Description" class="form-label">Notes</label>
+            <textarea asp-for="EditInput.Description" class="form-control" rows="2"></textarea>
+        </div>
+
+        @if (Model.EditInput.IsTask)
+        {
+            <div class="col-md-6">
+                <label asp-for="EditInput.DueDate" class="form-label">
+                    Due <span class="text-danger">*</span>
+                </label>
+                <input asp-for="EditInput.DueDate" type="datetime-local" class="form-control" required />
+                <span asp-validation-for="EditInput.DueDate" class="text-danger"></span>
+                <small class="text-muted">Change this to reschedule</small>
+            </div>
+
+            @if (Model.Assignees.Count > 1)
+            {
+                <div class="col-md-6">
+                    <label asp-for="EditInput.AssignedToUserId" class="form-label">Assigned to</label>
+                    <select asp-for="EditInput.AssignedToUserId" class="form-select">
+                        @foreach (var user in Model.Assignees)
+                        {
+                            <option value="@user.UserId"
+                                    selected="@(user.UserId == Model.EditInput.AssignedToUserId)">
+                                @user.Name@(user.UserId == Model.CurrentUserId.ToString() ? " (you)" : "")
+                            </option>
+                        }
+                    </select>
+                </div>
+            }
+
+            <div class="col-12">
+                <label asp-for="EditInput.Outcome" class="form-label">Outcome</label>
+                <input asp-for="EditInput.Outcome" class="form-control"
+                       placeholder="How did it go? Fill this in once it's done." />
+            </div>
+        }
+        else
+        {
+            <div class="col-md-6">
+                <label asp-for="EditInput.ActivityDate" class="form-label">When did it happen?</label>
+                <input asp-for="EditInput.ActivityDate" type="datetime-local" class="form-control" />
+            </div>
+
+            <div class="col-md-6">
+                <label asp-for="EditInput.Duration" class="form-label">Duration (minutes)</label>
+                <input asp-for="EditInput.Duration" type="number" class="form-control" min="1" max="480" />
+                <span asp-validation-for="EditInput.Duration" class="text-danger"></span>
+            </div>
+
+            <div class="col-12">
+                <label asp-for="EditInput.Outcome" class="form-label">Outcome</label>
+                <input asp-for="EditInput.Outcome" class="form-control"
+                       placeholder="e.g. Agreed to a site visit next week" />
+            </div>
+        }
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-3">
+        <a class="btn btn-outline-secondary"
+           asp-route-id="@Model.Deal.Id"
+           asp-fragment="@(Model.EditInput.IsTask ? "tasks" : "activities")">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check2 me-1"></i>Save changes
+        </button>
+    </div>
+</form>

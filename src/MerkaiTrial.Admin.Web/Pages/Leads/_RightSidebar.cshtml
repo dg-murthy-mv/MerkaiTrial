@@ -194,12 +194,12 @@
                 @if (Model.CanUpdate)
                 {
                     <button class="btn btn-sm btn-outline-info"
-                            onclick="document.getElementById('activities-tab').click(); document.querySelector('#activities textarea').focus();">
+                            onclick="document.getElementById('activities-tab')?.click(); document.querySelector('#activities textarea')?.focus();">
                         <i class="bi bi-clock-history me-2"></i>Log Activity
                     </button>
                     <button class="btn btn-sm btn-outline-warning"
-                            onclick="document.getElementById('reminders-tab').click(); document.querySelector('#reminders input[type=text]').focus();">
-                        <i class="bi bi-bell me-2"></i>Set Reminder
+                            onclick="document.getElementById('tasks-tab')?.click(); document.querySelector('#tasks input[name=&quot;TaskInput.Subject&quot;]')?.focus();">
+                        <i class="bi bi-list-check me-2"></i>Add Task
                     </button>
                 }
             }

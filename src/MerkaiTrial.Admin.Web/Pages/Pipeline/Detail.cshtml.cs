@@ -4,42 +4,20 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES IN THIS PASS
+// NEW IN THIS PASS (task follow-through — matching the Lead page)
+//   • Assign a task to a colleague.
+//   • Edit / reschedule a task; edit a logged activity. Inline, via
+//     ?editId=<guid>.
+//   • Delete an entry — needs Deals.Delete, not Deals.Update.
+//   • "How did it go?" added AFTER completing, so completing is one click.
+//   • Editing someone else's entry needs tenant admin.
 //
-// 1. ACTIVITIES AND REMINDERS NOW USE IActivityService (the unified
-//    Activities table) instead of IDealService's DealActivities /
-//    DealReminders. Migration 010 already copied the existing rows, so
-//    nothing disappears. This is the last legacy writer — after this, the
-//    old tables are read by nothing.
+// CLOSED DEALS: notes, activities and tasks can still be added, edited and
+// completed after a deal closes — post-sale follow-up is real work, and a
+// Won deal still has a handover. Only the DEAL itself is locked.
 //
-// 2. LEAD HISTORY APPEARS ON THE DEAL. GetActivitiesHandler follows
-//    Deal.LeadId, so everything logged while it was a lead now shows in
-//    the Activities tab, marked "from lead". Nothing is copied; it is read
-//    through the link. This is the context a rep loses today at exactly
-//    the moment it matters.
-//
-// 3. TIMEZONE. ReminderDate used .ToUniversalTime(), which converts using
-//    the SERVER's timezone — right on your laptop for an Indian tenant,
-//    wrong for Thai tenants, and a silent no-op on Azure (UTC servers).
-//    Now _currentTenantService.LocalToUtc. Activity dates can be backdated
-//    for the first time (the old handler always stamped "now", so logging
-//    yesterday's call recorded it as today).
-//
-// 4. GetRelativeTime did UtcNow - dateTime with no conversion, so "2h ago"
-//    was wrong by the tenant's offset. Now converts both sides.
-//
-// 5. STAGE NAMES. IsClosedDeal checked four spellings ("ClosedWon",
-//    "Won", "ClosedLost", "Lost") because the vocabulary is inconsistent.
-//    That defensive check is preserved but moved into one place,
-//    StageRules, so normalisation later changes one file, not ten call
-//    sites. NOT a fix — the underlying inconsistency still needs the
-//    migration we discussed.
-//
-// 6. CreatedBy was the user's FULL NAME here and the user ID on the Lead
-//    page, so the same person counted as two people in reports. The API
-//    now sets it from the signed-in user, so both pages agree.
-//
-// 7. Error messages show the API's reason instead of "Please try again".
+// A deal's entries include rows carried over from the lead it came from
+// (IsFromLead). Those are editable under the same rules as any other.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Activities;
@@ -108,6 +86,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         /// <summary>True when the row came from the lead this deal was converted from.</summary>
         public bool IsFromLead(ActivityDto a) => a.EntityType == ActivityEntityType.Lead;
 
+        // ── Who is looking ────────────────────────────────────────────
+        public Guid CurrentUserId { get; private set; }
+        public bool IsTenantAdmin { get; private set; }
+
+        /// <summary>Colleagues a task can be assigned to.</summary>
+        public List<AssigneeDto> Assignees { get; private set; } = new();
+
         [BindProperty]
         public NoteInputModel NoteInput { get; set; } = new();
 
@@ -116,6 +101,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         [BindProperty]
         public TaskInputModel TaskInput { get; set; } = new();
+
+        [BindProperty]
+        public EditEntryModel EditInput { get; set; } = new();
+
+        [BindProperty]
+        public string? OutcomeText { get; set; }
+
+        /// <summary>Which entry is being edited inline. Null = none.</summary>
+        [BindProperty(SupportsGet = true)]
+        public Guid? EditId { get; set; }
+
+        /// <summary>Which completed entry is having an outcome added.</summary>
+        [BindProperty(SupportsGet = true)]
+        public Guid? OutcomeId { get; set; }
 
         [TempData]
         public string? SuccessMessage { get; set; }
@@ -183,11 +182,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             [Range(1, 480, ErrorMessage = "Duration must be between 1 and 480 minutes")]
             public int? Duration { get; set; }
 
-            /// <summary>Tenant-local; null = now. New — the old page couldn't backdate.</summary>
+            /// <summary>Tenant-local; null = now.</summary>
             public DateTime? ActivityDate { get; set; }
         }
 
-        /// <summary>Scheduling work. Replaces ReminderInputModel.</summary>
+        /// <summary>Scheduling work.</summary>
         public class TaskInputModel
         {
             [Required(ErrorMessage = "Task type is required")]
@@ -202,6 +201,40 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             [Required(ErrorMessage = "Due date is required")]
             public DateTime DueDate { get; set; }
+
+            /// <summary>Empty = assign to myself.</summary>
+            public string? AssignedToUserId { get; set; }
+        }
+
+        /// <summary>One form, used for editing either a task or a logged activity.</summary>
+        public class EditEntryModel
+        {
+            public Guid ActivityId { get; set; }
+            public bool IsTask { get; set; }
+
+            [Required(ErrorMessage = "Type is required")]
+            public string ActivityType { get; set; } = string.Empty;
+
+            [Required(ErrorMessage = "Subject is required")]
+            [StringLength(200)]
+            public string Subject { get; set; } = string.Empty;
+
+            [StringLength(1000)]
+            public string? Description { get; set; }
+
+            [Range(1, 480)]
+            public int? Duration { get; set; }
+
+            /// <summary>Tasks: when it's due. Local time.</summary>
+            public DateTime? DueDate { get; set; }
+
+            /// <summary>Logs: when it happened. Local time.</summary>
+            public DateTime? ActivityDate { get; set; }
+
+            public string? AssignedToUserId { get; set; }
+
+            [StringLength(2000)]
+            public string? Outcome { get; set; }
         }
 
         // ==================== GET HANDLER ====================
@@ -215,7 +248,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             try
             {
-                var tenantId = _currentUserService.GetCurrentTenantId();
+                var me = await _currentUserService.GetCurrentUserAsync();
+                CurrentUserId = me.UserId;
+                IsTenantAdmin = me.IsTenantAdmin;
+
+                var tenantId = me.TenantId;
 
                 Deal = await _dealService.GetDetailAsync(tenantId, id);
 
@@ -223,8 +260,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var stageHistoryTask = _dealService.GetStageHistoryAsync(tenantId, id);
                 var attachmentsTask  = _dealService.GetAttachmentsAsync(tenantId, id);
                 var activitiesTask   = LoadActivitiesAsync(tenantId, id);
+                var assigneesTask    = LoadAssigneesAsync();
 
-                await Task.WhenAll(notesTask, stageHistoryTask, attachmentsTask, activitiesTask);
+                await Task.WhenAll(notesTask, stageHistoryTask, attachmentsTask, activitiesTask, assigneesTask);
 
                 Notes        = await notesTask;
                 StageHistory = await stageHistoryTask;
@@ -234,6 +272,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 if (TaskInput.DueDate == default)
                     TaskInput.DueDate = _currentTenantService.UtcToLocal(DateTime.UtcNow)
                                                              .Date.AddDays(1).AddHours(9);
+
+                PrefillEditForm();
 
                 try
                 {
@@ -280,8 +320,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     TenantId  = tenantId,
                     DealId    = id,
                     Note      = NoteInput.Note,
-                    // Was FullName. The user ID matches what the Lead page and
-                    // the Activities API store, so reports group correctly.
                     CreatedBy = currentUser.UserId.ToString()
                 });
 
@@ -296,7 +334,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        // ==================== ADD ACTIVITY (log) ====================
+        // ==================== LOG AN ACTIVITY ====================
 
         public async Task<IActionResult> OnPostAddActivityAsync(Guid id)
         {
@@ -335,7 +373,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     CreatedBy: currentUserId.ToString()
                 ));
 
-                SuccessMessage = "Activity logged successfully!";
+                SuccessMessage = "Activity logged.";
                 return RedirectToPage(new { id });
             }
             catch (Exception ex)
@@ -346,7 +384,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        // ==================== ADD TASK (was reminder) ====================
+        // ==================== PLAN A TASK ====================
 
         public async Task<IActionResult> OnPostAddTaskAsync(Guid id)
         {
@@ -365,6 +403,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId      = _currentUserService.GetCurrentTenantId();
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
+                var assignee = string.IsNullOrWhiteSpace(TaskInput.AssignedToUserId)
+                    ? currentUserId.ToString()
+                    : TaskInput.AssignedToUserId;
+
                 await _activityService.CreateAsync(new CreateActivityDto(
                     TenantId: tenantId,
                     EntityType: ActivityEntityType.Deal,
@@ -376,11 +418,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     ActivityDate: null,
                     IsTask: true,
                     DueDate: _currentTenantService.LocalToUtc(TaskInput.DueDate),
-                    AssignedToUserId: currentUserId.ToString(),
+                    AssignedToUserId: assignee,
                     CreatedBy: currentUserId.ToString()
                 ));
 
-                SuccessMessage = "Task created successfully!";
+                SuccessMessage = assignee == currentUserId.ToString()
+                    ? "Task created."
+                    : "Task created and assigned.";
                 return RedirectToPage(new { id });
             }
             catch (Exception ex)
@@ -391,7 +435,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        // ==================== COMPLETE TASK ====================
+        // ==================== COMPLETE — one click ====================
 
         public async Task<IActionResult> OnPostCompleteTaskAsync(Guid id, Guid activityId)
         {
@@ -410,13 +454,118 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     CompletedBy: currentUserId.ToString()
                 ));
 
-                SuccessMessage = "Task marked as complete!";
+                SuccessMessage = "Task done.";
                 return RedirectToPage(new { id });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to complete task {ActivityId}", activityId);
                 ErrorMessage = Explain(ex, "Failed to complete task.");
+                return RedirectToPage(new { id });
+            }
+        }
+
+        // ==================== OUTCOME — added afterwards ====================
+
+        public async Task<IActionResult> OnPostSetOutcomeAsync(Guid id, Guid activityId)
+        {
+            var check = await ValidatePermissionAsync(Actions.Update);
+            if (check != null) return check;
+
+            try
+            {
+                var tenantId      = _currentUserService.GetCurrentTenantId();
+                var currentUserId = _currentUserService.GetCurrentUserId();
+
+                await _activityService.SetOutcomeAsync(new SetActivityOutcomeDto(
+                    TenantId: tenantId,
+                    ActivityId: activityId,
+                    Outcome: OutcomeText,
+                    UpdatedBy: currentUserId.ToString()
+                ));
+
+                SuccessMessage = "Outcome saved.";
+                return RedirectToPage(new { id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to set outcome on {ActivityId}", activityId);
+                ErrorMessage = Explain(ex, "Failed to save the outcome.");
+                return RedirectToPage(new { id });
+            }
+        }
+
+        // ==================== EDIT / RESCHEDULE ====================
+
+        public async Task<IActionResult> OnPostUpdateEntryAsync(Guid id)
+        {
+            var check = await ValidatePermissionAsync(Actions.Update);
+            if (check != null) return check;
+
+            ModelState.Clear();
+            if (!TryValidateModel(EditInput, nameof(EditInput)))
+            {
+                LogModelStateErrors();
+                EditId = EditInput.ActivityId;   // keep the form open
+                return await OnGetAsync(id);
+            }
+
+            try
+            {
+                var tenantId      = _currentUserService.GetCurrentTenantId();
+                var currentUserId = _currentUserService.GetCurrentUserId();
+
+                DateTime? dueUtc = EditInput.IsTask && EditInput.DueDate.HasValue
+                    ? _currentTenantService.LocalToUtc(EditInput.DueDate.Value)
+                    : null;
+
+                var whenUtc = EditInput.ActivityDate.HasValue
+                    ? _currentTenantService.LocalToUtc(EditInput.ActivityDate.Value)
+                    : DateTime.UtcNow;
+
+                await _activityService.UpdateAsync(new UpdateActivityDto(
+                    TenantId: tenantId,
+                    ActivityId: EditInput.ActivityId,
+                    Subject: EditInput.Subject,
+                    Description: EditInput.Description,
+                    Duration: EditInput.Duration,
+                    ActivityDate: whenUtc,
+                    DueDate: dueUtc,
+                    AssignedToUserId: EditInput.AssignedToUserId,
+                    Outcome: EditInput.Outcome,
+                    UpdatedBy: currentUserId.ToString(),
+                    ActivityType: EditInput.ActivityType
+                ));
+
+                SuccessMessage = EditInput.IsTask ? "Task updated." : "Activity updated.";
+                return RedirectToPage(new { id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update entry {ActivityId}", EditInput.ActivityId);
+                ErrorMessage = Explain(ex, "Failed to save those changes.");
+                return RedirectToPage(new { id });
+            }
+        }
+
+        // ==================== DELETE ENTRY — needs Deals.Delete ====================
+
+        public async Task<IActionResult> OnPostDeleteEntryAsync(Guid id, Guid activityId)
+        {
+            var check = await ValidatePermissionAsync(Actions.Delete);
+            if (check != null) return check;
+
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                await _activityService.DeleteAsync(tenantId, activityId);
+                SuccessMessage = "Entry deleted.";
+                return RedirectToPage(new { id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete entry {ActivityId}", activityId);
+                ErrorMessage = Explain(ex, "Failed to delete that entry.");
                 return RedirectToPage(new { id });
             }
         }
@@ -471,7 +620,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        // ==================== UPLOAD ATTACHMENT ====================
+        // ==================== ATTACHMENTS ====================
 
         public async Task<IActionResult> OnPostUploadAttachmentAsync(Guid id, IFormFile file)
         {
@@ -496,7 +645,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
             catch (InvalidOperationException ex)
             {
-                // File size / MIME type rejected by storage service
                 ErrorMessage = ex.Message;
                 return RedirectToPage(new { id });
             }
@@ -507,8 +655,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 return RedirectToPage(new { id });
             }
         }
-
-        // ==================== DELETE ATTACHMENT ====================
 
         public async Task<IActionResult> OnPostDeleteAttachmentAsync(Guid id, Guid attachmentId)
         {
@@ -547,6 +693,46 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
+        private async Task LoadAssigneesAsync()
+        {
+            try { Assignees = await _activityService.GetAssigneesAsync(); }
+            catch (Exception ex)
+            {
+                // A missing list just means no dropdown — the task still gets
+                // created, assigned to the person creating it.
+                _logger.LogWarning(ex, "Failed to load assignees");
+                Assignees = new();
+            }
+        }
+
+        /// <summary>
+        /// When ?editId= names an entry, copy its current values into the
+        /// edit form so the inline form opens populated.
+        /// </summary>
+        private void PrefillEditForm()
+        {
+            if (EditId is null) return;
+
+            var entry = AllActivities.FirstOrDefault(a => a.Id == EditId.Value);
+            if (entry is null) { EditId = null; return; }
+
+            if (!CanEditEntry(entry)) { EditId = null; return; }
+
+            EditInput = new EditEntryModel
+            {
+                ActivityId       = entry.Id,
+                IsTask           = entry.IsTask,
+                ActivityType     = entry.ActivityType,
+                Subject          = entry.Subject,
+                Description      = entry.Description,
+                Duration         = entry.Duration,
+                DueDate          = entry.DueDate.HasValue ? _currentTenantService.UtcToLocal(entry.DueDate.Value) : null,
+                ActivityDate     = _currentTenantService.UtcToLocal(entry.ActivityDate),
+                AssignedToUserId = entry.AssignedToUserId,
+                Outcome          = entry.Outcome
+            };
+        }
+
         private void LogModelStateErrors()
         {
             foreach (var kv in ModelState)
@@ -564,23 +750,49 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         // ==================== VIEW HELPERS ====================
 
+        /// <summary>
+        /// You can always edit your own entry. Editing someone else's is a
+        /// tenant-admin action. Note this does NOT check IsEditableState:
+        /// a closed deal still gets post-sale follow-up, and a Won deal has
+        /// a handover. Only the deal record itself is locked.
+        ///
+        /// Entries created before the activity unification store a NAME in
+        /// CreatedBy rather than an id, so they match nobody and are
+        /// admin-only. That is the safe side to fail on.
+        /// </summary>
+        public bool CanEditEntry(ActivityDto a)
+        {
+            if (!CanUpdate) return false;
+            if (IsTenantAdmin) return true;
+            return string.Equals(a.CreatedBy, CurrentUserId.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Deleting history needs the Delete permission, not Update.</summary>
+        public bool CanDeleteEntry(ActivityDto a)
+        {
+            if (!CanDelete) return false;
+            if (IsTenantAdmin) return true;
+            return string.Equals(a.CreatedBy, CurrentUserId.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        public bool IsEditing(ActivityDto a) => EditId.HasValue && EditId.Value == a.Id;
+        public bool IsAddingOutcome(ActivityDto a) => OutcomeId.HasValue && OutcomeId.Value == a.Id;
+
         // FormatDate / FormatDateTime / FormatCurrency come from
         // AuthorizedPageModel — single source of truth.
 
         public string GetRelativeTime(DateTime utcDateTime)
         {
-            // Was UtcNow - dateTime with no conversion: off by the tenant's
-            // offset, so a call logged 1 hour ago read "6h ago" in Bangkok.
             var localNow  = _currentTenantService.UtcToLocal(DateTime.UtcNow);
             var localThen = _currentTenantService.UtcToLocal(utcDateTime);
             var span      = localNow - localThen;
 
-            // Timeline shows tasks by DUE date, which is usually in the future.
+            // Tasks are shown by DUE date, which is usually ahead.
             if (span.TotalSeconds < -60)
             {
                 var ahead = -span;
                 if (ahead.TotalHours < 24) return $"in {(int)ahead.TotalHours}h";
-                if (ahead.TotalDays < 30) return $"in {(int)ahead.TotalDays}d";
+                if (ahead.TotalDays < 30)  return $"in {(int)ahead.TotalDays}d";
                 return FormatDate(utcDateTime);
             }
 
