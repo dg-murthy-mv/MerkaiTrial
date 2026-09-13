@@ -1,0 +1,346 @@
+@page
+@using MerkaiTrial.Application.Commands.Leads.Import
+@model MerkaiTrial.Admin.Web.Pages.Leads.ImportModel
+@{
+    ViewData["Title"] = "Import Leads";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-upload me-2"></i>Import Leads</h2>
+        <p class="text-muted mb-0">Bring your existing list in from a spreadsheet</p>
+    </div>
+    <a asp-page="./Index" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to Leads
+    </a>
+</div>
+
+@* ── Progress ─────────────────────────────────────────────────────── *@
+<div class="d-flex align-items-center gap-2 mb-4 small">
+    @foreach (var (n, label) in new[] { (1, "Upload"), (2, "Match columns"), (3, "Review") })
+    {
+        <span class="badge rounded-pill @(Model.Step >= n ? "bg-primary" : "bg-light text-muted border")">
+            @n
+        </span>
+        <span class="@(Model.Step >= n ? "fw-semibold" : "text-muted")">@label</span>
+        if (n < 3)
+        {
+            <span class="text-muted mx-2">→</span>
+        }
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+    </div>
+}
+
+@* ═══════════════ STEP 1 — UPLOAD ═══════════════ *@
+@if (Model.Step == 1)
+{
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <form method="post" asp-page-handler="Upload" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label asp-for="File" class="form-label">Spreadsheet</label>
+                    <input asp-for="File" type="file" class="form-control"
+                           accept=".csv,.xlsx,.xls" required />
+                    <div class="form-text">
+                        .csv or .xlsx, up to 10 MB and 5,000 rows. The first row must be your
+                        column headings.
+                    </div>
+                </div>
+
+                <div class="alert alert-light border small mb-3">
+                    <strong>What's needed:</strong> one column with the person's name. Everything
+                    else — email, phone, company, source, value — is optional, and you'll match
+                    your columns to ours on the next screen. An export from another CRM works as
+                    it comes.
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload me-1"></i>Upload and continue
+                </button>
+            </form>
+        </div>
+    </div>
+}
+
+@* ═══════════════ STEP 2 — MAPPING ═══════════════ *@
+@if (Model.Step == 2 && Model.Upload is not null)
+{
+    <form method="post" asp-page-handler="Preview">
+        <input type="hidden" asp-for="SessionId" />
+        <input type="hidden" asp-for="FileName" />
+        <input type="hidden" asp-for="TotalRows" />
+        @for (var i = 0; i < Model.Headers.Count; i++)
+        {
+            <input type="hidden" name="Headers[@i]" value="@Model.Headers[i]" />
+        }
+
+        <div class="alert alert-info d-flex align-items-center">
+            <i class="bi bi-file-earmark-spreadsheet fs-4 me-3"></i>
+            <div>
+                <strong>@Model.FileName</strong> — @Model.TotalRows.ToString("N0") rows,
+                @Model.Headers.Count columns.
+                We've matched what we recognised; correct anything that's wrong.
+            </div>
+        </div>
+
+        @foreach (var w in Model.Upload.Warnings)
+        {
+            <div class="alert alert-warning py-2"><i class="bi bi-info-circle me-2"></i>@w</div>
+        }
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0">Match your columns</h6></div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 30%;">Merkai field</th>
+                            <th style="width: 35%;">Your column</th>
+                            <th>Sample from your file</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var field in Model.Fields)
+                        {
+                            var selected = Model.Mapping.TryGetValue(field.Key, out var v) ? v : -1;
+                            <tr>
+                                <td>
+                                    <span class="fw-semibold">@field.Label</span>
+                                    @if (field.IsRequired)
+                                    {
+                                        <span class="text-danger ms-1">*</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(field.Hint))
+                                    {
+                                        <div class="text-muted small">@field.Hint</div>
+                                    }
+                                </td>
+                                <td>
+                                    <select name="Mapping[@field.Key]" class="form-select form-select-sm">
+                                        <option value="-1" selected="@(selected < 0)">— Don't import —</option>
+                                        @for (var i = 0; i < Model.Headers.Count; i++)
+                                        {
+                                            <option value="@i" selected="@(selected == i)">@Model.Headers[i]</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td class="text-muted small">
+                                    @if (selected >= 0 && Model.Upload.SampleRows.Count > 0)
+                                    {
+                                        @string.Join(" · ", Model.Upload.SampleRows
+                                            .Where(r => selected < r.Count && !string.IsNullOrWhiteSpace(r[selected]))
+                                            .Select(r => r[selected])
+                                            .Take(3))
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white"><h6 class="mb-0">If a lead is already in Merkai</h6></div>
+            <div class="card-body">
+                <p class="text-muted small">Matched on email address or phone number.</p>
+
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" asp-for="Duplicates"
+                           value="@DuplicateAction.Skip" id="dupSkip" checked="@(Model.Duplicates == DuplicateAction.Skip)">
+                    <label class="form-check-label" for="dupSkip">
+                        <strong>Skip it</strong>
+                        <div class="text-muted small">Leave the existing lead exactly as it is. Safest.</div>
+                    </label>
+                </div>
+
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="radio" asp-for="Duplicates"
+                           value="@DuplicateAction.Update" id="dupUpdate" checked="@(Model.Duplicates == DuplicateAction.Update)">
+                    <label class="form-check-label" for="dupUpdate">
+                        <strong>Fill in the blanks</strong>
+                        <div class="text-muted small">
+                            Add missing details only. Never overwrites what's already there, and
+                            never changes status, score or owner.
+                        </div>
+                    </label>
+                </div>
+
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="radio" asp-for="Duplicates"
+                           value="@DuplicateAction.Import" id="dupImport" checked="@(Model.Duplicates == DuplicateAction.Import)">
+                    <label class="form-check-label" for="dupImport">
+                        <strong>Import anyway</strong>
+                        <div class="text-muted small">Creates a second lead for the same person.</div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+                Check the file <i class="bi bi-arrow-right ms-1"></i>
+            </button>
+            <a asp-page="./Import" class="btn btn-outline-secondary">Start over</a>
+        </div>
+    </form>
+}
+
+@* ═══════════════ STEP 3 — PREVIEW ═══════════════ *@
+@if (Model.Step == 3 && Model.Preview is not null)
+{
+    var p = Model.Preview;
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-0 text-success">@p.WillImport</div>
+                <div class="text-muted small">will be imported</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-0 text-info">@p.WillUpdate</div>
+                <div class="text-muted small">will be updated</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-0 text-secondary">@p.WillSkip</div>
+                <div class="text-muted small">skipped</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-0 @(p.ErrorCount > 0 ? "text-danger" : "text-muted")">@p.ErrorCount</div>
+                <div class="text-muted small">can't be imported</div>
+            </div></div>
+        </div>
+    </div>
+
+    @if (p.ExceedsQuota)
+    {
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-octagon me-2"></i>
+            <strong>Over your plan limit.</strong>
+            You have @p.CurrentLeadCount.ToString("N0") leads and your plan allows
+            @p.MaxLeads.ToString("N0"). This import would add @p.WillImport.ToString("N0") more.
+            Import a smaller file or upgrade first.
+        </div>
+    }
+
+    @foreach (var n in p.Notices)
+    {
+        <div class="alert alert-warning py-2 small"><i class="bi bi-info-circle me-2"></i>@n</div>
+    }
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Every row</h6>
+            <span class="badge bg-secondary">@p.TotalRows</span>
+        </div>
+        <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light position-sticky top-0">
+                    <tr>
+                        <th style="width: 70px;">Row</th>
+                        <th style="width: 110px;">Status</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Company</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in p.Rows)
+                    {
+                        <tr class="@(row.Verdict == RowVerdict.Error ? "table-danger" : "")">
+                            <td class="text-muted">@row.RowNumber</td>
+                            <td>
+                                <span class="badge @Model.VerdictBadge(row.Verdict)">
+                                    @Model.VerdictLabel(row.Verdict)
+                                </span>
+                            </td>
+                            <td>@row.FullName</td>
+                            <td class="small">@row.Email</td>
+                            <td class="small">@row.Phone</td>
+                            <td class="small">@row.CompanyName</td>
+                            <td class="small text-muted">
+                                @foreach (var m in row.Messages)
+                                {
+                                    <div>@m</div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <form method="post" asp-page-handler="Commit">
+        <input type="hidden" asp-for="SessionId" />
+        <input type="hidden" asp-for="FileName" />
+        <input type="hidden" asp-for="TotalRows" />
+        <input type="hidden" asp-for="Duplicates" />
+        @foreach (var kv in Model.Mapping)
+        {
+            <input type="hidden" name="Mapping[@kv.Key]" value="@kv.Value" />
+        }
+        @for (var i = 0; i < Model.Headers.Count; i++)
+        {
+            <input type="hidden" name="Headers[@i]" value="@Model.Headers[i]" />
+        }
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-success"
+                    disabled="@(p.ExceedsQuota || (p.WillImport + p.WillUpdate) == 0)">
+                <i class="bi bi-check2-circle me-1"></i>
+                Import @((p.WillImport + p.WillUpdate).ToString("N0")) lead(s)
+            </button>
+            <a asp-page="./Import" class="btn btn-outline-secondary">Start over</a>
+        </div>
+        <p class="text-muted small mt-2 mb-0">
+            All or nothing — if anything goes wrong, no leads are created.
+        </p>
+    </form>
+}
+
+@* ═══════════════ STEP 4 — PARTIAL RESULT ═══════════════ *@
+@if (Model.Step == 4 && Model.Result is not null)
+{
+    <div class="alert alert-warning">
+        <h5 class="alert-heading">Import finished with problems</h5>
+        Imported @Model.Result.Imported, updated @Model.Result.Updated,
+        skipped @Model.Result.Skipped, and @Model.Result.Failed row(s) couldn't be read.
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white"><h6 class="mb-0">Rows that didn't import</h6></div>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Row</th><th>Name</th><th>Why</th></tr></thead>
+                <tbody>
+                    @foreach (var row in Model.Result.FailedRows)
+                    {
+                        <tr>
+                            <td>@row.RowNumber</td>
+                            <td>@row.FullName</td>
+                            <td class="small text-muted">@string.Join("; ", row.Messages)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <a asp-page="./Index" class="btn btn-primary">Go to Leads</a>
+    <a asp-page="./Import" class="btn btn-outline-secondary">Import another file</a>
+}

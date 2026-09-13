@@ -854,7 +854,16 @@
                         <i class="bi bi-house"></i> Dashboard
                     </a>
                 }
-
+                @* Tasks — the page a rep opens first each morning.
+                   Gated on Leads OR Deals read: tasks hang off both, and
+                   deliberately not a separate module (see ModuleCatalog). *@
+                @if (CanNav("Leads") || CanNav("Deals"))
+                {
+                    <a class="lf-nav-item @(IsActive("/Tasks") ? "active" : "")"
+                       asp-page="/Tasks/Index">
+                        <i class="bi bi-list-check"></i> Tasks
+                    </a>
+                }
                 <!-- CUSTOMERS & SALES -->
                 @if (CanNav("Companies") || CanNav("Contacts") || CanNav("Products") || CanNav("Leads"))
                 {

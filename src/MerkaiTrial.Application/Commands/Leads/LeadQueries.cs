@@ -17,6 +17,7 @@ using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MerkaiTrial.Application.Commands.Activities;
 
 namespace MerkaiTrial.Application.Commands.Leads
 {
@@ -244,12 +245,17 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class GetLeadStatsHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly ICurrentTenantService _tenant;
         private readonly ILogger<GetLeadStatsHandler> _logger;
 
-        public GetLeadStatsHandler(FlowDbContext context, ILogger<GetLeadStatsHandler> logger)
+        public GetLeadStatsHandler(
+            FlowDbContext context,
+            ICurrentTenantService tenant,
+            ILogger<GetLeadStatsHandler> logger)
         {
             _context = context;
-            _logger  = logger;
+            _tenant = tenant;
+            _logger = logger;
         }
 
         public async Task<LeadStatsDto> Handle(
@@ -258,63 +264,55 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
-                var today = DateTime.UtcNow.Date;
+                var nowUtc = DateTime.UtcNow;
 
-                // Previously: 6 separate CountAsync round-trips against the
-                // same Leads table (total, new, working, qualified,
-                // unqualified, converted) — each individually fast (15-100ms)
-                // but sequential, so they added up to a big chunk of the
-                // multi-second total this endpoint was taking. Collapsed
-                // into ONE query using conditional aggregates — EF Core
-                // translates g.Count(predicate) here into a single SQL
-                // statement with multiple SUM(CASE WHEN ...) expressions,
-                // so it's one round-trip instead of six.
-                //
-                // Note: GroupBy(x => 1) on an empty result set returns NO
-                // groups at all (not a group with zero counts) — so this
-                // must handle the null case explicitly for tenants with no
-                // leads yet, which is the current state of several demo
-                // tenants.
+                // "Today" is the TENANT's calendar day, expressed as a UTC range.
+                var localToday = _tenant.UtcToLocal(nowUtc).Date;
+                var todayStartUtc = _tenant.LocalToUtc(localToday);
+                var todayEndUtc = todayStartUtc.AddDays(1);
+
+                // One round-trip for all status counts (unchanged).
                 var counts = await _context.Leads
                     .Where(l => l.TenantId == query.TenantId && !l.IsDeleted)
                     .GroupBy(l => 1)
                     .Select(g => new
                     {
-                        TotalLeads       = g.Count(),
-                        NewLeads         = g.Count(l => l.Status == LeadStatus.New),
-                        WorkingLeads     = g.Count(l => l.Status == LeadStatus.Working),
-                        QualifiedLeads   = g.Count(l => l.Status == LeadStatus.Qualified),
+                        TotalLeads = g.Count(),
+                        NewLeads = g.Count(l => l.Status == LeadStatus.New),
+                        WorkingLeads = g.Count(l => l.Status == LeadStatus.Working),
+                        QualifiedLeads = g.Count(l => l.Status == LeadStatus.Qualified),
                         UnqualifiedLeads = g.Count(l => l.Status == LeadStatus.Unqualified),
-                        ConvertedLeads   = g.Count(l => l.IsConverted)
+                        ConvertedLeads = g.Count(l => l.IsConverted)
                     })
                     .FirstOrDefaultAsync(cancellationToken);
 
-                // Overdue reminders — different table (LeadReminder), can't
-                // be folded into the query above. Left as its own round-trip.
-                // NOTE: When Activities module is built, this moves to unified ActivityHandler
-                var overdueReminders = await _context.Set<LeadReminder>()
-                    .CountAsync(r =>
-                        r.TenantId == query.TenantId &&
-                        !r.IsDeleted &&
-                        !r.IsCompleted &&
-                        r.ReminderDate < DateTime.UtcNow, cancellationToken);
-
-                // Today's activities — different table again (LeadActivity).
-                var todayActivities = await _context.Set<LeadActivity>()
+                // Open lead tasks past their due date (reminders are tasks now).
+                var overdueTasks = await _context.Activities
                     .CountAsync(a =>
                         a.TenantId == query.TenantId &&
+                        a.EntityType == ActivityEntityType.Lead &&
+                        a.IsTask && !a.IsCompleted && !a.IsDeleted &&
+                        a.DueDate < nowUtc, cancellationToken);
+
+                // Lead activity that happened today: logs + tasks completed today.
+                var todayActivities = await _context.Activities
+                    .CountAsync(a =>
+                        a.TenantId == query.TenantId &&
+                        a.EntityType == ActivityEntityType.Lead &&
                         !a.IsDeleted &&
-                        a.ActivityDate.Date == today, cancellationToken);
+                        (!a.IsTask || a.IsCompleted) &&
+                        a.ActivityDate >= todayStartUtc &&
+                        a.ActivityDate < todayEndUtc, cancellationToken);
 
                 return new LeadStatsDto(
-                    TotalLeads:       counts?.TotalLeads       ?? 0,
-                    NewLeads:         counts?.NewLeads         ?? 0,
-                    WorkingLeads:     counts?.WorkingLeads     ?? 0,
-                    QualifiedLeads:   counts?.QualifiedLeads   ?? 0,
+                    TotalLeads: counts?.TotalLeads ?? 0,
+                    NewLeads: counts?.NewLeads ?? 0,
+                    WorkingLeads: counts?.WorkingLeads ?? 0,
+                    QualifiedLeads: counts?.QualifiedLeads ?? 0,
                     UnqualifiedLeads: counts?.UnqualifiedLeads ?? 0,
-                    ConvertedLeads:   counts?.ConvertedLeads   ?? 0,
-                    OverdueReminders: overdueReminders,
-                    TodayActivities:  todayActivities
+                    ConvertedLeads: counts?.ConvertedLeads ?? 0,
+                    OverdueReminders: overdueTasks,
+                    TodayActivities: todayActivities
                 );
             }
             catch (Exception ex)
@@ -324,6 +322,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             }
         }
     }
+
 
     // ==================== DROPDOWN QUERIES ====================
     // (No changes needed — these are already correct)

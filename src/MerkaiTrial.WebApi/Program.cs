@@ -38,6 +38,8 @@
 using MerkaiTrial.Admin.Web.Services.UserManagement;
 using MerkaiTrial.Application;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.Leads.Import;
 using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
@@ -141,6 +143,10 @@ builder.Services.AddScoped<IPaymentProviderFactory, PaymentProviderFactory>();
 builder.Services.AddScoped<QuoteService>();
 builder.Services.AddScoped<InvoiceService>();
 builder.Services.AddSingleton<UiContext>();
+builder.Services.AddScoped<GetAssigneesHandler>();
+builder.Services.AddScoped<SetActivityOutcomeHandler>();
+builder.Services.AddScoped<ReassignActivityHandler>();
+
 
 builder.Services.AddScoped<ICurrentUserService, ApiCurrentUserService>();
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
@@ -149,6 +155,8 @@ builder.Services.AddScoped<ILeadScoringService, LeadScoringService>();
 builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
 builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<GetActivityAccessHandler>();
+builder.Services.AddScoped<GetTimelineHandler>();
 
 
 // Required by the tenant-scoped role handlers, which run in THIS host.
@@ -157,7 +165,10 @@ builder.Services.AddScoped<IRoleScope, RoleScope>();
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 ExcelPackage.License.SetNonCommercialPersonal("MerkaiTrial");
 builder.Services.AddMemoryCache();
-
+builder.Services.AddSingleton<IImportSessionStore, ImportSessionStore>();
+builder.Services.AddScoped<UploadLeadImportHandler>();
+builder.Services.AddScoped<PreviewLeadImportHandler>();
+builder.Services.AddScoped<CommitLeadImportHandler>();
 // =====================================================================
 var app = builder.Build();
 

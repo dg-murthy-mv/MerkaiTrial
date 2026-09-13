@@ -37,7 +37,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // Export/Import
         private readonly ExportLeadsHandler _exportHandler;
-        private readonly ImportLeadsHandler _importHandler;
+        
 
         public LeadsExtendedController(
             CreateLeadNoteHandler createNoteHandler,
@@ -50,8 +50,7 @@ namespace MerkaiTrial.WebApi.Controllers
             CompleteReminderHandler completeReminderHandler,
             AssignLeadHandler assignLeadHandler,
             GetLeadTimelineHandler getTimelineHandler,
-            ExportLeadsHandler exportHandler,
-            ImportLeadsHandler importHandler,
+            ExportLeadsHandler exportHandler,            
             ILogger<LeadsExtendedController> logger)
         {
             _createNoteHandler = createNoteHandler;
@@ -64,8 +63,7 @@ namespace MerkaiTrial.WebApi.Controllers
             _completeReminderHandler = completeReminderHandler;
             _assignLeadHandler = assignLeadHandler;
             _getTimelineHandler = getTimelineHandler;
-            _exportHandler = exportHandler;
-            _importHandler = importHandler;
+            _exportHandler = exportHandler;            
             _logger = logger;
         }
 
@@ -311,54 +309,5 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        // ==================== IMPORT ====================
-
-        [HttpPost("import")]
-        [Consumes("multipart/form-data")]
-        public async Task<ActionResult<ImportLeadsResult>> ImportLeads(
-            [FromQuery] Guid tenantId,
-            IFormFile file,
-            [FromQuery] string? importedBy = null)
-        {
-            try
-            {
-                if (file == null || file.Length == 0)
-                    return BadRequest(new { error = "File is required" });
-
-                List<ImportLeadRow> rows;
-
-                // Check file type
-                var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-
-                if (extension == ".csv")
-                {
-                    using var reader = new StreamReader(file.OpenReadStream());
-                    var csvContent = await reader.ReadToEndAsync();
-                    rows = ParseCsvHelper.ParseCsv(csvContent);
-                }
-                else if (extension == ".xlsx" || extension == ".xls")
-                {
-                    using var stream = new MemoryStream();
-                    await file.CopyToAsync(stream);
-                    rows = ParseExcelHelper.ParseExcel(stream.ToArray());
-                }
-                else
-                {
-                    return BadRequest(new { error = "Invalid file type. Only .csv, .xlsx, .xls are supported" });
-                }
-
-                var request = new ImportLeadsRequest(tenantId, rows, importedBy);
-                var result = await _importHandler.Handle(request);
-
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to import leads");
-                return StatusCode(500, new { error = $"Failed to import leads: {ex.Message}" });
-            }
-        }
-
-        // NOTE: GetStats endpoint REMOVED - already in LeadsController
     }
 }

@@ -104,9 +104,9 @@
         </div>
         <div class="d-flex justify-content-between mb-0">
             <span class="text-muted">
-                <i class="bi bi-bell me-1"></i>Pending Reminders
+                <i class="bi bi-bell me-1"></i>Pending Tasks
             </span>
-            <span class="badge bg-warning text-dark">@Model.Reminders.Count(r => !r.IsCompleted)</span>
+            <span class="badge bg-warning text-dark">@Model.Tasks.Count(r => !r.IsCompleted)</span>
         </div>
     </div>
 </div>

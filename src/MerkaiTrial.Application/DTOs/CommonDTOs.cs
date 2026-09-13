@@ -371,29 +371,9 @@ namespace MerkaiTrial.Application.DTOs
         string? AssignedTo
     );
 
-    public record ImportLeadsRequest(
-        Guid TenantId,
-        List<ImportLeadRow> Rows,
-        string? ImportedBy
-    );
+    
 
-    public record ImportLeadRow(
-        string FullName,
-        string Email,
-        string? Phone,
-        string? Channel,
-        string? Source,
-        string? Status,
-        string? OwnerUserId,
-        int? Score
-    );
-
-    public record ImportLeadsResult(
-        int TotalRows,
-        int SuccessCount,
-        int FailedCount,
-        List<string> Errors
-    );
+    
 
     // ========== STATISTICS ==========
     public record LeadStatsDto(

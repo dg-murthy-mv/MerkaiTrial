@@ -58,7 +58,7 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
 
         // Export/Import
         Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo);
-        Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy);
+       // Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy);
 
         // Attachments
         Task<AttachmentDto> UploadAttachmentAsync(Guid tenantId, Guid leadId, IFormFile file, string? uploadedBy);
@@ -489,29 +489,29 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             }
         }
 
-        public async Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy)
-        {
-            try
-            {
-                using var stream = new MemoryStream();
-                await file.CopyToAsync(stream);
-                var fileBytes = stream.ToArray();
+        //public async Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy)
+        //{
+        //    try
+        //    {
+        //        using var stream = new MemoryStream();
+        //        await file.CopyToAsync(stream);
+        //        var fileBytes = stream.ToArray();
 
-                var request = new
-                {
-                    tenantId = tenantId,
-                    fileName = file.FileName,
-                    fileContent = Convert.ToBase64String(fileBytes),
-                    importedBy = importedBy
-                };
+        //        var request = new
+        //        {
+        //            tenantId = tenantId,
+        //            fileName = file.FileName,
+        //            fileContent = Convert.ToBase64String(fileBytes),
+        //            importedBy = importedBy
+        //        };
 
-                return await _api.PostAsync<ImportLeadsResult>("/api/leads/import", request);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error importing leads");
-                throw;
-            }
-        }
+        //        return await _api.PostAsync<ImportLeadsResult>("/api/leads/import", request);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        _logger.LogError(ex, "Error importing leads");
+        //        throw;
+        //    }
+        //}
     }
 }

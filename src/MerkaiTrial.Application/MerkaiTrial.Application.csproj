@@ -10,6 +10,7 @@
 	</ItemGroup>
   <ItemGroup>
     <Folder Include="Commands\Activities\" />
+    <Folder Include="Commands\Leads\Import\" />
     <Folder Include="Commands\Meta\" />
     <Folder Include="Commands\Reports\" />
     <Folder Include="Commands\Plans\" />

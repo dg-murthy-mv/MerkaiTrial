@@ -19,6 +19,13 @@
         <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
             @Model.PlanDisplayName
         </span>
+        @* Import — same permission as creating a lead *@
+        @if (Model.CanCreate)
+        {
+            <a asp-page="./Import" class="btn btn-outline-primary">
+                <i class="bi bi-upload me-1"></i>Import
+            </a>
+        }
 
         @* ✅ Add Lead — quota + permission aware *@
         @if (!AuthorizedPageModel.IsAtLimit(Model.Stats.TotalLeads, Model.MaxLeads) && Model.CanCreate)

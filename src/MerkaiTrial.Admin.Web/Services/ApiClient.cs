@@ -415,29 +415,29 @@ namespace MerkaiTrial.Admin.Web.Services
 
         // ==================== IMPORT ====================
 
-        public async Task<ImportLeadsResult> ImportLeadsAsync(Guid tenantId, IFormFile file, string? importedBy = null)
-        {
-            try
-            {
-                using var content = new MultipartFormDataContent();
-                using var fileStream = file.OpenReadStream();
-                using var fileContent = new StreamContent(fileStream);
+        //public async Task<ImportLeadsResult> ImportLeadsAsync(Guid tenantId, IFormFile file, string? importedBy = null)
+        //{
+        //    try
+        //    {
+        //        using var content = new MultipartFormDataContent();
+        //        using var fileStream = file.OpenReadStream();
+        //        using var fileContent = new StreamContent(fileStream);
 
-                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
-                content.Add(fileContent, "file", file.FileName);
+        //        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+        //        content.Add(fileContent, "file", file.FileName);
 
-                var url = $"api/leads/import?tenantId={tenantId}";
-                if (!string.IsNullOrWhiteSpace(importedBy))
-                    url += $"&importedBy={Uri.EscapeDataString(importedBy)}";
+        //        var url = $"api/leads/import?tenantId={tenantId}";
+        //        if (!string.IsNullOrWhiteSpace(importedBy))
+        //            url += $"&importedBy={Uri.EscapeDataString(importedBy)}";
 
-                var response = await _http.PostAsync(url, content);
-                return await ReadOrThrow<ImportLeadsResult>(response, "Import leads");
-            }
-            catch (Exception ex)
-            {
-                throw new HttpRequestException("Import leads failed", ex);
-            }
-        }
+        //        var response = await _http.PostAsync(url, content);
+        //        return await ReadOrThrow<ImportLeadsResult>(response, "Import leads");
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        throw new HttpRequestException("Import leads failed", ex);
+        //    }
+        //}
 
         // ==================== STATISTICS ====================
 

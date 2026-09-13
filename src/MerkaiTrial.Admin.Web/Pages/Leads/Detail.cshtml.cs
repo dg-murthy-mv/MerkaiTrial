@@ -1,38 +1,24 @@
-﻿// =====================================================================
+// =====================================================================
 // LEAD DETAIL - Backend
 // Location: MerkaiTrial.Admin.Web/Pages/Leads/Detail.cshtml.cs
 //
-// MIGRATION (this pass):
-//   1. Base class AppPageModel -> AuthorizedPageModel
-//   2. OnGetAsync now enforces Leads.Read via ValidatePermissionAsync
-//      before loading the lead (previously: no permission check at all —
-//      anyone could open any lead by URL regardless of role)
-//   3. CRITICAL FIX: OnPostDeleteAsync had NO permission check whatsoever
-//      before this pass — only the business-rule "not converted" guard.
-//      Any authenticated user (including viewer) could POST to this
-//      handler directly and delete a non-converted lead. Now gated with
-//      ValidatePermissionAsync(Actions.Delete), same as Index's delete
-//      handler always was.
-//   4. RENAMED to avoid collision with AuthorizedPageModel's own
-//      permission properties of the same name:
-//        CanEdit   -> IsEditableState   (business rule: not converted)
-//        CanDelete -> IsDeletableState  (business rule: not converted)
-//      These are NOT permission checks — they reflect record state.
-//      The view's actual buttons should now check BOTH, e.g.:
-//        @if (Model.CanDelete && Model.IsDeletableState) { ...delete button... }
-//      where Model.CanDelete (inherited) is the permission check and
-//      Model.IsDeletableState is the "not converted" business lock.
+// COMPLETE FILE — replaces the existing one.
 //
-//   NOT YET ADDED IN THIS PASS (flagging for a decision, not guessing):
-//   OnPostChangeStatusAsync, OnPostAddNoteAsync, OnPostAddActivityAsync,
-//   OnPostAddReminderAsync, OnPostCompleteReminderAsync,
-//   OnPostConvertToDealAsync, OnPostUploadAttachmentAsync,
-//   OnPostDeleteAttachmentAsync still have NO permission checks at all.
-//   These need an explicit call on what permission each maps to
-//   (e.g. does adding a note require Leads.Update, or is that too
-//   restrictive for a role that can only read/create? Does converting to
-//   a deal need Deals.Create on top of Leads.Update?) before I add gates,
-//   rather than assume and risk locking out a workflow you rely on.
+// NEW IN THIS PASS (task follow-through)
+//   • Assign a task to a colleague — Assignees list + dropdown.
+//   • Edit / reschedule a task, edit a logged activity. Inline, driven by
+//     ?editId=<guid> rather than a modal per row: no JS, and the edit
+//     survives a validation failure.
+//   • Delete an entry. Needs Leads.Delete, not Leads.Update — erasing the
+//     record of a call is a different act from adding to it.
+//   • "How did it go?" — an outcome added AFTER completing, so completing
+//     stays one click. A dialog on every completion would add friction to
+//     the one action we most want repeated.
+//   • Editing someone else's entry needs tenant admin. Correcting your own
+//     typo is not the same as rewriting another rep's record.
+//
+// The API enforces all of this again; the flags here only decide which
+// buttons render.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Activities;
@@ -53,9 +39,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
     public class DetailModel : AuthorizedPageModel
     {
         private readonly ILeadService _leadService;
-        private readonly IActivityService _activityService;  // unified activities
+        private readonly IActivityService _activityService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
+        private readonly IAuthorizationService _authorizationService;
         private readonly ILogger<DetailModel> _logger;
 
         protected override string ModuleName => Modules.Leads;
@@ -73,50 +60,79 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             _activityService = activityService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
+            _authorizationService = authorizationService;
             _logger = logger;
         }
 
         // ── Lead data ─────────────────────────────────────────────────
         public LeadDetailDto Lead { get; set; } = null!;
 
-        // ── Tenant context (exposed to view — no hardcoding in cshtml) ─
+        // ── Tenant context ────────────────────────────────────────────
         public string TenantCurrency { get; private set; } = "INR";
         public string TenantCurrencySymbol { get; private set; } = "₹";
         public string TenantDateFormat { get; private set; } = "dd/MM/yyyy";
         public string TenantTimezone { get; private set; } = "Asia/Kolkata";
         public List<AttachmentDto> Attachments { get; set; } = new();
+
+        // ── Who is looking ────────────────────────────────────────────
+        public Guid CurrentUserId { get; private set; }
+        public bool IsTenantAdmin { get; private set; }
+
+        /// <summary>Colleagues a task can be assigned to.</summary>
+        public List<AssigneeDto> Assignees { get; private set; } = new();
+
         // ── Status ────────────────────────────────────────────────────
         [BindProperty]
         public LeadStatus? NewStatus { get; set; }
         public List<SelectListItem> StatusOptions { get; set; } = new();
 
-        // ── Notes (kept via ILeadService — backward compat) ───────────
+        // ── Notes ─────────────────────────────────────────────────────
         public List<LeadNoteDto> Notes { get; set; } = new();
         [BindProperty]
         public NoteInputModel NoteInput { get; set; } = new();
 
-        // ── Unified Activities (replaces LeadActivityDto list) ─────────
-        public List<ActivityDto> Activities { get; set; } = new();
+        // ── Unified Activities ────────────────────────────────────────
+        public List<ActivityDto> AllActivities { get; set; } = new();
+
+        /// <summary>Logged history — the Activities tab.</summary>
+        public List<ActivityDto> Activities => AllActivities.Where(a => !a.IsTask).ToList();
+
+        /// <summary>Scheduled work — the Tasks tab.</summary>
+        public List<ActivityDto> Tasks => AllActivities.Where(a => a.IsTask).ToList();
+
+        public List<ActivityDto> OpenTasks =>
+            Tasks.Where(t => !t.IsCompleted).OrderBy(t => t.DueDate).ToList();
+
+        public List<ActivityDto> CompletedTasks =>
+            Tasks.Where(t => t.IsCompleted).OrderByDescending(t => t.CompletedAtUtc).ToList();
+
         [BindProperty]
         public ActivityInputModel ActivityInput { get; set; } = new();
 
-        // ── Reminders (kept via ILeadService — backward compat) ────────
-        public List<LeadReminderDto> Reminders { get; set; } = new();
         [BindProperty]
-        public ReminderInputModel ReminderInput { get; set; } = new();
+        public TaskInputModel TaskInput { get; set; } = new();
 
-        // ── Timeline (unified) ────────────────────────────────────────
+        [BindProperty]
+        public EditEntryModel EditInput { get; set; } = new();
+
+        [BindProperty]
+        public string? OutcomeText { get; set; }
+
+        /// <summary>Which entry is being edited inline. Null = none.</summary>
+        [BindProperty(SupportsGet = true)]
+        public Guid? EditId { get; set; }
+
+        /// <summary>Which completed entry is having an outcome added.</summary>
+        [BindProperty(SupportsGet = true)]
+        public Guid? OutcomeId { get; set; }
+
+        // ── Timeline ──────────────────────────────────────────────────
         public List<TimelineItemDto> Timeline { get; set; } = new();
 
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
 
-        // ── Level 1: UI lock properties (business-rule state, NOT permission) ──
-        // Converted leads are read-only — part of the financial audit trail.
-        // RENAMED from CanEdit/CanDelete to avoid colliding with
-        // AuthorizedPageModel's permission-based CanUpdate/CanDelete properties.
-        // View buttons should check BOTH permission and state, e.g.:
-        //   @if (Model.CanDelete && Model.IsDeletableState) { ... }
+        // ── Business-rule state (NOT permission) ──────────────────────
         public bool IsEditableState => Lead != null && !Lead.IsConverted;
         public bool IsDeletableState => Lead != null && !Lead.IsConverted;
 
@@ -131,6 +147,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             public string Note { get; set; } = string.Empty;
         }
 
+        /// <summary>Logging something that already happened.</summary>
         public class ActivityInputModel
         {
             [Required(ErrorMessage = "Activity type is required")]
@@ -146,24 +163,59 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             [Range(1, 480)]
             public int? Duration { get; set; }
 
+            /// <summary>Tenant-local; null = now.</summary>
             public DateTime? ActivityDate { get; set; }
-
-            // Task support — IsTask=true means future task with DueDate
-            public bool IsTask { get; set; }
-            public DateTime? DueDate { get; set; }
         }
 
-        public class ReminderInputModel
+        /// <summary>Scheduling something to do.</summary>
+        public class TaskInputModel
         {
+            [Required(ErrorMessage = "Task type is required")]
+            public string ActivityType { get; set; } = MerkaiTrial.Application.Commands.Activities.ActivityType.Task;
+
             [Required(ErrorMessage = "Title is required")]
             [StringLength(200)]
-            public string Title { get; set; } = string.Empty;
+            public string Subject { get; set; } = string.Empty;
 
             [StringLength(1000)]
             public string? Description { get; set; }
 
-            [Required(ErrorMessage = "Reminder date is required")]
-            public DateTime ReminderDate { get; set; }
+            [Required(ErrorMessage = "Due date is required")]
+            public DateTime DueDate { get; set; }
+
+            /// <summary>Empty = assign to myself.</summary>
+            public string? AssignedToUserId { get; set; }
+        }
+
+        /// <summary>One form, used for editing either a task or a logged activity.</summary>
+        public class EditEntryModel
+        {
+            public Guid ActivityId { get; set; }
+            public bool IsTask { get; set; }
+
+            [Required(ErrorMessage = "Type is required")]
+            public string ActivityType { get; set; } = string.Empty;
+
+            [Required(ErrorMessage = "Subject is required")]
+            [StringLength(200)]
+            public string Subject { get; set; } = string.Empty;
+
+            [StringLength(1000)]
+            public string? Description { get; set; }
+
+            [Range(1, 480)]
+            public int? Duration { get; set; }
+
+            /// <summary>Tasks: when it's due. Local time.</summary>
+            public DateTime? DueDate { get; set; }
+
+            /// <summary>Logs: when it happened. Local time.</summary>
+            public DateTime? ActivityDate { get; set; }
+
+            public string? AssignedToUserId { get; set; }
+
+            [StringLength(2000)]
+            public string? Outcome { get; set; }
         }
 
         [BindProperty]
@@ -197,44 +249,37 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public async Task<IActionResult> OnGetAsync(Guid id)
         {
-            // ✅ Check READ permission before loading anything
             var permissionCheck = await ValidatePermissionAsync(Actions.Read);
             if (permissionCheck != null) return permissionCheck;
 
-            // Initialize permissions for UI buttons (Edit/Delete gating)
             await InitializePermissionsAsync();
 
             try
             {
                 LoadTenantContext();
 
-                var tenantId = _currentUserService.GetCurrentTenantId();
+                var me = await _currentUserService.GetCurrentUserAsync();
+                CurrentUserId = me.UserId;
+                IsTenantAdmin = me.IsTenantAdmin;
+
+                var tenantId = me.TenantId;
                 Lead = await _leadService.GetByIdAsync(tenantId, id);
 
                 LoadStatusOptions();
 
-                // ── PERF: these five loads are independent of one another.
-                // They used to be awaited one at a time, which serialised five
-                // WebApi round-trips: the server log showed each call starting
-                // at the exact millisecond the previous one finished
-                // (~8.5s of the page's 11.8s). Each method assigns only its own
-                // property and swallows its own exception, so running them
-                // concurrently is safe. Pipeline/Detail already uses this
-                // pattern. ApiService is stateless and the tenant/user headers
-                // are attached per-request by TenantContextForwardingHandler,
-                // so concurrent calls do not race.
                 var notesTask       = LoadNotesAsync(tenantId, id);
                 var activitiesTask  = LoadActivitiesAsync(tenantId, id);
-                var remindersTask   = LoadRemindersAsync(tenantId, id);
                 var timelineTask    = LoadTimelineAsync(tenantId, id);
                 var attachmentsTask = LoadAttachmentsAsync(tenantId, id);
+                var assigneesTask   = LoadAssigneesAsync();
 
-                await Task.WhenAll(
-                    notesTask, activitiesTask, remindersTask, timelineTask, attachmentsTask);
+                await Task.WhenAll(notesTask, activitiesTask, timelineTask, attachmentsTask, assigneesTask);
 
-                if (ReminderInput.ReminderDate == default)
-                    ReminderInput.ReminderDate = DateTime.Now.AddMinutes(30);
+                if (TaskInput.DueDate == default)
+                    TaskInput.DueDate = _tenantService.UtcToLocal(DateTime.UtcNow)
+                                                      .Date.AddDays(1).AddHours(9);
 
+                PrefillEditForm();
                 InitializeConvertToDealInput();
                 return Page();
             }
@@ -252,11 +297,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         }
 
         // =====================================================================
-        // POST HANDLERS
+        // NOTES / STATUS / ATTACHMENTS  (unchanged behaviour)
         // =====================================================================
 
         public async Task<IActionResult> OnPostChangeStatusAsync(Guid id, LeadStatus status)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -266,13 +314,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error changing status for lead {Id}", id);
-                TempData["ErrorMessage"] = "Failed to change status. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to change status.");
             }
             return RedirectToPage(new { id });
         }
 
         public async Task<IActionResult> OnPostAddNoteAsync(Guid id)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 ModelState.Clear();
@@ -298,13 +349,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding note to lead {Id}", id);
-                TempData["ErrorMessage"] = "Failed to add note. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to add note.");
             }
             return RedirectToPage(new { id });
         }
 
         public async Task<IActionResult> OnPostDeleteNoteAsync(Guid id, Guid noteId)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -314,13 +368,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting note {NoteId}", noteId);
-                TempData["ErrorMessage"] = "Failed to delete note. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to delete note.");
             }
             return RedirectToPage(new { id });
         }
 
+        // =====================================================================
+        // LOG AN ACTIVITY  ("Log what happened")
+        // =====================================================================
+
         public async Task<IActionResult> OnPostAddActivityAsync(Guid id)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 ModelState.Clear();
@@ -334,6 +395,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
+                DateTime? activityDateUtc = ActivityInput.ActivityDate.HasValue
+                    ? _tenantService.LocalToUtc(ActivityInput.ActivityDate.Value)
+                    : null;
+
                 await _activityService.CreateAsync(new CreateActivityDto(
                     TenantId: tenantId,
                     EntityType: ActivityEntityType.Lead,
@@ -342,31 +407,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     Subject: ActivityInput.Subject,
                     Description: ActivityInput.Description,
                     Duration: ActivityInput.Duration,
-                    ActivityDate: ActivityInput.ActivityDate,
-                    IsTask: ActivityInput.IsTask,
-                    DueDate: ActivityInput.DueDate,
+                    ActivityDate: activityDateUtc,
+                    IsTask: false,
+                    DueDate: null,
                     AssignedToUserId: currentUserId.ToString(),
                     CreatedBy: currentUserId.ToString()
                 ));
 
-                TempData["SuccessMessage"] = ActivityInput.IsTask
-                    ? "Task created successfully!"
-                    : "Activity logged successfully!";
+                TempData["SuccessMessage"] = "Activity logged.";
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding activity to lead {Id}", id);
-                TempData["ErrorMessage"] = "Failed to log activity. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to log activity.");
             }
             return RedirectToPage(new { id });
         }
 
-        public async Task<IActionResult> OnPostAddReminderAsync(Guid id)
+        // =====================================================================
+        // PLAN A TASK  ("Plan what's next")
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostAddTaskAsync(Guid id)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 ModelState.Clear();
-                if (!TryValidateModel(ReminderInput, nameof(ReminderInput)))
+                if (!TryValidateModel(TaskInput, nameof(TaskInput)))
                 {
                     LogModelStateErrors();
                     await ReloadPageDataAsync(id);
@@ -376,47 +446,201 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
-                await _leadService.CreateReminderAsync(new CreateLeadReminderDto(
+                var assignee = string.IsNullOrWhiteSpace(TaskInput.AssignedToUserId)
+                    ? currentUserId.ToString()
+                    : TaskInput.AssignedToUserId;
+
+                await _activityService.CreateAsync(new CreateActivityDto(
                     TenantId: tenantId,
-                    LeadId: id,
-                    Title: ReminderInput.Title,
-                    Description: ReminderInput.Description,
-                    ReminderDate: ReminderInput.ReminderDate,
+                    EntityType: ActivityEntityType.Lead,
+                    EntityId: id,
+                    ActivityType: TaskInput.ActivityType,
+                    Subject: TaskInput.Subject,
+                    Description: TaskInput.Description,
+                    Duration: null,
+                    ActivityDate: null,
+                    IsTask: true,
+                    DueDate: _tenantService.LocalToUtc(TaskInput.DueDate),
+                    AssignedToUserId: assignee,
                     CreatedBy: currentUserId.ToString()
                 ));
 
-                TempData["SuccessMessage"] = "Reminder created successfully!";
+                TempData["SuccessMessage"] =
+                    assignee == currentUserId.ToString()
+                        ? "Task created."
+                        : "Task created and assigned.";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error adding reminder to lead {Id}", id);
-                TempData["ErrorMessage"] = "Failed to create reminder. Please try again.";
+                _logger.LogError(ex, "Error adding task to lead {Id}", id);
+                TempData["ErrorMessage"] = Explain(ex, "Failed to create task.");
             }
             return RedirectToPage(new { id });
         }
 
-        public async Task<IActionResult> OnPostCompleteReminderAsync(Guid id, Guid reminderId)
+        // =====================================================================
+        // COMPLETE — one click, no dialog
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostCompleteTaskAsync(Guid id, Guid activityId)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
-                await _leadService.CompleteReminderAsync(tenantId, reminderId);
-                TempData["SuccessMessage"] = "Reminder marked as complete!";
+                var currentUserId = _currentUserService.GetCurrentUserId();
+
+                await _activityService.CompleteAsync(new CompleteActivityDto(
+                    TenantId: tenantId,
+                    ActivityId: activityId,
+                    Outcome: null,
+                    CompletedBy: currentUserId.ToString()
+                ));
+
+                TempData["SuccessMessage"] = "Task done.";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error completing reminder {ReminderId}", reminderId);
-                TempData["ErrorMessage"] = "Failed to complete reminder. Please try again.";
+                _logger.LogError(ex, "Error completing task {ActivityId}", activityId);
+                TempData["ErrorMessage"] = Explain(ex, "Failed to complete task.");
             }
             return RedirectToPage(new { id });
         }
 
-        public async Task<IActionResult> OnPostConvertToDealAsync(Guid id)
+        // =====================================================================
+        // OUTCOME — "how did it go?", added afterwards
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostSetOutcomeAsync(Guid id, Guid activityId)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
-                if (!ModelState.IsValid)
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                var currentUserId = _currentUserService.GetCurrentUserId();
+
+                await _activityService.SetOutcomeAsync(new SetActivityOutcomeDto(
+                    TenantId: tenantId,
+                    ActivityId: activityId,
+                    Outcome: OutcomeText,
+                    UpdatedBy: currentUserId.ToString()
+                ));
+
+                TempData["SuccessMessage"] = "Outcome saved.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting outcome on {ActivityId}", activityId);
+                TempData["ErrorMessage"] = Explain(ex, "Failed to save the outcome.");
+            }
+            return RedirectToPage(new { id });
+        }
+
+        // =====================================================================
+        // EDIT / RESCHEDULE
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostUpdateEntryAsync(Guid id)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            try
+            {
+                ModelState.Clear();
+                if (!TryValidateModel(EditInput, nameof(EditInput)))
                 {
+                    LogModelStateErrors();
+                    EditId = EditInput.ActivityId;   // keep the form open
+                    await ReloadPageDataAsync(id);
+                    return Page();
+                }
+
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                var currentUserId = _currentUserService.GetCurrentUserId();
+
+                // Tasks carry a due date; logs carry the date it happened.
+                DateTime? dueUtc = EditInput.IsTask && EditInput.DueDate.HasValue
+                    ? _tenantService.LocalToUtc(EditInput.DueDate.Value)
+                    : null;
+
+                var whenUtc = EditInput.ActivityDate.HasValue
+                    ? _tenantService.LocalToUtc(EditInput.ActivityDate.Value)
+                    : DateTime.UtcNow;
+
+                await _activityService.UpdateAsync(new UpdateActivityDto(
+                    TenantId: tenantId,
+                    ActivityId: EditInput.ActivityId,
+                    Subject: EditInput.Subject,
+                    Description: EditInput.Description,
+                    Duration: EditInput.Duration,
+                    ActivityDate: whenUtc,
+                    DueDate: dueUtc,
+                    AssignedToUserId: EditInput.AssignedToUserId,
+                    Outcome: EditInput.Outcome,
+                    UpdatedBy: currentUserId.ToString(),
+                    ActivityType: EditInput.ActivityType
+                ));
+
+                TempData["SuccessMessage"] = EditInput.IsTask ? "Task updated." : "Activity updated.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating entry {ActivityId}", EditInput.ActivityId);
+                TempData["ErrorMessage"] = Explain(ex, "Failed to save those changes.");
+            }
+            return RedirectToPage(new { id });
+        }
+
+        // =====================================================================
+        // DELETE — needs Leads.Delete, not Update
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostDeleteEntryAsync(Guid id, Guid activityId)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Delete);
+            if (permissionCheck != null) return permissionCheck;
+
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                await _activityService.DeleteAsync(tenantId, activityId);
+                TempData["SuccessMessage"] = "Entry deleted.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting entry {ActivityId}", activityId);
+                TempData["ErrorMessage"] = Explain(ex, "Failed to delete that entry.");
+            }
+            return RedirectToPage(new { id });
+        }
+
+        // =====================================================================
+        // CONVERT / DELETE LEAD / ATTACHMENTS
+        // =====================================================================
+
+        public async Task<IActionResult> OnPostConvertToDealAsync(Guid id)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            var canCreateDeal = await _authorizationService.AuthorizeAsync(User, "Deals.Create");
+            if (!canCreateDeal.Succeeded)
+            {
+                TempData["ErrorMessage"] = "You don't have permission to create deals.";
+                return RedirectToPage(new { id });
+            }
+
+            try
+            {
+                ModelState.Clear();
+                if (!TryValidateModel(ConvertToDealInput, nameof(ConvertToDealInput)))
+                {
+                    LogModelStateErrors();
                     await ReloadPageDataAsync(id);
                     return Page();
                 }
@@ -424,7 +648,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
-                if (!string.Equals((Lead?.Status ?? "").Trim(), "Qualified", StringComparison.OrdinalIgnoreCase))
+                // Lead is only populated by OnGetAsync, so on a POST it is
+                // null — load it before checking status.
+                var lead = await _leadService.GetByIdAsync(tenantId, id);
+
+                if (!string.Equals((lead?.Status ?? "").Trim(), "Qualified", StringComparison.OrdinalIgnoreCase))
                 {
                     TempData["ErrorMessage"] = "Only qualified leads can be converted to deals.";
                     return RedirectToPage(new { id });
@@ -439,8 +667,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     Stage = ConvertToDealInput.Stage,
                     ExpectedValue = ConvertToDealInput.ExpectedValue,
                     Currency = ConvertToDealInput.Currency,
-                    ExpectedCloseDateUtc = ConvertToDealInput.ExpectedCloseDate.ToUniversalTime(),
-                    OwnerUserId = Lead?.OwnerUserId,
+                    ExpectedCloseDateUtc = _tenantService.LocalToUtc(ConvertToDealInput.ExpectedCloseDate),
+                    OwnerUserId = lead?.OwnerUserId,
                     ConvertedBy = currentUser.FullName
                 });
 
@@ -456,18 +684,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to convert lead {LeadId} to deal", id);
-                TempData["ErrorMessage"] = "Failed to convert lead to deal. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to convert lead to deal.");
                 return RedirectToPage(new { id });
             }
         }
 
         public async Task<IActionResult> OnPostDeleteAsync(Guid id)
         {
-            // ✅ CRITICAL FIX: this handler previously had NO permission check
-            // at all — only the "not converted" business-rule guard below.
-            // Any authenticated user could delete a non-converted lead via
-            // direct POST regardless of role. Now gated the same way
-            // Index's delete handler always was.
             var permissionCheck = await ValidatePermissionAsync(Actions.Delete);
             if (permissionCheck != null) return permissionCheck;
 
@@ -475,7 +698,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
-                // Level 2: backend guard — reject even if UI is bypassed
                 var lead = await _leadService.GetByIdAsync(tenantId, id);
                 if (lead?.IsConverted == true)
                 {
@@ -490,13 +712,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting lead {Id}", id);
-                TempData["ErrorMessage"] = "Failed to delete lead. Please try again.";
+                TempData["ErrorMessage"] = Explain(ex, "Failed to delete lead.");
                 return RedirectToPage("./Detail", new { id });
             }
         }
 
         public async Task<IActionResult> OnPostUploadAttachmentAsync(Guid id)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             var file = Request.Form.Files.FirstOrDefault();
             if (file == null || file.Length == 0)
             {
@@ -513,20 +738,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
                 SuccessMessage = $"'{file.FileName}' uploaded successfully.";
             }
-            catch (InvalidOperationException ex) // file type/size
+            catch (InvalidOperationException ex)
             {
                 ErrorMessage = ex.Message;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to upload attachment for lead {LeadId}", id);
-                ErrorMessage = "Upload failed. Please try again.";
-
+                ErrorMessage = Explain(ex, "Upload failed.");
             }
             return RedirectToPage(new { id });
         }
+
         public async Task<IActionResult> OnPostDeleteAttachmentAsync(Guid id, Guid attachmentId)
         {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -536,8 +764,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete attachment {AttachmentId}", attachmentId);
-                ErrorMessage = "Delete failed.";
-
+                ErrorMessage = Explain(ex, "Delete failed.");
             }
 
             return RedirectToPage(new { id });
@@ -577,20 +804,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         {
             try
             {
-                Activities = await _activityService.GetForEntityAsync(
+                AllActivities = await _activityService.GetForEntityAsync(
                     new GetActivitiesQuery(tenantId, ActivityEntityType.Lead, leadId));
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to load activities for lead {Id}", leadId);
-                Activities = new();
+                AllActivities = new();
             }
         }
 
-        private async Task LoadRemindersAsync(Guid tenantId, Guid leadId)
+        private async Task LoadAssigneesAsync()
         {
-            try { Reminders = await _leadService.GetRemindersAsync(tenantId, leadId); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to load reminders for lead {Id}", leadId); Reminders = new(); }
+            try { Assignees = await _activityService.GetAssigneesAsync(); }
+            catch (Exception ex)
+            {
+                // A missing list just means no dropdown — the task still
+                // gets created, assigned to the person creating it.
+                _logger.LogWarning(ex, "Failed to load assignees");
+                Assignees = new();
+            }
         }
 
         private async Task LoadTimelineAsync(Guid tenantId, Guid leadId)
@@ -599,9 +832,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to load timeline for lead {Id}", leadId); Timeline = new(); }
         }
 
-        // Extracted from OnGetAsync so it can join the Task.WhenAll batch above.
-        // Behaviour is unchanged: failure logs and leaves an empty list rather
-        // than failing the whole page.
         private async Task LoadAttachmentsAsync(Guid tenantId, Guid leadId)
         {
             try { Attachments = await _leadService.GetAttachmentsAsync(tenantId, leadId); }
@@ -611,13 +841,48 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private async Task ReloadPageDataAsync(Guid id)
         {
             LoadTenantContext();
-            var tenantId = _currentUserService.GetCurrentTenantId();
+
+            var me = await _currentUserService.GetCurrentUserAsync();
+            CurrentUserId = me.UserId;
+            IsTenantAdmin = me.IsTenantAdmin;
+
+            var tenantId = me.TenantId;
             Lead = await _leadService.GetByIdAsync(tenantId, id);
             LoadStatusOptions();
-            await LoadNotesAsync(tenantId, id);
-            await LoadActivitiesAsync(tenantId, id);
-            await LoadRemindersAsync(tenantId, id);
-            await LoadTimelineAsync(tenantId, id);
+            await Task.WhenAll(
+                LoadNotesAsync(tenantId, id),
+                LoadActivitiesAsync(tenantId, id),
+                LoadTimelineAsync(tenantId, id),
+                LoadAttachmentsAsync(tenantId, id),
+                LoadAssigneesAsync());
+        }
+
+        /// <summary>
+        /// When ?editId= names an entry, copy its current values into the
+        /// edit form so the inline form opens populated.
+        /// </summary>
+        private void PrefillEditForm()
+        {
+            if (EditId is null) return;
+
+            var entry = AllActivities.FirstOrDefault(a => a.Id == EditId.Value);
+            if (entry is null) { EditId = null; return; }
+
+            if (!CanEditEntry(entry)) { EditId = null; return; }
+
+            EditInput = new EditEntryModel
+            {
+                ActivityId       = entry.Id,
+                IsTask           = entry.IsTask,
+                ActivityType     = entry.ActivityType,
+                Subject          = entry.Subject,
+                Description      = entry.Description,
+                Duration         = entry.Duration,
+                DueDate          = entry.DueDate.HasValue ? _tenantService.UtcToLocal(entry.DueDate.Value) : null,
+                ActivityDate     = _tenantService.UtcToLocal(entry.ActivityDate),
+                AssignedToUserId = entry.AssignedToUserId,
+                Outcome          = entry.Outcome
+            };
         }
 
         private void InitializeConvertToDealInput()
@@ -627,9 +892,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 DealTitle = $"Deal - {Lead.FullName}",
                 Stage = "Qualification",
                 ExpectedValue = Lead.ExpectedValue,
-                Currency = !string.IsNullOrEmpty(Lead.Currency)
-                                      ? Lead.Currency
-                                      : TenantCurrency,
+                Currency = !string.IsNullOrEmpty(Lead.Currency) ? Lead.Currency : TenantCurrency,
                 ExpectedCloseDate = DateTime.Today.AddDays(30)
             };
         }
@@ -641,9 +904,39 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     _logger.LogWarning("ModelState error. Key={Key} Error={Error}", kv.Key, err.ErrorMessage);
         }
 
+        private static string Explain(Exception ex, string fallback)
+            => string.IsNullOrWhiteSpace(ex.Message) || ex is NullReferenceException
+                ? $"{fallback} Please try again."
+                : ex.Message;
+
         // =====================================================================
-        // VIEW HELPER METHODS
+        // VIEW HELPERS
         // =====================================================================
+
+        /// <summary>
+        /// You can always edit your own entry. Editing someone else's is a
+        /// tenant-admin action — correcting your own typo isn't the same as
+        /// rewriting another rep's record of what they did.
+        /// Older rows store a NAME in CreatedBy rather than an id; those are
+        /// admin-only, which is the safe side to fail on.
+        /// </summary>
+        public bool CanEditEntry(ActivityDto a)
+        {
+            if (!CanUpdate || !IsEditableState) return false;
+            if (IsTenantAdmin) return true;
+            return string.Equals(a.CreatedBy, CurrentUserId.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Deleting history needs the Delete permission, not Update.</summary>
+        public bool CanDeleteEntry(ActivityDto a)
+        {
+            if (!CanDelete || !IsEditableState) return false;
+            if (IsTenantAdmin) return true;
+            return string.Equals(a.CreatedBy, CurrentUserId.ToString(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        public bool IsEditing(ActivityDto a) => EditId.HasValue && EditId.Value == a.Id;
+        public bool IsAddingOutcome(ActivityDto a) => OutcomeId.HasValue && OutcomeId.Value == a.Id;
 
         public string FormatDate(DateTime utcDateTime)
             => _tenantService.FormatDate(utcDateTime);
@@ -657,6 +950,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             var localTime = _tenantService.UtcToLocal(utcDateTime);
             var timeSpan = localNow - localTime;
 
+            // The timeline shows tasks by DUE date, which is usually ahead.
+            if (timeSpan.TotalSeconds < -60)
+            {
+                var ahead = -timeSpan;
+                if (ahead.TotalHours < 24) return $"in {(int)ahead.TotalHours}h";
+                if (ahead.TotalDays < 30)  return $"in {(int)ahead.TotalDays}d";
+                return FormatDate(utcDateTime);
+            }
+
             if (timeSpan.TotalMinutes < 1) return "just now";
             if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m ago";
             if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h ago";
@@ -664,6 +966,31 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             if (timeSpan.TotalDays < 30) return $"{(int)(timeSpan.TotalDays / 7)}w ago";
             return FormatDate(utcDateTime);
         }
+
+        public string GetDueDescription(DateTime? dueUtc)
+        {
+            if (dueUtc is null) return "";
+
+            var localNow = _tenantService.UtcToLocal(DateTime.UtcNow);
+            var localDue = _tenantService.UtcToLocal(dueUtc.Value);
+            var span = localDue - localNow;
+
+            if (span.TotalSeconds < 0)
+            {
+                var overdue = -span;
+                if (overdue.TotalHours < 1) return $"{(int)overdue.TotalMinutes}m overdue";
+                if (overdue.TotalHours < 24) return $"{(int)overdue.TotalHours}h overdue";
+                return $"{(int)overdue.TotalDays}d overdue";
+            }
+
+            if (span.TotalMinutes < 60) return $"in {(int)span.TotalMinutes}m";
+            if (span.TotalHours < 24) return $"in {(int)span.TotalHours}h";
+            return $"in {(int)span.TotalDays}d";
+        }
+
+        public bool IsOverdue(ActivityDto task)
+            => task.IsTask && !task.IsCompleted && task.DueDate.HasValue
+               && task.DueDate.Value < DateTime.UtcNow;
 
         public string FormatCurrency(decimal amount)
             => _tenantService.FormatCurrency(amount);
@@ -686,16 +1013,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             return "bg-secondary";
         }
 
-        public string GetActivityIcon(string activityType) => activityType switch
-        {
-            "Call" => "bi-telephone",
-            "Email" => "bi-envelope",
-            "Meeting" => "bi-calendar-event",
-            "SMS" => "bi-chat",
-            "WhatsApp" => "bi-whatsapp",
-            "Task" => "bi-check-square",
-            "Note" => "bi-sticky",
-            _ => "bi-activity"
-        };
+        public string GetActivityIcon(string activityType) => ActivityType.Icon(activityType);
     }
 }

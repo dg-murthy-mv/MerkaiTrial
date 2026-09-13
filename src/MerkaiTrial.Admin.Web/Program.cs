@@ -113,6 +113,8 @@ builder.Services.AddScoped<ITenantUiService, TenantUiService>();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
+builder.Services.AddScoped<ILeadImportService, LeadImportService>();
+
 
 // ---------------- EF Core ----------------
 builder.Services.AddDbContext<FlowDbContext>((sp, o) =>

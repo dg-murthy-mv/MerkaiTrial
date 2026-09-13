@@ -149,6 +149,19 @@
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tasks-tab"
+                            data-bs-toggle="tab" data-bs-target="#tasks"
+                            type="button" role="tab">
+                        <i class="bi bi-list-check me-2"></i>Tasks
+                        @if (Model.OpenTasks.Any())
+                        {
+                            <span class="badge @(Model.OpenTasks.Any(t => Model.IsOverdue(t)) ? "bg-danger" : "bg-secondary") ms-1">
+                                @Model.OpenTasks.Count
+                            </span>
+                        }
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                     <button class="nav-link" id="notes-tab"
                             data-bs-toggle="tab" data-bs-target="#notes"
                             type="button" role="tab">
@@ -163,17 +176,7 @@
                         <i class="bi bi-activity me-2"></i>Activities
                         <span class="badge bg-secondary ms-1">@Model.Activities.Count</span>
                     </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="reminders-tab"
-                            data-bs-toggle="tab" data-bs-target="#reminders"
-                            type="button" role="tab">
-                        <i class="bi bi-bell me-2"></i>Reminders
-                        <span class="badge bg-secondary ms-1">
-                            @Model.Reminders.Count(r => !r.IsCompleted)
-                        </span>
-                    </button>
-                </li>
+                </li>                
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="timeline-tab"
                             data-bs-toggle="tab" data-bs-target="#timeline"
@@ -202,8 +205,8 @@
                 <div class="tab-pane fade" id="activities" role="tabpanel">
                     @await Html.PartialAsync("_ActivitiesTab", Model)
                 </div>
-                <div class="tab-pane fade" id="reminders" role="tabpanel">
-                    @await Html.PartialAsync("_RemindersTab", Model)
+                <div class="tab-pane fade" id="tasks" role="tabpanel">
+                    @await Html.PartialAsync("_TasksTab", Model)
                 </div>
                 <div class="tab-pane fade" id="timeline" role="tabpanel">
                     @await Html.PartialAsync("_TimelineTab", Model)

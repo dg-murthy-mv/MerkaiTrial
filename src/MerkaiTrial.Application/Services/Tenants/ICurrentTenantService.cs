@@ -50,6 +50,7 @@ public interface ICurrentTenantService
 
     // ── Timezone helpers ──────────────────────────────────────────────
     DateTime UtcToLocal(DateTime utcDateTime);
+    DateTime LocalToUtc(DateTime localDateTime);
     string FormatDate(DateTime utcDateTime);
     string FormatDateTime(DateTime utcDateTime);
     string GetTenantName();
@@ -412,6 +413,22 @@ public class CurrentTenantService : ICurrentTenantService
             return utcDateTime;
         }
     }
+    public DateTime LocalToUtc(DateTime localDateTime)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(GetTimezone());
+            return TimeZoneInfo.ConvertTimeToUtc(
+                DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified), tz);
+        }
+        catch (Exception ex)
+        {
+            // Same fallback as UtcToLocal: treat the value as already UTC.
+            _logger.LogWarning(ex, "Timezone conversion failed for {Tz}", GetTimezone());
+            return DateTime.SpecifyKind(localDateTime, DateTimeKind.Utc);
+        }
+    }
+
 
     public string FormatDate(DateTime utcDateTime)
         => UtcToLocal(utcDateTime).ToString(GetDateFormat());

@@ -8,6 +8,7 @@ using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MerkaiTrial.Application.Commands.Activities;
 
 namespace MerkaiTrial.Application.Commands.Reports
 {
@@ -771,24 +772,45 @@ namespace MerkaiTrial.Application.Commands.Reports
         public async Task<ActivityLeaderboardReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
         {
-            var tenantId = filter.TenantId;
             var from = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
-            var notes = await _db.DealNotes
-                .Where(n => n.TenantId.ToString() == tenantId &&
+            if (!Guid.TryParse(filter.TenantId, out var tenantId))
+                return new ActivityLeaderboardReportDto
+                {
+                    Reps = new List<ActivityRepItem>(),
+                    TotalNotes = 0,
+                    TotalActivities = 0,
+                    TotalReminders = 0
+                };
+
+            var dealNotes = await _db.DealNotes
+                .Where(n => n.TenantId == tenantId && !n.IsDeleted &&
                             n.CreatedAtUtc >= from && n.CreatedAtUtc <= to)
                 .Select(n => n.CreatedBy).ToListAsync(ct);
 
-            var activities = await _db.DealActivities
-                .Where(a => a.TenantId.ToString() == tenantId &&
-                            a.CreatedAtUtc >= from && a.CreatedAtUtc <= to)
-                .Select(a => a.CreatedBy).ToListAsync(ct);
+            var leadNotes = await _db.LeadNotes
+                .Where(n => n.TenantId == tenantId && !n.IsDeleted &&
+                            n.CreatedAtUtc >= from && n.CreatedAtUtc <= to)
+                .Select(n => n.CreatedBy).ToListAsync(ct);
 
-            var reminders = await _db.DealReminders
-                .Where(r => r.TenantId.ToString() == tenantId &&
-                            r.CreatedAtUtc >= from && r.CreatedAtUtc <= to)
-                .Select(r => r.CreatedBy).ToListAsync(ct);
+            var activityRows = await _db.Activities
+                .Where(a => a.TenantId == tenantId && !a.IsDeleted &&
+                            a.CreatedAtUtc >= from && a.CreatedAtUtc <= to)
+                .Select(a => new { a.IsTask, a.CreatedBy })
+                .ToListAsync(ct);
+
+            // Ids → names, so "dd100001-…" and "Somchai Wiriya" become one rep.
+            var names = await ActivityReadModel.UserNamesAsync(_db, tenantId,
+                dealNotes.Concat(leadNotes).Concat(activityRows.Select(r => r.CreatedBy)), ct);
+
+            string? Who(string? stored) =>
+                string.IsNullOrWhiteSpace(stored) ? null
+                : ActivityReadModel.Lookup(names, stored) ?? stored;
+
+            var notes = dealNotes.Concat(leadNotes).Select(Who).ToList();
+            var activities = activityRows.Where(r => !r.IsTask).Select(r => Who(r.CreatedBy)).ToList();
+            var reminders = activityRows.Where(r => r.IsTask).Select(r => Who(r.CreatedBy)).ToList();
 
             var allReps = notes.Concat(activities).Concat(reminders)
                 .Where(r => !string.IsNullOrEmpty(r))
@@ -820,4 +842,5 @@ namespace MerkaiTrial.Application.Commands.Reports
             };
         }
     }
+
 }

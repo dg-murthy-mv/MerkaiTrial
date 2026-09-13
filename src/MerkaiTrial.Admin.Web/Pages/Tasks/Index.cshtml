@@ -1,0 +1,195 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Tasks.IndexModel
+@{
+    ViewData["Title"] = "Tasks";
+}
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+        <h2 class="mb-1">Tasks</h2>
+        <p class="text-muted mb-0">
+            @if (Model.OverdueCount > 0)
+            {
+                <span class="text-danger fw-semibold">@Model.OverdueCount overdue</span>
+                <span class="mx-1">·</span>
+            }
+            <span>@Model.TodayCount due today</span>
+            <span class="mx-1">·</span>
+            <span>@Model.TotalCount open</span>
+        </p>
+    </div>
+
+    <form method="get" class="d-flex align-items-center gap-2">
+        @if (Model.IsTenantAdmin)
+        {
+            <div class="btn-group" role="group">
+                <a class="btn btn-sm @(Model.Scope == "mine" ? "btn-primary" : "btn-outline-primary")"
+                   asp-route-scope="mine" asp-route-days="@Model.Days">My tasks</a>
+                <a class="btn btn-sm @(Model.Scope == "all" ? "btn-primary" : "btn-outline-primary")"
+                   asp-route-scope="all" asp-route-days="@Model.Days">Whole team</a>
+            </div>
+        }
+
+        <select name="days" class="form-select form-select-sm" style="width: auto;"
+                onchange="this.form.submit()">
+            <option value="7"  selected="@(Model.Days == 7)">Next 7 days</option>
+            <option value="30" selected="@(Model.Days == 30)">Next 30 days</option>
+            <option value="90" selected="@(Model.Days == 90)">Next 90 days</option>
+        </select>
+        <input type="hidden" name="scope" value="@Model.Scope" />
+    </form>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.SuccessMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle me-2"></i>@Model.SuccessMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+}
+
+@if (!Model.Groups.Any())
+{
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-check2-circle text-success" style="font-size: 3.5rem; opacity: 0.4;"></i>
+            <h5 class="mt-3 mb-1">Nothing due</h5>
+            <p class="text-muted mb-0">
+                @if (Model.Scope == "all")
+                {
+                    <text>No open tasks for anyone in the next @Model.Days days.</text>
+                }
+                else
+                {
+                    <text>You have no open tasks in the next @Model.Days days.</text>
+                }
+            </p>
+            <p class="text-muted small mt-2 mb-0">
+                Tasks are created from a lead or deal — open one and use the Tasks tab.
+            </p>
+        </div>
+    </div>
+}
+else
+{
+    @foreach (var group in Model.Groups)
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <span class="badge @group.BadgeClass me-2">@group.Tasks.Count</span>
+                    @group.Title
+                </h6>
+            </div>
+            <div class="list-group list-group-flush">
+                @foreach (var task in group.Tasks)
+                {
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-start gap-3">
+
+                            <div class="pt-1">
+                                <i class="bi @Model.GetActivityIcon(task.ActivityType) fs-5
+                                          @(group.Key == "overdue" ? "text-danger" : "text-muted")"></i>
+                            </div>
+
+                            <div class="flex-grow-1 min-width-0">
+                                <div class="fw-semibold">@task.Subject</div>
+
+                                @if (!string.IsNullOrEmpty(task.Description))
+                                {
+                                    <div class="text-muted small text-truncate">@task.Description</div>
+                                }
+
+                                <div class="small mt-1">
+                                    <a href="@Model.RecordUrl(task)" class="text-decoration-none">
+                                        <i class="bi @Model.RecordIcon(task) me-1"></i>@Model.RecordName(task)
+                                    </a>
+                                    <span class="text-muted mx-2">·</span>
+                                    <span class="@(group.Key == "overdue" ? "text-danger" : "text-muted")">
+                                        <i class="bi bi-clock me-1"></i>@Model.FormatDueDate(task.DueDate)
+                                        (@Model.GetDueDescription(task.DueDate))
+                                    </span>
+
+                                    @if (!string.IsNullOrEmpty(task.AssignedToName) &&
+                                         task.AssignedToUserId != Model.CurrentUserId.ToString())
+                                    {
+                                        <span class="text-muted mx-2">·</span>
+                                        <span class="text-muted">
+                                            <i class="bi bi-person me-1"></i>@task.AssignedToName
+                                        </span>
+                                    }
+                                </div>
+
+                                @* Reassign — inline, so a manager clearing
+                                   someone's overdue list doesn't have to open
+                                   every lead one at a time. *@
+                                @if (Model.IsReassigning(task))
+                                {
+                                    <form method="post" asp-page-handler="Reassign"
+                                          asp-route-activityId="@task.Id"
+                                          asp-route-scope="@Model.Scope"
+                                          asp-route-days="@Model.Days"
+                                          class="mt-2">
+                                        <div class="input-group input-group-sm" style="max-width: 420px;">
+                                            <span class="input-group-text">Give to</span>
+                                            <select name="NewAssigneeId" class="form-select" required>
+                                                @foreach (var user in Model.Assignees)
+                                                {
+                                                    <option value="@user.UserId"
+                                                            selected="@(user.UserId == task.AssignedToUserId)">
+                                                        @user.Name@(user.UserId == Model.CurrentUserId.ToString() ? " (you)" : "")
+                                                    </option>
+                                                }
+                                            </select>
+                                            <button type="submit" class="btn btn-primary">Save</button>
+                                            <a class="btn btn-outline-secondary"
+                                               asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">Cancel</a>
+                                        </div>
+                                    </form>
+                                }
+                            </div>
+
+                            <div class="flex-shrink-0 btn-group btn-group-sm">
+                                @if (Model.CanReassign(task) && !Model.IsReassigning(task))
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary"
+                                       asp-route-reassignId="@task.Id"
+                                       asp-route-scope="@Model.Scope"
+                                       asp-route-days="@Model.Days"
+                                       title="Reassign">
+                                        <i class="bi bi-person-gear"></i>
+                                    </a>
+                                }
+                                <form method="post" asp-page-handler="Complete"
+                                      asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">
+                                    <input type="hidden" name="activityId" value="@task.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-success"
+                                            title="Mark as done">
+                                        <i class="bi bi-check2"></i>
+                                        <span class="d-none d-md-inline ms-1">Done</span>
+                                    </button>
+                                </form>
+                            </div>
+
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+<p class="text-muted small">
+    Times shown in @Model.TenantTimezone.
+</p>
+
+<style>
+    .min-width-0 { min-width: 0; }
+</style>

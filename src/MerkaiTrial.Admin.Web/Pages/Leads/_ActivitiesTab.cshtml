@@ -1,90 +1,70 @@
 @* =====================================================================
-   ACTIVITIES TAB - FIXED with proper form binding
+   LEAD ACTIVITIES TAB
    Location: MerkaiTrial.Admin.Web/Pages/Leads/_ActivitiesTab.cshtml
+
+   COMPLETE FILE — replaces the existing one.
+
+   NEW: edit and delete a logged activity, and an outcome line.
+   The title is now "Log what happened" rather than "Log Activity" —
+   the two forms looked near-identical, and the words carry the
+   distinction between logging and planning better than the layout does.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
 
-<!-- Log New Activity Section -->
-@if (Model.CanUpdate)
+@if (Model.CanUpdate && Model.IsEditableState)
 {
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-white">
-            <h6 class="mb-0">
-                <i class="bi bi-plus-circle me-2"></i>Log Activity
-            </h6>
+            <h6 class="mb-0"><i class="bi bi-activity me-2"></i>Log what happened</h6>
         </div>
         <div class="card-body">
-            @* ✅ CRITICAL: Must have asp-page-handler and asp-route-id *@
             <form method="post" asp-page-handler="AddActivity" asp-route-id="@Model.Lead.Id">
-
-                @* ✅ Show validation errors *@
                 <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
 
                 <div class="row g-3">
-                    <!-- Activity Type -->
                     <div class="col-md-6">
                         <label asp-for="ActivityInput.ActivityType" class="form-label">
                             Activity Type <span class="text-danger">*</span>
                         </label>
                         <select asp-for="ActivityInput.ActivityType" class="form-select" required>
-                            <option value="">-- Select Type --</option>
+                            <option value="">— Select Type —</option>
                             <option value="Call">📞 Call</option>
                             <option value="Email">📧 Email</option>
                             <option value="Meeting">🤝 Meeting</option>
-                            <option value="SMS">💬 SMS</option>
                             <option value="WhatsApp">📱 WhatsApp</option>
-                            <option value="Task">✅ Task</option>
-                            <option value="Note">📝 Note</option>
+                            <option value="LINE">💬 LINE</option>
+                            <option value="SMS">✉️ SMS</option>
                         </select>
                         <span asp-validation-for="ActivityInput.ActivityType" class="text-danger"></span>
                     </div>
 
-                    <!-- Duration -->
                     <div class="col-md-6">
-                        <label asp-for="ActivityInput.Duration" class="form-label">
-                            Duration (minutes)
-                        </label>
-                        <input asp-for="ActivityInput.Duration"
-                               type="number"
-                               class="form-control"
-                               min="1"
-                               max="480"
-                               placeholder="e.g., 30">
+                        <label asp-for="ActivityInput.Duration" class="form-label">Duration (minutes)</label>
+                        <input asp-for="ActivityInput.Duration" type="number" class="form-control"
+                               min="1" max="480" placeholder="e.g. 30">
                         <span asp-validation-for="ActivityInput.Duration" class="text-danger"></span>
                         <small class="text-muted">Optional, 1-480 minutes</small>
                     </div>
 
-                    <!-- Subject -->
                     <div class="col-12">
                         <label asp-for="ActivityInput.Subject" class="form-label">
                             Subject <span class="text-danger">*</span>
                         </label>
-                        <input asp-for="ActivityInput.Subject"
-                               type="text"
-                               class="form-control"
-                               placeholder="Brief description of the activity"
-                               required>
+                        <input asp-for="ActivityInput.Subject" type="text" class="form-control"
+                               placeholder="Brief description of the activity" required>
                         <span asp-validation-for="ActivityInput.Subject" class="text-danger"></span>
                     </div>
 
-                    <!-- Description -->
                     <div class="col-12">
                         <label asp-for="ActivityInput.Description" class="form-label">Description</label>
-                        <textarea asp-for="ActivityInput.Description"
-                                  class="form-control"
-                                  rows="3"
-                                  placeholder="Additional details..."></textarea>
-                        <span asp-validation-for="ActivityInput.Description" class="text-danger"></span>
+                        <textarea asp-for="ActivityInput.Description" class="form-control" rows="3"
+                                  placeholder="What was discussed..."></textarea>
                     </div>
 
-                    <!-- Activity Date -->
                     <div class="col-md-6">
                         <label asp-for="ActivityInput.ActivityDate" class="form-label">Activity Date</label>
-                        <input asp-for="ActivityInput.ActivityDate"
-                               type="datetime-local"
-                               class="form-control">
-                        <span asp-validation-for="ActivityInput.ActivityDate" class="text-danger"></span>
-                        <small class="text-muted">Leave empty for current time</small>
+                        <input asp-for="ActivityInput.ActivityDate" type="datetime-local" class="form-control">
+                        <small class="text-muted">Leave empty for now · @Model.TenantTimezone</small>
                     </div>
                 </div>
 
@@ -98,12 +78,9 @@
     </div>
 }
 
-<!-- Activities History Section -->
 <div class="card shadow-sm">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h6 class="mb-0">
-            <i class="bi bi-clock-history me-2"></i>Activity History
-        </h6>
+        <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Activity History</h6>
         <span class="badge bg-secondary">@Model.Activities.Count</span>
     </div>
     <div class="card-body">
@@ -111,90 +88,90 @@
         {
             <div class="text-center text-muted py-4">
                 <i class="bi bi-activity" style="font-size: 3rem; opacity: 0.3;"></i>
-                <p class="mb-0 mt-2">No activities logged yet. Log your first activity above.</p>
+                <p class="mb-0 mt-2">Nothing logged yet.</p>
+                <p class="small mb-0">Record calls, emails and meetings here as they happen.</p>
             </div>
         }
         else
         {
-            <div class="timeline">
+            <div class="list-group list-group-flush">
                 @foreach (var activity in Model.Activities)
                 {
-                    <div class="timeline-item mb-4">
-                        <div class="timeline-marker">
-                            <i class="bi @Model.GetActivityIcon(activity.ActivityType)"></i>
-                        </div>
-                        <div class="timeline-content">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <div>
+                    <div class="list-group-item px-0">
+                        @if (Model.IsEditing(activity))
+                        {
+                            @await Html.PartialAsync("_EntryEditForm", Model)
+                        }
+                        else
+                        {
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
                                     <h6 class="mb-1">
                                         <span class="badge bg-success me-2">@activity.ActivityType</span>
                                         @activity.Subject
                                     </h6>
+
+                                    @if (!string.IsNullOrEmpty(activity.Description))
+                                    {
+                                        <p class="mb-1 text-muted small" style="white-space: pre-wrap;">@activity.Description</p>
+                                    }
+
+                                    @if (!string.IsNullOrEmpty(activity.Outcome))
+                                    {
+                                        <p class="mb-1 small">
+                                            <i class="bi bi-chat-quote me-1 text-muted"></i>@activity.Outcome
+                                        </p>
+                                    }
+
                                     <small class="text-muted">
-                                        <i class="bi bi-person me-1"></i>@activity.CreatedBy
+                                        <i class="bi bi-person me-1"></i>
+                                        @(activity.CreatedByName ?? activity.CreatedBy)
                                         @if (activity.Duration.HasValue)
                                         {
-                                            <span class="ms-2">
-                                                <i class="bi bi-clock me-1"></i>@activity.Duration min
-                                            </span>
+                                            <span class="ms-2"><i class="bi bi-clock me-1"></i>@activity.Duration min</span>
                                         }
                                     </small>
                                 </div>
-                                <small class="text-muted">
-                                    <i class="bi bi-calendar me-1"></i>@Model.GetRelativeTime(activity.ActivityDate)
-                                </small>
+
+                                <div class="text-end">
+                                    <small class="text-muted d-block">
+                                        @Model.GetRelativeTime(activity.ActivityDate)
+                                    </small>
+                                    <small class="text-muted d-block mb-1">
+                                        @Model.FormatDateTime(activity.ActivityDate)
+                                    </small>
+
+                                    <div class="btn-group btn-group-sm">
+                                        @if (Model.CanEditEntry(activity))
+                                        {
+                                            <a class="btn btn-sm btn-outline-secondary"
+                                               asp-route-id="@Model.Lead.Id"
+                                               asp-route-editId="@activity.Id"
+                                               asp-fragment="activities"
+                                               title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        }
+                                        @if (Model.CanDeleteEntry(activity))
+                                        {
+                                            <form method="post"
+                                                  asp-page-handler="DeleteEntry"
+                                                  asp-route-id="@Model.Lead.Id"
+                                                  asp-route-activityId="@activity.Id"
+                                                  class="d-inline"
+                                                  onsubmit="return confirm('Delete this activity? The record of it will be gone.');">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        }
+                                    </div>
+                                </div>
                             </div>
-                            @if (!string.IsNullOrEmpty(activity.Description))
-                            {
-                                <p class="mb-0 text-muted" style="white-space: pre-wrap;">@activity.Description</p>
-                            }
-                        </div>
+                        }
                     </div>
                 }
             </div>
         }
     </div>
 </div>
-
-<style>
-    .timeline {
-        position: relative;
-        padding-left: 40px;
-    }
-    .timeline-item {
-        position: relative;
-    }
-    .timeline-marker {
-        position: absolute;
-        left: -40px;
-        top: 0;
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background-color: #28a745;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1;
-    }
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: -24px;
-        top: 16px;
-        bottom: 0;
-        width: 2px;
-        background-color: #dee2e6;
-    }
-    .timeline-content {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 3px solid #28a745;
-    }
-</style>
-
-@section Scripts {
-    <partial name="_ValidationScriptsPartial" />
-}

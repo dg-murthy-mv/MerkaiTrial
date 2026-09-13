@@ -1,0 +1,1200 @@
+2026-09-13 16:56:40.315 +05:30 [WRN] The entity type 'Journey' was first mapped explicitly and then ignored. Consider not mapping the entity type in the first place.
+2026-09-13 16:56:40.707 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'ChannelMessage'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-13 16:56:40.846 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'Consent'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-13 16:56:40.853 +05:30 [WRN] Entity 'Role' has a global query filter defined and is the required end of a relationship with the entity 'UserRole'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-13 16:56:41.123 +05:30 [WRN] No store type was specified for the decimal property 'DefaultTaxRate' on entity type 'Country'. This will cause values to be silently truncated if they do not fit in the default precision and scale. Explicitly specify the SQL server column type that can accommodate all the values in 'OnModelCreating' using 'HasColumnType', specify precision and scale using 'HasPrecision', or configure a value converter using 'HasConversion'.
+2026-09-13 16:56:42.716 +05:30 [INF] Executed DbCommand (104ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT 1
+2026-09-13 16:56:43.070 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-13 16:56:43.334 +05:30 [INF] Executed DbCommand (91ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id]
+FROM [dbo].[Tenants] AS [t]
+2026-09-13 16:56:43.374 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-13 16:56:43.394 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id]
+FROM [Users] AS [u]
+2026-09-13 16:56:43.397 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-13 16:56:43.406 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[UserId]
+FROM [UserRoles] AS [u]
+2026-09-13 16:56:43.584 +05:30 [INF] Executed DbCommand (120ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [r].[Id]
+FROM [Roles] AS [r]
+WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+2026-09-13 16:56:43.589 +05:30 [INF] DatabaseWarmup [Admin.Web]: EF model built and connection pool primed in 5096ms. First user request will not pay this cost.
+2026-09-13 16:56:43.815 +05:30 [INF] User profile is available. Using 'C:\Users\dgmur\AppData\Local\ASP.NET\DataProtection-Keys' as key repository and Windows DPAPI to encrypt keys at rest.
+2026-09-13 16:56:45.132 +05:30 [INF] Now listening on: https://localhost:61093
+2026-09-13 16:56:45.132 +05:30 [INF] Now listening on: http://localhost:61092
+2026-09-13 16:56:45.264 +05:30 [INF] Application started. Press Ctrl+C to shut down.
+2026-09-13 16:56:45.264 +05:30 [INF] Hosting environment: Development
+2026-09-13 16:56:45.264 +05:30 [INF] Content root path: C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web
+2026-09-13 16:56:50.412 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-13 16:56:50.868 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-13 16:56:50.918 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-13 16:56:50.925 +05:30 [INF] HTTP GET / responded 302 in 195.8184 ms
+2026-09-13 16:56:50.945 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 539.4033ms
+2026-09-13 16:56:50.967 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - null null
+2026-09-13 16:56:51.037 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-13 16:56:51.140 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-13 16:56:51.245 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-13 16:56:51.247 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-13 16:56:51.253 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-13 16:56:51.254 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:56:51.512 +05:30 [INF] Executed page /Account/Login in 361.7339ms
+2026-09-13 16:56:51.513 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-13 16:56:51.513 +05:30 [INF] HTTP GET /Account/Login responded 200 in 538.1662 ms
+2026-09-13 16:56:51.527 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:56:51.527 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:56:51.530 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2F - 200 null text/html; charset=utf-8 560.1771ms
+2026-09-13 16:56:51.544 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 16.796ms
+2026-09-13 16:56:51.640 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 112.6567ms
+2026-09-13 16:56:51.729 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-13 16:56:51.744 +05:30 [INF] Authorization failed. These requirements were not met:
+DenyAnonymousAuthorizationRequirement: Requires an authenticated user.
+2026-09-13 16:56:51.745 +05:30 [INF] AuthenticationScheme: Cookies was challenged.
+2026-09-13 16:56:51.745 +05:30 [INF] HTTP GET /favicon.ico responded 302 in 12.9410 ms
+2026-09-13 16:56:51.745 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 302 0 null 16.2461ms
+2026-09-13 16:56:51.752 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - null null
+2026-09-13 16:56:51.755 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-13 16:56:51.755 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-13 16:56:51.758 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnGet - ModelState is "Valid"
+2026-09-13 16:56:51.758 +05:30 [INF] Executed handler method OnGet, returned result .
+2026-09-13 16:56:51.759 +05:30 [INF] Executing an implicit handler method - ModelState is "Valid"
+2026-09-13 16:56:51.759 +05:30 [INF] Executed an implicit handler method, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:56:51.780 +05:30 [INF] Executed page /Account/Login in 24.209ms
+2026-09-13 16:56:51.784 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-13 16:56:51.787 +05:30 [INF] HTTP GET /Account/Login responded 200 in 34.3241 ms
+2026-09-13 16:56:51.789 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Account/Login?ReturnUrl=%2Ffavicon.ico - 200 null text/html; charset=utf-8 36.6141ms
+2026-09-13 16:57:11.673 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - application/x-www-form-urlencoded 261
+2026-09-13 16:57:11.682 +05:30 [INF] Executing endpoint '/Account/Login'
+2026-09-13 16:57:11.682 +05:30 [INF] Route matched with {page = "/Account/Login"}. Executing page /Account/Login
+2026-09-13 16:57:11.722 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Account.LoginModel.OnPostAsync - ModelState is "Valid"
+2026-09-13 16:57:12.022 +05:30 [INF] Executed DbCommand (64ms) [Parameters=[@__email_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+FROM [Users] AS [u]
+WHERE [u].[Email] = @__email_0 AND [u].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:12.339 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__user_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__user_TenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:12.542 +05:30 [INF] Executed DbCommand (51ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SET IMPLICIT_TRANSACTIONS OFF;
+SET NOCOUNT ON;
+UPDATE [Users] SET [LastLoginUtc] = @p0
+OUTPUT 1
+WHERE [Id] = @p1;
+2026-09-13 16:57:12.585 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@__user_Id_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[RoleId]
+FROM [UserRoles] AS [u]
+WHERE [u].[UserId] = @__user_Id_0
+2026-09-13 16:57:13.023 +05:30 [INF] Executed DbCommand (323ms) [Parameters=[@__roleIds_0='?' (Size = 4000), @__user_TenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+FROM [Roles] AS [r]
+WHERE [r].[Id] IN (
+    SELECT [r0].[value]
+    FROM OPENJSON(@__roleIds_0) WITH ([value] uniqueidentifier '$') AS [r0]
+) AND [r].[IsDeleted] = CAST(0 AS bit) AND ([r].[TenantId] IS NULL OR [r].[TenantId] = @__user_TenantId_1)
+2026-09-13 16:57:13.091 +05:30 [INF] AuthenticationScheme: Cookies signed in.
+2026-09-13 16:57:13.092 +05:30 [INF] Sign-in succeeded for user "dd100002-dd00-0000-0000-000000000002" in tenant "bb100002-aaaa-0000-0000-000000000002"
+2026-09-13 16:57:13.106 +05:30 [INF] Executed handler method OnPostAsync, returned result Microsoft.AspNetCore.Mvc.RedirectResult.
+2026-09-13 16:57:13.111 +05:30 [INF] Executing RedirectResult, redirecting to /.
+2026-09-13 16:57:13.111 +05:30 [INF] Executed page /Account/Login in 1428.3381ms
+2026-09-13 16:57:13.112 +05:30 [INF] Executed endpoint '/Account/Login'
+2026-09-13 16:57:13.112 +05:30 [INF] HTTP POST /Account/Login responded 302 in 1430.7887 ms
+2026-09-13 16:57:13.125 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Account/Login?ReturnUrl=%2F - 302 0 null 1451.4362ms
+2026-09-13 16:57:13.142 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/ - null null
+2026-09-13 16:57:13.308 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:13.315 +05:30 [INF] Executing endpoint 'HTTP: GET /'
+2026-09-13 16:57:13.316 +05:30 [INF] Executed endpoint 'HTTP: GET /'
+2026-09-13 16:57:13.317 +05:30 [INF] HTTP GET / responded 302 in 153.0772 ms
+2026-09-13 16:57:13.317 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/ - 302 0 null 175.0016ms
+2026-09-13 16:57:13.327 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Dashboard - null null
+2026-09-13 16:57:13.341 +05:30 [INF] Executed DbCommand (2ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:13.343 +05:30 [INF] Executing endpoint '/Dashboard/Index'
+2026-09-13 16:57:13.373 +05:30 [INF] Route matched with {page = "/Dashboard/Index"}. Executing page /Dashboard/Index
+2026-09-13 16:57:13.496 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel.OnGet - ModelState is "Valid"
+2026-09-13 16:57:13.528 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:13.552 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:13.573 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:57:13.604 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:13.608 +05:30 [INF] Loading dashboard for tenant "bb100002-aaaa-0000-0000-000000000002" (THB)
+2026-09-13 16:57:13.626 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-13 16:57:13.784 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-13 16:57:13.824 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-13 16:57:13.825 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-13 16:57:13.834 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:13.834 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:13.844 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:13.844 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:13.851 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:13.852 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:15.840 +05:30 [INF] Received HTTP response headers after 2000.4467ms - 200
+2026-09-13 16:57:15.840 +05:30 [INF] Received HTTP response headers after 1989.0738ms - 200
+2026-09-13 16:57:15.841 +05:30 [INF] End processing HTTP request after 2007.5862ms - 200
+2026-09-13 16:57:15.841 +05:30 [INF] End processing HTTP request after 1997.5076ms - 200
+2026-09-13 16:57:16.532 +05:30 [INF] Received HTTP response headers after 2747.1571ms - 200
+2026-09-13 16:57:16.532 +05:30 [INF] End processing HTTP request after 2910.8121ms - 200
+2026-09-13 16:57:16.779 +05:30 [INF] Received HTTP response headers after 2927.7286ms - 200
+2026-09-13 16:57:16.780 +05:30 [INF] End processing HTTP request after 2928.8676ms - 200
+2026-09-13 16:57:16.884 +05:30 [INF] Received HTTP response headers after 3058.5661ms - 200
+2026-09-13 16:57:16.884 +05:30 [INF] End processing HTTP request after 3060.331ms - 200
+2026-09-13 16:57:16.937 +05:30 [INF] Executed handler method OnGet, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:57:17.244 +05:30 [INF] Executed page /Dashboard/Index in 3870.6082ms
+2026-09-13 16:57:17.244 +05:30 [INF] Executed endpoint '/Dashboard/Index'
+2026-09-13 16:57:17.244 +05:30 [INF] HTTP GET /Dashboard responded 200 in 3911.7595 ms
+2026-09-13 16:57:17.247 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Dashboard - 200 null text/html; charset=utf-8 3919.6193ms
+2026-09-13 16:57:17.369 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:57:17.369 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:57:17.388 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 17.0204ms
+2026-09-13 16:57:17.635 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 265.4917ms
+2026-09-13 16:57:17.673 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/favicon.ico - null null
+2026-09-13 16:57:17.768 +05:30 [INF] Executed DbCommand (87ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:17.769 +05:30 [INF] HTTP GET /favicon.ico responded 404 in 95.3000 ms
+2026-09-13 16:57:17.770 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/favicon.ico - 404 0 null 97.2436ms
+2026-09-13 16:57:17.772 +05:30 [INF] Request reached the end of the middleware pipeline without being handled by application code. Request path: GET https://localhost:61093/favicon.ico, Response status code: 404
+2026-09-13 16:57:20.760 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Tasks - null null
+2026-09-13 16:57:21.029 +05:30 [INF] Executed DbCommand (255ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:21.033 +05:30 [INF] Executing endpoint '/Tasks/Index'
+2026-09-13 16:57:21.054 +05:30 [INF] Route matched with {page = "/Tasks/Index"}. Executing page /Tasks/Index
+2026-09-13 16:57:21.072 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Tasks.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-13 16:57:21.271 +05:30 [INF] Executed DbCommand (39ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:57:21.357 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:21.369 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:21.376 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:57:21.386 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:21.390 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30&assignedToUserId=dd100002-dd00-0000-0000-000000000002
+2026-09-13 16:57:21.391 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30&assignedToUserId=dd100002-dd00-0000-0000-000000000002
+2026-09-13 16:57:21.398 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:21.399 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:21.516 +05:30 [INF] Received HTTP response headers after 117.3767ms - 200
+2026-09-13 16:57:21.516 +05:30 [INF] End processing HTTP request after 118.0164ms - 200
+2026-09-13 16:57:21.959 +05:30 [INF] Received HTTP response headers after 567.261ms - 200
+2026-09-13 16:57:21.959 +05:30 [INF] End processing HTTP request after 568.5121ms - 200
+2026-09-13 16:57:21.978 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:57:22.110 +05:30 [INF] Executed page /Tasks/Index in 1056.7691ms
+2026-09-13 16:57:22.111 +05:30 [INF] Executed endpoint '/Tasks/Index'
+2026-09-13 16:57:22.111 +05:30 [INF] HTTP GET /Tasks responded 200 in 1338.9475 ms
+2026-09-13 16:57:22.111 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Tasks - 200 null text/html; charset=utf-8 1351.0025ms
+2026-09-13 16:57:22.143 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:57:22.192 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:57:22.196 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 54.4047ms
+2026-09-13 16:57:22.484 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 292.2653ms
+2026-09-13 16:57:32.491 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads - null null
+2026-09-13 16:57:32.521 +05:30 [INF] Executed DbCommand (16ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:32.521 +05:30 [INF] Executing endpoint '/Leads/Index'
+2026-09-13 16:57:32.535 +05:30 [INF] Route matched with {page = "/Leads/Index"}. Executing page /Leads/Index
+2026-09-13 16:57:32.546 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:57:32.558 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:57:32.558 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:57:32.572 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:32.585 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:32.592 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:57:32.605 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:32.611 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads?pageNumber=1&pageSize=10
+2026-09-13 16:57:32.612 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads?pageNumber=1&pageSize=10
+2026-09-13 16:57:32.771 +05:30 [INF] Received HTTP response headers after 159.216ms - 200
+2026-09-13 16:57:32.771 +05:30 [INF] End processing HTTP request after 160.8709ms - 200
+2026-09-13 16:57:32.782 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-13 16:57:32.783 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/stats
+2026-09-13 16:57:32.845 +05:30 [INF] Received HTTP response headers after 62.2872ms - 200
+2026-09-13 16:57:32.845 +05:30 [INF] End processing HTTP request after 63.6274ms - 200
+2026-09-13 16:57:32.850 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:57:32.946 +05:30 [INF] Executed page /Leads/Index in 410.7029ms
+2026-09-13 16:57:32.946 +05:30 [INF] Executed endpoint '/Leads/Index'
+2026-09-13 16:57:32.946 +05:30 [INF] HTTP GET /Leads responded 200 in 443.7351 ms
+2026-09-13 16:57:32.948 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads - 200 null text/html; charset=utf-8 455.3703ms
+2026-09-13 16:57:33.027 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:57:33.061 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:57:33.063 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 35.4126ms
+2026-09-13 16:57:33.188 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 126.8903ms
+2026-09-13 16:57:39.420 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - null null
+2026-09-13 16:57:39.440 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:39.441 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:57:39.471 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:57:39.476 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:57:39.481 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:57:39.481 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:57:39.488 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:39.494 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:39.499 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:57:39.505 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:39.528 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:57:39.531 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:57:39.531 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:57:39.664 +05:30 [INF] Received HTTP response headers after 132.7499ms - 200
+2026-09-13 16:57:39.664 +05:30 [INF] End processing HTTP request after 133.5713ms - 200
+2026-09-13 16:57:39.676 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.677 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.684 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:57:39.685 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:57:39.702 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.702 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.710 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.710 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:39.726 +05:30 [INF] Received HTTP response headers after 48.6417ms - 200
+2026-09-13 16:57:39.726 +05:30 [INF] End processing HTTP request after 49.6712ms - 200
+2026-09-13 16:57:39.729 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:39.729 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:39.755 +05:30 [INF] Received HTTP response headers after 26.3442ms - 200
+2026-09-13 16:57:39.756 +05:30 [INF] End processing HTTP request after 26.8035ms - 200
+2026-09-13 16:57:39.800 +05:30 [INF] Received HTTP response headers after 89.6664ms - 200
+2026-09-13 16:57:39.800 +05:30 [INF] End processing HTTP request after 90.1487ms - 200
+2026-09-13 16:57:39.845 +05:30 [INF] Received HTTP response headers after 159.8135ms - 200
+2026-09-13 16:57:39.845 +05:30 [INF] End processing HTTP request after 160.6163ms - 200
+2026-09-13 16:57:39.889 +05:30 [INF] Received HTTP response headers after 186.3925ms - 200
+2026-09-13 16:57:39.889 +05:30 [INF] End processing HTTP request after 186.8804ms - 200
+2026-09-13 16:57:39.895 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:57:40.200 +05:30 [INF] Executed page /Leads/Detail in 729.3151ms
+2026-09-13 16:57:40.200 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:57:40.200 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 776.5618 ms
+2026-09-13 16:57:40.201 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - 200 null text/html; charset=utf-8 780.7871ms
+2026-09-13 16:57:40.270 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:57:40.310 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:57:40.313 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 43.5175ms
+2026-09-13 16:57:40.554 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 243.9432ms
+2026-09-13 16:57:55.378 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=59be6e24-e736-4870-acf4-f8364c71ded2 - null null
+2026-09-13 16:57:55.558 +05:30 [INF] Executed DbCommand (130ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:55.558 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:57:55.558 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:57:55.563 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:57:55.563 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:57:55.563 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:57:55.583 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:57:55.590 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:55.597 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:57:55.604 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:57:55.627 +05:30 [INF] Executed DbCommand (22ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:57:55.628 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:57:55.628 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:57:55.699 +05:30 [INF] Received HTTP response headers after 70.6037ms - 200
+2026-09-13 16:57:55.699 +05:30 [INF] End processing HTTP request after 71.3022ms - 200
+2026-09-13 16:57:55.707 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.707 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.714 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:57:55.714 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:57:55.740 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.740 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.753 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.753 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:57:55.757 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:55.757 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:57:55.802 +05:30 [INF] Received HTTP response headers after 44.6892ms - 200
+2026-09-13 16:57:55.802 +05:30 [INF] End processing HTTP request after 45.1948ms - 200
+2026-09-13 16:57:55.810 +05:30 [INF] Received HTTP response headers after 56.2985ms - 200
+2026-09-13 16:57:55.810 +05:30 [INF] End processing HTTP request after 56.9312ms - 200
+2026-09-13 16:57:55.824 +05:30 [INF] Received HTTP response headers after 117.018ms - 200
+2026-09-13 16:57:55.825 +05:30 [INF] End processing HTTP request after 117.5063ms - 200
+2026-09-13 16:57:55.832 +05:30 [INF] Received HTTP response headers after 117.8497ms - 200
+2026-09-13 16:57:55.832 +05:30 [INF] End processing HTTP request after 118.4143ms - 200
+2026-09-13 16:57:55.840 +05:30 [INF] Received HTTP response headers after 99.8435ms - 200
+2026-09-13 16:57:55.840 +05:30 [INF] End processing HTTP request after 100.5011ms - 200
+2026-09-13 16:57:55.844 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:57:55.988 +05:30 [INF] Executed page /Leads/Detail in 429.6484ms
+2026-09-13 16:57:55.990 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:57:55.991 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 570.3291 ms
+2026-09-13 16:57:55.991 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=59be6e24-e736-4870-acf4-f8364c71ded2 - 200 null text/html; charset=utf-8 613.8408ms
+2026-09-13 16:57:56.051 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:57:56.069 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:57:56.070 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 19.4157ms
+2026-09-13 16:57:56.277 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 208.0416ms
+2026-09-13 16:58:28.724 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - application/x-www-form-urlencoded 561
+2026-09-13 16:58:28.794 +05:30 [INF] Executed DbCommand (26ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:28.795 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:58:28.795 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:58:28.864 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:58:28.877 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:28.885 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:58:28.909 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:28.911 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnPostUpdateEntryAsync - ModelState is "Invalid"
+2026-09-13 16:58:28.925 +05:30 [INF] 🔐 Checking permission: leads.update for user admin@sathornprestige.co.th
+2026-09-13 16:58:28.925 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:58:29.032 +05:30 [INF] Start processing HTTP request PUT https://localhost:61091/api/activities/59be6e24-e736-4870-acf4-f8364c71ded2
+2026-09-13 16:58:29.032 +05:30 [INF] Sending HTTP request PUT https://localhost:61091/api/activities/59be6e24-e736-4870-acf4-f8364c71ded2
+2026-09-13 16:58:29.659 +05:30 [INF] Received HTTP response headers after 626.5393ms - 200
+2026-09-13 16:58:29.659 +05:30 [INF] End processing HTTP request after 627.0426ms - 200
+2026-09-13 16:58:29.663 +05:30 [INF] Executed handler method OnPostUpdateEntryAsync, returned result Microsoft.AspNetCore.Mvc.RedirectToPageResult.
+2026-09-13 16:58:29.667 +05:30 [INF] Executing RedirectToPageResult, redirecting to null.
+2026-09-13 16:58:29.671 +05:30 [INF] Executed page /Leads/Detail in 876.514ms
+2026-09-13 16:58:29.671 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:58:29.671 +05:30 [INF] HTTP POST /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 302 in 908.1423 ms
+2026-09-13 16:58:29.672 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - 302 0 null 947.2892ms
+2026-09-13 16:58:29.677 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - null null
+2026-09-13 16:58:29.687 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:29.688 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:58:29.688 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:58:29.692 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:58:29.692 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:58:29.692 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:58:29.698 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:58:29.705 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:29.710 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:58:29.716 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:29.748 +05:30 [INF] Executed DbCommand (31ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:58:29.750 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:58:29.750 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:58:29.820 +05:30 [INF] Received HTTP response headers after 69.2286ms - 200
+2026-09-13 16:58:29.820 +05:30 [INF] End processing HTTP request after 70.1989ms - 200
+2026-09-13 16:58:29.852 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.853 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.871 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:58:29.872 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:58:29.874 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.875 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.878 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.879 +05:30 [INF] Received HTTP response headers after 25.3698ms - 200
+2026-09-13 16:58:29.879 +05:30 [INF] End processing HTTP request after 27.0615ms - 200
+2026-09-13 16:58:29.879 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:29.881 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:58:29.882 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:58:29.930 +05:30 [INF] Received HTTP response headers after 47.8794ms - 200
+2026-09-13 16:58:29.930 +05:30 [INF] End processing HTTP request after 48.5802ms - 200
+2026-09-13 16:58:29.930 +05:30 [INF] Received HTTP response headers after 50.8572ms - 200
+2026-09-13 16:58:29.930 +05:30 [INF] End processing HTTP request after 51.4055ms - 200
+2026-09-13 16:58:29.956 +05:30 [INF] Received HTTP response headers after 81.4229ms - 200
+2026-09-13 16:58:29.956 +05:30 [INF] End processing HTTP request after 82.2865ms - 200
+2026-09-13 16:58:29.980 +05:30 [INF] Received HTTP response headers after 108.8261ms - 200
+2026-09-13 16:58:29.981 +05:30 [INF] End processing HTTP request after 109.3587ms - 200
+2026-09-13 16:58:29.984 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:58:30.083 +05:30 [INF] Executed page /Leads/Detail in 394.6051ms
+2026-09-13 16:58:30.083 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:58:30.083 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 403.9224 ms
+2026-09-13 16:58:30.085 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - 200 null text/html; charset=utf-8 407.7873ms
+2026-09-13 16:58:30.121 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:58:30.144 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:58:30.165 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 43.7747ms
+2026-09-13 16:58:30.199 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 54.6739ms
+2026-09-13 16:58:48.666 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=6a8cf399-7841-4716-8c99-0f1d87c81084 - null null
+2026-09-13 16:58:48.706 +05:30 [INF] Executed DbCommand (31ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:48.707 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:58:48.707 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:58:48.708 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:58:48.708 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:58:48.708 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:58:48.714 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:58:48.718 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:48.725 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:58:48.745 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:58:48.761 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:58:48.762 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:58:48.762 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:58:48.790 +05:30 [INF] Received HTTP response headers after 27.683ms - 200
+2026-09-13 16:58:48.790 +05:30 [INF] End processing HTTP request after 28.1398ms - 200
+2026-09-13 16:58:48.795 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.796 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.798 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:58:48.798 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:58:48.800 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.801 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.806 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.806 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:58:48.809 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:58:48.809 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:58:48.814 +05:30 [INF] Received HTTP response headers after 18.0644ms - 200
+2026-09-13 16:58:48.814 +05:30 [INF] End processing HTTP request after 18.967ms - 200
+2026-09-13 16:58:48.825 +05:30 [INF] Received HTTP response headers after 18.4646ms - 200
+2026-09-13 16:58:48.825 +05:30 [INF] End processing HTTP request after 19.013ms - 200
+2026-09-13 16:58:48.835 +05:30 [INF] Received HTTP response headers after 25.5689ms - 200
+2026-09-13 16:58:48.835 +05:30 [INF] End processing HTTP request after 26.304ms - 200
+2026-09-13 16:58:48.954 +05:30 [INF] Received HTTP response headers after 153.0409ms - 200
+2026-09-13 16:58:48.954 +05:30 [INF] End processing HTTP request after 154.0462ms - 200
+2026-09-13 16:58:48.965 +05:30 [INF] Received HTTP response headers after 167.036ms - 200
+2026-09-13 16:58:48.965 +05:30 [INF] End processing HTTP request after 167.5644ms - 200
+2026-09-13 16:58:48.990 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:58:49.043 +05:30 [INF] Executed page /Leads/Detail in 335.1792ms
+2026-09-13 16:58:49.043 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:58:49.043 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 371.2813 ms
+2026-09-13 16:58:49.044 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=6a8cf399-7841-4716-8c99-0f1d87c81084 - 200 null text/html; charset=utf-8 377.3266ms
+2026-09-13 16:58:49.077 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:58:49.078 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:58:49.145 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 65.6609ms
+2026-09-13 16:58:49.533 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 454.9302ms
+2026-09-13 16:59:08.162 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - application/x-www-form-urlencoded 561
+2026-09-13 16:59:08.239 +05:30 [INF] Executed DbCommand (32ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:08.242 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:59:08.242 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:59:08.259 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:08.266 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:08.273 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:08.281 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:08.281 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnPostUpdateEntryAsync - ModelState is "Invalid"
+2026-09-13 16:59:08.282 +05:30 [INF] 🔐 Checking permission: leads.update for user admin@sathornprestige.co.th
+2026-09-13 16:59:08.282 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:59:08.282 +05:30 [INF] Start processing HTTP request PUT https://localhost:61091/api/activities/6a8cf399-7841-4716-8c99-0f1d87c81084
+2026-09-13 16:59:08.283 +05:30 [INF] Sending HTTP request PUT https://localhost:61091/api/activities/6a8cf399-7841-4716-8c99-0f1d87c81084
+2026-09-13 16:59:08.845 +05:30 [INF] Received HTTP response headers after 561.9447ms - 400
+2026-09-13 16:59:08.845 +05:30 [INF] End processing HTTP request after 562.906ms - 400
+2026-09-13 16:59:08.861 +05:30 [WRN] PUT api/activities/6a8cf399-7841-4716-8c99-0f1d87c81084 rejected: A logged activity can't be in the future.
+2026-09-13 16:59:09.204 +05:30 [ERR] Error updating entry "6a8cf399-7841-4716-8c99-0f1d87c81084"
+System.InvalidOperationException: A logged activity can't be in the future.
+   at MerkaiTrial.Admin.Web.Services.Core.ApiService.ThrowForFailure(HttpResponseMessage response, String body, String verb, String url) in C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web\Services\Core\ApiService.cs:line 85
+   at MerkaiTrial.Admin.Web.Services.Core.ApiService.PutVoidAsync(String url, Object payload) in C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web\Services\Core\ApiService.cs:line 262
+   at MerkaiTrial.Admin.Web.Services.Activities.ActivityService.UpdateAsync(UpdateActivityDto dto, CancellationToken ct) in C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web\Services\Activities\ActivityService.cs:line 77
+   at MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnPostUpdateEntryAsync(Guid id) in C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.Admin.Web\Pages\Leads\Detail.cshtml.cs:line 575
+2026-09-13 16:59:09.524 +05:30 [INF] Executed handler method OnPostUpdateEntryAsync, returned result Microsoft.AspNetCore.Mvc.RedirectToPageResult.
+2026-09-13 16:59:09.524 +05:30 [INF] Executing RedirectToPageResult, redirecting to null.
+2026-09-13 16:59:09.530 +05:30 [INF] Executed page /Leads/Detail in 1287.9685ms
+2026-09-13 16:59:09.530 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:59:09.530 +05:30 [INF] HTTP POST /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 302 in 1330.3561 ms
+2026-09-13 16:59:09.531 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - 302 0 null 1368.5282ms
+2026-09-13 16:59:09.546 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - null null
+2026-09-13 16:59:09.582 +05:30 [INF] Executed DbCommand (23ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:09.582 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:59:09.582 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:59:09.586 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:59:09.586 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:59:09.586 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:59:09.592 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:09.596 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:09.602 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:09.607 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:09.626 +05:30 [INF] Executed DbCommand (18ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:59:09.627 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:09.627 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:09.662 +05:30 [INF] Received HTTP response headers after 34.862ms - 200
+2026-09-13 16:59:09.663 +05:30 [INF] End processing HTTP request after 35.4867ms - 200
+2026-09-13 16:59:09.670 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.671 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.713 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:09.713 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:09.722 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.723 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.731 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.732 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:09.755 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:09.758 +05:30 [INF] Received HTTP response headers after 86.5109ms - 200
+2026-09-13 16:59:09.758 +05:30 [INF] End processing HTTP request after 87.7676ms - 200
+2026-09-13 16:59:09.766 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:09.883 +05:30 [INF] Received HTTP response headers after 169.2825ms - 200
+2026-09-13 16:59:09.883 +05:30 [INF] End processing HTTP request after 170.2107ms - 200
+2026-09-13 16:59:09.883 +05:30 [INF] Received HTTP response headers after 116.5361ms - 200
+2026-09-13 16:59:09.883 +05:30 [INF] End processing HTTP request after 128.7353ms - 200
+2026-09-13 16:59:09.887 +05:30 [INF] Received HTTP response headers after 154.273ms - 200
+2026-09-13 16:59:09.887 +05:30 [INF] End processing HTTP request after 155.4073ms - 200
+2026-09-13 16:59:09.940 +05:30 [INF] Received HTTP response headers after 216.734ms - 200
+2026-09-13 16:59:09.940 +05:30 [INF] End processing HTTP request after 218.7981ms - 200
+2026-09-13 16:59:09.943 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:59:09.990 +05:30 [INF] Executed page /Leads/Detail in 407.5303ms
+2026-09-13 16:59:09.990 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:59:09.990 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 436.4905 ms
+2026-09-13 16:59:09.991 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - 200 null text/html; charset=utf-8 445.0979ms
+2026-09-13 16:59:10.054 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:59:10.090 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:59:10.135 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 80.7526ms
+2026-09-13 16:59:10.278 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 188.0139ms
+2026-09-13 16:59:30.001 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=6a8cf399-7841-4716-8c99-0f1d87c81084 - null null
+2026-09-13 16:59:30.021 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:30.021 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:59:30.022 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:59:30.027 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:59:30.027 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:59:30.027 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:59:30.033 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:30.038 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:30.042 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:30.047 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:30.063 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:59:30.064 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:30.064 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:30.205 +05:30 [INF] Received HTTP response headers after 140.975ms - 200
+2026-09-13 16:59:30.205 +05:30 [INF] End processing HTTP request after 141.444ms - 200
+2026-09-13 16:59:30.209 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.209 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.211 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:30.211 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:30.212 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.212 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.214 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.214 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:30.215 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:30.217 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:30.245 +05:30 [INF] Received HTTP response headers after 35.6724ms - 200
+2026-09-13 16:59:30.247 +05:30 [INF] End processing HTTP request after 37.8829ms - 200
+2026-09-13 16:59:30.311 +05:30 [INF] Received HTTP response headers after 93.151ms - 200
+2026-09-13 16:59:30.311 +05:30 [INF] End processing HTTP request after 95.7281ms - 200
+2026-09-13 16:59:30.313 +05:30 [INF] Received HTTP response headers after 99.1198ms - 200
+2026-09-13 16:59:30.313 +05:30 [INF] End processing HTTP request after 99.4608ms - 200
+2026-09-13 16:59:30.331 +05:30 [INF] Received HTTP response headers after 120.1525ms - 200
+2026-09-13 16:59:30.331 +05:30 [INF] End processing HTTP request after 120.4848ms - 200
+2026-09-13 16:59:30.352 +05:30 [INF] Received HTTP response headers after 139.6413ms - 200
+2026-09-13 16:59:30.352 +05:30 [INF] End processing HTTP request after 139.978ms - 200
+2026-09-13 16:59:30.354 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:59:30.494 +05:30 [INF] Executed page /Leads/Detail in 471.7026ms
+2026-09-13 16:59:30.494 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:59:30.494 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 489.0587 ms
+2026-09-13 16:59:30.494 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?editId=6a8cf399-7841-4716-8c99-0f1d87c81084 - 200 null text/html; charset=utf-8 493.5618ms
+2026-09-13 16:59:30.520 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:59:30.521 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:59:30.532 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 12.0955ms
+2026-09-13 16:59:30.675 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 153.9396ms
+2026-09-13 16:59:44.327 +05:30 [INF] Request starting HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - application/x-www-form-urlencoded 561
+2026-09-13 16:59:44.345 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.346 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:59:44.346 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:59:44.355 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:44.364 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.367 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:44.371 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.371 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnPostUpdateEntryAsync - ModelState is "Invalid"
+2026-09-13 16:59:44.371 +05:30 [INF] 🔐 Checking permission: leads.update for user admin@sathornprestige.co.th
+2026-09-13 16:59:44.371 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:59:44.371 +05:30 [INF] Start processing HTTP request PUT https://localhost:61091/api/activities/6a8cf399-7841-4716-8c99-0f1d87c81084
+2026-09-13 16:59:44.372 +05:30 [INF] Sending HTTP request PUT https://localhost:61091/api/activities/6a8cf399-7841-4716-8c99-0f1d87c81084
+2026-09-13 16:59:44.639 +05:30 [INF] Received HTTP response headers after 267.0771ms - 200
+2026-09-13 16:59:44.639 +05:30 [INF] End processing HTTP request after 267.5345ms - 200
+2026-09-13 16:59:44.639 +05:30 [INF] Executed handler method OnPostUpdateEntryAsync, returned result Microsoft.AspNetCore.Mvc.RedirectToPageResult.
+2026-09-13 16:59:44.640 +05:30 [INF] Executing RedirectToPageResult, redirecting to null.
+2026-09-13 16:59:44.640 +05:30 [INF] Executed page /Leads/Detail in 294.0891ms
+2026-09-13 16:59:44.640 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:59:44.640 +05:30 [INF] HTTP POST /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 302 in 308.2580 ms
+2026-09-13 16:59:44.640 +05:30 [INF] Request finished HTTP/2 POST https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a?handler=UpdateEntry - 302 0 null 312.8799ms
+2026-09-13 16:59:44.644 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - null null
+2026-09-13 16:59:44.651 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.651 +05:30 [INF] Executing endpoint '/Leads/Detail'
+2026-09-13 16:59:44.651 +05:30 [INF] Route matched with {page = "/Leads/Detail"}. Executing page /Leads/Detail
+2026-09-13 16:59:44.651 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Leads.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 16:59:44.651 +05:30 [INF] 🔐 Checking permission: leads.read for user admin@sathornprestige.co.th
+2026-09-13 16:59:44.651 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 16:59:44.657 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:44.660 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.663 +05:30 [INF] Executed DbCommand (2ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:44.667 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:44.679 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:59:44.680 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:44.680 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a
+2026-09-13 16:59:44.716 +05:30 [INF] Received HTTP response headers after 36.0826ms - 200
+2026-09-13 16:59:44.716 +05:30 [INF] End processing HTTP request after 36.5228ms - 200
+2026-09-13 16:59:44.718 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.719 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.732 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:44.734 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Lead&entityId=c5116dcb-d977-4f18-a879-bd2dfeefd37a&includeCompleted=True&tasksOnly=False
+2026-09-13 16:59:44.745 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.745 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/timeline?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.748 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.748 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/leads/c5116dcb-d977-4f18-a879-bd2dfeefd37a/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 16:59:44.753 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:44.753 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:44.754 +05:30 [INF] Received HTTP response headers after 35.1221ms - 200
+2026-09-13 16:59:44.758 +05:30 [INF] End processing HTTP request after 39.1723ms - 200
+2026-09-13 16:59:44.786 +05:30 [INF] Received HTTP response headers after 37.3142ms - 200
+2026-09-13 16:59:44.786 +05:30 [INF] End processing HTTP request after 37.768ms - 200
+2026-09-13 16:59:44.792 +05:30 [INF] Received HTTP response headers after 39.1023ms - 200
+2026-09-13 16:59:44.792 +05:30 [INF] End processing HTTP request after 39.7753ms - 200
+2026-09-13 16:59:44.843 +05:30 [INF] Received HTTP response headers after 109.4154ms - 200
+2026-09-13 16:59:44.843 +05:30 [INF] End processing HTTP request after 111.6507ms - 200
+2026-09-13 16:59:44.845 +05:30 [INF] Received HTTP response headers after 99.9411ms - 200
+2026-09-13 16:59:44.845 +05:30 [INF] End processing HTTP request after 100.3967ms - 200
+2026-09-13 16:59:44.846 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:59:44.854 +05:30 [INF] Executed page /Leads/Detail in 203.0845ms
+2026-09-13 16:59:44.854 +05:30 [INF] Executed endpoint '/Leads/Detail'
+2026-09-13 16:59:44.854 +05:30 [INF] HTTP GET /Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a responded 200 in 208.6071 ms
+2026-09-13 16:59:44.855 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Leads/Detail/c5116dcb-d977-4f18-a879-bd2dfeefd37a - 200 null text/html; charset=utf-8 210.7634ms
+2026-09-13 16:59:44.874 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:59:44.876 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 1.4027ms
+2026-09-13 16:59:44.876 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:59:45.077 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 199.9481ms
+2026-09-13 16:59:53.531 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Tasks - null null
+2026-09-13 16:59:53.579 +05:30 [INF] Executed DbCommand (33ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:53.581 +05:30 [INF] Executing endpoint '/Tasks/Index'
+2026-09-13 16:59:53.582 +05:30 [INF] Route matched with {page = "/Tasks/Index"}. Executing page /Tasks/Index
+2026-09-13 16:59:53.583 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Tasks.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-13 16:59:53.608 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 16:59:53.613 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 16:59:53.618 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:53.621 +05:30 [INF] Executed DbCommand (2ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 16:59:53.625 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 16:59:53.626 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30&assignedToUserId=dd100002-dd00-0000-0000-000000000002
+2026-09-13 16:59:53.626 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30&assignedToUserId=dd100002-dd00-0000-0000-000000000002
+2026-09-13 16:59:53.628 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:53.628 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 16:59:53.643 +05:30 [INF] Received HTTP response headers after 15.3657ms - 200
+2026-09-13 16:59:53.643 +05:30 [INF] End processing HTTP request after 15.802ms - 200
+2026-09-13 16:59:53.691 +05:30 [INF] Received HTTP response headers after 64.929ms - 200
+2026-09-13 16:59:53.691 +05:30 [INF] End processing HTTP request after 65.3616ms - 200
+2026-09-13 16:59:53.697 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 16:59:53.708 +05:30 [INF] Executed page /Tasks/Index in 125.6717ms
+2026-09-13 16:59:53.708 +05:30 [INF] Executed endpoint '/Tasks/Index'
+2026-09-13 16:59:53.708 +05:30 [INF] HTTP GET /Tasks responded 200 in 166.2336 ms
+2026-09-13 16:59:53.708 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Tasks - 200 null text/html; charset=utf-8 177.6729ms
+2026-09-13 16:59:53.726 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 16:59:53.726 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 16:59:53.728 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 1.5254ms
+2026-09-13 16:59:53.796 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 69.5586ms
+2026-09-13 17:00:00.449 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Tasks?scope=all&days=30 - null null
+2026-09-13 17:00:00.473 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:00:00.474 +05:30 [INF] Executing endpoint '/Tasks/Index'
+2026-09-13 17:00:00.474 +05:30 [INF] Route matched with {page = "/Tasks/Index"}. Executing page /Tasks/Index
+2026-09-13 17:00:00.475 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Tasks.IndexModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 17:00:00.504 +05:30 [INF] Executed DbCommand (28ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-13 17:00:00.514 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 17:00:00.520 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:00:00.524 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 17:00:00.537 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:00:00.537 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30
+2026-09-13 17:00:00.538 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/upcoming-tasks?tenantId=bb100002-aaaa-0000-0000-000000000002&daysAhead=30
+2026-09-13 17:00:00.540 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 17:00:00.541 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities/assignees
+2026-09-13 17:00:00.558 +05:30 [INF] Received HTTP response headers after 17.6137ms - 200
+2026-09-13 17:00:00.559 +05:30 [INF] End processing HTTP request after 18.8028ms - 200
+2026-09-13 17:00:00.633 +05:30 [INF] Received HTTP response headers after 95.3857ms - 200
+2026-09-13 17:00:00.633 +05:30 [INF] End processing HTTP request after 95.8659ms - 200
+2026-09-13 17:00:00.634 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 17:00:00.761 +05:30 [INF] Executed page /Tasks/Index in 287.0414ms
+2026-09-13 17:00:00.761 +05:30 [INF] Executed endpoint '/Tasks/Index'
+2026-09-13 17:00:00.761 +05:30 [INF] HTTP GET /Tasks responded 200 in 297.6273 ms
+2026-09-13 17:00:00.762 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Tasks?scope=all&days=30 - 200 null text/html; charset=utf-8 312.7718ms
+2026-09-13 17:00:00.781 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 17:00:00.816 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 17:00:00.830 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 14.5344ms
+2026-09-13 17:00:00.990 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 208.4955ms
+2026-09-13 17:01:27.666 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Companies - null null
+2026-09-13 17:01:27.694 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:27.694 +05:30 [INF] Executing endpoint '/Companies/Index'
+2026-09-13 17:01:27.739 +05:30 [INF] Route matched with {page = "/Companies/Index"}. Executing page /Companies/Index
+2026-09-13 17:01:27.763 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Companies.IndexModel.OnGetAsync - ModelState is "Invalid"
+2026-09-13 17:01:27.773 +05:30 [INF] 🔐 Checking permission: companies.read for user admin@sathornprestige.co.th
+2026-09-13 17:01:27.773 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 17:01:27.789 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 17:01:27.797 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:27.802 +05:30 [INF] Executed DbCommand (5ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 17:01:27.848 +05:30 [INF] Executed DbCommand (45ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:27.858 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:27.858 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies/stats?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:28.241 +05:30 [INF] Received HTTP response headers after 383.0617ms - 200
+2026-09-13 17:01:28.242 +05:30 [INF] End processing HTTP request after 384.064ms - 200
+2026-09-13 17:01:28.257 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-13 17:01:28.257 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/companies?pageNumber=1&pageSize=25
+2026-09-13 17:01:28.379 +05:30 [INF] Received HTTP response headers after 121.6491ms - 200
+2026-09-13 17:01:28.379 +05:30 [INF] End processing HTTP request after 122.0941ms - 200
+2026-09-13 17:01:28.396 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-13 17:01:28.396 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/countries?activeOnly=true&pageNumber=1&pageSize=300
+2026-09-13 17:01:28.481 +05:30 [INF] Received HTTP response headers after 85.119ms - 200
+2026-09-13 17:01:28.481 +05:30 [INF] End processing HTTP request after 85.4959ms - 200
+2026-09-13 17:01:28.503 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-13 17:01:28.504 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/meta/verticals
+2026-09-13 17:01:28.548 +05:30 [INF] Received HTTP response headers after 44.0146ms - 200
+2026-09-13 17:01:28.548 +05:30 [INF] End processing HTTP request after 44.7594ms - 200
+2026-09-13 17:01:28.568 +05:30 [INF] Loaded page 1 with 5 companies (Total: 5)
+2026-09-13 17:01:28.568 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 17:01:28.651 +05:30 [INF] Executed page /Companies/Index in 910.6485ms
+2026-09-13 17:01:28.651 +05:30 [INF] Executed endpoint '/Companies/Index'
+2026-09-13 17:01:28.651 +05:30 [INF] HTTP GET /Companies responded 200 in 974.2762 ms
+2026-09-13 17:01:28.652 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Companies - 200 null text/html; charset=utf-8 985.7792ms
+2026-09-13 17:01:28.711 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 17:01:28.731 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 17:01:28.761 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 49.7199ms
+2026-09-13 17:01:28.861 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 130.2581ms
+2026-09-13 17:01:42.487 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Pipeline - null null
+2026-09-13 17:01:42.521 +05:30 [INF] Executed DbCommand (19ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:42.522 +05:30 [INF] Executing endpoint '/Pipeline/Index'
+2026-09-13 17:01:42.538 +05:30 [INF] Route matched with {page = "/Pipeline/Index"}. Executing page /Pipeline/Index
+2026-09-13 17:01:42.553 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Pipeline.IndexModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 17:01:42.564 +05:30 [INF] 🔐 Checking permission: deals.read for user admin@sathornprestige.co.th
+2026-09-13 17:01:42.564 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 17:01:42.600 +05:30 [INF] Executed DbCommand (35ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 17:01:42.618 +05:30 [INF] Executed DbCommand (17ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:42.626 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 17:01:42.632 +05:30 [INF] Executed DbCommand (6ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:42.633 +05:30 [INF] Loading pipeline for TenantId="bb100002-aaaa-0000-0000-000000000002" Currency=THB
+2026-09-13 17:01:42.634 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-13 17:01:42.634 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=20
+2026-09-13 17:01:42.640 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/users/sales-team?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:42.640 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/users/sales-team?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:42.755 +05:30 [INF] Received HTTP response headers after 114.9149ms - 200
+2026-09-13 17:01:42.755 +05:30 [INF] End processing HTTP request after 115.3119ms - 200
+2026-09-13 17:01:42.773 +05:30 [INF] Received HTTP response headers after 138.7051ms - 200
+2026-09-13 17:01:42.773 +05:30 [INF] End processing HTTP request after 139.0927ms - 200
+2026-09-13 17:01:42.780 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:42.780 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:42.864 +05:30 [INF] Received HTTP response headers after 83.6936ms - 200
+2026-09-13 17:01:42.864 +05:30 [INF] End processing HTTP request after 84.1976ms - 200
+2026-09-13 17:01:42.883 +05:30 [INF] Loaded 7 deals
+2026-09-13 17:01:42.883 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 17:01:42.924 +05:30 [INF] Executed page /Pipeline/Index in 385.7259ms
+2026-09-13 17:01:42.924 +05:30 [INF] Executed endpoint '/Pipeline/Index'
+2026-09-13 17:01:42.925 +05:30 [INF] HTTP GET /Pipeline responded 200 in 428.1136 ms
+2026-09-13 17:01:42.927 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Pipeline - 200 null text/html; charset=utf-8 439.3627ms
+2026-09-13 17:01:42.941 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 17:01:42.950 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 8.6406ms
+2026-09-13 17:01:42.950 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 17:01:43.103 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 152.679ms
+2026-09-13 17:01:57.024 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/Pipeline/Detail/13d6615f-5dc1-4412-84e2-e514f5a572ad - null null
+2026-09-13 17:01:57.054 +05:30 [INF] Executed DbCommand (17ms) [Parameters=[@__userId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[SecurityStamp]
+FROM [Users] AS [u]
+WHERE [u].[Id] = @__userId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:57.055 +05:30 [INF] Executing endpoint '/Pipeline/Detail'
+2026-09-13 17:01:57.101 +05:30 [INF] Route matched with {page = "/Pipeline/Detail"}. Executing page /Pipeline/Detail
+2026-09-13 17:01:57.109 +05:30 [INF] Executing handler method MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel.OnGetAsync - ModelState is "Valid"
+2026-09-13 17:01:57.112 +05:30 [INF] 🔐 Checking permission: deals.read for user admin@sathornprestige.co.th
+2026-09-13 17:01:57.112 +05:30 [INF] ✅ Access granted (TenantAdmin bypass) for admin@sathornprestige.co.th
+2026-09-13 17:01:57.115 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.116 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.304 +05:30 [INF] Received HTTP response headers after 187.921ms - 200
+2026-09-13 17:01:57.304 +05:30 [INF] End processing HTTP request after 188.7454ms - 200
+2026-09-13 17:01:57.311 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.311 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/notes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.317 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/stage-history?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.317 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/stage-history?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.322 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.322 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/deals/13d6615f-5dc1-4412-84e2-e514f5a572ad/attachments?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.327 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Deal&entityId=13d6615f-5dc1-4412-84e2-e514f5a572ad&includeCompleted=True&tasksOnly=False
+2026-09-13 17:01:57.328 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/activities?tenantId=bb100002-aaaa-0000-0000-000000000002&entityType=Deal&entityId=13d6615f-5dc1-4412-84e2-e514f5a572ad&includeCompleted=True&tasksOnly=False
+2026-09-13 17:01:57.375 +05:30 [INF] Received HTTP response headers after 57.7124ms - 200
+2026-09-13 17:01:57.375 +05:30 [INF] End processing HTTP request after 58.1546ms - 200
+2026-09-13 17:01:57.382 +05:30 [INF] Received HTTP response headers after 70.686ms - 200
+2026-09-13 17:01:57.382 +05:30 [INF] End processing HTTP request after 71.3901ms - 200
+2026-09-13 17:01:57.404 +05:30 [INF] Received HTTP response headers after 82.3611ms - 200
+2026-09-13 17:01:57.404 +05:30 [INF] End processing HTTP request after 82.7137ms - 200
+2026-09-13 17:01:57.416 +05:30 [INF] Received HTTP response headers after 88.6024ms - 200
+2026-09-13 17:01:57.416 +05:30 [INF] End processing HTTP request after 89.5208ms - 200
+2026-09-13 17:01:57.428 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-13 17:01:57.433 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:57.436 +05:30 [INF] Executed DbCommand (3ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-13 17:01:57.441 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-13 17:01:57.442 +05:30 [INF] Start processing HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.442 +05:30 [INF] Sending HTTP request GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002
+2026-09-13 17:01:57.490 +05:30 [INF] Received HTTP response headers after 47.8879ms - 200
+2026-09-13 17:01:57.490 +05:30 [INF] End processing HTTP request after 48.236ms - 200
+2026-09-13 17:01:57.495 +05:30 [INF] Executed handler method OnGetAsync, returned result Microsoft.AspNetCore.Mvc.RazorPages.PageResult.
+2026-09-13 17:01:57.640 +05:30 [INF] Executed page /Pipeline/Detail in 538.7491ms
+2026-09-13 17:01:57.640 +05:30 [INF] Executed endpoint '/Pipeline/Detail'
+2026-09-13 17:01:57.640 +05:30 [INF] HTTP GET /Pipeline/Detail/13d6615f-5dc1-4412-84e2-e514f5a572ad responded 200 in 608.7093 ms
+2026-09-13 17:01:57.640 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/Pipeline/Detail/13d6615f-5dc1-4412-84e2-e514f5a572ad - 200 null text/html; charset=utf-8 616.2683ms
+2026-09-13 17:01:57.659 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-13 17:01:57.678 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_framework/aspnetcore-browser-refresh.js - 200 16527 application/javascript; charset=utf-8 19.1154ms
+2026-09-13 17:01:57.679 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61093/_vs/browserLink - null null
+2026-09-13 17:01:57.859 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61093/_vs/browserLink - 200 null text/javascript; charset=UTF-8 180.0835ms
