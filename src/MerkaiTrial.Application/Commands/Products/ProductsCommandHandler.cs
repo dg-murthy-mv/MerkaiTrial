@@ -8,12 +8,15 @@
 //            or keep it and populate from ICurrentTenantService
 // =====================================================================
 
+using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+
 
 namespace MerkaiTrial.Application.Commands.Products;
 
@@ -251,11 +254,12 @@ public class UpdateProductHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
     private readonly ICurrentUserService _currentUserService;
-
-    public UpdateProductHandler(FlowDbContext db, ICurrentUserService currentUserService)
+    private readonly IAuditService _audit;
+    public UpdateProductHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
     {
         _db                = db;
         _currentUserService = currentUserService;
+        _audit             = audit;
     }
 
     public async Task Handle(Guid tenantId, Guid productId, UpdateProductDto dto)
@@ -267,6 +271,8 @@ public class UpdateProductHandler : ICommandHandler
             throw new KeyNotFoundException($"Product {productId} not found");
 
         var currentUser = await _currentUserService.GetCurrentUserAsync();
+        var oldPrice = product.ListPrice;                               // ✅ AUDIT
+        var oldTax = product.TaxRate;
 
         product.Name        = dto.Name;
         product.Description = dto.Description;
@@ -281,6 +287,15 @@ public class UpdateProductHandler : ICommandHandler
         product.UpdatedBy    = currentUser.FullName;
 
         await _db.SaveChangesAsync();
+        if (oldPrice != product.ListPrice || oldTax != product.TaxRate)
+            await _audit.WriteAsync(
+                AuditAction.ProductPriceChanged, AuditEntityType.Product, product.Id, tenantId,
+                new
+                {
+                    name = product.Name,
+                    price = new { from = oldPrice, to = product.ListPrice },
+                    taxRate = new { from = oldTax, to = product.TaxRate }
+                });
     }
 }
 
@@ -288,11 +303,12 @@ public class DeleteProductHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
     private readonly ICurrentUserService _currentUserService;
-
-    public DeleteProductHandler(FlowDbContext db, ICurrentUserService currentUserService)
+    private readonly IAuditService _audit;
+    public DeleteProductHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
     {
         _db                = db;
         _currentUserService = currentUserService;
+        _audit             = audit;
     }
 
     public async Task Handle(Guid tenantId, Guid productId)
@@ -310,6 +326,9 @@ public class DeleteProductHandler : ICommandHandler
         product.DeletedBy    = currentUser.FullName;
 
         await _db.SaveChangesAsync();
+        await _audit.WriteAsync(
+        AuditAction.ProductDeleted, AuditEntityType.Product, product.Id, tenantId,
+        new { name = product.Name, sku = product.Sku, price = product.ListPrice });
     }
 }
 

@@ -1,11 +1,12 @@
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
-using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace MerkaiTrial.Application.Commands.Leads
 {
@@ -15,21 +16,24 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly ILogger<ConvertLeadToDealHandler> _logger;
-
+        private readonly IAuditService _audit;
         public ConvertLeadToDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
-            ILogger<ConvertLeadToDealHandler> logger)
+            ILogger<ConvertLeadToDealHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<ConvertLeadToDealResultDto> Handle(ConvertLeadToDealDto dto)
         {
+            using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
                 _logger.LogInformation("Starting lead conversion: LeadId={LeadId}", dto.LeadId);
@@ -238,7 +242,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 _db.Deals.Add(deal);
 
                 // ── STEP 5: UPDATE LEAD ───────────────────────────────────────
-
+                var oldStatus = lead.Status;
                 lead.Status = LeadStatus.Converted;
                 lead.IsConverted = true;
                 lead.DealId = deal.Id;
@@ -253,6 +257,35 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // ── STEP 6: SAVE ──────────────────────────────────────────────
 
                 await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                // ✅ AUDIT — two events, because two things happened.
+                // The deal is a new record in its own right; without this,
+                // deals born from conversion would have no creation entry
+                // while manually created ones do.
+                await _audit.WriteAsync(
+                    AuditAction.LeadConverted, AuditEntityType.Lead, lead.Id, dto.TenantId,
+                    new
+                    {
+                        name = lead.FullName,
+                        fromStatus = oldStatus.ToString(),
+                        dealId = deal.Id,
+                        contactId,
+                        companyId,
+                        contactWasCreated,
+                        companyWasCreated
+                    });
+
+                await _audit.WriteAsync(
+                    AuditAction.DealCreated, AuditEntityType.Deal, deal.Id, dto.TenantId,
+                    new
+                    {
+                        title = deal.Title,
+                        stage = deal.Stage,
+                        value = deal.ExpectedValue,
+                        currency = deal.Currency,
+                        fromLeadId = lead.Id
+                    });
 
                 _logger.LogInformation(
                     "Lead conversion complete: LeadId={LeadId} → DealId={DealId} ContactId={ContactId} CompanyId={CompanyId}",
@@ -283,6 +316,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             }
             catch (Exception ex)
             {
+                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Failed to convert lead {LeadId} to deal", dto.LeadId);
                 throw;
             }

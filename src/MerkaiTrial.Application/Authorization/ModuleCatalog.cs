@@ -62,6 +62,8 @@ public static class ModuleCatalog
         // Grantable by a tenant admin to their own people.
         new("users",     "Users",     "bi-person-badge",       "Workspace Settings", 40, Crud),
         new("roles",     "Roles",     "bi-shield-lock",        "Workspace Settings", 41, Crud),
+        new("audit",     "Activity Log", "bi-clock-history",     "Workspace Settings", 42, ReadOnly),
+
     };
 
     /// <summary>

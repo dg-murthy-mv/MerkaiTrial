@@ -7,8 +7,10 @@
 //   ✅ UpdateDealHandler    — sets VerticalId from UpdateDealDto
 // =====================================================================
 
+using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -76,22 +78,41 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class TransitionDealStageHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public TransitionDealStageHandler(FlowDbContext db) => _db = db;
+        private readonly IAuditService _audit;                           // ✅ AUDIT
+
+        public TransitionDealStageHandler(FlowDbContext db, IAuditService audit)
+        {
+            _db = db;
+            _audit = audit;                                              // ✅ AUDIT
+        }
 
         public async Task HandleAsync(
             string tenantId, Guid dealId, string toStage, int probability, string changedBy)
         {
+            // ✅ FIX: parse once so EF can use the TenantId index, instead
+            // of d.TenantId.ToString() == tenantId which forces a scan.
+            if (!Guid.TryParse(tenantId, out var tenantGuid))
+                throw new ArgumentException($"Invalid tenantId: {tenantId}");
+
+            // ✅ FIX: validate. Without this, any string became a stage —
+            // which is how "Won" (not a valid stage) reached
+            // DealStageHistory.
+            if (!DealStages.IsValid(toStage))
+                throw new ArgumentException(
+                    $"Invalid stage '{toStage}'. Valid: {string.Join(", ", DealStages.All)}");
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d =>
-                    d.Id == dealId &&
-                    d.TenantId.ToString() == tenantId &&
-                    !d.IsDeleted);
+                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted);
 
             if (deal == null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
-            if (deal.Stage is "Won" or "Lost" or "ClosedWon" or "ClosedLost")
-                return;  // already terminal — no-op
+            if (DealStages.IsTerminal(deal.Stage))
+                return;  // already Won or Lost — no-op
+
+            // ✅ FIX: no-op guard. Without it, accepting a quote on a deal
+            // already in that stage wrote a Negotiation → Negotiation row.
+            if (deal.Stage == toStage) return;
 
             var fromStage = deal.Stage;
             deal.Stage = toStage;
@@ -102,6 +123,12 @@ namespace MerkaiTrial.Application.Commands.Deals
             _db.DealStageHistory.Add(new DealStageHistory
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantGuid,          // ✅ FIX — was never set.
+                                                // DealStageHistory HAS a global
+                                                // query filter, so rows written
+                                                // with Guid.Empty were invisible
+                                                // to every query, including the
+                                                // deal timeline.
                 DealId = dealId,
                 FromStage = fromStage,
                 ToStage = toStage,
@@ -110,6 +137,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             });
 
             await _db.SaveChangesAsync();
+
+            await _audit.WriteAsync(                                     // ✅ AUDIT
+                AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
+                new { from = fromStage, to = toStage, automatic = true });
         }
     }
     // ==================== GET DEALS LIST ====================
@@ -328,15 +359,18 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<CreateDealHandler> _logger;
+        private readonly IAuditService _audit;
 
         public CreateDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<CreateDealHandler> logger)
+            ILogger<CreateDealHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<DealDto> HandleAsync(CreateDealDto dto)
@@ -411,7 +445,15 @@ namespace MerkaiTrial.Application.Commands.Deals
             });
 
             await _db.SaveChangesAsync();
-
+            await _audit.WriteAsync(
+            AuditAction.DealCreated, AuditEntityType.Deal, deal.Id, deal.TenantId,
+            new
+            {
+                title = deal.Title,
+                stage = deal.Stage,
+                value = deal.ExpectedValue,
+                currency = deal.Currency
+            });
             _logger.LogInformation(
                 "Deal '{Title}' created at stage {Stage} for tenant {TenantId}",
                 deal.Title, stage, dto.TenantId);
@@ -462,11 +504,13 @@ namespace MerkaiTrial.Application.Commands.Deals
     {
         private readonly FlowDbContext       _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IAuditService _audit;
 
-        public UpdateDealHandler(FlowDbContext db, ICurrentUserService currentUserService)
+        public UpdateDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
         {
             _db                 = db;
             _currentUserService = currentUserService;
+            _audit              = audit;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId, UpdateDealDto dto)
@@ -544,6 +588,9 @@ namespace MerkaiTrial.Application.Commands.Deals
             deal.UpdatedBy    = currentUser.FullName;
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+            AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
+            new { title = deal.Title });
         }
     }
 
@@ -553,11 +600,13 @@ namespace MerkaiTrial.Application.Commands.Deals
     {
         private readonly FlowDbContext       _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IAuditService _audit;
 
-        public UpdateDealStageHandler(FlowDbContext db, ICurrentUserService currentUserService)
+        public UpdateDealStageHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
         {
             _db                 = db;
             _currentUserService = currentUserService;
+            _audit              = audit;    
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId, string newStage)
@@ -608,6 +657,15 @@ namespace MerkaiTrial.Application.Commands.Deals
             deal.UpdatedBy    = currentUser.FullName;
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+                AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, deal.TenantId,
+                new
+                {
+                    title = deal.Title,
+                    from = previousStage,
+                    to = newStage,
+                    value = deal.ExpectedValue
+                });
         }
     }
 
@@ -617,11 +675,13 @@ namespace MerkaiTrial.Application.Commands.Deals
     {
         private readonly FlowDbContext       _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IAuditService _audit;
 
-        public DeleteDealHandler(FlowDbContext db, ICurrentUserService currentUserService)
+        public DeleteDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
         {
             _db                 = db;
             _currentUserService = currentUserService;
+            _audit              = audit;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId)
@@ -639,7 +699,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             deal.DeletedBy    = currentUser.FullName;
 
             await _db.SaveChangesAsync();
-        }
+            await _audit.WriteAsync(
+            AuditAction.DealDeleted, AuditEntityType.Deal, dealId, deal.TenantId,
+            new { title = deal.Title, stage = deal.Stage, value = deal.ExpectedValue });
+                }
     }
 
     // ==================== NOTES ====================

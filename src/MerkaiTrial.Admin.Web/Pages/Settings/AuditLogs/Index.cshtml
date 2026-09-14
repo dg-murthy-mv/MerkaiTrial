@@ -1,0 +1,251 @@
+@page "/Settings/AuditLogs"
+@model MerkaiTrial.Admin.Web.Pages.Settings.AuditLogs.IndexModel
+@{
+    ViewData["Title"] = "Activity Log";
+}
+
+@*
+    FILE: MerkaiTrial.Admin.Web/Pages/Settings/AuditLogs/Index.cshtml
+
+    Called "Activity Log" in the UI rather than "Audit Log" — the people
+    reading it are business owners asking "who changed this", not
+    auditors. Alerts are rendered globally by _Layout.
+*@
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">Activity Log</h1>
+        <p class="text-muted mb-0" style="font-size:13.5px;">
+            Who changed what, and when. Read-only — nothing here can be edited or removed.
+        </p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body py-3">
+        <form method="get" class="row g-2 align-items-end">
+            <input type="hidden" name="PageSize" value="@Model.PageSize" />
+
+            <div class="col-md-4">
+                <label class="form-label mb-1">Search</label>
+                <input type="text" name="SearchTerm" value="@Model.SearchTerm"
+                       class="form-control" placeholder="A name, email or record" />
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label mb-1">Record type</label>
+                <select name="EntityType" class="form-select">
+                    <option value="">All</option>
+                    @foreach (var t in Model.FilterOptions.EntityTypes)
+                    {
+                        <option value="@t" selected="@(t == Model.EntityType)">@t</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label mb-1">Action</label>
+                <select name="Action" class="form-select">
+                    <option value="">All</option>
+                    @foreach (var a in Model.FilterOptions.Actions)
+                    {
+                        <option value="@a" selected="@(a == Model.Action)">@a</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-1">
+                <label class="form-label mb-1">Period</label>
+                <select name="Range" class="form-select">
+                    <option value="7"   selected="@(Model.Range == "7")">7d</option>
+                    <option value="30"  selected="@(Model.Range == "30")">30d</option>
+                    <option value="90"  selected="@(Model.Range == "90")">90d</option>
+                    <option value="all" selected="@(Model.Range == "all")">All</option>
+                </select>
+            </div>
+
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill">
+                    <i class="bi bi-search me-1"></i> Filter
+                </button>
+                <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- List -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-clock-history me-2"></i>Events
+            <span class="badge bg-primary ms-1">@Model.Logs.TotalCount</span>
+        </span>
+        @if (Model.Logs.TotalPages > 1)
+        {
+            <span class="text-muted" style="font-size:12px;">
+                Page @Model.Logs.Page of @Model.Logs.TotalPages
+            </span>
+        }
+    </div>
+
+    @if (!Model.Logs.Items.Any())
+    {
+        <div class="card-body text-center py-5 text-muted">
+            <i class="bi bi-clock-history" style="font-size:2rem;opacity:.4;"></i>
+            <p class="mt-3 mb-0">Nothing recorded in this period.</p>
+            <p class="small mb-0">Try a longer period, or clear the filters.</p>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive d-none d-md-block">
+            <table class="table table-hover mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th style="width:38%;">What happened</th>
+                        <th style="width:20%;">Who</th>
+                        <th style="width:18%;">When</th>
+                        <th class="text-end" style="width:24%;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Model.Logs.Items)
+                    {
+                        var url = Model.RecordUrl(row);
+
+                        <tr>
+                            <td>
+                                <i class="bi @Model.IconFor(row.EntityType) me-2 @Model.ToneFor(row.Action)"></i>
+                                <span class="@Model.ToneFor(row.Action)">@Model.Describe(row)</span>
+                            </td>
+                            <td>
+                                <div style="font-size:13.5px;">@row.By</div>
+                                @* During ViewAs, By is the impersonated user and this
+                                   is the super admin who was actually driving. Showing
+                                   both is the entire point of recording both. *@
+                                @if (!string.IsNullOrEmpty(row.RealActorName))
+                                {
+                                    <small class="text-warning">
+                                        <i class="bi bi-person-badge me-1"></i>via @row.RealActorName
+                                    </small>
+                                }
+                            </td>
+                            <td>
+                                <div style="font-size:13.5px;">@Model.RelativeWhen(row.CreatedAtUtc)</div>
+                                <small class="text-muted">@Model.FormatWhen(row.CreatedAtUtc)</small>
+                            </td>
+                            <td class="text-end">
+                                @if (url != null && !Model.IsDeletion(row.Action))
+                                {
+                                    <a href="@url" class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-box-arrow-up-right"></i> Open
+                                    </a>
+                                }
+                                @if (!string.IsNullOrEmpty(row.Data))
+                                {
+                                    @if (Model.IsExpanded(row))
+                                    {
+                                        <a class="btn btn-sm btn-outline-secondary"
+                                           asp-route-SearchTerm="@Model.SearchTerm"
+                                           asp-route-EntityType="@Model.EntityType"
+                                           asp-route-Action="@Model.Action"
+                                           asp-route-Range="@Model.Range"
+                                           asp-route-Page="@Model.Page">Hide</a>
+                                    }
+                                    else
+                                    {
+                                        <a class="btn btn-sm btn-outline-secondary"
+                                           asp-route-DetailId="@row.Id"
+                                           asp-route-SearchTerm="@Model.SearchTerm"
+                                           asp-route-EntityType="@Model.EntityType"
+                                           asp-route-Action="@Model.Action"
+                                           asp-route-Range="@Model.Range"
+                                           asp-route-Page="@Model.Page">Detail</a>
+                                    }
+                                }
+                            </td>
+                        </tr>
+
+                        @if (Model.IsExpanded(row))
+                        {
+                            <tr class="table-light">
+                                <td colspan="4">
+                                    <div class="small text-muted mb-1">
+                                        @row.Action · @row.EntityType
+                                        @if (!string.IsNullOrEmpty(row.IpAddress))
+                                        {
+                                            <span> · from @row.IpAddress</span>
+                                        }
+                                    </div>
+                                    <pre class="mb-0 small" style="white-space:pre-wrap;">@Model.PrettyJson(row.Data)</pre>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Mobile -->
+        <div class="d-md-none">
+            @foreach (var row in Model.Logs.Items)
+            {
+                <div class="border-bottom p-3">
+                    <div class="@Model.ToneFor(row.Action)">
+                        <i class="bi @Model.IconFor(row.EntityType) me-2"></i>@Model.Describe(row)
+                    </div>
+                    <div class="small text-muted mt-1">
+                        @row.By · @Model.RelativeWhen(row.CreatedAtUtc)
+                    </div>
+                    @if (!string.IsNullOrEmpty(row.RealActorName))
+                    {
+                        <div class="small text-warning">via @row.RealActorName</div>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (Model.Logs.TotalPages > 1)
+        {
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                @if (Model.Logs.Page > 1)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-route-Page="@(Model.Logs.Page - 1)"
+                       asp-route-SearchTerm="@Model.SearchTerm"
+                       asp-route-EntityType="@Model.EntityType"
+                       asp-route-Action="@Model.Action"
+                       asp-route-Range="@Model.Range">Previous</a>
+                }
+                else
+                {
+                    <span></span>
+                }
+
+                <span class="text-muted" style="font-size:12px;">
+                    @Model.Logs.TotalCount events
+                </span>
+
+                @if (Model.Logs.Page < Model.Logs.TotalPages)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-route-Page="@(Model.Logs.Page + 1)"
+                       asp-route-SearchTerm="@Model.SearchTerm"
+                       asp-route-EntityType="@Model.EntityType"
+                       asp-route-Action="@Model.Action"
+                       asp-route-Range="@Model.Range">Next</a>
+                }
+                else
+                {
+                    <span></span>
+                }
+            </div>
+        }
+    }
+</div>
+
+<p class="text-muted small mt-3">
+    Times shown in @Model.TenantTimezone.
+</p>

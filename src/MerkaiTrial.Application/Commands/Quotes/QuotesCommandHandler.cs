@@ -1,4 +1,7 @@
+using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
+using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
@@ -136,15 +139,17 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<CreateQuoteHandler> _logger;
-
+        private readonly IAuditService _audit;
         public CreateQuoteHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<CreateQuoteHandler> logger)
+            ILogger<CreateQuoteHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<QuoteDto> Handle(CreateQuoteDto dto)
@@ -203,6 +208,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             _db.Quotes.Add(quote);
             await SaveWithNumberRetryAsync(quote, dto.TenantId);
+            await _audit.WriteAsync(
+                AuditAction.QuoteCreated, AuditEntityType.Quote, quote.Id, dto.TenantId,
+                new { number = quote.Id, dealId = quote.DealId, total = quote.GrandTotal },
+                CancellationToken.None);
+
 
             // ── ✅ AUTO-ADVANCE: Quote created → Deal moves to Proposal ─
             await AdvanceDealToProposalAsync(dto.DealId, dto.TenantId, currentUser.FullName);
@@ -345,15 +355,17 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<UpdateQuoteStatusHandler> _logger;
-
+        private readonly IAuditService _audit;
         public UpdateQuoteStatusHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<UpdateQuoteStatusHandler> logger)
+            ILogger<UpdateQuoteStatusHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
@@ -398,12 +410,22 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 _logger.LogInformation(
                     "Quote {QuoteId} public link generated: {Url}", quoteId, quote.PaymentLinkUrl);
             }
-
+            var oldStatus = quote.Status;
             quote.Status = newStatus;
             quote.UpdatedAtUtc = DateTime.UtcNow;
             quote.UpdatedBy = changedBy;
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+                AuditAction.QuoteStatusChanged, AuditEntityType.Quote, quote.Id, tenantId,
+                new
+                {
+                    number = quote.Id,
+                    from = oldStatus.ToString(),
+                    to = newStatus.ToString(),
+                    total = quote.GrandTotal
+                },
+                CancellationToken.None);
 
             _logger.LogInformation(
                 "Quote {QuoteId} status → {Status} by {User}", quoteId, newStatus, changedBy);
@@ -421,6 +443,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 await TransitionDealStageAsync(
                     quote.DealId, tenantId,
                     toStage: "Negotiation", probability: 80, changedBy: changedBy, actualValue: quote.GrandTotal);
+                await _audit.WriteAsync(
+                    AuditAction.DealStageFailed, AuditEntityType.Deal, quote.DealId, tenantId,
+                    new { attemptedStage = "Negotiation", reason = "Quote accepted" },
+                    CancellationToken.None);
+
             }
             else if (newStatus == QuoteStatus.Rejected)
             {
@@ -428,6 +455,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 await TransitionDealStageAsync(
                     quote.DealId, tenantId,
                     toStage: "ClosedLost", probability: 0, changedBy: changedBy);
+                await _audit.WriteAsync(
+                    AuditAction.DealStageFailed, AuditEntityType.Deal, quote.DealId, tenantId,
+                    new { attemptedStage = "ClosedLost", reason = "Quote rejected" },
+                    CancellationToken.None);
+
             }
         }
 
@@ -614,8 +646,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
     public class GetQuoteByTokenHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-
-        public GetQuoteByTokenHandler(FlowDbContext db) => _db = db;
+        private readonly IAuditService _audit;
+        public GetQuoteByTokenHandler(FlowDbContext db, IAuditService audit)
+        {
+            _db = db;
+            _audit = audit;                                       // ✅ AUDIT
+        }
 
         /// <summary>
         /// Loads a quote by its public token — no tenant or auth required.
@@ -664,6 +700,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     tracked.UpdatedAtUtc = DateTime.UtcNow;
                     tracked.UpdatedBy = "Customer";
                     await _db.SaveChangesAsync(ct);
+                    await _audit.WriteAsync(
+                     AuditAction.QuoteStatusChanged, AuditEntityType.Quote,
+                     tracked.Id, tracked.TenantId,
+                     new { number = tracked.Number, from = "Sent", to = "Viewed", bySource = "PublicLink" },
+                     ct);
                 }
             }
 
@@ -718,11 +759,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
     {
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
-
-        public DeleteQuoteHandler(FlowDbContext db, ICurrentUserService currentUserService)
+        private readonly IAuditService _audit;
+        public DeleteQuoteHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
+            _audit = audit;
         }
 
         public async Task Handle(Guid tenantId, Guid quoteId)
@@ -748,6 +790,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
             }
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+                AuditAction.QuoteDeleted, AuditEntityType.Quote, quoteId, tenantId,
+                new { number = quote.Id, status = quote.Status.ToString() },
+                CancellationToken.None);
         }
     }
 

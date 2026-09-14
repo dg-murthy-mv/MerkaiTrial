@@ -1013,7 +1013,7 @@
                         </div>
                     }
                 }
-                @if (CanNav("roles") || CanNav("users"))
+                @if (CanNav("roles") || CanNav("users") || CanNav("audit"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
 
@@ -1032,6 +1032,14 @@
                             <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
                         </a>
                     }
+                    @if (CanNav("audit"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/AuditLogs") ? "active" : "")"
+                           asp-page="/Settings/AuditLogs/Index">
+                            <i class="bi bi-clock-history"></i> Activity Log
+                        </a>
+                    }
+
                 }
 
                 @* ✅ SuperAdmin — visible to tenant admins only, links to SuperAdmin layout *@

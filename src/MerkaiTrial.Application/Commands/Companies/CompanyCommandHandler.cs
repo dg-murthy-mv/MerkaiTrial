@@ -7,12 +7,14 @@
 //   Company.TenantId = Guid → direct comparison, no .ToString() needed
 // =====================================================================
 
+using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;          // ✅ ADDED
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MerkaiTrial.Application.Security;
 
 namespace MerkaiTrial.Application.Commands.Companies
 {
@@ -191,11 +193,12 @@ namespace MerkaiTrial.Application.Commands.Companies
     {
         private readonly FlowDbContext _context;
         private readonly ILogger<DeleteCompanyHandler> _logger;
-
-        public DeleteCompanyHandler(FlowDbContext context, ILogger<DeleteCompanyHandler> logger)
+        private readonly IAuditService _audit;
+        public DeleteCompanyHandler(FlowDbContext context, ILogger<DeleteCompanyHandler> logger, IAuditService audit)
         {
             _context = context;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task Handle(DeleteCompanyCommand request, CancellationToken cancellationToken)
@@ -215,7 +218,10 @@ namespace MerkaiTrial.Application.Commands.Companies
                 company.UpdatedBy = request.DeletedBy;
 
                 await _context.SaveChangesAsync(cancellationToken);
-
+                await _audit.WriteAsync(
+                   AuditAction.CompanyDeleted, AuditEntityType.Company, company.Id, request.TenantId,
+                   new { name = company.Name, country = company.Country, taxId = company.TaxId },
+                   cancellationToken);
                 _logger.LogInformation("Deleted company {Name}", company.Name);
             }
             catch (KeyNotFoundException) { throw; }

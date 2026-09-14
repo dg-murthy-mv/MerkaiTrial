@@ -34,7 +34,9 @@
 // two layers never contradict each other.
 // =====================================================================
 
+using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -313,15 +315,17 @@ namespace MerkaiTrial.Application.Commands.Activities
         private readonly FlowDbContext _db;
         private readonly ILeadScoringService _scoring;
         private readonly ILogger<CreateActivityHandler> _logger;
-
+        private readonly IAuditService _audit;
         public CreateActivityHandler(
             FlowDbContext db,
             ILeadScoringService scoring,
-            ILogger<CreateActivityHandler> logger)
+            ILogger<CreateActivityHandler> logger,
+            IAuditService audit)
         {
             _db      = db;
             _scoring = scoring;
             _logger  = logger;
+            _audit   = audit;
         }
 
         public async Task<ActivityDto> Handle(CreateActivityDto dto, CancellationToken ct = default)
@@ -394,6 +398,16 @@ namespace MerkaiTrial.Application.Commands.Activities
 
             _db.Activities.Add(activity);
             await _db.SaveChangesAsync(ct);
+            await _audit.WriteAsync(
+                AuditAction.ActivityDeleted, AuditEntityType.Activity, activity.Id, dto.TenantId,
+                new
+                {
+                    entityType = activity.EntityType,
+                    entityId = activity.EntityId,
+                    subject = activity.Subject,
+                    isTask = activity .IsTask
+                },
+                ct);
 
             if (ActivityGuards.AffectsLeadScore(activity))
                 await _scoring.RecalculateAsync(activity.EntityId, activity.TenantId, ct);
@@ -732,11 +746,13 @@ namespace MerkaiTrial.Application.Commands.Activities
     {
         private readonly FlowDbContext _db;
         private readonly ILeadScoringService _scoring;
+        private readonly IAuditService _audit;
 
-        public DeleteActivityHandler(FlowDbContext db, ILeadScoringService scoring)
+        public DeleteActivityHandler(FlowDbContext db, ILeadScoringService scoring, IAuditService audit)
         {
             _db      = db;
             _scoring = scoring;
+            _audit   = audit;
         }
 
         public async Task Handle(Guid tenantId, Guid activityId, string? deletedBy, CancellationToken ct = default)
@@ -752,6 +768,17 @@ namespace MerkaiTrial.Application.Commands.Activities
             a.UpdatedBy    = deletedBy;
 
             await _db.SaveChangesAsync(ct);
+            await _audit.WriteAsync(
+                AuditAction.ActivityDeleted, AuditEntityType.Activity, a.Id, tenantId,
+                new
+                {
+                    entityType = a.EntityType,
+                    entityId = a.EntityId,
+                    subject = a.Subject,
+                    isTask = a.IsTask
+                },
+                ct);
+
 
             if (ActivityGuards.AffectsLeadScore(a))
                 await _scoring.RecalculateAsync(a.EntityId, a.TenantId, ct);
@@ -776,7 +803,7 @@ namespace MerkaiTrial.Application.Commands.Activities
 
         public GetTimelineHandler(FlowDbContext db, ILogger<GetTimelineHandler> logger)
         {
-            _db     = db;
+            _db = db;
             _logger = logger;
         }
 
@@ -827,12 +854,33 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Select(h => new { h.Id, h.FromStage, h.ToStage, h.ChangedAtUtc, h.ChangedBy })
                         .ToListAsync(ct);
 
+                // ✅ AUDIT — lead status history.
+                // Lead status changes live in AuditLogs rather than their own
+                // table. Deals have DealStageHistory for historical reasons; a
+                // second table just for leads would not earn its keep.
+                //
+                // AuditLogs has NO global query filter (it is in
+                // TenantFilterExemptions), so the TenantId condition below is
+                // the only thing scoping this. That is deliberate and required.
+                var leadIdForStatus = query.EntityType == ActivityEntityType.Lead ? query.EntityId : linkedLeadId;
+
+                var statusChanges = leadIdForStatus == Guid.Empty
+                    ? new()
+                    : await _db.Set<AuditLog>().AsNoTracking()
+                        .Where(l => l.TenantId == query.TenantId &&
+                                    l.EntityType == AuditEntityType.Lead &&
+                                    l.EntityId == leadIdForStatus &&
+                                    l.Action == AuditAction.LeadStatusChanged)
+                        .Select(l => new { l.Id, l.Data, l.CreatedAtUtc, l.By })
+                        .ToListAsync(ct);
+
                 // ── Resolve every "who" in one query ─────────────────────
                 var names = await ActivityReadModel.UserNamesAsync(_db, query.TenantId,
                     activities.Select(a => a.CreatedBy)
                         .Concat(leadNotes.Select(n => n.CreatedBy))
                         .Concat(dealNotes.Select(n => n.CreatedBy))
                         .Concat(stageChanges.Select(h => h.ChangedBy))
+                        .Concat(statusChanges.Select(s => s.By))          // ✅ AUDIT
                         .Append(creation.CreatedBy), ct);
 
                 string? Who(string? stored) => ActivityReadModel.Lookup(names, stored) ?? stored;
@@ -846,7 +894,7 @@ namespace MerkaiTrial.Application.Commands.Activities
                 foreach (var a in activities)
                 {
                     var suffix = FromLinkedLead(a.EntityType) ? " · from lead" : "";
-                    var title  = a.ActivityType == ActivityType.Task
+                    var title = a.ActivityType == ActivityType.Task
                         ? a.Subject
                         : $"{a.ActivityType}: {a.Subject}";
 
@@ -857,7 +905,7 @@ namespace MerkaiTrial.Application.Commands.Activities
                     }
                     else
                     {
-                        var date  = a.IsCompleted ? (a.CompletedAtUtc ?? a.ActivityDate) : (a.DueDate ?? a.ActivityDate);
+                        var date = a.IsCompleted ? (a.CompletedAtUtc ?? a.ActivityDate) : (a.DueDate ?? a.ActivityDate);
                         var badge = a.IsCompleted ? "bg-secondary"
                                   : a.DueDate < now ? "bg-danger"
                                   : "bg-warning";
@@ -881,6 +929,29 @@ namespace MerkaiTrial.Application.Commands.Activities
                     items.Add(new TimelineItemDto(h.Id, "StageChange",
                         $"Stage: {h.FromStage ?? "—"} → {h.ToStage}", null,
                         h.ChangedAtUtc, Who(h.ChangedBy), "bi-arrow-right-circle", "bg-primary"));
+
+                // ✅ AUDIT — lead status changes, read out of the Data JSON.
+                var fromLeadStatus = query.EntityType == ActivityEntityType.Deal ? " · from lead" : "";
+
+                foreach (var s in statusChanges)
+                {
+                    string? from = null, to = null;
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(s.Data ?? "{}");
+                        from = doc.RootElement.TryGetProperty("from", out var f) ? f.GetString() : null;
+                        to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
+                    }
+                    catch
+                    {
+                        // A malformed Data blob must not take the whole timeline
+                        // down — show the event without the detail.
+                    }
+
+                    items.Add(new TimelineItemDto(s.Id, "StatusChange",
+                        $"Status: {from ?? "—"} → {to ?? "—"}" + fromLeadStatus, null,
+                        s.CreatedAtUtc, Who(s.By), "bi-flag", "bg-info"));
+                }
 
                 return items.OrderByDescending(t => t.Date).ToList();
             }

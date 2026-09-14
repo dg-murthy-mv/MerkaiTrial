@@ -32,6 +32,7 @@
 using MerkaiTrial.Admin.Web.Filters;
 using MerkaiTrial.Admin.Web.Services;
 using MerkaiTrial.Admin.Web.Services.Activities;
+using MerkaiTrial.Admin.Web.Services.Audit;
 using MerkaiTrial.Admin.Web.Services.Companies;
 using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -114,6 +115,7 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
 builder.Services.AddScoped<ILeadImportService, LeadImportService>();
+builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 
 
 // ---------------- EF Core ----------------

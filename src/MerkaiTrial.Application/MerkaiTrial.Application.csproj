@@ -15,6 +15,7 @@
     <Folder Include="Commands\Reports\" />
     <Folder Include="Commands\Plans\" />
     <Folder Include="Commands\Roles\" />
+    <Folder Include="Queries\" />
     <Folder Include="Services\Pdf\" />
     <Folder Include="Services\Tenants\" />
   </ItemGroup>

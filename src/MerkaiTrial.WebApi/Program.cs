@@ -138,6 +138,9 @@ builder.Services.AddScoped<IPaymentProvider, XenditProvider>();
 builder.Services.AddScoped<IPaymentProvider, PayMongoProvider>();
 builder.Services.AddScoped<IPaymentProvider, PromptPayProvider>();
 builder.Services.AddScoped<IPaymentProviderFactory, PaymentProviderFactory>();
+builder.Services.AddScoped<GetAuditLogsHandler>();
+builder.Services.AddScoped<GetAuditFiltersHandler>();
+
 
 // ========== APP SERVICES ==========
 builder.Services.AddScoped<QuoteService>();

@@ -1,5 +1,7 @@
-﻿using MerkaiTrial.Application.Commands.Deals;
+﻿using DocumentFormat.OpenXml.Presentation;
+using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
@@ -23,15 +25,17 @@ namespace MerkaiTrial.Application.Commands.Invoices
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<CreateInvoiceHandler> _logger;
-
+        private readonly IAuditService _audit;
         public CreateInvoiceHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<CreateInvoiceHandler> logger)
+            ILogger<CreateInvoiceHandler> logger,
+            IAuditService audit)    
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<InvoiceDto> Handle(CreateInvoiceDto dto)
@@ -99,6 +103,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
 
             _db.Invoices.Add(invoice);
             await SaveWithNumberRetryAsync(invoice, dto.TenantId);
+            await _audit.WriteAsync(
+                AuditAction.InvoiceCreated, AuditEntityType.Invoice, invoice.Id, dto.TenantId,
+                new { number = invoice.Number, total = invoice.Total, quoteId = invoice.QuoteId });
+
 
             _logger.LogInformation("Invoice {Number} created successfully", invoice.Number);
 
@@ -315,13 +323,15 @@ namespace MerkaiTrial.Application.Commands.Invoices
     {
         private readonly FlowDbContext _context;
         private readonly ILogger<UpdateInvoiceHandler> _logger;
-
+        private readonly IAuditService _audit;
         public UpdateInvoiceHandler(
             FlowDbContext context,
-            ILogger<UpdateInvoiceHandler> logger)
+            ILogger<UpdateInvoiceHandler> logger,
+            IAuditService audit)    
         {
             _context = context;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<InvoiceDto> Handle(
@@ -422,6 +432,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 }
 
                 await _context.SaveChangesAsync(cancellationToken);
+                await _audit.WriteAsync(
+                        AuditAction.InvoiceUpdated, AuditEntityType.Invoice, invoice.Id, request.TenantId,
+                        new { number = invoice.Number, lineCount = newLines.Count, total = grandTotal },
+                        cancellationToken);
 
                 _logger.LogInformation("✅ Invoice {Number} updated successfully", invoice.Number);
 
@@ -490,15 +504,17 @@ namespace MerkaiTrial.Application.Commands.Invoices
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<UpdateInvoiceStatusHandler> _logger;
-
+        private readonly IAuditService _audit;
         public UpdateInvoiceStatusHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<UpdateInvoiceStatusHandler> logger)
+            ILogger<UpdateInvoiceStatusHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task Handle(Guid tenantId, Guid invoiceId, UpdateInvoiceStatusDto dto)
@@ -512,6 +528,18 @@ namespace MerkaiTrial.Application.Commands.Invoices
             if (!Enum.TryParse<InvoiceStatus>(dto.Status, out var newStatus))
                 throw new ArgumentException($"Invalid status: {dto.Status}");
 
+            var rejection = InvoiceStatusRules.RejectionReason(invoice.Status, newStatus);
+            if (rejection != null)
+            {
+                await _audit.WriteAsync(
+                    AuditAction.ActionRefused, AuditEntityType.Invoice, invoice.Id, tenantId,
+                    new { attempted = newStatus.ToString(), current = invoice.Status.ToString(), reason = rejection });
+
+                throw new InvalidOperationException(rejection);
+            }
+
+            var oldStatus = invoice.Status;
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
             invoice.Status = newStatus;
@@ -519,6 +547,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
             invoice.UpdatedBy = string.IsNullOrWhiteSpace(dto.UpdatedBy) ? currentUser.FullName : dto.UpdatedBy!;
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+               AuditAction.InvoiceStatusChanged, AuditEntityType.Invoice, invoice.Id, tenantId,
+               new { number = invoice.Number, from = oldStatus.ToString(), to = newStatus.ToString() });
             _logger.LogInformation("Invoice {Number} status updated to {Status}", invoice.Number, newStatus);
         }
     }
@@ -531,17 +562,19 @@ namespace MerkaiTrial.Application.Commands.Invoices
         private readonly ICurrentUserService _currentUserService;
         private readonly TransitionDealStageHandler _dealTransition;     // ← NEW
         private readonly ILogger<AddPaymentHandler> _logger;
-
+        private readonly IAuditService _audit;
         public AddPaymentHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             TransitionDealStageHandler dealTransition,                    // ← NEW
-            ILogger<AddPaymentHandler> logger)
+            ILogger<AddPaymentHandler> logger,
+            IAuditService audit)        
         {
             _db = db;
             _currentUserService = currentUserService;
             _dealTransition = dealTransition;                               // ← NEW
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task<PaymentDto> Handle(CreatePaymentDto dto)
@@ -603,7 +636,16 @@ namespace MerkaiTrial.Application.Commands.Invoices
             invoice.UpdatedBy = payment.CreatedBy;
 
             await _db.SaveChangesAsync();
-
+            await _audit.WriteCriticalAsync(
+                AuditAction.PaymentRecorded, AuditEntityType.Payment, payment.Id, dto.TenantId,
+                new
+                {
+                    invoiceNumber = invoice.Number,
+                    amount = payment.Amount,
+                    method = payment.Method,
+                    paidAmount = dto.Amount,
+                    invoiceStatus = invoice.Status.ToString()
+                });
             _logger.LogInformation(
                 "Payment of {Amount} recorded for invoice {Number}. New balance: {Balance}",
                 dto.Amount, invoice.Number, invoice.Balance);
@@ -679,15 +721,17 @@ namespace MerkaiTrial.Application.Commands.Invoices
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<DeleteInvoiceHandler> _logger;
-
+        private readonly IAuditService _audit;
         public DeleteInvoiceHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
-            ILogger<DeleteInvoiceHandler> logger)
+            ILogger<DeleteInvoiceHandler> logger,
+            IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task Handle(Guid tenantId, Guid invoiceId, string? deletedBy = null)
@@ -724,6 +768,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
             }
 
             await _db.SaveChangesAsync();
+            await _audit.WriteAsync(
+               AuditAction.InvoiceDeleted, AuditEntityType.Invoice, invoiceId, tenantId,
+               new { number = invoice.Number, status = invoice.Status.ToString(), total = invoice.Total });
+
             _logger.LogInformation("Invoice {Number} soft-deleted", invoice.Number);
         }
     }

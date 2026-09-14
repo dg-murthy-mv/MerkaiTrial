@@ -15,6 +15,8 @@ using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MerkaiTrial.Application.Security;
+
 
 namespace MerkaiTrial.Application.Commands.Contacts
 {
@@ -247,11 +249,13 @@ namespace MerkaiTrial.Application.Commands.Contacts
     {
         private readonly FlowDbContext _context;
         private readonly ILogger<DeleteContactHandler> _logger;
+        private readonly IAuditService _audit;
 
-        public DeleteContactHandler(FlowDbContext context, ILogger<DeleteContactHandler> logger)
+        public DeleteContactHandler(FlowDbContext context, ILogger<DeleteContactHandler> logger, IAuditService audit)
         {
             _context = context;
             _logger = logger;
+            _audit = audit;
         }
 
         public async Task Handle(DeleteContactCommand request, CancellationToken cancellationToken)
@@ -271,7 +275,10 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 contact.UpdatedBy = request.DeletedBy;
 
                 await _context.SaveChangesAsync(cancellationToken);
-
+                await _audit.WriteAsync(
+                    AuditAction.ContactDeleted, AuditEntityType.Contact, contact.Id, request.TenantId,
+                    new { name = contact.DisplayName, email = contact.Email, companyId = contact.CompanyId },
+                    cancellationToken);
                 _logger.LogInformation("Deleted contact {Name}", contact.DisplayName);
             }
             catch (KeyNotFoundException) { throw; } // ✅ Expected — not a system error
