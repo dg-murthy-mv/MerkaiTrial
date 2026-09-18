@@ -113,10 +113,17 @@
                             <div class="stage-timeline-dot mt-1 flex-shrink-0"></div>
                             <div class="flex-grow-1">
                                 <div class="d-flex align-items-center gap-1 flex-wrap">
+                                    @* History stores the stage KEY, which
+                                       never changes. Resolve it to the stage's
+                                       CURRENT name so a renamed stage reads
+                                       correctly here — otherwise a client who
+                                       renames "Proposal" to "Quotation" still
+                                       sees "Proposal" in every past entry and
+                                       reasonably calls it a bug. *@
                                     @if (!string.IsNullOrEmpty(entry.FromStage))
                                     {
                                         <span class="badge @Model.GetStageBadgeClass(entry.FromStage) badge-sm">
-                                            @entry.FromStage
+                                            @Model.StageName(entry.FromStage)
                                         </span>
                                         <i class="bi bi-arrow-right text-muted small"></i>
                                     }
@@ -125,7 +132,7 @@
                                         <i class="bi bi-plus-circle text-muted small me-1"></i>
                                     }
                                     <span class="badge @Model.GetStageBadgeClass(entry.ToStage) badge-sm">
-                                        @entry.ToStage
+                                        @Model.StageName(entry.ToStage)
                                     </span>
                                 </div>
                                 <div class="text-muted" style="font-size: 0.75rem; margin-top: 2px;">

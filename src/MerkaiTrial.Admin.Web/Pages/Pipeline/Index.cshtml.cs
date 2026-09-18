@@ -9,12 +9,15 @@
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -28,7 +31,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;          // ✅ ONE service only
         private readonly ILogger<IndexModel> _logger;
-
+        private readonly IPipelineStageService _stageService;
         protected override string ModuleName => Modules.Deals;
 
         public IndexModel(
@@ -38,7 +41,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,                        // ✅ ONE param only
             IAuthorizationService authorizationService,
-            ILogger<IndexModel> logger)
+            ILogger<IndexModel> logger, IPipelineStageService stageService)
             : base(authorizationService, currentUserService, logger)
         {
             _dealService = dealService;
@@ -47,6 +50,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
+            _stageService = stageService;
         }
 
         // ── View Properties ────────────────────────────────────────────
@@ -57,16 +61,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         // ── Tenant Currency ────────────────────────────────────────────
         public string TenantCurrencySymbol { get; set; } = string.Empty;
         public string TenantCurrencyCode { get; set; } = string.Empty;
+        public List<PipelineStageDto> Stages { get; private set; } = new();
 
         // ── Stats ──────────────────────────────────────────────────────
         public int TotalDeals => Deals.Count;
         public decimal TotalValue => Deals.Sum(d => d.ExpectedValue);
-        public decimal WeightedValue => Deals
-            .Where(d => d.Stage is not ("ClosedWon" or "ClosedLost"))
-            .Sum(d => d.ExpectedValue * d.Probability / 100m);
+      
 
-        public int ClosedWonCount => Deals.Count(d => d.Stage == "ClosedWon");
-        public int ClosedLostCount => Deals.Count(d => d.Stage == "ClosedLost");
+        private HashSet<string> KeysWith(StageCategory c) =>
+            Stages.Where(s => s.Category == c).Select(s => s.Key).ToHashSet();
+
+        public decimal WeightedValue
+        {
+            get
+            {
+                var open = KeysWith(StageCategory.Open);
+                return Deals.Where(d => open.Contains(d.Stage))
+                            .Sum(d => d.ExpectedValue * d.Probability / 100m);
+            }
+        }
+
+        public int ClosedWonCount => Deals.Count(d => KeysWith(StageCategory.Won).Contains(d.Stage));
+        public int ClosedLostCount => Deals.Count(d => KeysWith(StageCategory.Lost).Contains(d.Stage));
         public int WinRate
         {
             get
@@ -107,11 +123,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var dealsTask = _dealService.GetAllAsync(tenantId, stage: StageFilter,
                                         search: SearchTerm, ownerUserId: OwnerFilter);
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
+                var stagesTask = _stageService.GetAsync(activeOnly: true);
 
-                await Task.WhenAll(dealsTask, salesTeamTask);
+                await Task.WhenAll(dealsTask, salesTeamTask, stagesTask);
 
                 Deals = (await dealsTask).Items;
                 SalesTeam = await salesTeamTask;
+                Stages = await stagesTask;
 
                 await LoadQuoteStatusForDealsAsync(tenantId);
 

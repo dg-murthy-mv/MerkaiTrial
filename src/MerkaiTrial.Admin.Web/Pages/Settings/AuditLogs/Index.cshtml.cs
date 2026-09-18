@@ -68,6 +68,53 @@ public class IndexModel : AuthorizedPageModel
     /// <summary>Which row has its raw JSON expanded.</summary>
     [BindProperty(SupportsGet = true)] public Guid? DetailId { get; set; }
 
+    public record DetailLine(string Field, string? From, string? To, bool IsChange);
+
+    /// <summary>
+    /// Keys whose numbers are money. Without this a deal value renders as
+    /// "180000" on a page where every other amount reads "฿180,000.00" —
+    /// the same number in two formats invites a double-take.
+    /// </summary>
+    private static bool IsMoneyKey(string? key) =>
+        key is not null &&
+        (key.Contains("total", StringComparison.OrdinalIgnoreCase) ||
+         key.Contains("amount", StringComparison.OrdinalIgnoreCase) ||
+         key.Contains("value", StringComparison.OrdinalIgnoreCase) ||
+         key.Contains("price", StringComparison.OrdinalIgnoreCase) ||
+         key.Contains("balance", StringComparison.OrdinalIgnoreCase));
+
+    private string Render(JsonElement e, string? key = null)
+    {
+        switch (e.ValueKind)
+        {
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return "—";
+
+            case JsonValueKind.True: return "Yes";
+            case JsonValueKind.False: return "No";
+
+            case JsonValueKind.String:
+                var s = e.GetString() ?? "";
+                if (string.IsNullOrWhiteSpace(s)) return "—";
+
+                if (DateTime.TryParse(s, null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal |
+                        System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+                    return FormatWhen(dt);
+
+                if (Guid.TryParse(s, out _)) return "—";
+
+                return s;
+
+            case JsonValueKind.Number:
+                if (!e.TryGetDecimal(out var d)) return e.ToString();
+                return IsMoneyKey(key) ? _tenantService.FormatCurrency(d) : d.ToString("0.##");
+
+            default:
+                return e.ToString();
+        }
+    }
     public async Task<IActionResult> OnGetAsync()
     {
         var permissionCheck = await ValidatePermissionAsync(Actions.Read);
@@ -175,7 +222,17 @@ public class IndexModel : AuthorizedPageModel
             AuditAction.ProductPriceChanged => $"Price or tax changed — {S("name")}",
             AuditAction.ProductDeleted      => $"Product deleted{Name()}",
 
-            AuditAction.ActivityDeleted => $"Activity deleted — {S("subject")}",
+            AuditAction.ActivityCreated =>
+                (S("isTask") is "True" or "true" ? "Task created" : "Activity logged")
+                + (S("subject") is { Length: > 0 } cs ? $" — {cs}" : ""),
+
+            AuditAction.ActivityUpdated =>
+                (S("isTask") is "True" or "true" ? "Task changed" : "Logged activity changed")
+                + (S("subject_current") is { Length: > 0 } us ? $" — {us}" : ""),
+
+            AuditAction.ActivityDeleted =>
+                (S("isTask") is "True" or "true" ? "Task deleted" : "Logged activity deleted")
+                + (S("subject") is { Length: > 0 } ds ? $" — {ds}" : ""),
 
             AuditAction.ActionRefused =>
                 $"Refused: {S("reason")}",
@@ -224,6 +281,107 @@ public class IndexModel : AuthorizedPageModel
             .ToList();
 
         return fields.Count == 0 ? "" : $" ({string.Join(", ", fields)})";
+    }
+
+    public List<DetailLine> DetailLines(AuditLogListItem row)
+    {
+        var lines = new List<DetailLine>();
+        if (string.IsNullOrWhiteSpace(row.Data)) return lines;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(row.Data);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return lines;
+
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                // Internal keys the sentence already used — showing them
+                // again is the noise that made the JSON panel useless.
+                if (prop.Name is "subject_current" or "isTask" or "entityId"
+                              or "automatic" or "bySource")
+                    continue;
+
+                if (prop.Value.ValueKind == JsonValueKind.Object)
+                {
+                    var from = prop.Value.TryGetProperty("from", out var f) ? Render(f, prop.Name) : null;
+                    var to = prop.Value.TryGetProperty("to", out var t) ? Render(t, prop.Name) : null;
+                    lines.Add(new DetailLine(Label(prop.Name), from, to, IsChange: true));
+                }
+                else
+                {
+                    lines.Add(new DetailLine(Label(prop.Name), null, Render(prop.Value, prop.Name), IsChange: false));
+                }
+            }
+        }
+        catch
+        {
+            // A malformed payload must not take the page down.
+        }
+
+        return lines;
+    }
+
+    public bool HasUsefulDetail(AuditLogListItem row)
+    {
+        var lines = DetailLines(row);
+        if (lines.Count == 0) return false;
+
+        // Field diffs are always worth showing — that is the whole value.
+        if (lines.Any(l => l.IsChange)) return true;
+
+        // Flat payloads: only worth it if there is more than the one or
+        // two facts already in the sentence.
+        return lines.Count > 2;
+    }
+
+    /// <summary>"dueDate" -> "Due date", "entityType" -> "Entity type".</summary>
+    private static string Label(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return key;
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(char.ToUpper(key[0]));
+
+        for (var i = 1; i < key.Length; i++)
+        {
+            if (char.IsUpper(key[i])) sb.Append(' ').Append(char.ToLower(key[i]));
+            else sb.Append(key[i]);
+        }
+        return sb.ToString();
+    }
+
+    private string Render(JsonElement e)
+    {
+        switch (e.ValueKind)
+        {
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return "—";
+
+            case JsonValueKind.True: return "Yes";
+            case JsonValueKind.False: return "No";
+
+            case JsonValueKind.String:
+                var s = e.GetString() ?? "";
+                if (string.IsNullOrWhiteSpace(s)) return "—";
+
+                // Dates arrive as ISO strings inside Data.
+                if (DateTime.TryParse(s, null,
+                        System.Globalization.DateTimeStyles.AdjustToUniversal |
+                        System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+                    return FormatWhen(dt);
+
+                // A bare GUID tells a human nothing.
+                if (Guid.TryParse(s, out _)) return "—";
+
+                return s;
+
+            case JsonValueKind.Number:
+                return e.TryGetDecimal(out var d) ? d.ToString("0.##") : e.ToString();
+
+            default:
+                return e.ToString();
+        }
     }
 
     /// <summary>
@@ -334,17 +492,4 @@ public class IndexModel : AuthorizedPageModel
 
     public bool IsExpanded(AuditLogListItem row) => DetailId.HasValue && DetailId.Value == row.Id;
 
-    public string PrettyJson(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return "(no detail)";
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch
-        {
-            return json;
-        }
-    }
 }

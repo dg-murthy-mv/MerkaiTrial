@@ -297,5 +297,7 @@ namespace MerkaiTrial.Application.DTOs
 
         public static bool IsTerminal(string? stage) =>
             stage is ClosedWon or ClosedLost;
+        public static bool IsQuoteEligible(string? stage) =>
+           stage is Proposal or Negotiation;
     }
 }

@@ -252,6 +252,7 @@ public class TenantProvisioningService : ITenantProvisioningService
 
             SeedTaxRates(tenant.Id, country, now, provisionedBy);
             SeedLeadSourcesAndChannels(tenant.Id, country?.Code, now, provisionedBy);
+            SeedPipelineStages(tenant.Id, now, provisionedBy);
 
             // ── 5. ADMIN USER ────────────────────────────────────────
             // No password. They set one through the invite link, which
@@ -387,6 +388,27 @@ public class TenantProvisioningService : ITenantProvisioningService
                 IsActive = true,
                 CreatedAtUtc = now,
                 CreatedBy = by,
+            });
+        }
+    }
+
+    private void SeedPipelineStages(Guid tenantId, DateTime now, string by)
+    {
+        foreach (var s in DefaultPipelineStages.All)
+        {
+            _db.PipelineStages.Add(new PipelineStage
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                Key = s.Key,
+                Name = s.Name,
+                SortOrder = s.SortOrder,
+                Probability = s.Probability,
+                Category = s.Category,
+                IsActive = true,
+                IsDefault = s.IsDefault,
+                CreatedAtUtc = now,
+                CreatedBy = by
             });
         }
     }

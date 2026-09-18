@@ -399,15 +399,18 @@ namespace MerkaiTrial.Application.Commands.Activities
             _db.Activities.Add(activity);
             await _db.SaveChangesAsync(ct);
             await _audit.WriteAsync(
-                AuditAction.ActivityDeleted, AuditEntityType.Activity, activity.Id, dto.TenantId,
-                new
-                {
-                    entityType = activity.EntityType,
-                    entityId = activity.EntityId,
-                    subject = activity.Subject,
-                    isTask = activity .IsTask
-                },
-                ct);
+            activity.IsTask ? AuditAction.ActivityCreated : AuditAction.ActivityCreated,
+            AuditEntityType.Activity, activity.Id, dto.TenantId,
+            new
+            {
+                entityType = activity.EntityType,
+                entityId = activity.EntityId,
+                subject = activity.Subject,
+                isTask = activity.IsTask,
+                activityType = activity.ActivityType,
+                assignedTo = activity.AssignedToUserId
+            },
+            ct);
 
             if (ActivityGuards.AffectsLeadScore(activity))
                 await _scoring.RecalculateAsync(activity.EntityId, activity.TenantId, ct);
@@ -621,11 +624,13 @@ namespace MerkaiTrial.Application.Commands.Activities
     {
         private readonly FlowDbContext _db;
         private readonly ILeadScoringService _scoring;
+        private readonly IAuditService _audit;
 
-        public UpdateActivityHandler(FlowDbContext db, ILeadScoringService scoring)
+        public UpdateActivityHandler(FlowDbContext db, ILeadScoringService scoring, IAuditService audit)
         {
             _db = db;
             _scoring = scoring;
+            _audit = audit;
         }
 
         public async Task Handle(UpdateActivityDto dto, CancellationToken ct = default)
@@ -633,6 +638,15 @@ namespace MerkaiTrial.Application.Commands.Activities
             var a = await _db.Activities
                 .FirstOrDefaultAsync(x => x.Id == dto.ActivityId && x.TenantId == dto.TenantId && !x.IsDeleted, ct)
                 ?? throw new KeyNotFoundException($"Activity {dto.ActivityId} not found");
+
+            var oldSubject = a.Subject;
+            var oldDescription = a.Description;
+            var oldType = a.ActivityType;
+            var oldDue = a.DueDate;
+            var oldWhen = a.ActivityDate;
+            var oldAssignee = a.AssignedToUserId;
+            var oldOutcome = a.Outcome;
+            var oldDuration = a.Duration;
 
             // A log never becomes a task or vice versa — create a new one.
             var type = string.IsNullOrWhiteSpace(dto.ActivityType) ? a.ActivityType : dto.ActivityType;
@@ -689,7 +703,27 @@ namespace MerkaiTrial.Application.Commands.Activities
             a.UpdatedAtUtc = now;
             a.UpdatedBy    = dto.UpdatedBy;
 
+
             await _db.SaveChangesAsync(ct);
+
+            var changes = new Dictionary<string, object?>();
+            if (oldSubject != a.Subject) changes["subject"] = new { from = oldSubject, to = a.Subject };
+            if (oldDescription != a.Description) changes["description"] = new { from = oldDescription, to = a.Description };
+            if (oldType != a.ActivityType) changes["type"] = new { from = oldType, to = a.ActivityType };
+            if (oldDue != a.DueDate) changes["dueDate"] = new { from = oldDue, to = a.DueDate };
+            if (oldWhen != a.ActivityDate) changes["when"] = new { from = oldWhen, to = a.ActivityDate };
+            if (oldAssignee != a.AssignedToUserId) changes["assignee"] = new { from = oldAssignee, to = a.AssignedToUserId };
+            if (oldOutcome != a.Outcome) changes["outcome"] = new { from = oldOutcome, to = a.Outcome };
+            if (oldDuration != a.Duration) changes["duration"] = new { from = oldDuration, to = a.Duration };
+
+            if (changes.Count > 0)
+            {
+                changes["subject_current"] = a.Subject;
+                changes["isTask"] = a.IsTask;
+                await _audit.WriteAsync(
+                    AuditAction.ActivityUpdated, AuditEntityType.Activity, a.Id, dto.TenantId,
+                    changes, ct);
+            }
 
             // Editing the date of a logged call moves it in or out of the
             // "today" window the lead stats count.
@@ -854,6 +888,22 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Select(h => new { h.Id, h.FromStage, h.ToStage, h.ChangedAtUtc, h.ChangedBy })
                         .ToListAsync(ct);
 
+                // ✅ STAGE NAMES — key -> current display name.
+                // Only fetched for deals, and only when there is history to
+                // render: an extra query on every lead timeline for nothing
+                // would be a poor trade.
+                var stageNames = stageChanges.Count == 0
+                    ? new Dictionary<string, string>()
+                    : await _db.PipelineStages.AsNoTracking()
+                        .Where(s => s.TenantId == query.TenantId)
+                        .ToDictionaryAsync(s => s.Key, s => s.Name, ct);
+
+                // Falls back to the key itself: a stage deleted after its
+                // history was written still renders something readable rather
+                // than vanishing from the record.
+                string StageName(string? key) =>
+                    string.IsNullOrEmpty(key) ? "—" : stageNames.GetValueOrDefault(key, key);
+
                 // ✅ AUDIT — lead status history.
                 // Lead status changes live in AuditLogs rather than their own
                 // table. Deals have DealStageHistory for historical reasons; a
@@ -880,7 +930,7 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Concat(leadNotes.Select(n => n.CreatedBy))
                         .Concat(dealNotes.Select(n => n.CreatedBy))
                         .Concat(stageChanges.Select(h => h.ChangedBy))
-                        .Concat(statusChanges.Select(s => s.By))          // ✅ AUDIT
+                        .Concat(statusChanges.Select(s => s.By))
                         .Append(creation.CreatedBy), ct);
 
                 string? Who(string? stored) => ActivityReadModel.Lookup(names, stored) ?? stored;
@@ -925,9 +975,10 @@ namespace MerkaiTrial.Application.Commands.Activities
                     items.Add(new TimelineItemDto(n.Id, "Note", "Note added", Truncate(n.Note),
                         n.CreatedAtUtc, Who(n.CreatedBy), "bi-chat-left-text", "bg-info"));
 
+                // ✅ Stage keys resolved to their current names.
                 foreach (var h in stageChanges)
                     items.Add(new TimelineItemDto(h.Id, "StageChange",
-                        $"Stage: {h.FromStage ?? "—"} → {h.ToStage}", null,
+                        $"Stage: {StageName(h.FromStage)} → {StageName(h.ToStage)}", null,
                         h.ChangedAtUtc, Who(h.ChangedBy), "bi-arrow-right-circle", "bg-primary"));
 
                 // ✅ AUDIT — lead status changes, read out of the Data JSON.

@@ -8,6 +8,7 @@
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;
@@ -78,57 +79,59 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class TransitionDealStageHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        private readonly IAuditService _audit;                           // ✅ AUDIT
+        private readonly IStageResolver _stages;
+        private readonly IAuditService _audit;
 
-        public TransitionDealStageHandler(FlowDbContext db, IAuditService audit)
+        public TransitionDealStageHandler(
+            FlowDbContext db, IStageResolver stages, IAuditService audit)
         {
             _db = db;
-            _audit = audit;                                              // ✅ AUDIT
+            _stages = stages;
+            _audit = audit;
         }
 
         public async Task HandleAsync(
             string tenantId, Guid dealId, string toStage, int probability, string changedBy)
         {
-            // ✅ FIX: parse once so EF can use the TenantId index, instead
-            // of d.TenantId.ToString() == tenantId which forces a scan.
+            // Parse once so EF can use the TenantId index rather than scanning
+            // on d.TenantId.ToString().
             if (!Guid.TryParse(tenantId, out var tenantGuid))
                 throw new ArgumentException($"Invalid tenantId: {tenantId}");
 
-            // ✅ FIX: validate. Without this, any string became a stage —
-            // which is how "Won" (not a valid stage) reached
-            // DealStageHistory.
-            if (!DealStages.IsValid(toStage))
+            var stages = await _stages.GetAsync(tenantGuid);
+
+            var target = stages.Find(toStage);
+            if (target is null)
                 throw new ArgumentException(
-                    $"Invalid stage '{toStage}'. Valid: {string.Join(", ", DealStages.All)}");
+                    $"'{toStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
 
             var deal = await _db.Deals
                 .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted);
 
-            if (deal == null)
+            if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
-            if (DealStages.IsTerminal(deal.Stage))
-                return;  // already Won or Lost — no-op
+            // Already won or lost — an automatic advance must not reopen it.
+            if (stages.IsTerminal(deal.Stage)) return;
 
-            // ✅ FIX: no-op guard. Without it, accepting a quote on a deal
-            // already in that stage wrote a Negotiation → Negotiation row.
+            // No-op guard. Without it, accepting a quote on a deal already in
+            // that stage wrote a Negotiation → Negotiation history row.
             if (deal.Stage == toStage) return;
 
             var fromStage = deal.Stage;
+
             deal.Stage = toStage;
-            deal.Probability = probability;
+            // Caller-supplied probability wins when given, otherwise the
+            // tenant's configured value for that stage.
+            deal.Probability = probability > 0 ? probability : target.Probability;
             deal.UpdatedAtUtc = DateTime.UtcNow;
             deal.UpdatedBy = changedBy;
 
             _db.DealStageHistory.Add(new DealStageHistory
             {
                 Id = Guid.NewGuid(),
-                TenantId = tenantGuid,          // ✅ FIX — was never set.
-                                                // DealStageHistory HAS a global
-                                                // query filter, so rows written
-                                                // with Guid.Empty were invisible
-                                                // to every query, including the
-                                                // deal timeline.
+                TenantId = tenantGuid,      // was never set — rows were invisible
+                                            // under the global query filter
                 DealId = dealId,
                 FromStage = fromStage,
                 ToStage = toStage,
@@ -138,7 +141,7 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             await _db.SaveChangesAsync();
 
-            await _audit.WriteAsync(                                     // ✅ AUDIT
+            await _audit.WriteAsync(
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
                 new { from = fromStage, to = toStage, automatic = true });
         }
@@ -358,17 +361,20 @@ namespace MerkaiTrial.Application.Commands.Deals
     {
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IStageResolver _stages;
         private readonly ILogger<CreateDealHandler> _logger;
         private readonly IAuditService _audit;
 
         public CreateDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
+            IStageResolver stages,
             ILogger<CreateDealHandler> logger,
             IAuditService audit)
         {
             _db = db;
             _currentUserService = currentUserService;
+            _stages = stages;
             _logger = logger;
             _audit = audit;
         }
@@ -377,11 +383,9 @@ namespace MerkaiTrial.Application.Commands.Deals
         {
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
-            // ── ✅ Plan quota check ───────────────────────────────────────────
-            // dto.TenantId is string → parse to Guid for TenantSettings query
-            // Deal.TenantId is Guid  → direct comparison, no .ToString() needed
             var tenantGuid = Guid.Parse(dto.TenantId);
 
+            // ── Plan quota check ─────────────────────────────────────────
             var planSettings = await _db.TenantSettings
                 .AsNoTracking()
                 .FirstOrDefaultAsync(ts => ts.TenantId == tenantGuid);
@@ -395,17 +399,25 @@ namespace MerkaiTrial.Application.Commands.Deals
                     throw new PlanLimitExceededException(
                         "deals", currentDealCount, planSettings.MaxDeals);
             }
-            // ── end quota check ───────────────────────────────────────────────
 
+            // ── Stage, from the TENANT's pipeline ────────────────────────
+            // Deal.Stage has a composite FK to PipelineStages(TenantId, Key),
+            // so an unknown value would surface as a foreign key violation.
+            // Resolving here turns that into something a person can act on,
+            // and honours a tenant who renamed or reordered their pipeline.
+            var stages = await _stages.GetAsync(tenantGuid);
 
-            // ✅ Validate stage — falls back to Discovery (not "New")
-            var stage = DealStages.IsValid(dto.Stage) ? dto.Stage : DealStages.Discovery;
-            var probability = dto.Probability ?? DealStages.DefaultProbability(stage);
+            var chosen = stages.ResolveOrDefault(dto.Stage)
+                ?? throw new InvalidOperationException(
+                    "This workspace has no pipeline stages set up. Add them under Settings → Pipeline Stages.");
+
+            var stage = chosen.Key;
+            var probability = dto.Probability ?? chosen.Probability;
 
             var deal = new Deal
             {
                 Id = Guid.NewGuid(),
-                TenantId = Guid.Parse(dto.TenantId),
+                TenantId = tenantGuid,
                 ContactId = dto.ContactId,
                 LeadId = dto.LeadId,
                 CompanyId = dto.CompanyId,
@@ -413,13 +425,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 Description = dto.Description,
                 Stage = stage,
                 ExpectedValue = dto.ExpectedValue,
-                // ✅ Multi-tenant: currency stored per-deal, set from tenant on create
                 Currency = dto.Currency,
                 VerticalId = dto.VerticalId,
-                // ✅ FIXED: Source stored as string name — no int→Guid conversion
                 SourceId = dto.SourceId,
                 Source = dto.Source,
-                // SourceId removed — was causing new Guid(int.ToString()) crash
                 ExpectedCloseDateUtc = dto.ExpectedCloseDateUtc,
                 OwnerUserId = dto.OwnerUserId ?? currentUser.UserId.ToString(),
                 Probability = probability,
@@ -436,7 +445,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             _db.DealStageHistory.Add(new DealStageHistory
             {
                 Id = Guid.NewGuid(),
-                TenantId = Guid.Parse(dto.TenantId),
+                TenantId = tenantGuid,
                 DealId = deal.Id,
                 FromStage = null,
                 ToStage = stage,
@@ -445,15 +454,17 @@ namespace MerkaiTrial.Application.Commands.Deals
             });
 
             await _db.SaveChangesAsync();
+
             await _audit.WriteAsync(
-            AuditAction.DealCreated, AuditEntityType.Deal, deal.Id, deal.TenantId,
-            new
-            {
-                title = deal.Title,
-                stage = deal.Stage,
-                value = deal.ExpectedValue,
-                currency = deal.Currency
-            });
+                AuditAction.DealCreated, AuditEntityType.Deal, deal.Id, deal.TenantId,
+                new
+                {
+                    title = deal.Title,
+                    stage = chosen.Name,        // the client's word, not our key
+                    value = deal.ExpectedValue,
+                    currency = deal.Currency
+                });
+
             _logger.LogInformation(
                 "Deal '{Title}' created at stage {Stage} for tenant {TenantId}",
                 deal.Title, stage, dto.TenantId);
@@ -502,95 +513,124 @@ namespace MerkaiTrial.Application.Commands.Deals
 
     public class UpdateDealHandler : ICommandHandler
     {
-        private readonly FlowDbContext       _db;
+        private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IStageResolver _stages;
         private readonly IAuditService _audit;
 
-        public UpdateDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
+        public UpdateDealHandler(
+            FlowDbContext db,
+            ICurrentUserService currentUserService,
+            IStageResolver stages,
+            IAuditService audit)
         {
-            _db                 = db;
+            _db = db;
             _currentUserService = currentUserService;
-            _audit              = audit;
+            _stages = stages;
+            _audit = audit;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId, UpdateDealDto dto)
         {
+            if (!Guid.TryParse(tenantId, out var tenantGuid))
+                throw new ArgumentException($"Invalid tenantId: {tenantId}");
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId.ToString() == tenantId && !d.IsDeleted);
+                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted);
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
+            var stages = await _stages.GetAsync(tenantGuid);
 
-            deal.Title                = dto.Title;
-            deal.Description          = dto.Description;
-            deal.ExpectedValue        = dto.ExpectedValue;
-            deal.Currency             = dto.Currency;
+            deal.Title = dto.Title;
+            deal.Description = dto.Description;
+            deal.ExpectedValue = dto.ExpectedValue;
+            deal.Currency = dto.Currency;
             deal.ExpectedCloseDateUtc = dto.ExpectedCloseDateUtc;
-            deal.Probability          = dto.Probability;
-            deal.Tags                 = dto.Tags;
+            deal.Probability = dto.Probability;
+            deal.Tags = dto.Tags;
 
-            // ✅ Vertical — update if provided
             if (dto.VerticalId.HasValue)
                 deal.VerticalId = dto.VerticalId;
 
-            // Source FK
             if (dto.SourceId.HasValue)
             {
                 var sourceExists = await _db.LeadSources
-                    .AnyAsync(s => s.Id == new Guid(dto.SourceId.Value.ToString()) && s.IsActive && !s.IsDeleted);
+                    .AnyAsync(s => s.Id == dto.SourceId.Value && s.IsActive && !s.IsDeleted);
                 if (sourceExists)
-                    deal.SourceId = new Guid(dto.SourceId.Value.ToString());
+                    deal.SourceId = dto.SourceId.Value;
             }
 
-            // Stage change + history
-            if (DealStages.IsValid(dto.Stage) && deal.Stage != dto.Stage)
+            // ── Stage change + history ───────────────────────────────────
+            // A stage the tenant does not have is now an ERROR rather than a
+            // silent skip. The old code ignored an unknown stage, so a typo
+            // or a stale dropdown looked like it worked and changed nothing.
+            if (!string.IsNullOrWhiteSpace(dto.Stage) && deal.Stage != dto.Stage)
             {
+                var target = stages.Find(dto.Stage)
+                    ?? throw new InvalidOperationException(
+                        $"'{dto.Stage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
+
                 var previousStage = deal.Stage;
+                var isLost = target.Category == StageCategory.Lost;
+                var isClosing = target.Category is StageCategory.Won or StageCategory.Lost;
 
                 _db.DealStageHistory.Add(new DealStageHistory
                 {
-                    Id           = Guid.NewGuid(),
-                    TenantId     = Guid.Parse(tenantId),
-                    DealId       = dealId,
-                    FromStage    = previousStage,
-                    ToStage      = dto.Stage,
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantGuid,
+                    DealId = dealId,
+                    FromStage = previousStage,
+                    ToStage = dto.Stage,
                     ChangedAtUtc = DateTime.UtcNow,
-                    ChangedBy    = currentUser.FullName,
-                    Note         = dto.Stage == DealStages.ClosedLost ? dto.LostReason : null
+                    ChangedBy = currentUser.FullName,
+                    // Category, not the key: a tenant's own "Walked Away"
+                    // stage should carry its reason just as ClosedLost does.
+                    Note = isLost ? dto.LostReason : null
                 });
 
                 deal.Stage = dto.Stage;
 
-                if (dto.Stage is DealStages.ClosedWon or DealStages.ClosedLost)
+                if (isClosing)
                 {
                     deal.ActualCloseDateUtc ??= dto.ActualCloseDateUtc ?? DateTime.UtcNow;
-                    deal.ActualValue        ??= dto.ActualValue        ?? deal.ExpectedValue;
+                    deal.ActualValue ??= dto.ActualValue ?? deal.ExpectedValue;
                 }
 
-                if (dto.Stage == DealStages.ClosedLost && !string.IsNullOrEmpty(dto.LostReason))
+                if (isLost && !string.IsNullOrEmpty(dto.LostReason))
                     deal.LostReason = dto.LostReason;
+
+                await _audit.WriteAsync(
+                    AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
+                    new
+                    {
+                        title = deal.Title,
+                        from = stages.NameOf(previousStage),
+                        to = target.Name,
+                        value = deal.ExpectedValue
+                    });
             }
 
-            // Owner
             if (!string.IsNullOrEmpty(dto.OwnerUserId))
             {
                 var userExists = await _db.Users
                     .AnyAsync(u => u.Id.ToString() == dto.OwnerUserId
-                                && u.TenantId.ToString() == tenantId
+                                && u.TenantId == tenantGuid
                                 && u.IsActive);
                 if (userExists)
                     deal.OwnerUserId = dto.OwnerUserId;
             }
 
             deal.UpdatedAtUtc = DateTime.UtcNow;
-            deal.UpdatedBy    = currentUser.FullName;
+            deal.UpdatedBy = currentUser.FullName;
 
             await _db.SaveChangesAsync();
+
             await _audit.WriteAsync(
-            AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
-            new { title = deal.Title });
+                AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
+                new { title = deal.Title });
         }
     }
 
@@ -598,72 +638,80 @@ namespace MerkaiTrial.Application.Commands.Deals
 
     public class UpdateDealStageHandler : ICommandHandler
     {
-        private readonly FlowDbContext       _db;
+        private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IStageResolver _stages;
         private readonly IAuditService _audit;
 
-        public UpdateDealStageHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
+        public UpdateDealStageHandler(
+            FlowDbContext db,
+            ICurrentUserService currentUserService,
+            IStageResolver stages,
+            IAuditService audit)
         {
-            _db                 = db;
+            _db = db;
             _currentUserService = currentUserService;
-            _audit              = audit;    
+            _stages = stages;
+            _audit = audit;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId, string newStage)
         {
-            if (!DealStages.IsValid(newStage))
-                throw new ArgumentException(
-                    $"Invalid stage '{newStage}'. Valid: {string.Join(", ", DealStages.All)}");
-
-            // ✅ Parse once — lets EF use the TenantId index properly
             if (!Guid.TryParse(tenantId, out var tenantGuid))
                 throw new ArgumentException($"Invalid tenantId: {tenantId}");
 
-            var deal = await _db.Deals
-                   .FirstOrDefaultAsync(d => d.Id == dealId
-                                          && d.TenantId == tenantGuid   // ← direct Guid compare
-                                          && !d.IsDeleted);
+            var stages = await _stages.GetAsync(tenantGuid);
 
+            var target = stages.Find(newStage)
+                ?? throw new ArgumentException(
+                    $"'{newStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
+
+            var deal = await _db.Deals
+                .FirstOrDefaultAsync(d => d.Id == dealId
+                                       && d.TenantId == tenantGuid
+                                       && !d.IsDeleted);
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
             if (deal.Stage == newStage) return;
 
-            var currentUser   = await _currentUserService.GetCurrentUserAsync();
+            var currentUser = await _currentUserService.GetCurrentUserAsync();
             var previousStage = deal.Stage;
 
             _db.DealStageHistory.Add(new DealStageHistory
             {
-                Id           = Guid.NewGuid(),
-                TenantId     = Guid.Parse(tenantId),
-                DealId       = dealId,
-                FromStage    = previousStage,
-                ToStage      = newStage,
+                Id = Guid.NewGuid(),
+                TenantId = tenantGuid,
+                DealId = dealId,
+                FromStage = previousStage,
+                ToStage = newStage,
                 ChangedAtUtc = DateTime.UtcNow,
-                ChangedBy    = currentUser.FullName
+                ChangedBy = currentUser.FullName
             });
 
-            deal.Stage       = newStage;
-            deal.Probability = DealStages.DefaultProbability(newStage);
+            deal.Stage = newStage;
+            // The tenant's own figure for that stage, not a hardcoded table.
+            deal.Probability = target.Probability;
 
-            if (newStage is DealStages.ClosedWon or DealStages.ClosedLost)
+            if (target.Category is StageCategory.Won or StageCategory.Lost)
             {
                 deal.ActualCloseDateUtc ??= DateTime.UtcNow;
-                deal.ActualValue        ??= deal.ExpectedValue;
+                deal.ActualValue ??= deal.ExpectedValue;
             }
 
             deal.UpdatedAtUtc = DateTime.UtcNow;
-            deal.UpdatedBy    = currentUser.FullName;
+            deal.UpdatedBy = currentUser.FullName;
 
             await _db.SaveChangesAsync();
+
             await _audit.WriteAsync(
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, deal.TenantId,
                 new
                 {
                     title = deal.Title,
-                    from = previousStage,
-                    to = newStage,
+                    from = stages.NameOf(previousStage),
+                    to = target.Name,
                     value = deal.ExpectedValue
                 });
         }

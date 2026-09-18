@@ -41,6 +41,7 @@ using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
+using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Reports;
@@ -64,8 +65,10 @@ using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Infrastructure.Persistence;
 using MerkaiTrial.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -98,6 +101,11 @@ builder.Services.AddRazorPages(options =>
     // Super admins stay on the admin side unless in ViewAs;
     // MustChangePassword is enforced; expired trials go read-only.
     options.Filters.Add<AccountStatePageFilter>();
+});
+
+builder.Services.Configure<JsonOptions>(o =>
+{
+    o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
 // ---------------- Config / Tenancy ----------------
@@ -165,6 +173,7 @@ builder.Services.AddScoped<IMetaService, MetaService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddScoped<IRoleScope, RoleScope>();
 builder.Services.AddScoped<NavigationService>();
+builder.Services.AddScoped<IPipelineStageService, PipelineStageService>();
 
 //-----Admin Module---
 builder.Services.AddScoped<ICountryService, CountryService>();

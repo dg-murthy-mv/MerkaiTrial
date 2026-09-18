@@ -143,11 +143,15 @@
                                         <i class="bi bi-box-arrow-up-right"></i> Open
                                     </a>
                                 }
-                                @if (!string.IsNullOrEmpty(row.Data))
+                                @* Detail button — only where expanding
+                                   adds something the sentence does not
+                                   already say. *@
+                                @if (Model.HasUsefulDetail(row))
                                 {
                                     @if (Model.IsExpanded(row))
                                     {
                                         <a class="btn btn-sm btn-outline-secondary"
+                                           asp-page="./Index"
                                            asp-route-SearchTerm="@Model.SearchTerm"
                                            asp-route-EntityType="@Model.EntityType"
                                            asp-route-Action="@Model.Action"
@@ -157,6 +161,7 @@
                                     else
                                     {
                                         <a class="btn btn-sm btn-outline-secondary"
+                                           asp-page="./Index"
                                            asp-route-DetailId="@row.Id"
                                            asp-route-SearchTerm="@Model.SearchTerm"
                                            asp-route-EntityType="@Model.EntityType"
@@ -168,18 +173,62 @@
                             </td>
                         </tr>
 
+                        @* Expanded detail — a Field / From / To table rather
+                           than raw JSON. The old <pre> dump repeated what the
+                           sentence already said and showed unreadable GUIDs. *@
                         @if (Model.IsExpanded(row))
                         {
+                            var lines  = Model.DetailLines(row);
+                            var isDiff = lines.Any(l => l.IsChange);
+
                             <tr class="table-light">
                                 <td colspan="4">
-                                    <div class="small text-muted mb-1">
+                                    <table class="table table-sm mb-2" style="max-width:720px;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:30%;">Field</th>
+                                                @if (isDiff)
+                                                {
+                                                    <th style="width:35%;">From</th>
+                                                    <th style="width:35%;">To</th>
+                                                }
+                                                else
+                                                {
+                                                    <th>Value</th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var line in lines)
+                                            {
+                                                <tr>
+                                                    <td class="text-muted">@line.Field</td>
+                                                    @if (isDiff)
+                                                    {
+                                                        <td class="text-muted">
+                                                            @if (line.IsChange)
+                                                            {
+                                                                <span class="text-decoration-line-through">@line.From</span>
+                                                            }
+                                                        </td>
+                                                        <td class="fw-semibold">@line.To</td>
+                                                    }
+                                                    else
+                                                    {
+                                                        <td>@line.To</td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+
+                                    <div class="small text-muted">
                                         @row.Action · @row.EntityType
                                         @if (!string.IsNullOrEmpty(row.IpAddress))
                                         {
                                             <span> · from @row.IpAddress</span>
                                         }
                                     </div>
-                                    <pre class="mb-0 small" style="white-space:pre-wrap;">@Model.PrettyJson(row.Data)</pre>
                                 </td>
                             </tr>
                         }

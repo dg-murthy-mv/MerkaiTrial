@@ -1,0 +1,49 @@
+@* =====================================================================
+   STAGE EDIT FORM
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/Pipeline/_StageEditForm.cshtml
+
+   NEW FILE. One leading underscore.
+
+   Category is deliberately NOT editable. Flipping a stage from Won to
+   Open would silently change what every past report counted as revenue —
+   a deal closed last quarter would stop being closed. If a client needs
+   a different category, they add a stage and move the deals.
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Settings.Pipeline.IndexModel
+
+<form method="post" asp-page-handler="Update">
+    <input type="hidden" asp-for="Input.StageId" />
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+    <div class="row g-3 align-items-end">
+        <div class="col-md-5">
+            <label asp-for="Input.Name" class="form-label">Name</label>
+            <input asp-for="Input.Name" class="form-control" required />
+            <span asp-validation-for="Input.Name" class="text-danger"></span>
+        </div>
+
+        <div class="col-md-3">
+            <label asp-for="Input.Probability" class="form-label">Likelihood</label>
+            <div class="input-group">
+                <input asp-for="Input.Probability" type="number" class="form-control"
+                       min="0" max="100" />
+                <span class="input-group-text">%</span>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="form-check mb-2">
+                <input asp-for="Input.IsActive" class="form-check-input" type="checkbox" />
+                <label asp-for="Input.IsActive" class="form-check-label">
+                    Offer this stage for new work
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-3">
+        <a class="btn btn-sm btn-outline-secondary" asp-page="./Index">Cancel</a>
+        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+    </div>
+</form>

@@ -1,5 +1,6 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.CreateModel
+@using MerkaiTrial.Domain.Entities
 @{
     ViewData["Title"] = "Create New Deal";
 }
@@ -243,31 +244,39 @@
                 <div class="mb-3">
                     <label class="form-label">Deal Stage <span class="text-danger">*</span></label>
                     <div class="stage-selector">
-                        <div class="stage-badge stage-discovery active"
-                             data-stage="Discovery" data-probability="20">
-                            <i class="bi bi-search me-1"></i>Discovery (20%)
-                        </div>
-                        <div class="stage-badge stage-qualification"
-                             data-stage="Qualification" data-probability="30">
-                            <i class="bi bi-check-circle me-1"></i>Qualification (30%)
-                        </div>
-                        <div class="stage-badge stage-proposal"
-                             data-stage="Proposal" data-probability="40">
-                            <i class="bi bi-file-earmark-text me-1"></i>Proposal (40%)
-                        </div>
-                        <div class="stage-badge stage-negotiation"
-                             data-stage="Negotiation" data-probability="60">
-                            <i class="bi bi-handshake me-1"></i>Negotiation (60%)
-                        </div>
-                        <div class="stage-badge stage-closedwon"
-                             data-stage="ClosedWon" data-probability="100">
-                            <i class="bi bi-trophy me-1"></i>Won (100%)
-                        </div>
-                        <div class="stage-badge stage-closedlost"
-                             data-stage="ClosedLost" data-probability="0">
-                            <i class="bi bi-x-circle me-1"></i>Lost (0%)
-                        </div>
+                        @* Badges come from the tenant's own pipeline now. Six were
+            hardcoded here, so a tenant who added "Site Visit" in Settings
+            could not actually put a deal in it. The CSS class follows the
+            stage's CATEGORY, not its name — a custom stage has no
+            stage-sitevisit class to match. *@
+                        @foreach (var s in Model.Stages)
+                        {
+                            var cls = s.Category switch
+                            {
+                                StageCategory.Won => "stage-closedwon",
+                                StageCategory.Lost => "stage-closedlost",
+                                _ => "stage-discovery"
+                            };
+
+                            var icon = s.Category switch
+                            {
+                                StageCategory.Won => "bi-trophy",
+                                StageCategory.Lost => "bi-x-circle",
+                                _ => "bi-circle"
+                            };
+
+                            <div class="stage-badge @cls @(s.Key == Model.Input.Stage ? "active" : "")"
+                                 data-stage="@s.Key" data-probability="@s.Probability">
+                                <i class="bi @icon me-1"></i>@s.Name (@s.Probability%)
+                            </div>
+                        }
                     </div>
+
+                                @* The badges are divs, so something must carry the value to the
+                    server. If your JS already writes to a hidden input, keep that one
+                    and delete this. *@
+                    <input type="hidden" asp-for="Input.Stage" id="stageValue" />
+                    <span asp-validation-for="Input.Stage" class="text-danger"></span>
                 </div>
 
                 <div class="mb-3">

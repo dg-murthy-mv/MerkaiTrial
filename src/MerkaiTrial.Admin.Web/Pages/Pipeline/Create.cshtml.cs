@@ -1,11 +1,18 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Pipeline/Create.cshtml.cs
 //
-// CHANGES vs previous version:
-//   ✅ ContactDropdownItem replaces SelectListItem for Contacts
-//      — carries CompanyId + CompanyName for JS auto-fill
-//   ✅ ContactItems property replaces Contacts (List<SelectListItem>)
-//   ✅ All other functionality unchanged
+// COMPLETE FILE — replaces the existing one.
+//
+// WHAT CHANGED
+//   The stage dropdown, its default and its probability all come from the
+//   tenant's PipelineStages now. Previously a tenant could add "Site
+//   Visit" in Settings and then find it nowhere on the form that creates
+//   deals — which made the settings page a promise the product did not
+//   keep.
+//
+//   GetStageProbability also read the hardcoded table, so the JS that
+//   auto-fills probability on stage change was showing figures the tenant
+//   had not chosen.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Companies;
@@ -13,11 +20,14 @@ using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Meta;
+using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -44,6 +54,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentUserService      _currentUserService;
         private readonly ICurrentTenantService    _currentTenantService;
         private readonly IMetaService             _metaService;
+        private readonly IPipelineStageService    _stageService;
         private readonly ILogger<CreateModel>     _logger;
 
         protected override string ModuleName => Modules.Deals;
@@ -57,6 +68,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentUserService   currentUserService,
             ICurrentTenantService currentTenantService,
             IMetaService          metaService,
+            IPipelineStageService stageService,
             IAuthorizationService authorizationService,
             ILogger<CreateModel>  logger)
             : base(authorizationService, currentUserService, logger)
@@ -69,6 +81,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentUserService   = currentUserService;
             _currentTenantService = currentTenantService;
             _metaService          = metaService;
+            _stageService         = stageService;
             _logger               = logger;
         }
 
@@ -84,6 +97,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<SelectListItem> Companies        { get; set; } = new();
         public List<SelectListItem> Sources          { get; set; } = new();
         public List<SelectListItem> VerticalOptions  { get; set; } = new();
+
+        /// <summary>
+        /// The tenant's own stages, active only — a retired stage should
+        /// not be offered for brand new work.
+        /// </summary>
+        public List<PipelineStageDto> Stages { get; set; } = new();
 
         // ✅ Multi-tenant: exposed for Razor — no hardcoding
         public string TenantCurrencyCode   { get; set; } = string.Empty;
@@ -117,12 +136,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             [StringLength(3)]
             public string Currency { get; set; } = string.Empty;
 
-            // ✅ Default = Discovery — matches CK_Deals_Stage constraint
-            [Required]
-            public string Stage { get; set; } = DealStages.Discovery;
+            /// <summary>
+            /// Empty by default, filled from the tenant's starting stage on
+            /// GET. A hardcoded default here would override the tenant's own
+            /// choice of where deals begin.
+            /// </summary>
+            [Required(ErrorMessage = "Please choose a stage")]
+            public string Stage { get; set; } = string.Empty;
 
             [Range(0, 100)]
-            public int? Probability { get; set; } = 20;
+            public int? Probability { get; set; }
 
             [Required(ErrorMessage = "Expected close date is required")]
             public DateTime ExpectedCloseDate { get; set; } = DateTime.Today.AddDays(30);
@@ -160,13 +183,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var companiesTask = _companyService.GetLookupAsync(tenantId);
                 var sourcesTask   = _dealService.GetSourcesAsync(tenantId);
                 var usersTask     = _userService.GetLookupAsync(tenantId);
+                var stagesTask    = _stageService.GetAsync(activeOnly: true);
 
-                await Task.WhenAll(contactsTask, companiesTask, sourcesTask, usersTask);
+                await Task.WhenAll(contactsTask, companiesTask, sourcesTask, usersTask, stagesTask);
 
                 var contacts  = await contactsTask;
                 var companies = await companiesTask;
                 var sources   = await sourcesTask;
                 var users     = await usersTask;
+                Stages        = await stagesTask;
+
+                // Start where the tenant says deals start, unless the user
+                // has already chosen (a validation round-trip keeps theirs).
+                if (string.IsNullOrEmpty(Input.Stage))
+                {
+                    var start = Stages.FirstOrDefault(s => s.IsDefault) ?? Stages.FirstOrDefault();
+                    if (start is not null)
+                    {
+                        Input.Stage = start.Key;
+                        Input.Probability ??= start.Probability;
+                    }
+                }
 
                 // ✅ Build company lookup for enriching contact items
                 var companyLookup = companies.ToDictionary(
@@ -244,8 +281,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId    = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
-                if (!DealStages.IsValid(Input.Stage))
-                    Input.Stage = DealStages.Discovery;
+                // The stage is validated server-side by CreateDealHandler
+                // against this tenant's own stages, so nothing is checked
+                // against a hardcoded list here. An empty value resolves to
+                // the tenant's starting stage.
 
                 var createDto = new CreateDealDto
                 {
@@ -259,6 +298,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     ExpectedValue        = Input.ExpectedValue,
                     Currency             = Input.Currency,
                     Probability          = Input.Probability,
+                    // NOTE: ToUniversalTime() converts using the SERVER's
+                    // timezone and becomes a no-op on Azure. Should be
+                    // _currentTenantService.LocalToUtc — left as-is here to
+                    // keep this change to stages only.
                     ExpectedCloseDateUtc = Input.ExpectedCloseDate.ToUniversalTime(),
                     OwnerUserId          = string.IsNullOrEmpty(Input.OwnerUserId)
                                             ? currentUser.UserId.ToString()
@@ -274,6 +317,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 SuccessMessage = $"Deal '{Input.Title}' created successfully!";
                 return RedirectToPage("/Pipeline/Detail", new { id = createdDeal.Id });
             }
+            catch (InvalidOperationException ex)
+            {
+                // A refused stage or a missing pipeline — the message is
+                // written for the user, so show it rather than swallowing it.
+                _logger.LogWarning(ex, "Deal creation refused");
+                ErrorMessage = ex.Message;
+                await OnGetAsync();
+                return Page();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create deal");
@@ -283,7 +335,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        public int GetStageProbability(string stage) =>
-            DealStages.DefaultProbability(stage);
+        /// <summary>
+        /// The tenant's probability for a stage, used by the JS that
+        /// auto-fills the field when the stage dropdown changes. Was the
+        /// hardcoded table, so it showed figures the tenant never chose.
+        /// </summary>
+        public int GetStageProbability(string stageKey) =>
+            Stages.FirstOrDefault(s => s.Key == stageKey)?.Probability ?? 0;
     }
 }

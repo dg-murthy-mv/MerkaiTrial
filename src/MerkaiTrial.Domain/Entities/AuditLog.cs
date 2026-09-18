@@ -30,6 +30,8 @@ namespace MerkaiTrial.Domain.Entities
 
         public const string ProductPriceChanged = "ProductPriceChgd";
         public const string ProductDeleted = "ProductDeleted";
+        public const string ActivityCreated = "ActivityCreated";
+        public const string ActivityUpdated = "ActivityUpdated";
         // =============================================================
         // CRM RECORDS — new
         //

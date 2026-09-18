@@ -47,6 +47,7 @@ public class FlowDbContext : DbContext
     public DbSet<RoleTemplate> RoleTemplates => Set<RoleTemplate>();
 
     // ── DbSets ───────────────────────────────────────────────────────
+    public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
     public DbSet<Attachment> Attachments { get; set; }
     public DbSet<Country> Countries { get; set; }
     public DbSet<Activity> Activities { get; set; }
@@ -136,6 +137,8 @@ public class FlowDbContext : DbContext
         b.Entity<Attachment>()      .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TaxRate>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantSettings>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<PipelineStage>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,
         // and LeadSourceConfiguration already declares TenantId required.

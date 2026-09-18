@@ -22,12 +22,15 @@
 
 using MerkaiTrial.Admin.Web.Services.Activities;
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -43,7 +46,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _currentTenantService;
         private readonly ILogger<DetailModel> _logger;
-
+        private readonly IPipelineStageService _stageService;
         protected override string ModuleName => Modules.Deals;
 
         public DetailModel(
@@ -53,7 +56,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
             IAuthorizationService authorizationService,
-            ILogger<DetailModel> logger)
+            ILogger<DetailModel> logger, IPipelineStageService stageService)
             : base(authorizationService, currentUserService, logger)
         {
             _dealService          = dealService;
@@ -62,6 +65,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentUserService   = currentUserService;
             _currentTenantService = currentTenantService;
             _logger               = logger;
+            _stageService         = stageService;
         }
 
         // ==================== PAGE PROPERTIES ====================
@@ -77,6 +81,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<ActivityDto> Activities => AllActivities.Where(a => !a.IsTask).ToList();
         public List<ActivityDto> Tasks      => AllActivities.Where(a =>  a.IsTask).ToList();
 
+        public List<PipelineStageDto> Stages { get; set; } = new();
         public List<ActivityDto> OpenTasks =>
             Tasks.Where(t => !t.IsCompleted).OrderBy(t => t.DueDate).ToList();
 
@@ -125,15 +130,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         // ── Level 1: UI lock ──────────────────────────────────────────
         // Closed deals are part of the financial audit trail. Notes,
         // activities and tasks can still be added (post-deal records).
-        public bool IsClosedDeal      => StageRules.IsClosed(Deal?.Stage);
-        public bool IsEditableState   => !IsClosedDeal;
-        public bool IsDeletableState  => !IsClosedDeal;
+        private PipelineStageDto? CurrentStage =>
+            Stages.FirstOrDefault(s => s.Key == Deal?.Stage);
+        public string StageName(string? key)
+        {
+            if (string.IsNullOrEmpty(key)) return "—";
+            return Stages.FirstOrDefault(s => s.Key == key)?.Name ?? key;
+        }
+
+        public bool IsClosedDeal => CurrentStage?.Category is StageCategory.Won or StageCategory.Lost;
+
+        // Quote eligibility was "Proposal or Negotiation" by name. With
+        // tenant stages that cannot hold, so: any open stage past the
+        // first. A client quoting earlier or later than us is not wrong.
+        public bool CanCreateQuote => !IsClosedDeal && !HasExistingQuote;
+        public bool IsEditableState => !IsClosedDeal;
+        public bool IsDeletableState => !IsClosedDeal;
 
         // "Create Quote" only when no quote exists and the deal is in a
         // quote-eligible stage.
-        public bool CanCreateQuote  => !IsClosedDeal &&
-                                       StageRules.IsQuoteEligible(Deal?.Stage) &&
-                                       !HasExistingQuote;
+        //public bool CanCreateQuote => !IsClosedDeal &&
+        //                               DealStages.IsQuoteEligible(Deal?.Stage) &&
+        //                               !HasExistingQuote;
         public bool HasExistingQuote { get; private set; }
 
         /// <summary>
@@ -143,20 +161,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         /// vocabulary is normalised, this class is the only thing to change
         /// on this page.
         /// </summary>
-        public static class StageRules
-        {
-            public static bool IsWon(string? stage)
-                => stage is "ClosedWon" or "Won";
-
-            public static bool IsLost(string? stage)
-                => stage is "ClosedLost" or "Lost";
-
-            public static bool IsClosed(string? stage)
-                => IsWon(stage) || IsLost(stage);
-
-            public static bool IsQuoteEligible(string? stage)
-                => stage is "Proposal" or "Negotiation";
-        }
+       
 
         // ==================== INPUT MODELS ====================
 
@@ -258,14 +263,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 var notesTask        = _dealService.GetNotesAsync(tenantId, id);
                 var stageHistoryTask = _dealService.GetStageHistoryAsync(tenantId, id);
+                var stagesTask       = _stageService.GetAsync(activeOnly: true);
                 var attachmentsTask  = _dealService.GetAttachmentsAsync(tenantId, id);
                 var activitiesTask   = LoadActivitiesAsync(tenantId, id);
                 var assigneesTask    = LoadAssigneesAsync();
 
-                await Task.WhenAll(notesTask, stageHistoryTask, attachmentsTask, activitiesTask, assigneesTask);
+                await Task.WhenAll(notesTask, stageHistoryTask, stagesTask, attachmentsTask, activitiesTask, assigneesTask);
 
                 Notes        = await notesTask;
                 StageHistory = await stageHistoryTask;
+                Stages       = await stagesTask;
                 Attachments  = await attachmentsTask;
 
                 // Default due date: tomorrow morning, tenant-local.
@@ -583,12 +590,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 // Level 2: backend guard — reject even if the UI is bypassed
                 var deal = await _dealService.GetDetailAsync(tenantId, id);
+                var stages = await _stageService.GetAsync(activeOnly: false);
+                var stage = stages.FirstOrDefault(s => s.Key == deal?.Stage);
+                var isTerminal = stage?.Category is StageCategory.Won or StageCategory.Lost;
 
                 // Block delete when an accepted or invoiced quote exists.
                 // Checked for ANY open stage: the old code only looked when the
                 // stage was "Negotiation", so a deal moved back to Proposal
                 // after its quote was accepted could still be deleted.
-                if (!StageRules.IsClosed(deal?.Stage))
+                if (!isTerminal)
                 {
                     var quotes = await _quoteService.GetAllAsync(tenantId);
                     var hasAcceptedQuote = quotes?.Any(q =>
@@ -602,9 +612,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     }
                 }
 
-                if (StageRules.IsClosed(deal?.Stage))
+                if (isTerminal)
                 {
-                    ErrorMessage = $"Closed deals cannot be deleted — they are part of the revenue audit trail. Stage: {deal!.Stage}";
+                    ErrorMessage = $"Closed deals cannot be deleted — they are part of the revenue audit trail. Stage: {StageName(deal?.Stage)}";
                     return RedirectToPage(new { id });
                 }
 
@@ -832,18 +842,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         public string GetActivityIcon(string activityType) => ActivityType.Icon(activityType);
 
-        public string GetStageBadgeClass(string stage) => stage switch
+        public string GetStageBadgeClass(string? stageKey)
         {
-            "Discovery"     => "bg-secondary",
-            "Qualification" => "bg-info",
-            "Proposal"      => "bg-primary",
-            "Negotiation"   => "bg-warning text-dark",
-            "ClosedWon"     => "bg-success",
-            "Won"           => "bg-success",
-            "ClosedLost"    => "bg-danger",
-            "Lost"          => "bg-danger",
-            _               => "bg-secondary"
-        };
+            var stage = Stages.FirstOrDefault(s => s.Key == stageKey);
+
+            return stage?.Category switch
+            {
+                StageCategory.Won => "bg-success",
+                StageCategory.Lost => "bg-danger",
+                _ => "bg-secondary"
+            };
+        }
+
 
         public string GetCurrencySymbol(string? currencyCode)
         {

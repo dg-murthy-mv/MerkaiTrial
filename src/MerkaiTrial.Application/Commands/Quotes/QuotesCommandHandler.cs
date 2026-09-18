@@ -209,9 +209,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
             _db.Quotes.Add(quote);
             await SaveWithNumberRetryAsync(quote, dto.TenantId);
             await _audit.WriteAsync(
-                AuditAction.QuoteCreated, AuditEntityType.Quote, quote.Id, dto.TenantId,
-                new { number = quote.Id, dealId = quote.DealId, total = quote.GrandTotal },
-                CancellationToken.None);
+                 AuditAction.QuoteCreated, AuditEntityType.Quote, quote.Id, dto.TenantId,
+                 new { number = quote.Number, dealId = quote.DealId, total = quote.GrandTotal },
+                 CancellationToken.None);
 
 
             // ── ✅ AUTO-ADVANCE: Quote created → Deal moves to Proposal ─
@@ -420,7 +420,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 AuditAction.QuoteStatusChanged, AuditEntityType.Quote, quote.Id, tenantId,
                 new
                 {
-                    number = quote.Id,
+                    number = quote.Number,
                     from = oldStatus.ToString(),
                     to = newStatus.ToString(),
                     total = quote.GrandTotal
@@ -792,7 +792,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             await _db.SaveChangesAsync();
             await _audit.WriteAsync(
                 AuditAction.QuoteDeleted, AuditEntityType.Quote, quoteId, tenantId,
-                new { number = quote.Id, status = quote.Status.ToString() },
+                new { number = quote.Number, status = quote.Status.ToString() },
                 CancellationToken.None);
         }
     }

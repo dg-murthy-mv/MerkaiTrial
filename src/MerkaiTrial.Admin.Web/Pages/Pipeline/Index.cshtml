@@ -2,6 +2,7 @@
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.IndexModel
 @using MerkaiTrial.Admin.Web.Pages
 @using MerkaiTrial.Domain.Enums
+@using MerkaiTrial.Domain.Entities
 @{
     ViewData["Title"] = "Pipeline";
 }
@@ -321,261 +322,105 @@
         <!-- Kanban Board -->
         <div id="boardView" class="kanban-board">
 
-            <!-- 1️⃣ Discovery Column -->
-            <div class="kanban-column column-discovery" data-stage="Discovery">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-search me-2"></i>Discovery</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("Discovery"), 0)</div>
-                    </div>
-                    <span class="column-count">@Model.GetStageCount("Discovery")</span>
-                </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "Discovery"))
-                    {
-                        var quoteStatus = Model.GetQuoteStatus(deal.Id);
-                        <div class="deal-card stage-discovery"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? $"ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
+            @* Columns come from the tenant's own pipeline now. Sathorn
+               renaming "Proposal" to "Quotation" or adding "Site Visit"
+               shows up here with no code change — which is the point of
+               PipelineStages. Six fixed blocks used to live here. *@
+            @foreach (var stage in Model.Stages.OrderBy(s => s.SortOrder))
+            {
+                var isWon = stage.Category == StageCategory.Won;
+                var isLost = stage.Category == StageCategory.Lost;
+                var isClosed = isWon || isLost;
 
-                            @if (quoteStatus?.HasAcceptedQuote == true)
-                            {
-                                <div class="quote-alert alert alert-success p-2 mb-2" style="font-size:0.875rem;">
-                                    <div class="d-flex align-items-center justify-content-between">
-                                        <div><i class="bi bi-check-circle-fill me-1"></i><strong>Quote Accepted!</strong></div>
-                                        @* ✅ Only show if has update permission *@
-                                        @if (canDrag)
+                var columnClass = isWon ? "column-won" : isLost ? "column-lost" : "column-discovery";
+                var cardClass = isWon ? "stage-won" : isLost ? "stage-lost" : "stage-discovery";
+                var icon = isWon ? "bi-trophy" : isLost ? "bi-x-circle" : "bi-kanban";
+
+                var dealsHere = Model.GetDealsByStage(stage.Key);
+
+                <div class="kanban-column @columnClass" data-stage="@stage.Key">
+                    <div class="column-header">
+                        <div>
+                            <div class="column-title">
+                                <i class="bi @icon me-2"></i>@stage.Name
+                            </div>
+                            <div class="column-value">
+                                @Model.FormatCurrency(Model.GetStageValue(stage.Key), 0)
+                            </div>
+                        </div>
+                        <span class="column-count">@dealsHere.Count</span>
+                    </div>
+
+                    <div class="deals-container"
+                         @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
+
+                        @foreach (var deal in dealsHere)
+                        {
+                            var quoteStatus = Model.GetQuoteStatus(deal.Id);
+
+                            <div class="deal-card @cardClass"
+                                 draggable="@(canDrag ? "true" : "false")"
+                                 @(canDrag ? "ondragstart=\"drag(event)\"" : "")
+                                 data-deal-id="@deal.Id">
+
+                                @* Quote alerts only matter on open deals —
+                                   a won deal's quote was obviously accepted. *@
+                                @if (!isClosed && quoteStatus?.HasAcceptedQuote == true)
+                                {
+                                    <div class="quote-alert alert alert-success p-2 mb-2" style="font-size:0.875rem;">
+                                        <div class="d-flex align-items-center justify-content-between">
+                                            <div><i class="bi bi-check-circle-fill me-1"></i><strong>Quote Accepted!</strong></div>
+                                        </div>
+                                    </div>
+                                }
+                                else if (!isClosed && quoteStatus?.LatestQuoteStatus == "Sent")
+                                {
+                                    <div class="quote-alert alert alert-info p-2 mb-2" style="font-size:0.875rem;">
+                                        <i class="bi bi-send me-1"></i><span>Quote sent - awaiting response</span>
+                                    </div>
+                                }
+
+                                <div class="deal-title">@deal.Title</div>
+                                <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
+                                <div class="deal-value @(isLost ? "text-muted" : "")">
+                                    @Model.FormatCurrency(deal.ExpectedValue, 0)
+                                </div>
+                                <div class="deal-meta">
+                                    <div class="deal-owner">
+                                        <div class="owner-avatar @(isLost ? "bg-secondary" : "")">@deal.OwnerInitials</div>
+                                        <span>@deal.OwnerName</span>
+                                    </div>
+                                    <div class="deal-date">
+                                        @if (isClosed)
                                         {
-                                            <button type="button" class="btn btn-sm btn-success"
-                                                    onclick="moveDealToNegotiation('@deal.Id', '@deal.Title')"
-                                                    title="Move to Negotiation stage">
-                                                <i class="bi bi-arrow-right"></i> Negotiation
-                                            </button>
+                                            <i class="bi @(isWon ? "bi-check-circle" : "bi-x-circle") me-1"></i>
+                                            @(deal.ActualCloseDateUtc?.ToString("MMM dd") ?? "N/A")
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-calendar me-1"></i>
+                                            @deal.ExpectedCloseDateUtc.ToString("MMM dd")
                                         }
                                     </div>
                                 </div>
-                            }
-                            else if (quoteStatus?.LatestQuoteStatus == "Sent")
-                            {
-                                <div class="quote-alert alert alert-info p-2 mb-2" style="font-size:0.875rem;">
-                                    <i class="bi bi-send me-1"></i><span>Quote sent - awaiting response</span>
-                                </div>
-                            }
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-calendar me-1"></i>@deal.ExpectedCloseDateUtc.ToString("MMM dd")
-                                </div>
                             </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "Discovery"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
+                        }
 
-            <!-- 2️⃣ Qualification Column -->
-            <div class="kanban-column column-qualification" data-stage="Qualification">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-check-circle me-2"></i>Qualification</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("Qualification"), 0)</div>
+                        @if (dealsHere.Count == 0)
+                        {
+                            <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
+                        }
                     </div>
-                    <span class="column-count">@Model.GetStageCount("Qualification")</span>
                 </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "Qualification"))
-                    {
-                        <div class="deal-card stage-qualification"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-calendar me-1"></i>@deal.ExpectedCloseDateUtc.ToString("MMM dd")
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "Qualification"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
+            }
 
-            <!-- 3️⃣ Proposal Column -->
-            <div class="kanban-column column-proposal" data-stage="Proposal">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-file-earmark-text me-2"></i>Proposal</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("Proposal"), 0)</div>
-                    </div>
-                    <span class="column-count">@Model.GetStageCount("Proposal")</span>
+            @if (!Model.Stages.Any())
+            {
+                <div class="alert alert-warning">
+                    This workspace has no pipeline stages set up.
+                    <a asp-page="/Settings/Pipeline/Index">Add them under Settings</a> before creating deals.
                 </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "Proposal"))
-                    {
-                        <div class="deal-card stage-proposal"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-calendar me-1"></i>@deal.ExpectedCloseDateUtc.ToString("MMM dd")
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "Proposal"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
-
-            <!-- 4️⃣ Negotiation Column -->
-            <div class="kanban-column column-negotiation" data-stage="Negotiation">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-handshake me-2"></i>Negotiation</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("Negotiation"), 0)</div>
-                    </div>
-                    <span class="column-count">@Model.GetStageCount("Negotiation")</span>
-                </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "Negotiation"))
-                    {
-                        <div class="deal-card stage-negotiation"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-calendar me-1"></i>@deal.ExpectedCloseDateUtc.ToString("MMM dd")
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "Negotiation"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
-
-            <!-- 5️⃣ Won Column -->
-            <div class="kanban-column column-won" data-stage="ClosedWon">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-trophy me-2"></i>Won</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("ClosedWon"), 0)</div>
-                    </div>
-                    <span class="column-count">@Model.GetStageCount("ClosedWon")</span>
-                </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "ClosedWon"))
-                    {
-                        <div class="deal-card stage-won"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-check-circle me-1"></i>
-                                    @(deal.ActualCloseDateUtc?.ToString("MMM dd") ?? "N/A")
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "ClosedWon"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
-
-            <!-- 6️⃣ Lost Column -->
-            <div class="kanban-column column-lost" data-stage="ClosedLost">
-                <div class="column-header">
-                    <div>
-                        <div class="column-title"><i class="bi bi-x-circle me-2"></i>Lost</div>
-                        <div class="column-value">@Model.FormatCurrency(Model.GetStageValue("ClosedLost"), 0)</div>
-                    </div>
-                    <span class="column-count">@Model.GetStageCount("ClosedLost")</span>
-                </div>
-                <div class="deals-container"
-                     @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-                    @foreach (var deal in Model.Deals.Where(d => d.Stage == "ClosedLost"))
-                    {
-                        <div class="deal-card stage-lost"
-                             draggable="@(canDrag ? "true" : "false")"
-                             @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                             data-deal-id="@deal.Id">
-                            <div class="deal-title">@deal.Title</div>
-                            <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                            <div class="deal-value text-muted">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
-                            <div class="deal-meta">
-                                <div class="deal-owner">
-                                    <div class="owner-avatar bg-secondary">@deal.OwnerInitials</div>
-                                    <span>@deal.OwnerName</span>
-                                </div>
-                                <div class="deal-date">
-                                    <i class="bi bi-x-circle me-1"></i>
-                                    @(deal.ActualCloseDateUtc?.ToString("MMM dd") ?? "N/A")
-                                </div>
-                            </div>
-                        </div>
-                    }
-                    @if (!Model.Deals.Any(d => d.Stage == "ClosedLost"))
-                    {
-                        <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                    }
-                </div>
-            </div>
-
+            }
         </div>
 
         <!-- Table View -->

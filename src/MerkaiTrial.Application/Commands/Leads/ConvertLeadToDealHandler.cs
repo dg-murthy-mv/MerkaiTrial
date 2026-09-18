@@ -1,3 +1,4 @@
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -17,17 +18,20 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ICurrentTenantService _tenantService;
         private readonly ILogger<ConvertLeadToDealHandler> _logger;
         private readonly IAuditService _audit;
+        private readonly IStageResolver _stages;
         public ConvertLeadToDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadToDealHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            IStageResolver stages)
         {
             _db = db;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
+            _stages = stages;
             _audit = audit;
         }
 
@@ -199,19 +203,14 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 // ── STEP 4: CREATE DEAL ───────────────────────────────────────
 
-                if (!Enum.TryParse<DealStage>(dto.Stage, out var dealStage))
-                    dealStage = DealStage.Qualification;
+                var stages = await _stages.GetAsync(dto.TenantId);
+                var chosen = stages.ResolveOrDefault(dto.Stage)
+                    ?? throw new InvalidOperationException(
+                        "This workspace has no pipeline stages set up.");
 
-                int probability = dealStage switch
-                {
-                    DealStage.Discovery => 20,
-                    DealStage.Qualification => 50,
-                    DealStage.Proposal => 40,
-                    DealStage.Negotiation => 60,
-                    DealStage.ClosedWon => 100,
-                    DealStage.ClosedLost => 0,
-                    _ => 50
-                };
+                var dealStage = chosen.Key;
+                int probability = chosen.Probability;
+
 
                 var currency = !string.IsNullOrEmpty(dto.Currency)
                     ? dto.Currency
@@ -225,7 +224,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     LeadId = dto.LeadId,
                     Title = dto.DealTitle,
                     Description = dto.Description ?? lead.CustomFieldsJson,
-                    Stage = dealStage.ToString(),
+                    Stage = dealStage,
                     ExpectedValue = dto.ExpectedValue,
                     Currency = currency,
                     VerticalId = lead.VerticalId,

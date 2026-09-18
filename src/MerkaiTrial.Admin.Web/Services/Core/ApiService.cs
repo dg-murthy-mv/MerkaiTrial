@@ -1,7 +1,8 @@
-﻿using System.Net.Http;
+﻿using System.Net;
+using System.Net.Http;
 using System.Net.Http.Json;
-using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MerkaiTrial.Admin.Web.Services.Core
 {
@@ -26,7 +27,15 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             _logger = logger;
             _json = new JsonSerializerOptions
             {
-                PropertyNameCaseInsensitive = true
+                PropertyNameCaseInsensitive = true,
+
+                // WebApi registers JsonStringEnumConverter in its Program.cs,
+                // so it sends enums as "Open" rather than 0. Without the
+                // matching converter here, EVERY enum crossing the host
+                // boundary fails to deserialise. PipelineStage.Category was
+                // the first one to do so — nothing else had crossed as an
+                // enum before.
+                Converters = { new JsonStringEnumConverter() }
             };
         }
 

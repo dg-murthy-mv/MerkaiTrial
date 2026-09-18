@@ -1,4 +1,8 @@
 // Domain/Entities/Deal.cs
+using MerkaiTrial.Domain.Enums;
+
+
+
 namespace MerkaiTrial.Domain.Entities
 {
     public class Deal
@@ -14,8 +18,8 @@ namespace MerkaiTrial.Domain.Entities
         public string? Description { get; set; }
 
         /// <summary>Stored as nvarchar. Valid values: New | Qualified | Proposal | Won | Lost</summary>
-        public string Stage { get; set; } = "New";
-        public int Probability { get; set; } = 10;
+        public string Stage { get; set; } = "Discovery";
+        public int Probability { get; set; } = 20;
         public string Currency { get; set; } = string.Empty;
 
         // ── Industry / Vertical ────────────────────────────────────────
@@ -61,4 +65,6 @@ namespace MerkaiTrial.Domain.Entities
         public ICollection<DealReminder> Reminders { get; set; } = new List<DealReminder>();
         public ICollection<DealStageHistory> StageHistory { get; set; } = new List<DealStageHistory>();
     }
+
+   
 }

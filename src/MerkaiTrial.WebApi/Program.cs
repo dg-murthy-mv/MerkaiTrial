@@ -40,6 +40,7 @@ using MerkaiTrial.Application;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.Leads.Import;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
@@ -149,7 +150,7 @@ builder.Services.AddSingleton<UiContext>();
 builder.Services.AddScoped<GetAssigneesHandler>();
 builder.Services.AddScoped<SetActivityOutcomeHandler>();
 builder.Services.AddScoped<ReassignActivityHandler>();
-
+builder.Services.AddScoped<IStageResolver, StageResolver>();
 
 builder.Services.AddScoped<ICurrentUserService, ApiCurrentUserService>();
 builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
