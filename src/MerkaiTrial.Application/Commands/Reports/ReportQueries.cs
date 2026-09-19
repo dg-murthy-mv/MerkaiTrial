@@ -3,12 +3,14 @@
 // Location: MerkaiTrial.Application/Commands/Reports/ReportQueries.cs
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using MerkaiTrial.Application.Commands.Activities;
 
 namespace MerkaiTrial.Application.Commands.Reports
 {
@@ -17,12 +19,15 @@ namespace MerkaiTrial.Application.Commands.Reports
     public class GetSalesFunnelHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        private readonly ILogger<GetSalesFunnelHandler> _logger;
 
-        public GetSalesFunnelHandler(FlowDbContext db, ILogger<GetSalesFunnelHandler> logger)
+        private readonly ILogger<GetSalesFunnelHandler> _logger;
+        private readonly ILeadStatusResolver _statuses;
+
+        public GetSalesFunnelHandler(FlowDbContext db, ILogger<GetSalesFunnelHandler> logger, ILeadStatusResolver statuses)
         {
             _db     = db;
             _logger = logger;
+            _statuses = statuses;
         }
 
         public async Task<SalesFunnelReportDto> HandleAsync(
@@ -34,7 +39,7 @@ namespace MerkaiTrial.Application.Commands.Reports
             var to       = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
             var leads = await _db.Leads
-                .Where(l => l.TenantId.ToString() == tenantId &&
+                .Where(l => l.TenantId.ToString()== tenantId &&
                             !l.IsDeleted &&
                             l.CreatedAtUtc >= from && l.CreatedAtUtc <= to &&
                             (filter.Vertical == null || l.Vertical.ToString() == filter.Vertical))
@@ -59,8 +64,16 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .ToListAsync(ct);
 
             var totalLeads     = leads.Count;
-            var qualifiedLeads = leads.Count(l => l.Status.ToString() == "Qualified" ||
-                                                   (int)l.Status >= 2);
+            var statuses = await _statuses.GetAsync(Guid.Parse(tenantId), ct);
+
+            // Was (int)l.Status >= 2 — "qualified or better" by enum
+            // ordinal, which silently counted Unqualified (3) as qualified.
+            var qualifiedOrBetter = statuses.All
+               .Where(s => s.Category is LeadStatusCategory.Qualified or LeadStatusCategory.Converted)
+               .Select(s => s.Key)
+               .ToHashSet();
+
+            var qualifiedLeads = leads.Count(l => qualifiedOrBetter.Contains(l.Status));
             var convertedLeads = leads.Count(l => l.IsConverted);
             var totalDeals     = deals.Count;
             var dealsWithQuotes = deals.Count(d => quotes.Any(q => q.DealId == d.Id));
@@ -568,10 +581,10 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetLeadSourceHandler> _logger;
-
+        private readonly ILeadStatusResolver _statuses;
         public GetLeadSourceHandler(FlowDbContext db,
-            ILogger<GetLeadSourceHandler> logger)
-        { _db = db; _logger = logger; }
+            ILogger<GetLeadSourceHandler> logger, ILeadStatusResolver statuses)
+        { _db = db; _logger = logger; _statuses = statuses; }
 
         public async Task<LeadSourceReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
@@ -601,6 +614,13 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .Select(s => new { s.Id, s.Name })
                 .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
 
+            var statuses = await _statuses.GetAsync(Guid.Parse(tenantId), ct);
+
+            var qualifiedOrBetter = statuses.All
+                .Where(s => s.Category is LeadStatusCategory.Qualified or LeadStatusCategory.Converted)
+                .Select(s => s.Key)
+                .ToHashSet();
+
             LeadSourceItem BuildItem(IGrouping<string, dynamic> g) =>
                 new()
                 {
@@ -613,6 +633,7 @@ namespace MerkaiTrial.Application.Commands.Reports
                     EstimatedValue = g.Sum(l => (decimal?)l.EstimatedValue ?? 0m)
                 };
 
+            // Existing grouping logic, but swap out fragile ordinal check
             var byChannel = leads
                 .GroupBy(l => l.ChannelId.HasValue
                     ? (channelMap.TryGetValue(l.ChannelId.Value, out var n) ? n : "Unknown")
@@ -624,34 +645,39 @@ namespace MerkaiTrial.Application.Commands.Reports
                     {
                         Name = g.Key,
                         TotalLeads = g.Count(),
-                        Qualified = g.Count(l => (int)l.Status >= 2),
+                        Qualified = g.Count(l => qualifiedOrBetter.Contains(l.Status)),
                         Converted = conv,
                         ConversionRate = g.Count() == 0 ? 0 :
                             Math.Round(conv * 100.0 / g.Count(), 1),
                         EstimatedValue = g.Sum(l => l.EstimatedValue ?? 0)
                     };
                 })
-                .OrderByDescending(c => c.TotalLeads).ToList();
+                .OrderByDescending(c => c.TotalLeads)
+                .ToList();
+
 
             var bySource = leads
-                .GroupBy(l => l.SourceId.HasValue
-                    ? (sourceMap.TryGetValue(l.SourceId.Value, out var n) ? n : "Unknown")
-                    : "Not Set")
-                .Select(g =>
-                {
-                    var conv = g.Count(l => l.IsConverted);
-                    return new LeadSourceItem
-                    {
-                        Name = g.Key,
-                        TotalLeads = g.Count(),
-                        Qualified = g.Count(l => (int)l.Status >= 2),
-                        Converted = conv,
-                        ConversionRate = g.Count() == 0 ? 0 :
-                            Math.Round(conv * 100.0 / g.Count(), 1),
-                        EstimatedValue = g.Sum(l => l.EstimatedValue ?? 0)
-                    };
-                })
-                .OrderByDescending(c => c.TotalLeads).ToList();
+                 .GroupBy(l => l.SourceId.HasValue
+                     ? (sourceMap.TryGetValue(l.SourceId.Value, out var n) ? n : "Unknown")
+                     : "Not Set")
+                 .Select(g =>
+                 {
+                     var conv = g.Count(l => l.IsConverted);
+                     return new LeadSourceItem
+                     {
+                         Name = g.Key,
+                         TotalLeads = g.Count(),
+                         // Was (int)l.Status >= 2 — "qualified or better" by
+                         // enum ordinal, which counted Unqualified (3) as
+                         // qualified and overstated this column.
+                         Qualified = g.Count(l => qualifiedOrBetter.Contains(l.Status)),
+                         Converted = conv,
+                         ConversionRate = g.Count() == 0 ? 0 :
+                             Math.Round(conv * 100.0 / g.Count(), 1),
+                         EstimatedValue = g.Sum(l => l.EstimatedValue ?? 0)
+                     };
+                 })
+                 .OrderByDescending(c => c.TotalLeads).ToList();
 
             var totalConverted = leads.Count(l => l.IsConverted);
             return new LeadSourceReportDto

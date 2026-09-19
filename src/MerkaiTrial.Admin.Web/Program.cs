@@ -124,6 +124,7 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
 builder.Services.AddScoped<ILeadImportService, LeadImportService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
+builder.Services.AddScoped<ILeadStatusService, LeadStatusService>();
 
 
 // ---------------- EF Core ----------------

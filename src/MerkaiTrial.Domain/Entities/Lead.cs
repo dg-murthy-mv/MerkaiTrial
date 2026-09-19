@@ -26,7 +26,8 @@ namespace MerkaiTrial.Domain.Entities
         public Channel Channel { get; set; }
         public string Source { get; set; } = "widget";
 
-        public LeadStatus Status { get; set; }
+        //public LeadStatus Status { get; set; }
+        public string Status { get; set; } = string.Empty;
         public int Score { get; set; }
         public string? OwnerUserId { get; set; }
         public decimal? EstimatedValue { get; set; }

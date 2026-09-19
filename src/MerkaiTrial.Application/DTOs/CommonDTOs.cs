@@ -65,7 +65,7 @@ namespace MerkaiTrial.Application.DTOs
     public record UpdateLeadStatusDto(
         Guid TenantId,
         Guid LeadId,
-        LeadStatus Status
+        string StatusKey
     );
 
     // Update existing lead details

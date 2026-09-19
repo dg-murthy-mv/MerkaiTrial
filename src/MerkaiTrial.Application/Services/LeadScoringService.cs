@@ -4,8 +4,14 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// WHAT CHANGED
-//   Engagement now counts the unified Activities table instead of
+// WHAT CHANGED THIS PASS
+//   Status points come from the TENANT's own status definition instead of
+//   a hardcoded 0/5/15/15 switch. A firm whose process has "Site Visit
+//   Booked" can now say what that is worth; previously any status we did
+//   not know about scored zero.
+//
+// EARLIER CHANGE, STILL TRUE
+//   Engagement counts the unified Activities table instead of
 //   LeadActivities. Since March the Lead page has written to Activities,
 //   so every real activity was scoring zero.
 //
@@ -21,7 +27,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Activities;
-using MerkaiTrial.Domain.Enums;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -36,12 +42,17 @@ public interface ILeadScoringService
 public class LeadScoringService : ILeadScoringService
 {
     private readonly FlowDbContext               _db;
+    private readonly ILeadStatusResolver         _statusResolver;
     private readonly ILogger<LeadScoringService> _logger;
 
-    public LeadScoringService(FlowDbContext db, ILogger<LeadScoringService> logger)
+    public LeadScoringService(
+        FlowDbContext db,
+        ILeadStatusResolver statusResolver,
+        ILogger<LeadScoringService> logger)
     {
-        _db     = db;
-        _logger = logger;
+        _db             = db;
+        _statusResolver = statusResolver;
+        _logger         = logger;
     }
 
     public async Task RecalculateAsync(Guid leadId, Guid tenantId, CancellationToken ct = default)
@@ -64,7 +75,11 @@ public class LeadScoringService : ILeadScoringService
                     !a.IsDeleted &&
                     (!a.IsTask || a.IsCompleted), ct);
 
-            var newScore = Calculate(lead, noteCount, activityCount);
+            // GetAsync returns the tenant's statuses; ScoreOf lives on THAT
+            // result, not on the resolver itself.
+            var statuses = await _statusResolver.GetAsync(tenantId, ct);
+
+            var newScore = Calculate(lead, noteCount, activityCount, statuses.ScoreOf(lead.Status));
 
             if (lead.Score != newScore)
             {
@@ -84,10 +99,16 @@ public class LeadScoringService : ILeadScoringService
 
     // ── Pure calculation — testable with no DB dependency ────────────────
 
+    /// <param name="statusScore">
+    /// The tenant's configured points for the lead's current status. Comes
+    /// from LeadStatusDefinition.Score, clamped to 0-15 here so a bad value
+    /// in the table cannot blow past the ceiling.
+    /// </param>
     public static int Calculate(
         MerkaiTrial.Domain.Entities.Lead lead,
         int noteCount,
-        int activityCount)
+        int activityCount,
+        int statusScore)
     {
         int score = 0;
 
@@ -106,14 +127,7 @@ public class LeadScoringService : ILeadScoringService
         score += Math.Min(activityCount * 5, 20);  // 1 activity=5 ... 4+=20
 
         // ── Status progression (max 15 pts) ───────────────────────────
-        score += lead.Status switch
-        {
-            LeadStatus.New       => 0,
-            LeadStatus.Working   => 5,
-            LeadStatus.Qualified => 15,
-            LeadStatus.Converted => 15,  // keep score high after conversion
-            _                    => 0
-        };
+        score += Math.Clamp(statusScore, 0, 15);
 
         return Math.Min(score, 100);
     }

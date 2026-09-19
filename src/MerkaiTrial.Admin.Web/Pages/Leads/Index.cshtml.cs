@@ -2,22 +2,33 @@
 // LEADS INDEX - BACKEND
 // Location: MerkaiTrial.Admin.Web/Pages/Leads/Index.cshtml.cs
 //
-// MIGRATION (this pass):
-//   1. Base class AppPageModel -> AuthorizedPageModel
-//   2. OnGetAsync now enforces Leads.Read via ValidatePermissionAsync
-//      before loading any data (previously: no permission check on GET at all)
-//   3. InitializePermissionsAsync() called so the view can gate
-//      Add/Edit/Delete buttons via Model.CanCreate/CanUpdate/CanDelete
-//   4. OnPostDeleteAsync now uses ValidatePermissionAsync(Actions.Delete)
-//      instead of the old hand-rolled CanDelete("Leads") claim check
+// COMPLETE FILE — replaces the existing one.
+//
+// LEAD STATUSES (this pass):
+//   1. Status filter options come from the tenant's lead statuses
+//      (ILeadStatusService), not Enum.GetValues<LeadStatus>(). Value = Key
+//      (what's stored on Lead.Status), Text = Name (what the tenant calls it).
+//      Retired and system (Converted) statuses are INCLUDED — you still need
+//      to filter old leads sitting in a retired status.
+//   2. LeadListItem.Status is now the KEY. The view must show
+//      @Model.StatusName(lead.Status), never lead.Status directly, or a tenant
+//      that renamed "Working" to "กำลังติดต่อ" still sees "Working".
+//   3. Badge colour is decided by CATEGORY, not name — renaming a status
+//      never breaks its colour, and a new tenant status gets the right one.
+//   4. Delete guard uses lead.IsConverted instead of Status == "Converted"
+//      (the Converted key's display name is tenant-editable).
+//   5. `using MerkaiTrial.Domain.Enums` removed — the LeadStatus enum is gone.
+//
+// Earlier passes: AuthorizedPageModel, Leads.Read on GET, Leads.Delete on POST.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
-using MerkaiTrial.Domain.Enums;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -27,6 +38,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
     public class IndexModel : AuthorizedPageModel
     {
         private readonly ILeadService _leadService;
+        private readonly ILeadStatusService _statusService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly ILogger<IndexModel> _logger;
@@ -35,6 +47,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public IndexModel(
             ILeadService leadService,
+            ILeadStatusService statusService,
             IAuthorizationService authorizationService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
@@ -42,6 +55,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             : base(authorizationService, currentUserService, logger)
         {
             _leadService = leadService;
+            _statusService = statusService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
@@ -52,17 +66,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public LeadStatsDto Stats { get; set; } = new LeadStatsDto(0, 0, 0, 0, 0, 0, 0, 0);
 
+        /// <summary>
+        /// All of this tenant's lead statuses (including retired and Converted),
+        /// used for the filter dropdown, display names and badge colours.
+        /// </summary>
+        public List<LeadStatusDto> Statuses { get; private set; } = new();
+
         // Tenant context — use these in the view, never hardcode.
-        // ✅ Defaults were "₹" / "INR". The comment said "never hardcode" while the
-        // initialisers did exactly that: on any failure path that returns before
-        // OnGetAsync sets them, a Thai tenant would render Indian currency. Empty
-        // is visibly wrong rather than plausibly wrong.
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrency { get; private set; } = string.Empty;
 
         [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
-        [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }
+        [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }   // status KEY
         [BindProperty(SupportsGet = true)] public string? AssignedToFilter { get; set; }
 
         [TempData] public string? SuccessMessage { get; set; }
@@ -71,26 +87,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public int TotalLeads => PaginatedLeads.TotalCount;
 
         public SelectList StatusOptions => new SelectList(
-            Enum.GetValues<LeadStatus>().Select(s => new SelectListItem
-            {
-                Value = s.ToString(),
-                Text = s.ToString(),
-                Selected = s.ToString() == StatusFilter
-            }),
+            Statuses
+                .OrderBy(s => s.SortOrder)
+                .Select(s => new SelectListItem
+                {
+                    Value = s.Key,
+                    Text = s.IsActive ? s.Name : $"{s.Name} (retired)",
+                    Selected = s.Key == StatusFilter
+                }),
             "Value", "Text", StatusFilter);
 
         public async Task<IActionResult> OnGetAsync()
         {
-            // ✅ Check READ permission before loading anything
             var permissionCheck = await ValidatePermissionAsync(Actions.Read);
             if (permissionCheck != null) return permissionCheck;
 
-            // Initialize permissions for UI buttons (Add/Edit/Delete gating)
             await InitializePermissionsAsync();
+
+            // Statuses first and outside the main try: a failure here must not
+            // blank the lead list — the helpers fall back to showing the key.
+            await LoadStatusesAsync();
 
             try
             {
-                // Load tenant context first — needed by view helpers
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
                 TenantCurrency = _tenantService.GetCurrencyCode();
 
@@ -133,7 +152,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public async Task<IActionResult> OnPostDeleteAsync(Guid id)
         {
-            // ✅ Check DELETE permission via the real (case-fixed) pipeline
             var permissionCheck = await ValidatePermissionAsync(Actions.Delete);
             if (permissionCheck != null) return permissionCheck;
 
@@ -141,14 +159,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
-                // Guard: fetch lead first, block delete if Converted
                 var lead = await _leadService.GetByIdAsync(tenantId, id);
                 if (lead == null)
                 {
                     TempData["ErrorMessage"] = "Lead not found.";
                     return RedirectToPage();
                 }
-                if (lead.Status == "Converted")
+
+                // By flag, not by name — the Converted status can be renamed.
+                if (lead.IsConverted)
                 {
                     TempData["ErrorMessage"] = "Converted leads cannot be deleted. Manage this record via the associated Deal.";
                     return RedirectToPage();
@@ -165,7 +184,50 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             return RedirectToPage();
         }
 
+        private async Task LoadStatusesAsync()
+        {
+            try
+            {
+                Statuses = await _statusService.GetAsync(selectableOnly: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load lead statuses");
+                Statuses = new();
+            }
+        }
+
         // ── View helpers — call these in cshtml, never format inline ──
+
+        /// <summary>
+        /// Use: @Model.StatusName(lead.Status)
+        /// Lead.Status holds the KEY; this returns the tenant's display name.
+        /// Falls back to the key if statuses failed to load.
+        /// </summary>
+        public string StatusName(string? key)
+        {
+            if (string.IsNullOrEmpty(key)) return "—";
+            return Statuses.FirstOrDefault(s => s.Key == key)?.Name ?? key;
+        }
+
+        /// <summary>
+        /// Use: class="badge @Model.GetStatusBadgeClass(lead.Status)"
+        /// Colour follows the status CATEGORY, so renamed or tenant-added
+        /// statuses still get the right colour.
+        /// </summary>
+        public string GetStatusBadgeClass(string? key)
+        {
+            var status = Statuses.FirstOrDefault(s => s.Key == key);
+            if (status == null) return "bg-dark";
+
+            return status.Category switch
+            {
+                LeadStatusCategory.Qualified => "bg-success",
+                LeadStatusCategory.Disqualified => "bg-secondary",
+                LeadStatusCategory.Converted => "bg-warning text-dark",
+                _ => "bg-primary"   // Open
+            };
+        }
 
         /// <summary>Use: @Model.FormatDate(item.CreatedAtUtc)</summary>
         public string FormatDate(DateTime utcDateTime)
@@ -177,16 +239,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         /// <summary>
         /// Use: @Model.FormatCurrency(item.EstimatedValue, 0) — whole-number money
-        /// for compact list/tile displays, without hardcoding "N0" in the view.
-        ///
-        /// ✅ Added because the Leads list previously rendered
-        ///      @@lead.Currency @@lead.EstimatedValue.ToString("N0")
-        /// which printed the ISO CODE instead of the symbol ("INR 1,40,000") and,
-        /// worse, used ToString("N0") with NO culture — i.e. the SERVER's
-        /// CurrentCulture. On an en-IN dev box that is the same leak that put
-        /// Indian lakh grouping on Thai tenants in Pipeline/Index.
-        ///
-        /// Same shape as Pipeline/Index.cshtml.cs — keep the two in step.
+        /// for compact list/tile displays. Same shape as Pipeline/Index.cshtml.cs.
         /// </summary>
         public string FormatCurrency(decimal amount, int decimals)
             => _tenantService.FormatCurrency(amount, decimals);
@@ -194,15 +247,5 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         /// <summary>Use: @Model.FormatDateTime(item.CreatedAtUtc)</summary>
         public string FormatDateTime(DateTime utcDateTime)
             => _tenantService.FormatDateTime(utcDateTime);
-
-        public string GetStatusBadgeClass(string status) => status switch
-        {
-            "New" => "bg-primary",
-            "Contacted" => "bg-info",
-            "Qualified" => "bg-success",
-            "Unqualified" => "bg-secondary",
-            "Converted" => "bg-warning text-dark",
-            _ => "bg-dark"
-        };
     }
 }

@@ -40,6 +40,7 @@ using MerkaiTrial.Application;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.Leads.Import;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.Commands.Users;
@@ -141,6 +142,14 @@ builder.Services.AddScoped<IPaymentProvider, PromptPayProvider>();
 builder.Services.AddScoped<IPaymentProviderFactory, PaymentProviderFactory>();
 builder.Services.AddScoped<GetAuditLogsHandler>();
 builder.Services.AddScoped<GetAuditFiltersHandler>();
+
+builder.Services.AddScoped<ILeadStatusResolver, LeadStatusResolver>();
+builder.Services.AddScoped<GetLeadStatusesHandler>();
+builder.Services.AddScoped<CreateLeadStatusHandler>();
+builder.Services.AddScoped<UpdateLeadStatusDefHandler>();
+builder.Services.AddScoped<ReorderLeadStatusesHandler>();
+builder.Services.AddScoped<SetDefaultLeadStatusHandler>();
+builder.Services.AddScoped<DeleteLeadStatusHandler>();
 
 
 // ========== APP SERVICES ==========

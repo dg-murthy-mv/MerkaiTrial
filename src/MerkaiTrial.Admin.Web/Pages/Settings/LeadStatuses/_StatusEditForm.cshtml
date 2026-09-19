@@ -1,0 +1,65 @@
+@* =====================================================================
+   STATUS EDIT FORM
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/LeadStatuses/_StatusEditForm.cshtml
+
+   NEW FILE. One leading underscore.
+
+   Category is deliberately NOT editable. Moving a status from Qualified
+   to Open would silently change what conversion allows, and every past
+   report of qualified leads would mean something different. If a client
+   needs a different category, they add a status and move the leads.
+   ===================================================================== *@
+@using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Settings.LeadStatuses.IndexModel
+
+@{
+    var editing = Model.Statuses.FirstOrDefault(s => s.Id == Model.Input.StatusId);
+    var isSystem = editing?.IsSystem == true;
+}
+
+<form method="post" asp-page-handler="Update">
+    <input type="hidden" asp-for="Input.StatusId" />
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+    <div class="row g-3 align-items-end">
+        <div class="col-md-5">
+            <label asp-for="Input.Name" class="form-label">Name</label>
+            <input asp-for="Input.Name" class="form-control" required />
+            <span asp-validation-for="Input.Name" class="text-danger"></span>
+        </div>
+
+        <div class="col-md-3">
+            <label asp-for="Input.Score" class="form-label">Score points</label>
+            <input asp-for="Input.Score" type="number" class="form-control" min="0" max="15" />
+            <span asp-validation-for="Input.Score" class="text-danger"></span>
+        </div>
+
+        <div class="col-md-4">
+            @if (isSystem)
+            {
+                @* Retiring this would leave conversion with nowhere to put
+                   the lead, so the checkbox is not offered at all. *@
+                <input type="hidden" asp-for="Input.IsActive" value="true" />
+                <div class="small text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Set automatically on conversion — always available.
+                </div>
+            }
+            else
+            {
+                <div class="form-check mb-2">
+                    <input asp-for="Input.IsActive" class="form-check-input" type="checkbox" />
+                    <label asp-for="Input.IsActive" class="form-check-label">
+                        Offer this status for new work
+                    </label>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-3">
+        <a class="btn btn-sm btn-outline-secondary" asp-page="./Index">Cancel</a>
+        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+    </div>
+</form>

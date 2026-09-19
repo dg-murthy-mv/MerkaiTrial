@@ -1,6 +1,27 @@
 // =====================================================================
 // LEADS CONTROLLER - Main CRUD Operations
 // Location: MerkaiTrial.WebApi/Controllers/LeadsController.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// LEAD STATUSES (this pass):
+//   1. PUT {id}/status takes the status KEY as a string (was LeadStatus enum,
+//      which no longer exists) and calls the handler with UpdateLeadStatusDto
+//      — the handler's real signature. The old call
+//      Handle(tenantId, id, status, ct) did not compile.
+//   2. InvalidOperationException → 400 on Create / Update / UpdateStatus /
+//      Delete. The handlers now throw it for an unknown status key, for
+//      picking the system Converted status by hand, or for a workspace with
+//      no statuses. Before, those surfaced as a generic 500 "Failed to …"
+//      and the user never saw the real reason.
+//   3. `using MerkaiTrial.Domain.Enums` removed.
+//
+// TENANT SAFETY (found while validating):
+//   4. Convert used TenantId from the request BODY; attachments used
+//      tenantId from the QUERY STRING. Both now use the signed-in user's
+//      tenant. A client-supplied tenant ID must never decide which tenant's
+//      data is touched. Admin.Web can keep sending ?tenantId=… — it's
+//      simply ignored now, so no Admin.Web change is required.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Countries;
@@ -8,7 +29,6 @@ using MerkaiTrial.Application.Commands.Leads;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
-using MerkaiTrial.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,7 +38,6 @@ namespace MerkaiTrial.WebApi.Controllers
     [Route("api/[controller]")]
     public class LeadsController : ControllerBase
     {
-
         private readonly ConvertLeadToDealHandler _convertLeadToDealHandler;
         private readonly GetLeadsPaginatedHandler _getPaginatedHandler;
         private readonly GetLeadDetailHandler _getDetailHandler;
@@ -38,6 +57,7 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly UploadLeadAttachmentHandler _uploadAttachment;
         private readonly GetLeadAttachmentsHandler _getAttachments;
         private readonly DeleteLeadAttachmentHandler _deleteAttachment;
+
         public LeadsController(
             GetLeadsPaginatedHandler getPaginatedHandler,
             GetLeadDetailHandler getDetailHandler,
@@ -52,11 +72,11 @@ namespace MerkaiTrial.WebApi.Controllers
             ConvertLeadHandler convertHandler,
             ICurrentUserService currentUserService,
             GetCountriesForDropdownHandler getCountriesHandler,
-             ConvertLeadToDealHandler convertLeadToDealHandler,
+            ConvertLeadToDealHandler convertLeadToDealHandler,
             GetCurrenciesForDropdownHandler getCurrenciesHandler,
-                UploadLeadAttachmentHandler uploadAttachment,
-                GetLeadAttachmentsHandler getAttachments,
-                DeleteLeadAttachmentHandler deleteAttachment,
+            UploadLeadAttachmentHandler uploadAttachment,
+            GetLeadAttachmentsHandler getAttachments,
+            DeleteLeadAttachmentHandler deleteAttachment,
             ILogger<LeadsController> logger)
         {
             _getPaginatedHandler = getPaginatedHandler;
@@ -74,16 +94,17 @@ namespace MerkaiTrial.WebApi.Controllers
             _deleteHandler = deleteHandler;
             _convertHandler = convertHandler;
             _currentUserService = currentUserService;
-                _uploadAttachment = uploadAttachment;
-                _getAttachments = getAttachments;
-                _deleteAttachment = deleteAttachment;
+            _uploadAttachment = uploadAttachment;
+            _getAttachments = getAttachments;
+            _deleteAttachment = deleteAttachment;
             _logger = logger;
         }
 
         // ==================== QUERIES ====================
 
         /// <summary>
-        /// GET /api/leads - Get paginated leads
+        /// GET /api/leads - Get paginated leads.
+        /// `status` is a status KEY (e.g. "Working"), not a display name.
         /// </summary>
         [HttpGet]
         [Authorize(Policy = "Leads.Read")]
@@ -175,6 +196,9 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
+        /// <summary>
+        /// GET /api/leads/sales-team - Assignable users for dropdown
+        /// </summary>
         [HttpGet("sales-team")]
         [Authorize(Policy = "Leads.Read")]
         [ProducesResponseType(typeof(List<SalesTeamMemberDto>), 200)]
@@ -194,6 +218,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 return StatusCode(500, new { error = "Failed to retrieve sales team" });
             }
         }
+
         /// <summary>
         /// GET /api/leads/sources - Get available sources for dropdown
         /// </summary>
@@ -216,19 +241,6 @@ namespace MerkaiTrial.WebApi.Controllers
                 return StatusCode(500, new { error = "Failed to retrieve sources" });
             }
         }
-
-        //[HttpGet("verticals")]
-        //public async Task<IActionResult> GetVerticals(CancellationToken ct)
-        //{
-        //    // Reuse MetaController logic or inline:
-        //    var verticals = await _db.CompanyVerticals
-        //        .AsNoTracking()
-        //        .Where(v => v.IsActive && !v.IsDeleted)
-        //        .OrderBy(v => v.Name)
-        //        .Select(v => new { v.Id, v.Name })
-        //        .ToListAsync(ct);
-        //    return Ok(verticals);
-        //}
 
         /// <summary>
         /// GET /api/leads/stats - Get lead statistics
@@ -256,7 +268,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ==================== COMMANDS ====================
 
         /// <summary>
-        /// POST /api/leads - Create new lead
+        /// POST /api/leads - Create new lead (starts in the tenant's default status)
         /// </summary>
         [HttpPost]
         [Authorize(Policy = "Leads.Create")]
@@ -289,12 +301,17 @@ namespace MerkaiTrial.WebApi.Controllers
                     limit = ex.Limit
                 });
             }
+            catch (InvalidOperationException ex)
+            {
+                // e.g. workspace has no default lead status configured
+                _logger.LogWarning(ex, "Lead create refused");
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating lead");
                 return StatusCode(500, new { error = "Failed to create lead" });
             }
-            
         }
 
         /// <summary>
@@ -328,6 +345,11 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = $"Lead {id} not found" });
             }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Lead update refused {LeadId}", id);
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating lead {LeadId}", id);
@@ -336,21 +358,30 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         /// <summary>
-        /// PUT /api/leads/{id}/status - Update lead status
+        /// PUT /api/leads/{id}/status?status={key} - Update lead status.
+        /// `status` is the tenant's status KEY. The handler rejects unknown keys
+        /// and the system Converted status (set only by conversion) with 400.
         /// </summary>
         [HttpPut("{id:guid}/status")]
         [Authorize(Policy = "Leads.Update")]
         [ProducesResponseType(200)]
+        [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> UpdateStatus(
             [FromRoute] Guid id,
-            [FromQuery] LeadStatus status,
+            [FromQuery] string? status,
             CancellationToken cancellationToken = default)
         {
+            if (string.IsNullOrWhiteSpace(status))
+                return BadRequest(new { error = "Status is required" });
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
-                await _updateStatusHandler.Handle(tenantId, id, status, cancellationToken);
+
+                await _updateStatusHandler.Handle(
+                    new UpdateLeadStatusDto(tenantId, id, status.Trim()),
+                    cancellationToken);
 
                 _logger.LogInformation("Lead status updated: {LeadId} -> {Status}", id, status);
 
@@ -359,6 +390,12 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Lead {id} not found" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Unknown key, or Converted chosen by hand — message is user-facing
+                _logger.LogWarning(ex, "Lead status change refused {LeadId} -> {Status}", id, status);
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
@@ -373,6 +410,7 @@ namespace MerkaiTrial.WebApi.Controllers
         [HttpDelete("{id:guid}")]
         [Authorize(Policy = "Leads.Delete")]
         [ProducesResponseType(204)]
+        [ProducesResponseType(400)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> Delete(
             [FromRoute] Guid id,
@@ -392,13 +430,19 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = $"Lead {id} not found" });
             }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Lead delete refused {LeadId}", id);
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting lead {LeadId}", id);
                 return StatusCode(500, new { error = "Failed to delete lead" });
             }
         }
-        // ✅ NEW: GET COUNTRIES (For Dropdown)
+
+        /// <summary>GET /api/leads/countries - dropdown</summary>
         [HttpGet("countries")]
         [Authorize(Policy = "Leads.Read")]
         public async Task<ActionResult<List<CountryDropdownDto>>> GetCountries()
@@ -415,7 +459,7 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        // ✅ NEW: GET CURRENCIES (For Dropdown)
+        /// <summary>GET /api/leads/currencies - dropdown</summary>
         [HttpGet("currencies")]
         [Authorize(Policy = "Leads.Read")]
         public async Task<ActionResult<List<CurrencyDropdownDto>>> GetCurrencies()
@@ -432,6 +476,9 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
+        /// <summary>
+        /// POST /api/leads/{leadId}/convert-to-deal
+        /// </summary>
         [HttpPost("{leadId:guid}/convert-to-deal")]
         [Authorize(Policy = "Leads.Update")]
         [ProducesResponseType(typeof(ConvertLeadToDealResultDto), 200)]
@@ -439,16 +486,13 @@ namespace MerkaiTrial.WebApi.Controllers
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
         public async Task<ActionResult<ConvertLeadToDealResultDto>> ConvertToDeal(
-           [FromRoute] Guid leadId,
-           [FromBody] ConvertLeadToDealDto dto)
+            [FromRoute] Guid leadId,
+            [FromBody] ConvertLeadToDealDto dto)
         {
             try
             {
-                // Ensure route leadId matches DTO leadId
                 if (dto.LeadId != leadId)
-                {
                     return BadRequest(new { error = "LeadId in route and body must match" });
-                }
 
                 _logger.LogInformation("API: Converting lead {LeadId} to deal", leadId);
 
@@ -466,6 +510,7 @@ namespace MerkaiTrial.WebApi.Controllers
             }
             catch (InvalidOperationException ex)
             {
+                // e.g. lead's status is not in the Qualified category
                 _logger.LogWarning(ex, "Invalid conversion attempt for lead {LeadId}", leadId);
                 return BadRequest(new { error = ex.Message });
             }
@@ -475,8 +520,9 @@ namespace MerkaiTrial.WebApi.Controllers
                 return StatusCode(500, new { error = "Failed to convert lead to deal" });
             }
         }
+
         /// <summary>
-        /// POST /api/leads/{id}/convert - Convert lead to contact/company/deal
+        /// POST /api/leads/{id}/convert - Convert lead to contact/company
         /// </summary>
         [HttpPost("{id:guid}/convert")]
         [Authorize(Policy = "Leads.Update")]
@@ -495,8 +541,11 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
+                // ✅ Tenant from the signed-in user, never from the request body.
+                var tenantId = _currentUserService.GetCurrentTenantId();
+
                 var command = new ConvertLeadCommand(
-                    TenantId: dto.TenantId,
+                    TenantId: tenantId,
                     LeadId: dto.LeadId,
                     CreateCompany: dto.CreateCompany,
                     CompanyName: dto.CompanyName,
@@ -534,14 +583,18 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        /// GET /api/leads/{leadId}/attachments?tenantId={tenantId}
+        // ==================== ATTACHMENTS ====================
+        // Admin.Web still sends ?tenantId=… on these routes. It is no longer
+        // bound: the tenant always comes from the signed-in user.
+
+        /// GET /api/leads/{leadId}/attachments
         [HttpGet("{leadId:guid}/attachments")]
         [Authorize(Policy = "Leads.Read")]
-        public async Task<IActionResult> GetAttachments(
-            Guid leadId, [FromQuery] Guid tenantId, CancellationToken ct)
+        public async Task<IActionResult> GetAttachments(Guid leadId, CancellationToken ct)
         {
             try
             {
+                var tenantId = _currentUserService.GetCurrentTenantId();
                 var result = await _getAttachments.Handle(tenantId, leadId, ct);
                 return Ok(result);
             }
@@ -552,19 +605,19 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        /// POST /api/leads/{leadId}/attachments?tenantId={tenantId}
+        /// POST /api/leads/{leadId}/attachments
         [HttpPost("{leadId:guid}/attachments")]
         [Authorize(Policy = "Leads.Update")]
         [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
         public async Task<IActionResult> UploadAttachment(
-            Guid leadId, [FromQuery] Guid tenantId,
-            IFormFile file, CancellationToken ct)
+            Guid leadId, IFormFile file, CancellationToken ct)
         {
             try
             {
                 if (file == null || file.Length == 0)
                     return BadRequest(new { error = "No file provided" });
 
+                var tenantId = _currentUserService.GetCurrentTenantId();
                 var uploadedBy = _currentUserService.GetCurrentUserId().ToString();
 
                 var result = await _uploadAttachment.Handle(
@@ -583,22 +636,16 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        /// DELETE /api/leads/attachments/{attachmentId}?tenantId={tenantId}
-        // ✅ Aligned to Leads.Update (was Leads.Delete) — matches
-        // Admin.Web's OnPostDeleteAttachmentAsync gate and the other 7
-        // Leads sub-action handlers (notes, activities, reminders, status,
-        // upload) which are all scoped to "can this user edit this lead's
-        // related data", not the record-level Leads.Delete permission.
-        // Previously sales_rep (update, no delete) would have the button
-        // hidden client-side but still hit a server-side mismatch if the
-        // request were ever made directly.
+        /// DELETE /api/leads/attachments/{attachmentId}
+        // Leads.Update (not Leads.Delete) — matches Admin.Web's
+        // OnPostDeleteAttachmentAsync gate and the other Leads sub-actions.
         [HttpDelete("attachments/{attachmentId:guid}")]
         [Authorize(Policy = "Leads.Update")]
-        public async Task<IActionResult> DeleteAttachment(
-            Guid attachmentId, [FromQuery] Guid tenantId, CancellationToken ct)
+        public async Task<IActionResult> DeleteAttachment(Guid attachmentId, CancellationToken ct)
         {
             try
             {
+                var tenantId = _currentUserService.GetCurrentTenantId();
                 await _deleteAttachment.Handle(tenantId, attachmentId, ct);
                 return Ok(new { success = true });
             }

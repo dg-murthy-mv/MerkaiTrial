@@ -83,6 +83,7 @@ public class FlowDbContext : DbContext
     public DbSet<TenantSettings> TenantSettings => Set<TenantSettings>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<LeadReminder> LeadReminders => Set<LeadReminder>();
+    public DbSet<LeadStatusDefinition> LeadStatusDefinitions => Set<LeadStatusDefinition>();
     public DbSet<DealStageHistory> DealStageHistory { get; set; }
     public DbSet<LeadNote> LeadNotes => Set<LeadNote>();
     public DbSet<LeadActivity> LeadActivities => Set<LeadActivity>();
@@ -117,6 +118,9 @@ public class FlowDbContext : DbContext
         b.Entity<LeadNote>()        .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<LeadActivity>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<LeadReminder>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<LeadStatusDefinition>()
+            .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
 
         b.Entity<Deal>()            .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<DealNote>()        .HasQueryFilter(e => e.TenantId == CurrentTenantId);

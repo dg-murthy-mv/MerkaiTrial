@@ -15,7 +15,7 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
         Task<LeadDto> CreateAsync(CreateLeadDto dto);
         Task<LeadDetailDto> GetByIdAsync(Guid tenantId, Guid leadId);
         Task<LeadDetailDto> UpdateAsync(UpdateLeadDto dto);
-        Task UpdateStatusAsync(Guid tenantId, Guid leadId, LeadStatus status);
+        Task UpdateStatusAsync(Guid tenantId, Guid leadId, string status);
         Task DeleteAsync(Guid tenantId, Guid leadId);
         Task<List<SalesTeamMemberDto>> GetSalesTeamAsync(Guid tenantId);
         Task<List<CountryDropdownDto>> GetCountriesAsync();
@@ -182,11 +182,12 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             }
         }
 
-        public async Task UpdateStatusAsync(Guid tenantId, Guid leadId, LeadStatus status)
+        public async Task UpdateStatusAsync(Guid tenantId, Guid leadId, string status)
         {
             try
             {
-                await _api.PutAsync<object>($"/api/leads/{leadId}/status?status={status}", null);
+                await _api.PutAsync<object>(
+                     $"/api/leads/{leadId}/status?status={Uri.EscapeDataString(status)}", null);
             }
             catch (Exception ex)
             {

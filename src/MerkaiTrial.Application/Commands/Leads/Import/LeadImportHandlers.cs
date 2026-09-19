@@ -2,9 +2,22 @@
 // LeadImportHandlers.cs
 // Location: MerkaiTrial.Application/Commands/Leads/Import/LeadImportHandlers.cs
 //
-// NEW FILE. Replaces the old ImportLeadsHandler entirely.
+// COMPLETE FILE — replaces the existing one.
 //
-// WHAT THE OLD ONE DID WRONG (all fixed here)
+// THIS PASS: lead statuses are the tenant's, not an enum.
+//   Status resolution moved INTO ImportContext, alongside the other
+//   lookups (sources, channels, countries, owners). That matters because
+//   Resolve() is static and has no database access — the same reason
+//   every other lookup is pre-loaded there. It also means preview and
+//   commit resolve statuses identically, so what the user is shown and
+//   what happens cannot diverge.
+//
+//   A status column now matches on NAME or KEY, so a file exported from
+//   the CRM (keys) and a file typed by hand (names) both work.
+//
+// ORIGINAL NOTES, STILL TRUE
+//
+// WHAT THE OLD IMPORTER DID WRONG (all fixed here)
 //   • Created Contact rows with NO TenantId — either rejected by the DB or
 //     saved against Guid.Empty, where the global query filter makes them
 //     invisible to every tenant.
@@ -25,8 +38,8 @@
 // Importing 500 leads should not silently create 500 contacts.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Domain.Entities;
-using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -133,6 +146,19 @@ internal sealed class ImportContext
     public required Dictionary<string, Guid> ExistingByEmail { get; init; }
     public required Dictionary<string, Guid> ExistingByPhone { get; init; }
     public required string DefaultCurrency { get; init; }
+
+    /// <summary>
+    /// Both the NAME and the KEY of every status a person may import into,
+    /// mapped to the key. Two entries per status so a file exported from
+    /// the CRM ("SiteVisit") and one typed by hand ("Site Visit") both
+    /// resolve. System statuses are excluded — conversion is an action,
+    /// never an import value.
+    /// </summary>
+    public required Dictionary<string, string> StatusesByName { get; init; }
+
+    /// <summary>Where an imported lead lands when no status is given.</summary>
+    public required string DefaultStatusKey { get; init; }
+
     public HashSet<string> UnmatchedSources { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> UnmatchedOwners { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> UnmatchedCountries { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -152,7 +178,7 @@ internal sealed record ResolvedRow(
     string? SourceText,
     Guid? ChannelId,
     Guid? VerticalId,
-    LeadStatus Status,
+    string Status,
     int Score,
     decimal? EstimatedValue,
     string Currency,
@@ -163,10 +189,13 @@ internal sealed record ResolvedRow(
 internal static class ImportValidator
 {
     public static async Task<ImportContext> BuildContextAsync(
-         FlowDbContext db, Guid tenantId, string defaultCurrency, string? countryCode, CancellationToken ct)
+        FlowDbContext db,
+        Guid tenantId,
+        string defaultCurrency,
+        string? countryCode,
+        TenantLeadStatuses statuses,
+        CancellationToken ct)
     {
-        
-
         var sources = await db.LeadSources.AsNoTracking()
             .Where(s => s.TenantId == tenantId && !s.IsDeleted)
             .Select(s => new { s.Id, s.Name }).ToListAsync(ct);
@@ -199,6 +228,9 @@ internal static class ImportValidator
             if (!string.IsNullOrWhiteSpace(l.Email))
                 byEmail.TryAdd(l.Email.Trim(), l.Id);
 
+            // countryCode matters here: "+66 76 789 0123" and "076-789-0123"
+            // are the same number, and only match once both sides are
+            // normalised with the SAME dial code.
             var phone = LeadFileParser.NormalisePhone(l.Phone, countryCode);
             if (phone != null) byPhone.TryAdd(phone, l.Id);
         }
@@ -215,18 +247,31 @@ internal static class ImportValidator
         foreach (var c in countries)
             if (!string.IsNullOrWhiteSpace(c.Code)) countryLookup.TryAdd(c.Code.Trim(), c.Id);
 
+        // ── Statuses: name AND key, both pointing at the key ──────────
+        var statusLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in statuses.Selectable)
+        {
+            statusLookup.TryAdd(s.Name.Trim(), s.Key);
+            statusLookup.TryAdd(s.Key.Trim(), s.Key);
+            // "Site Visit" typed against a key of "SiteVisit".
+            statusLookup.TryAdd(s.Name.Replace(" ", ""), s.Key);
+        }
+
         return new ImportContext
         {
-            SourcesByName   = Dict(sources.Select(s => (s.Name, s.Id))),
-            ChannelsByName  = Dict(channels.Select(c => (c.Name, c.Id))),
-            CountriesByName = countryLookup,
-            VerticalsByName = Dict(verticals.Select(v => (v.Name, v.Id))),
-            UsersByEmail    = Dict(users.Select(u => (u.Email, u.Id))),
-            ExistingByEmail = byEmail,
-            ExistingByPhone = byPhone,
-            CountryCode = countryCode,
-            DefaultCurrency = defaultCurrency,
-
+            SourcesByName    = Dict(sources.Select(s => (s.Name, s.Id))),
+            ChannelsByName   = Dict(channels.Select(c => (c.Name, c.Id))),
+            CountriesByName  = countryLookup,
+            VerticalsByName  = Dict(verticals.Select(v => (v.Name, v.Id))),
+            UsersByEmail     = Dict(users.Select(u => (u.Email, u.Id))),
+            ExistingByEmail  = byEmail,
+            ExistingByPhone  = byPhone,
+            CountryCode      = countryCode,
+            DefaultCurrency  = defaultCurrency,
+            StatusesByName   = statusLookup,
+            DefaultStatusKey = statuses.Default?.Key
+                ?? throw new InvalidOperationException(
+                    "This workspace has no lead statuses set up. Add them under Settings → Lead Statuses."),
         };
     }
 
@@ -369,23 +414,28 @@ internal static class ImportValidator
                 }
             }
 
-            // ── Status / score / value ────────────────────────────────
-            var status = LeadStatus.New;
+            // ── Status ────────────────────────────────────────────────
+            // Matched against the TENANT's statuses, by name or key. The
+            // system status (Converted) is not in the lookup at all:
+            // conversion is an action that creates a deal, never a value
+            // someone can put in a spreadsheet column.
+            var status = ctx.DefaultStatusKey;
             var statusText = Get(row, ImportFields.Status);
             if (statusText != null)
             {
-                if (Enum.TryParse<LeadStatus>(statusText.Replace(" ", ""), true, out var parsed)
-                    && parsed != LeadStatus.Converted)   // conversion is an action, never an import value
+                if (ctx.StatusesByName.TryGetValue(statusText, out var matched)
+                    || ctx.StatusesByName.TryGetValue(statusText.Replace(" ", ""), out matched))
                 {
-                    status = parsed;
+                    status = matched;
                 }
                 else
                 {
-                    messages.Add($"Status \"{statusText}\" not recognised — imported as New");
+                    messages.Add($"Status \"{statusText}\" not recognised — imported as {ctx.DefaultStatusKey}");
                     if (verdict == RowVerdict.Ok) verdict = RowVerdict.Warning;
                 }
             }
 
+            // ── Score / value ─────────────────────────────────────────
             var score = LeadFileParser.ParseInt(Get(row, ImportFields.Score)) ?? 0;
             if (score < 0) score = 0;
             if (score > 100) score = 100;
@@ -424,7 +474,7 @@ internal static class ImportValidator
 
             ResolvedRow Fail(int n, string reason) => new(
                 n, RowVerdict.Error, "", null, null, null, null, null, null, null,
-                null, null, LeadStatus.New, 0, null, ctx.DefaultCurrency, null, null,
+                null, null, ctx.DefaultStatusKey, 0, null, ctx.DefaultCurrency, null, null,
                 new List<string> { reason });
         }
 
@@ -453,11 +503,16 @@ public class PreviewLeadImportHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
     private readonly IImportSessionStore _sessions;
+    private readonly ILeadStatusResolver _statusResolver;
 
-    public PreviewLeadImportHandler(FlowDbContext db, IImportSessionStore sessions)
+    public PreviewLeadImportHandler(
+        FlowDbContext db,
+        IImportSessionStore sessions,
+        ILeadStatusResolver statusResolver)
     {
         _db = db;
         _sessions = sessions;
+        _statusResolver = statusResolver;
     }
 
     public async Task<ImportPreview> Handle(
@@ -469,8 +524,13 @@ public class PreviewLeadImportHandler : ICommandHandler
         if (!request.Mapping.ContainsKey(ImportFields.FullName))
             throw new InvalidOperationException("Choose which column holds the lead's name.");
 
+        // GetAsync returns the tenant's statuses; every question about them
+        // is asked of THAT, not of the resolver.
+        var statuses = await _statusResolver.GetAsync(request.TenantId, ct);
+
         var ctx = await ImportValidator.BuildContextAsync(
-           _db, request.TenantId, defaultCurrency, countryCode, ct);
+            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct);
+
         var rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
 
         var errors = rows.Count(r => r.Verdict == RowVerdict.Error);
@@ -546,19 +606,23 @@ public class CommitLeadImportHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
     private readonly IImportSessionStore _sessions;
+    private readonly ILeadStatusResolver _statusResolver;
     private readonly ILogger<CommitLeadImportHandler> _logger;
 
     public CommitLeadImportHandler(
         FlowDbContext db,
         IImportSessionStore sessions,
+        ILeadStatusResolver statusResolver,
         ILogger<CommitLeadImportHandler> logger)
     {
         _db = db;
         _sessions = sessions;
+        _statusResolver = statusResolver;
         _logger = logger;
     }
 
-    public async Task<ImportResult> Handle(ImportRequest request, string defaultCurrency, string? countryCode, CancellationToken ct = default)
+    public async Task<ImportResult> Handle(
+        ImportRequest request, string defaultCurrency, string? countryCode, CancellationToken ct = default)
     {
         var session = _sessions.Get(request.SessionId, request.TenantId)
             ?? throw new KeyNotFoundException("That upload has expired. Please upload the file again.");
@@ -566,8 +630,11 @@ public class CommitLeadImportHandler : ICommandHandler
         if (!request.Mapping.ContainsKey(ImportFields.FullName))
             throw new InvalidOperationException("Choose which column holds the lead's name.");
 
+        var statuses = await _statusResolver.GetAsync(request.TenantId, ct);
+
         var ctx = await ImportValidator.BuildContextAsync(
-             _db, request.TenantId, defaultCurrency, countryCode, ct);
+            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct);
+
         var rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
 
         // ── Quota, checked BEFORE anything is written ─────────────────
@@ -642,7 +709,11 @@ public class CommitLeadImportHandler : ICommandHandler
                     Source = r.SourceText ?? "Import",
                     ChannelId = r.ChannelId,
                     VerticalId = r.VerticalId,
+
+                    // Already resolved against the tenant's statuses in
+                    // Resolve(), which is what preview showed the user.
                     Status = r.Status,
+
                     Score = r.Score,
                     EstimatedValue = r.EstimatedValue,
                     Currency = r.Currency,

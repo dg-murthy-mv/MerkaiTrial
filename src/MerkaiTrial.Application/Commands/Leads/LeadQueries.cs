@@ -18,33 +18,34 @@ using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 
 namespace MerkaiTrial.Application.Commands.Leads
 {
     // ==================== GET LEADS PAGINATED ====================
     public record GetLeadsPaginatedQuery(
-        Guid    TenantId,
-        int     PageNumber,
-        int     PageSize,
-        string? SearchTerm  = null,
-        string? Status      = null,
-        string? AssignedTo  = null
+        Guid TenantId,
+        int PageNumber,
+        int PageSize,
+        string? SearchTerm = null,
+        string? Status = null,
+        string? AssignedTo = null
     );
 
     public class GetLeadsPaginatedHandler : ICommandHandler
     {
-        private readonly FlowDbContext         _context;
+        private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 1
         private readonly ILogger<GetLeadsPaginatedHandler> _logger;
 
         public GetLeadsPaginatedHandler(
-            FlowDbContext         context,
+            FlowDbContext context,
             ICurrentTenantService tenantService,
             ILogger<GetLeadsPaginatedHandler> logger)
         {
-            _context       = context;
+            _context = context;
             _tenantService = tenantService;
-            _logger        = logger;
+            _logger = logger;
         }
 
         public async Task<PaginatedResult<LeadListItem>> Handle(
@@ -65,14 +66,13 @@ namespace MerkaiTrial.Application.Commands.Leads
                     var s = query.SearchTerm.ToLower();
                     leadsQuery = leadsQuery.Where(l =>
                         l.FullName.ToLower().Contains(s) ||
-                        (l.Email       != null && l.Email.ToLower().Contains(s))       ||
-                        (l.Phone       != null && l.Phone.ToLower().Contains(s))       ||
+                        (l.Email != null && l.Email.ToLower().Contains(s)) ||
+                        (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
                         (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
                 }
 
-                if (!string.IsNullOrWhiteSpace(query.Status) &&
-                    Enum.TryParse<LeadStatus>(query.Status, out var statusEnum))
-                    leadsQuery = leadsQuery.Where(l => l.Status == statusEnum);
+                if (!string.IsNullOrWhiteSpace(query.Status))
+                    leadsQuery = leadsQuery.Where(l => l.Status == query.Status);
 
                 if (!string.IsNullOrWhiteSpace(query.AssignedTo))
                     leadsQuery = leadsQuery.Where(l => l.OwnerUserId == query.AssignedTo);
@@ -89,7 +89,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                         l.Email ?? "",
                         l.Phone ?? "",
                         l.LeadChannel != null ? l.LeadChannel.Name : l.Channel.ToString(),
-                        l.LeadSource  != null ? l.LeadSource.Name  : l.Source,
+                        l.LeadSource != null ? l.LeadSource.Name : l.Source,
                         l.Status.ToString(),
                         l.Score,
                         l.CreatedAtUtc,
@@ -105,10 +105,10 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 return new PaginatedResult<LeadListItem>
                 {
-                    Items      = items,
+                    Items = items,
                     TotalCount = totalCount,
-                    Page       = query.PageNumber,
-                    PageSize   = query.PageSize
+                    Page = query.PageNumber,
+                    PageSize = query.PageSize
                 };
             }
             catch (Exception ex)
@@ -124,18 +124,21 @@ namespace MerkaiTrial.Application.Commands.Leads
 
     public class GetLeadDetailHandler : ICommandHandler
     {
-        private readonly FlowDbContext         _context;
+        private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 2
+        private readonly ILeadStatusResolver _statuses;
         private readonly ILogger<GetLeadDetailHandler> _logger;
 
         public GetLeadDetailHandler(
-            FlowDbContext         context,
+            FlowDbContext context,
             ICurrentTenantService tenantService,
+            ILeadStatusResolver statuses,
             ILogger<GetLeadDetailHandler> logger)
         {
-            _context       = context;
+            _context = context;
             _tenantService = tenantService;
-            _logger        = logger;
+            _statuses = statuses;
+            _logger = logger;
         }
 
         public async Task<LeadDetailDto> Handle(
@@ -149,20 +152,20 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .Where(l => l.Id == query.LeadId && l.TenantId == query.TenantId && !l.IsDeleted)
                     .Select(l => new
                     {
-                        Lead            = l,
-                        ChannelName     = l.ChannelId.HasValue
+                        Lead = l,
+                        ChannelName = l.ChannelId.HasValue
                             ? _context.LeadChannels.Where(c => c.Id == l.ChannelId).Select(c => c.Name).FirstOrDefault()
                             : null,
-                        SourceName      = l.SourceId.HasValue
+                        SourceName = l.SourceId.HasValue
                             ? _context.LeadSources.Where(s => s.Id == l.SourceId).Select(s => s.Name).FirstOrDefault()
                             : null,
-                        CountryName     = l.CountryId.HasValue
+                        CountryName = l.CountryId.HasValue
                             ? _context.Countries.Where(c => c.Id == l.CountryId).Select(c => c.Name).FirstOrDefault()
                             : null,
                         CountryCurrency = l.CountryId.HasValue
                             ? _context.Countries.Where(c => c.Id == l.CountryId).Select(c => c.CurrencyCode).FirstOrDefault()
                             : null,
-                        VerticalName    = l.VerticalId.HasValue
+                        VerticalName = l.VerticalId.HasValue
                             ? _context.CompanyVerticals
                                 .Where(v => v.Id == l.VerticalId.Value)
                                 .Select(v => v.Name)
@@ -182,7 +185,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                         : _tenantService.GetCurrencyCode();
 
                 // FIX 2: Guid comparison — not string cast (index-safe)
-                string? ownerName     = null;
+                string? ownerName = null;
                 string? ownerJobTitle = null;
                 if (Guid.TryParse(row.Lead.OwnerUserId, out var ownerGuid))
                 {
@@ -190,43 +193,43 @@ namespace MerkaiTrial.Application.Commands.Leads
                         .Where(u => u.Id == ownerGuid)
                         .Select(u => new { u.FullName, u.JobTitle })
                         .FirstOrDefaultAsync(cancellationToken);
-                    ownerName     = owner?.FullName;
+                    ownerName = owner?.FullName;
                     ownerJobTitle = owner?.JobTitle;
                 }
-                
+                var statuses = await _statuses.GetAsync(query.TenantId);
 
                 // NOTE: Dates returned as UTC — format in page model via:
                 //   _tenantService.FormatDate(lead.CreatedAtUtc)
                 //   _tenantService.FormatDateTime(lead.UpdatedAtUtc)
                 return new LeadDetailDto(
-                    Id:            row.Lead.Id,
-                    TenantId:      row.Lead.TenantId,
-                    ContactId:     row.Lead.ContactId ?? Guid.Empty,
-                    FullName:      row.Lead.FullName,
-                    Email:         row.Lead.Email ?? "",
-                    Phone:         row.Lead.Phone ?? "",
-                    CompanyName:   row.Lead.CompanyName,
-                    Address:       row.Lead.Address,
-                    CountryId:     row.Lead.CountryId,
-                    CountryName:   row.CountryName,
-                    Currency:      currency,
-                    ChannelId:     row.Lead.ChannelId,
-                    SourceId:      row.Lead.SourceId,
-                    Channel:       row.ChannelName ?? row.Lead.Channel.ToString(),
-                    Source:        row.SourceName  ?? row.Lead.Source,
-                    VerticalId:    row.Lead.VerticalId,
-                    VerticalName:  row.VerticalName ,
-                    Status:        row.Lead.Status.ToString(),
-                    Score:         row.Lead.Score,
-                    OwnerUserId:   row.Lead.OwnerUserId,
-                    OwnerName:     ownerName,
+                    Id: row.Lead.Id,
+                    TenantId: row.Lead.TenantId,
+                    ContactId: row.Lead.ContactId ?? Guid.Empty,
+                    FullName: row.Lead.FullName,
+                    Email: row.Lead.Email ?? "",
+                    Phone: row.Lead.Phone ?? "",
+                    CompanyName: row.Lead.CompanyName,
+                    Address: row.Lead.Address,
+                    CountryId: row.Lead.CountryId,
+                    CountryName: row.CountryName,
+                    Currency: currency,
+                    ChannelId: row.Lead.ChannelId,
+                    SourceId: row.Lead.SourceId,
+                    Channel: row.ChannelName ?? row.Lead.Channel.ToString(),
+                    Source: row.SourceName ?? row.Lead.Source,
+                    VerticalId: row.Lead.VerticalId,
+                    VerticalName: row.VerticalName,
+                    Status: row.Lead.Status.ToString(),
+                    Score: row.Lead.Score,
+                    OwnerUserId: row.Lead.OwnerUserId,
+                    OwnerName: ownerName,
                     OwnerJobTitle: ownerJobTitle,
-                    CreatedAtUtc:  row.Lead.CreatedAtUtc,
-                    UpdatedAtUtc:  row.Lead.UpdatedAtUtc,
-                    HasDeal:       row.Lead.DealId.HasValue,
-                    IsConverted: row.Lead.Status == LeadStatus.Converted,
-                    DealId:        row.Lead.DealId,
-                    DealStage:     "",
+                    CreatedAtUtc: row.Lead.CreatedAtUtc,
+                    UpdatedAtUtc: row.Lead.UpdatedAtUtc,
+                    HasDeal: row.Lead.DealId.HasValue,
+                    IsConverted: statuses.IsConverted(row.Lead.Status),
+                    DealId: row.Lead.DealId,
+                    DealStage: "",
                     ExpectedValue: row.Lead.EstimatedValue ?? 0m
                 );
             }
@@ -246,15 +249,18 @@ namespace MerkaiTrial.Application.Commands.Leads
     {
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenant;
+        private readonly ILeadStatusResolver _statuses;
         private readonly ILogger<GetLeadStatsHandler> _logger;
 
         public GetLeadStatsHandler(
             FlowDbContext context,
             ICurrentTenantService tenant,
+            ILeadStatusResolver statuses,
             ILogger<GetLeadStatsHandler> logger)
         {
             _context = context;
             _tenant = tenant;
+            _statuses = statuses;
             _logger = logger;
         }
 
@@ -271,17 +277,27 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var todayStartUtc = _tenant.LocalToUtc(localToday);
                 var todayEndUtc = todayStartUtc.AddDays(1);
 
-                // One round-trip for all status counts (unchanged).
+                var statuses = await _statuses.GetAsync(query.TenantId, cancellationToken);
+
+                var openKeys = statuses.All.Where(s => s.Category == LeadStatusCategory.Open).Select(s => s.Key).ToList();
+                var qualifiedKeys = statuses.All.Where(s => s.Category == LeadStatusCategory.Qualified).Select(s => s.Key).ToList();
+                var disqKeys = statuses.All.Where(s => s.Category == LeadStatusCategory.Disqualified).Select(s => s.Key).ToList();
+                var defaultKey = statuses.Default?.Key ?? "";
+
                 var counts = await _context.Leads
                     .Where(l => l.TenantId == query.TenantId && !l.IsDeleted)
                     .GroupBy(l => 1)
                     .Select(g => new
                     {
                         TotalLeads = g.Count(),
-                        NewLeads = g.Count(l => l.Status == LeadStatus.New),
-                        WorkingLeads = g.Count(l => l.Status == LeadStatus.Working),
-                        QualifiedLeads = g.Count(l => l.Status == LeadStatus.Qualified),
-                        UnqualifiedLeads = g.Count(l => l.Status == LeadStatus.Unqualified),
+                        // "New" is the starting status, whatever it is called.
+                        NewLeads = g.Count(l => l.Status == defaultKey),
+                        // Everything else still in play. Previously this
+                        // counted only LeadStatus.Working, so a tenant with
+                        // three working statuses would under-report.
+                        WorkingLeads = g.Count(l => openKeys.Contains(l.Status) && l.Status != defaultKey),
+                        QualifiedLeads = g.Count(l => qualifiedKeys.Contains(l.Status)),
+                        UnqualifiedLeads = g.Count(l => disqKeys.Contains(l.Status)),
                         ConvertedLeads = g.Count(l => l.IsConverted)
                     })
                     .FirstOrDefaultAsync(cancellationToken);
@@ -337,7 +353,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         public GetLeadChannelsHandler(FlowDbContext context, ILogger<GetLeadChannelsHandler> logger)
         {
             _context = context;
-            _logger  = logger;
+            _logger = logger;
         }
 
         public async Task<List<LeadChannelDto>> Handle(
@@ -371,7 +387,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         public GetLeadSourcesHandler(FlowDbContext context, ILogger<GetLeadSourcesHandler> logger)
         {
             _context = context;
-            _logger  = logger;
+            _logger = logger;
         }
 
         public async Task<List<LeadSourceDto>> Handle(
@@ -405,7 +421,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         public GetCountriesForDropdownHandler(FlowDbContext context, ILogger<GetCountriesForDropdownHandler> logger)
         {
             _context = context;
-            _logger  = logger;
+            _logger = logger;
         }
 
         public async Task<List<CountryDropdownDto>> Handle(
@@ -421,7 +437,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .Select(c => new CountryDropdownDto(
                         c.Id,
                         c.Name,
-                        (c.Code         ?? "").Trim().ToUpper(),
+                        (c.Code ?? "").Trim().ToUpper(),
                         (c.CurrencyCode ?? "").Trim().ToUpper()
                     ))
                     .ToListAsync(cancellationToken);
@@ -444,7 +460,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         public GetCurrenciesForDropdownHandler(FlowDbContext context, ILogger<GetCurrenciesForDropdownHandler> logger)
         {
             _context = context;
-            _logger  = logger;
+            _logger = logger;
         }
 
         public async Task<List<CurrencyDropdownDto>> Handle(

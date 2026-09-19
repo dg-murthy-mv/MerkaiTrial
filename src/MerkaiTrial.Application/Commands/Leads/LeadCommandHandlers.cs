@@ -10,6 +10,7 @@
 
 using DocumentFormat.OpenXml.Presentation;
 using DocumentFormat.OpenXml.Spreadsheet;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;
@@ -45,19 +46,21 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILogger<CreateLeadHandler> _logger;
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;
-
+        private readonly ILeadStatusResolver _statuses;
         public CreateLeadHandler(
             FlowDbContext         context,
             ICurrentUserService   currentUserService,
             ICurrentTenantService tenantService,
             ILeadScoringService scoring,
             ILogger<CreateLeadHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            ILeadStatusResolver statuses)
         {
             _context            = context;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
             _scoring = scoring;
+            _statuses = statuses;
             _audit = audit;
             _logger             = logger;
         }
@@ -88,7 +91,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                         throw new PlanLimitExceededException("leads", currentLeadCount, planSettings.MaxLeads);
                 }
                 // ── end quota check ───────────────────────────────────────────────
-
+                var statuses = await _statuses.GetAsync(dto.TenantId, cancellationToken);
+                var startStatus = statuses.Default
+                    ?? throw new InvalidOperationException(
+                        "This workspace has no lead statuses set up. Add them under Settings → Lead Statuses.");
                 var lead = new Lead
                 {
                     Id          = Guid.NewGuid(),
@@ -108,7 +114,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     Source      = dto.SourceId.HasValue ? "Dynamic" : "widget",
                     EstimatedValue = dto.EstimatedValue ?? 0,
                     OwnerUserId = dto.OwnerUserId,
-                    Status      = LeadStatus.New,
+                    Status      = startStatus.Key,
                     Score       = 0,
                     IsConverted = false,
                     CreatedAtUtc = DateTime.UtcNow,
@@ -172,6 +178,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILogger<UpdateLeadHandler> _logger;
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;                       // ✅ AUDIT
+        private readonly ILeadStatusResolver _statusResolver;
 
         public UpdateLeadHandler(
             FlowDbContext context,
@@ -179,6 +186,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             ICurrentTenantService tenantService,
             ILeadScoringService scoring,
             IAuditService audit,                                     // ✅ AUDIT
+            ILeadStatusResolver statusResolver,
             ILogger<UpdateLeadHandler> logger)
         {
             _context = context;
@@ -186,6 +194,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             _tenantService = tenantService;
             _scoring = scoring;
             _audit = audit;                             // ✅ AUDIT
+            _statusResolver = statusResolver;
             _logger = logger;
         }
 
@@ -277,6 +286,10 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 _logger.LogInformation("Updated lead {LeadId} by user {UserId}", dto.LeadId, currentUserId);
 
+                // Needed for IsConverted below — the resolver returns the
+                // tenant's statuses; the category questions live on THAT.
+                var leadStatuses = await _statusResolver.GetAsync(dto.TenantId, cancellationToken);
+
                 // Resolve display names after save
                 var channelName = lead.ChannelId.HasValue
                     ? await _context.LeadChannels
@@ -347,7 +360,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                     CreatedAtUtc: lead.CreatedAtUtc,
                     UpdatedAtUtc: lead.UpdatedAtUtc,
                     HasDeal: lead.DealId.HasValue,
-                    IsConverted: lead.Status == LeadStatus.Converted,
+                    // Category, not a status named "Converted" — a tenant
+                    // may rename it, and IsConverted must still be right.
+                    IsConverted: leadStatuses.IsConverted(lead.Status),
                     DealId: lead.DealId,
                     DealStage: "",
                     ExpectedValue: lead.EstimatedValue ?? 0
@@ -369,13 +384,16 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILogger<UpdateLeadStatusHandler> _logger;
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;
+        private readonly ILeadStatusResolver _statuses;
 
-        public UpdateLeadStatusHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<UpdateLeadStatusHandler> logger, IAuditService audit)
+        public UpdateLeadStatusHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<UpdateLeadStatusHandler> logger, 
+            IAuditService audit, ILeadStatusResolver statuses)
         {
             _context = context;
             _scoring = scoring;
             _logger  = logger;
             _audit   = audit;
+            _statuses = statuses;
         }
 
         public async Task Handle(UpdateLeadStatusDto dto, CancellationToken cancellationToken = default)
@@ -387,9 +405,22 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+                var statuses = await _statuses.GetAsync(dto.TenantId, cancellationToken);
+
+                var target = statuses.Find(dto.StatusKey)
+                    ?? throw new InvalidOperationException(
+                        $"'{dto.StatusKey}' is not a status in this workspace. Valid: {statuses.SelectableKeysText}");
+
+                // Converted is set by conversion and by nothing else —
+                // otherwise a lead could read as converted with no deal
+                // behind it, and the conversion funnel would lie.
+                if (target.IsSystem)
+                    throw new InvalidOperationException(
+                        $"\"{target.Name}\" is set automatically when a lead becomes a deal — it can't be chosen by hand.");
+
 
                 var oldStatus = lead.Status;
-                lead.Status       = dto.Status;
+                lead.Status = dto.StatusKey;
                 lead.UpdatedAtUtc = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync(cancellationToken);
@@ -397,11 +428,11 @@ namespace MerkaiTrial.Application.Commands.Leads
                 await _scoring.RecalculateAsync(lead.Id, lead.TenantId, cancellationToken);
                 await _audit.WriteAsync(
                     AuditAction.LeadStatusChanged, AuditEntityType.Lead, lead.Id, dto.TenantId,
-                    new { from = oldStatus.ToString(), to = dto.Status.ToString() },
+                    new { from = statuses.NameOf(oldStatus), to = target.Name },
                     cancellationToken);
 
 
-                _logger.LogInformation("Updated lead {LeadId} status {Old} → {New}", dto.LeadId, oldStatus, dto.Status);
+                _logger.LogInformation("Updated lead {LeadId} status {Old} → {New}", dto.LeadId, oldStatus, dto.StatusKey);
             }
             catch (KeyNotFoundException) { throw; }
             catch (Exception ex)
@@ -411,7 +442,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             }
         }
 
-        public async Task Handle(Guid tenantId, Guid leadId, LeadStatus status, CancellationToken ct = default)
+        public async Task Handle(Guid tenantId, Guid leadId, string status, CancellationToken ct = default)
             => await Handle(new UpdateLeadStatusDto(tenantId, leadId, status), ct);
     }
 
@@ -446,7 +477,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 await _context.SaveChangesAsync(cancellationToken);
                 await _audit.WriteAsync(
                     AuditAction.LeadDeleted, AuditEntityType.Lead, lead.Id, command.TenantId,
-                    new { name = lead.FullName, status = lead.Status.ToString() },
+                    new { name = lead.FullName, status = lead.Status },
                     cancellationToken);
 
 
@@ -484,17 +515,19 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ICurrentTenantService _tenantService;   // FIX 3 — replaces hardcoded "IN"
         private readonly ILogger<ConvertLeadHandler> _logger;
         private readonly IAuditService _audit;
-
+        private readonly ILeadStatusResolver _statuses;
         public ConvertLeadHandler(
             FlowDbContext         context,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadHandler> logger,
-            IAuditService audit   )
+            IAuditService audit,
+            ILeadStatusResolver statuses  )
         {
             _context       = context;
             _tenantService = tenantService;
             _logger        = logger;
             _audit         = audit;
+            _statuses      = statuses;
         }
 
         public async Task<ConversionResult> Handle(ConvertLeadCommand cmd, CancellationToken cancellationToken = default)
@@ -529,7 +562,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                     _context.Companies.Add(company);
                     companyId = company.Id;
                 }
-
+                var statuses = await _statuses.GetAsync(cmd.TenantId, cancellationToken);
+                var converted = statuses.ConvertedStatus
+                            ?? throw new InvalidOperationException("No converted status is configured.");
+                                        
                 // Create Contact
                 var names = lead.FullName.Split(' ', 2);
                 var contact = new Contact
@@ -552,7 +588,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.ConvertedToCompanyId = companyId;
                 lead.ConvertedAtUtc       = DateTime.UtcNow;
                 lead.ConvertedBy          = cmd.ConvertedBy;
-                lead.Status               = LeadStatus.Converted;
+                lead.Status               = converted.Key;
 
                 await _context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);

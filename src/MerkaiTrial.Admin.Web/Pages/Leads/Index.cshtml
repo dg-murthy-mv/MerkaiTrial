@@ -303,9 +303,7 @@
                                     <small class="text-muted">@lead.Source</small>
                                 </td>
                                 <td>
-                                    <span class="badge @Model.GetStatusBadgeClass(lead.Status)">
-                                        @lead.Status
-                                    </span>
+                                    <span class="badge @Model.GetStatusBadgeClass(lead.Status)">@Model.StatusName(lead.Status)</span>
                                 </td>
 
                                 @* ✅ Score cell — full for Pro/Enterprise, locked badge for Starter *@

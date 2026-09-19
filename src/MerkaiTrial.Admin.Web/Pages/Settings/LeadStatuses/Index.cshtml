@@ -1,0 +1,247 @@
+@page "/Settings/LeadStatuses"
+@using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Settings.LeadStatuses.IndexModel
+@{
+    ViewData["Title"] = "Lead Statuses";
+}
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">Lead Statuses</h1>
+        <p class="text-muted mb-0" style="font-size:13.5px;">
+            The steps a lead moves through before it becomes a deal. Name them
+            the way your business actually works.
+        </p>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+
+        <!-- Working statuses -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-funnel me-2"></i>Your statuses</span>
+                <span class="badge bg-secondary">@Model.WorkingStatuses.Count</span>
+            </div>
+            <div class="list-group list-group-flush">
+                @foreach (var s in Model.WorkingStatuses)
+                {
+                    @if (Model.IsEditing(s))
+                    {
+                        <div class="list-group-item bg-light">
+                            <partial name="_StatusEditForm" model="Model" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group-item @(s.IsActive ? "" : "opacity-50")">
+                            <div class="d-flex align-items-center gap-3">
+
+                                @if (Model.CanUpdate)
+                                {
+                                    <div class="btn-group-vertical btn-group-sm">
+                                        <form method="post" asp-page-handler="Move">
+                                            <input type="hidden" name="statusId" value="@s.Id" />
+                                            <input type="hidden" name="direction" value="up" />
+                                            <button class="btn btn-sm btn-link p-0 text-muted"
+                                                    disabled="@Model.IsFirst(s)" title="Move up">
+                                                <i class="bi bi-chevron-up"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-page-handler="Move">
+                                            <input type="hidden" name="statusId" value="@s.Id" />
+                                            <input type="hidden" name="direction" value="down" />
+                                            <button class="btn btn-sm btn-link p-0 text-muted"
+                                                    disabled="@Model.IsLast(s)" title="Move down">
+                                                <i class="bi bi-chevron-down"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                }
+
+                                <span class="badge @Model.CategoryBadge(s.Category)">
+                                    @Model.CategoryLabel(s.Category)
+                                </span>
+
+                                <div class="flex-grow-1">
+                                    <div class="fw-semibold">
+                                        @s.Name
+                                        @if (s.IsDefault)
+                                        {
+                                            <span class="badge bg-primary ms-2" title="New leads start here">
+                                                <i class="bi bi-flag me-1"></i>Starts here
+                                            </span>
+                                        }
+                                        @if (!s.IsActive)
+                                        {
+                                            <span class="badge bg-light text-dark border ms-2">Retired</span>
+                                        }
+                                    </div>
+                                    <div class="small text-muted">
+                                        Worth @s.Score point@(s.Score == 1 ? "" : "s") toward the lead score
+                                        @if (s.LeadCount > 0)
+                                        {
+                                            <span class="mx-2">·</span>
+                                            <span>@s.LeadCount lead@(s.LeadCount == 1 ? "" : "s") here now</span>
+                                        }
+                                    </div>
+                                </div>
+
+                                @if (Model.CanUpdate)
+                                {
+                                    <div class="btn-group btn-group-sm">
+                                        @if (!s.IsDefault && s.IsActive && s.Category == LeadStatusCategory.Open)
+                                        {
+                                            <form method="post" asp-page-handler="SetDefault">
+                                                <input type="hidden" name="statusId" value="@s.Id" />
+                                                <button class="btn btn-sm btn-outline-secondary"
+                                                        title="New leads should start here">
+                                                    <i class="bi bi-flag"></i>
+                                                </button>
+                                            </form>
+                                        }
+                                        <a class="btn btn-sm btn-outline-secondary"
+                                           asp-page="./Index" asp-route-EditId="@s.Id">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        @if (Model.CanDelete && s.LeadCount == 0 && !s.IsDefault)
+                                        {
+                                            <form method="post" asp-page-handler="Delete"
+                                                  onsubmit="return confirm('Remove this status?');">
+                                                <input type="hidden" name="statusId" value="@s.Id" />
+                                                <button class="btn btn-sm btn-outline-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- System status -->
+        @if (Model.SystemStatuses.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="bi bi-gear me-2"></i>Set automatically
+                </div>
+                <div class="list-group list-group-flush">
+                    @foreach (var s in Model.SystemStatuses)
+                    {
+                        @if (Model.IsEditing(s))
+                        {
+                            <div class="list-group-item bg-light">
+                                <partial name="_StatusEditForm" model="Model" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="list-group-item">
+                                <div class="d-flex align-items-center gap-3">
+                                    <span class="badge @Model.CategoryBadge(s.Category)">
+                                        @Model.CategoryLabel(s.Category)
+                                    </span>
+
+                                    <div class="flex-grow-1">
+                                        <div class="fw-semibold">@s.Name</div>
+                                        <div class="small text-muted">
+                                            Applied when a lead becomes a deal
+                                            @if (s.LeadCount > 0)
+                                            {
+                                                <span class="mx-2">·</span>
+                                                <span>@s.LeadCount lead@(s.LeadCount == 1 ? "" : "s")</span>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <a class="btn btn-sm btn-outline-secondary"
+                                           asp-page="./Index" asp-route-EditId="@s.Id">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="card-footer small text-muted">
+                    Converting a lead sets this status. It can be renamed, but not
+                    removed or chosen by hand — otherwise a lead could read as
+                    converted with no deal behind it.
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Add -->
+    <div class="col-lg-4">
+        @if (Model.CanUpdate && !Model.EditId.HasValue)
+        {
+            <div class="card">
+                <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Add a status</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="Create">
+                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Name" class="form-label">
+                                Name <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.Name" class="form-control"
+                                   placeholder="e.g. Site Visit Booked" required />
+                            <span asp-validation-for="Input.Name" class="text-danger"></span>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Category" class="form-label">Type</label>
+                            <select asp-for="Input.Category" class="form-select">
+                                <option value="@((int)LeadStatusCategory.Open)">Working — still being pursued</option>
+                                <option value="@((int)LeadStatusCategory.Qualified)">Qualified — ready to become a deal</option>
+                                <option value="@((int)LeadStatusCategory.Disqualified)">Not pursuing</option>
+                            </select>
+                            <div class="form-text">
+                                This decides what the CRM does with the lead, so it
+                                can't be changed later.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label asp-for="Input.Score" class="form-label">Lead score points</label>
+                            <input asp-for="Input.Score" type="number" class="form-control"
+                                   min="0" max="15" />
+                            <span asp-validation-for="Input.Score" class="text-danger"></span>
+                            <div class="form-text">
+                                How much reaching this status adds to a lead's score,
+                                out of 15.
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-plus-lg me-1"></i>Add status
+                        </button>
+                    </form>
+                </div>
+            </div>
+        }
+
+        <div class="card mt-3">
+            <div class="card-body small text-muted">
+                <p class="mb-2"><strong>Renaming is safe.</strong> Leads stay where
+                they are and past history keeps reading correctly.</p>
+                <p class="mb-2"><strong>You need at least one qualified status.</strong>
+                Without it, no lead could be converted to a deal.</p>
+                <p class="mb-0"><strong>Retiring keeps the record.</strong> A status
+                with leads in it can't be removed — move them first, or retire it so
+                it stops being offered for new work.</p>
+            </div>
+        </div>
+    </div>
+</div>

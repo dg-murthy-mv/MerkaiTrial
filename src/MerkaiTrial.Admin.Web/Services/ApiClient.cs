@@ -72,7 +72,7 @@ namespace MerkaiTrial.Admin.Web.Services
         /// <summary>
         /// Update only lead status
         /// </summary>
-        public Task UpdateLeadStatusAsync(Guid tenantId, Guid leadId, LeadStatus status)
+        public Task UpdateLeadStatusAsync(Guid tenantId, Guid leadId, string status)
         {
             var dto = new UpdateLeadStatusDto(tenantId, leadId, status);
             return SafePatchVoid(

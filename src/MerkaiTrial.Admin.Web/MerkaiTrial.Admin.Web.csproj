@@ -13,6 +13,7 @@
     <Folder Include="Areas\Admin\Leads\" />
     <Folder Include="Filters\" />
     <Folder Include="Pages\Settings\AuditLogs\" />
+    <Folder Include="Pages\Settings\LeadStatuses\" />
     <Folder Include="Pages\Settings\Pipeline\" />
     <Folder Include="Pages\Tasks\" />
     <Folder Include="Pages\Settings\Users\" />

@@ -1016,6 +1016,14 @@
                 @if (CanNav("roles") || CanNav("users") || CanNav("audit"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
+                    @if (CanNav("Leads"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/LeadStatuses") ? "active" : "")"
+                           asp-page="/Settings/LeadStatuses/Index">
+                            <i class="bi bi-funnel"></i> Lead Statuses
+                        </a>
+                    }
+
                     @if (CanNav("Deals"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"

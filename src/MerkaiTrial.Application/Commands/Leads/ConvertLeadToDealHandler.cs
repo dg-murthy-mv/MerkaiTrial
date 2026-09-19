@@ -1,3 +1,4 @@
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
@@ -19,18 +20,20 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILogger<ConvertLeadToDealHandler> _logger;
         private readonly IAuditService _audit;
         private readonly IStageResolver _stages;
+        private readonly ILeadStatusResolver _statuses;
         public ConvertLeadToDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadToDealHandler> logger,
             IAuditService audit,
-            IStageResolver stages)
+            IStageResolver stages, ILeadStatusResolver statuses)
         {
             _db = db;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
+            _statuses = statuses;
             _stages = stages;
             _audit = audit;
         }
@@ -50,13 +53,14 @@ namespace MerkaiTrial.Application.Commands.Leads
                         l.Id == dto.LeadId &&
                         l.TenantId == dto.TenantId &&
                         !l.IsDeleted);
+                var statuses = await _statuses.GetAsync(dto.TenantId);
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
 
-                if (lead.Status != LeadStatus.Qualified)
+                if (!statuses.IsQualified(lead.Status))
                     throw new InvalidOperationException(
-                        $"Lead must be in 'Qualified' status to convert. Current status: {lead.Status}");
+                        $"Lead must be qualified to convert. Current status: {statuses.NameOf(lead.Status)}");
 
                 if (lead.IsConverted)
                     throw new InvalidOperationException(
@@ -242,7 +246,9 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 // ── STEP 5: UPDATE LEAD ───────────────────────────────────────
                 var oldStatus = lead.Status;
-                lead.Status = LeadStatus.Converted;
+                lead.Status = statuses.ConvertedStatus?.Key
+                ?? throw new InvalidOperationException(
+                    "No converted status is configured for this workspace.");
                 lead.IsConverted = true;
                 lead.DealId = deal.Id;
                 lead.ConvertedAtUtc = now;

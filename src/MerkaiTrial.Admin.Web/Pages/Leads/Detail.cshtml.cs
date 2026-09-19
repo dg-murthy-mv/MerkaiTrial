@@ -25,9 +25,11 @@ using MerkaiTrial.Admin.Web.Services.Activities;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -44,6 +46,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private readonly ICurrentTenantService _tenantService;
         private readonly IAuthorizationService _authorizationService;
         private readonly ILogger<DetailModel> _logger;
+        private readonly ILeadStatusService _statusService;
 
         protected override string ModuleName => Modules.Leads;
 
@@ -53,12 +56,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
          IAuthorizationService authorizationService,
          ICurrentUserService currentUserService,
          ICurrentTenantService tenantService,
-         ILogger<DetailModel> logger)
+         ILogger<DetailModel> logger,
+         ILeadStatusService statuses)
             : base(authorizationService, currentUserService, logger)
         {
             _leadService = leadService;
             _activityService = activityService;
             _currentUserService = currentUserService;
+            _statusService = statuses;
             _tenantService = tenantService;
             _authorizationService = authorizationService;
             _logger = logger;
@@ -83,8 +88,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         // ── Status ────────────────────────────────────────────────────
         [BindProperty]
-        public LeadStatus? NewStatus { get; set; }
+        public string? NewStatus { get; set; }
         public List<SelectListItem> StatusOptions { get; set; } = new();
+        public List<LeadStatusDto> Statuses { get; private set; } = new();
 
         // ── Notes ─────────────────────────────────────────────────────
         public List<LeadNoteDto> Notes { get; set; } = new();
@@ -125,6 +131,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         /// <summary>Which completed entry is having an outcome added.</summary>
         [BindProperty(SupportsGet = true)]
         public Guid? OutcomeId { get; set; }
+
+        
+       
 
         // ── Timeline ──────────────────────────────────────────────────
         public List<TimelineItemDto> Timeline { get; set; } = new();
@@ -265,7 +274,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var tenantId = me.TenantId;
                 Lead = await _leadService.GetByIdAsync(tenantId, id);
 
-                LoadStatusOptions();
+                await LoadStatusOptionsAsync();
 
                 var notesTask       = LoadNotesAsync(tenantId, id);
                 var activitiesTask  = LoadActivitiesAsync(tenantId, id);
@@ -295,12 +304,37 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 return RedirectToPage("./Index");
             }
         }
+        private async Task LoadStatusOptionsAsync()
+        {
+            try
+            {
+                // selectableOnly: FALSE. The badge helper needs the system
+                // and retired statuses too; the dropdown filters below.
+                Statuses = await _statusService.GetAsync(selectableOnly: false);
+            }
+            catch (Exception ex)
+            {
+                // A missing list means no dropdown, not a broken page.
+                _logger.LogWarning(ex, "Failed to load lead statuses");
+                Statuses = new();
+            }
 
+            StatusOptions = Statuses
+                .Where(s => s.IsActive && !s.IsSystem)
+                .OrderBy(s => s.SortOrder)
+                .Select(s => new SelectListItem
+                {
+                    Value = s.Key,
+                    Text = s.Name,
+                    Selected = s.Key == Lead.Status
+                })
+                .ToList();
+        }
         // =====================================================================
         // NOTES / STATUS / ATTACHMENTS  (unchanged behaviour)
         // =====================================================================
 
-        public async Task<IActionResult> OnPostChangeStatusAsync(Guid id, LeadStatus status)
+        public async Task<IActionResult> OnPostChangeStatusAsync(Guid id, string status)
         {
             var permissionCheck = await ValidatePermissionAsync(Actions.Update);
             if (permissionCheck != null) return permissionCheck;
@@ -309,7 +343,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 await _leadService.UpdateStatusAsync(tenantId, id, status);
-                TempData["SuccessMessage"] = $"Lead status changed to {status} successfully!";
+
+                // The client's word for it, not our key — "Site Visit
+                // Booked", not "SiteVisitBooked". Nothing is loaded on a
+                // POST, so fetch the list to resolve the name.
+                var all = await _statusService.GetAsync(selectableOnly: false);
+                var name = all.FirstOrDefault(s => s.Key == status)?.Name ?? status;
+
+                TempData["SuccessMessage"] = $"Lead status changed to {name}.";
             }
             catch (Exception ex)
             {
@@ -652,11 +693,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 // null — load it before checking status.
                 var lead = await _leadService.GetByIdAsync(tenantId, id);
 
-                if (!string.Equals((lead?.Status ?? "").Trim(), "Qualified", StringComparison.OrdinalIgnoreCase))
-                {
-                    TempData["ErrorMessage"] = "Only qualified leads can be converted to deals.";
-                    return RedirectToPage(new { id });
-                }
+               
 
                 var result = await _leadService.ConvertToDealAsync(new ConvertLeadToDealDto
                 {
@@ -782,17 +819,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             TenantTimezone = _tenantService.GetTimezone();
         }
 
-        private void LoadStatusOptions()
-        {
-            StatusOptions = Enum.GetValues<LeadStatus>()
-                .Select(s => new SelectListItem
-                {
-                    Value = ((int)s).ToString(),
-                    Text = s.ToString(),
-                    Selected = s.ToString() == Lead.Status
-                })
-                .ToList();
-        }
+        
 
         private async Task LoadNotesAsync(Guid tenantId, Guid leadId)
         {
@@ -848,7 +875,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
             var tenantId = me.TenantId;
             Lead = await _leadService.GetByIdAsync(tenantId, id);
-            LoadStatusOptions();
+
+            await LoadStatusOptionsAsync();
+
             await Task.WhenAll(
                 LoadNotesAsync(tenantId, id),
                 LoadActivitiesAsync(tenantId, id),
@@ -995,15 +1024,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public string FormatCurrency(decimal amount)
             => _tenantService.FormatCurrency(amount);
 
-        public string GetStatusBadgeClass(string status) => status switch
+        public string GetStatusBadgeClass(string statusKey)
         {
-            "New" => "bg-primary",
-            "Contacted" => "bg-info",
-            "Qualified" => "bg-success",
-            "Unqualified" => "bg-secondary",
-            "Converted" => "bg-warning text-dark",
-            _ => "bg-dark"
-        };
+            var s = Statuses.FirstOrDefault(x => x.Key == statusKey);
+
+            return s?.Category switch
+            {
+                LeadStatusCategory.Qualified => "bg-success",
+                LeadStatusCategory.Disqualified => "bg-secondary",
+                LeadStatusCategory.Converted => "bg-warning text-dark",
+                _ => "bg-primary"
+            };
+        }
+
 
         public string GetScoreColor(int score)
         {
