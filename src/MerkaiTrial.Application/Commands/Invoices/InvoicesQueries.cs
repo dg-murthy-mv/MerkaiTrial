@@ -1,4 +1,19 @@
-﻿using MerkaiTrial.Application.DTOs;
+// =====================================================================
+// InvoicesQueries.cs
+// Location: MerkaiTrial.Application/Queries/Invoices/InvoicesQueries.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (016) — READ SIDE ONLY, on purpose.
+//   Invoices follow their deal (directly, or through the quote they were
+//   raised from). The invoice LIST and STATISTICS now only include
+//   invoices on deals the user can see. Invoice by-id is unchanged — part
+//   of the quotes/invoices round.
+// =====================================================================
+
+using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.Extensions.Logging;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -25,12 +40,15 @@ namespace MerkaiTrial.Application.Queries.Invoices
     {
         private readonly FlowDbContext _context;
         private readonly ILogger<GetInvoicesHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetInvoicesHandler(
             FlowDbContext context,
+            IRecordScopeService scope,
             ILogger<GetInvoicesHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -42,9 +60,12 @@ namespace MerkaiTrial.Application.Queries.Invoices
             {
                 _logger.LogInformation("Getting invoices for tenant {TenantId}", request.TenantId);
 
+                var dealAccess = await _scope.GetAsync(RecordModules.Deals, cancellationToken);
+
                 var query = _context.Invoices
                     .AsNoTracking()
-                    .Where(i => i.TenantId == request.TenantId && !i.IsDeleted);
+                    .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
+                    .WithVisibleDeal(_context, dealAccess);
 
                 // Apply filters
                 if (request.QuoteId.HasValue)
@@ -235,12 +256,15 @@ namespace MerkaiTrial.Application.Queries.Invoices
     {
         private readonly FlowDbContext _context;
         private readonly ILogger<GetInvoiceStatisticsHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetInvoiceStatisticsHandler(
             FlowDbContext context,
+            IRecordScopeService scope,
             ILogger<GetInvoiceStatisticsHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -265,9 +289,12 @@ namespace MerkaiTrial.Application.Queries.Invoices
                 var paid      = Domain.Enums.InvoiceStatus.Paid;
                 var now       = DateTime.UtcNow;
 
+                var dealAccess = await _scope.GetAsync(RecordModules.Deals, cancellationToken);
+
                 var stats = await _context.Invoices
                     .AsNoTracking()
                     .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
+                    .WithVisibleDeal(_context, dealAccess)
                     .GroupBy(i => 1)
                     .Select(g => new InvoiceStatisticsDto
                     {

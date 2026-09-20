@@ -1,3 +1,21 @@
+// =====================================================================
+// QuotesCommandHandler.cs
+// Location: MerkaiTrial.Application/Commands/Quotes/QuotesCommandHandler.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (016) — READ SIDE ONLY, on purpose.
+//   A quote has no owner of its own; it follows its deal. The quote LIST
+//   (Quotes page, Pipeline cards, Dashboard "Recent Quotes") and the quote
+//   STATISTICS (Dashboard) now only include quotes on deals the user can
+//   see. A rep's dashboard no longer shows the whole workspace's quotes.
+//
+//   Quote by-id, create, update, status and delete are UNCHANGED — they are
+//   part of the quotes/invoices round you planned alongside the approval
+//   workflow. GetQuoteByIdHandler in particular keeps its one-argument
+//   constructor: CreateQuoteHandler builds it with `new`.
+// =====================================================================
+
 using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
@@ -15,8 +33,13 @@ namespace MerkaiTrial.Application.Commands.Quotes
     public class GetQuotesHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
 
-        public GetQuotesHandler(FlowDbContext db) => _db = db;
+        public GetQuotesHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<QuoteListItem>> Handle(
             Guid tenantId,
@@ -25,8 +48,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {
+            // Quotes follow their deal's visibility.
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals);
+
             IQueryable<Quote> query = _db.Quotes
                 .Where(q => q.TenantId == tenantId && !q.IsDeleted)
+                .WithVisibleDeal(_db, dealAccess)
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Contact)
                 .Include(q => q.Items.Where(i => !i.IsDeleted));
@@ -803,8 +830,13 @@ namespace MerkaiTrial.Application.Commands.Quotes
     public class GetQuoteStatisticsHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
 
-        public GetQuoteStatisticsHandler(FlowDbContext db) => _db = db;
+        public GetQuoteStatisticsHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<QuoteStatisticsDto> Handle(Guid tenantId)
         {
@@ -819,8 +851,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
             var rejected = QuoteStatus.Rejected;
             var expired  = QuoteStatus.Expired;
 
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals);
+
             var stats = await _db.Quotes
                 .Where(q => q.TenantId == tenantId && !q.IsDeleted)
+                .WithVisibleDeal(_db, dealAccess)
                 .GroupBy(q => 1)
                 .Select(g => new QuoteStatisticsDto
                 {

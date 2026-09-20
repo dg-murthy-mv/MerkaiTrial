@@ -1,6 +1,7 @@
 // =====================================================================
 // FILE: MerkaiTrial.Domain/Entities/User.cs
 // CHANGED: credential + lockout fields added (migration 001).
+// CHANGED: TeamId added (migration 014) — drives "Team" record scope.
 //
 // IsSuperAdmin moves from appsettings (DemoAuthenticationOptions) onto the
 // user row. That is the whole point: super-admin status must be a property
@@ -22,6 +23,14 @@ namespace MerkaiTrial.Domain.Entities
         public string? JobTitle { get; set; }
         public bool IsActive { get; set; } = true;
         public bool IsTenantAdmin { get; set; }
+
+        /// <summary>
+        /// The user's team, if any. A user whose role has "Team" scope sees
+        /// records owned by anyone with the same TeamId (plus unassigned
+        /// ones). Null = no team: Team scope then behaves like Own + unassigned.
+        /// Must belong to the same tenant — enforced in SetUserTeamHandler.
+        /// </summary>
+        public Guid? TeamId { get; set; }
 
         // ── Credentials ───────────────────────────────────────────────
         /// <summary>Null means "no password set" — user cannot log in and must

@@ -5,6 +5,20 @@
 //   ✅ GetDealDetailHandler — joins CompanyVerticals, populates VerticalId/VerticalName
 //   ✅ CreateDealHandler    — sets VerticalId from CreateDealDto
 //   ✅ UpdateDealHandler    — sets VerticalId from UpdateDealDto
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (016) — deals follow the same Own / Team / All rule
+// as leads, on Deal.OwnerUserId.
+//   • List, by-contact, detail, summary: only visible deals. A deal
+//     outside scope → KeyNotFound → 404, same as another tenant's.
+//   • Update, stage change (both kinds), delete: the deal must be visible.
+//   • Notes, legacy activities, reminders, stage history: checked against
+//     the deal first. Lists → empty; writes → 404.
+//   • DealAccessHandler: used by DealsController to guard the attachment
+//     endpoints (their handlers live in another file).
+//   • GetDealsResponse.QuotaUsed: every deal in the workspace, for the
+//     plan quota bar — the list itself is scoped.
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
@@ -43,13 +57,20 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealsByContactHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
 
-        public GetDealsByContactHandler(FlowDbContext db) => _db = db;
+        public GetDealsByContactHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<ContactDealItem>> HandleAsync(GetDealsByContactRequest request)
         {
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var deals = await (
-                from d in _db.Deals
+                from d in _db.Deals.VisibleTo(access)
                 join comp in _db.Companies on d.CompanyId equals (Guid?)comp.Id into compGroup
                 from comp in compGroup.DefaultIfEmpty()
                 where d.TenantId.ToString() == request.TenantId
@@ -81,11 +102,13 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly FlowDbContext _db;
         private readonly IStageResolver _stages;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
 
         public TransitionDealStageHandler(
-            FlowDbContext db, IStageResolver stages, IAuditService audit)
+            FlowDbContext db, IStageResolver stages, IAuditService audit, IRecordScopeService scope)
         {
             _db = db;
+            _scope = scope;
             _stages = stages;
             _audit = audit;
         }
@@ -105,8 +128,12 @@ namespace MerkaiTrial.Application.Commands.Deals
                 throw new ArgumentException(
                     $"'{toStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
 
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted);
+                .Where(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted)
+                .VisibleTo(access)
+                .FirstOrDefaultAsync();
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
@@ -151,7 +178,13 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealsHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealsHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealsHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<GetDealsResponse> HandleAsync(GetDealsRequest request)
         {
@@ -162,8 +195,14 @@ namespace MerkaiTrial.Application.Commands.Deals
             // comparing Guid-to-Guid lets the index actually get used.
             var tenantId = Guid.Parse(request.TenantId);
 
+            // Record visibility — Own / Team / All.
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
+            // The plan limit counts every deal in the workspace, whoever owns it.
+            var quotaUsed = await _db.Deals.CountAsync(d => d.TenantId == tenantId && !d.IsDeleted);
+
             var query =
-                from d    in _db.Deals
+                from d    in _db.Deals.VisibleTo(access)
                 join c    in _db.Contacts  on d.ContactId  equals c.Id
                 join comp in _db.Companies on d.CompanyId  equals (Guid?)comp.Id into compGroup
                 from comp in compGroup.DefaultIfEmpty()
@@ -233,7 +272,7 @@ namespace MerkaiTrial.Application.Commands.Deals
                 );
             }).ToList();
 
-            return new GetDealsResponse(items, total, request.Page, request.PageSize);
+            return new GetDealsResponse(items, total, request.Page, request.PageSize, quotaUsed);
         }
     }
 
@@ -242,13 +281,22 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealDetailHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealDetailHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealDetailHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<DealDetailDto> HandleAsync(string tenantId, Guid dealId)
         {
+            // Outside the user's scope reads exactly like "does not exist".
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             // ✅ Join CompanyVerticals to resolve VerticalName
             var row = await (
-                from deal in _db.Deals
+                from deal in _db.Deals.VisibleTo(access)
                 join c    in _db.Contacts      on deal.ContactId  equals c.Id
                 join comp in _db.Companies     on deal.CompanyId  equals (Guid?)comp.Id  into compGroup
                 from comp in compGroup.DefaultIfEmpty()
@@ -325,12 +373,20 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealByIdHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealByIdHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealByIdHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<DealDto> HandleAsync(string tenantId, Guid dealId)
         {
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var row = await (
-                from deal in _db.Deals
+                from deal in _db.Deals.VisibleTo(access)
                 join c    in _db.Contacts  on deal.ContactId equals c.Id
                 join comp in _db.Companies on deal.CompanyId equals (Guid?)comp.Id into compGroup
                 from comp in compGroup.DefaultIfEmpty()
@@ -517,14 +573,17 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly ICurrentUserService _currentUserService;
         private readonly IStageResolver _stages;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
 
         public UpdateDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             IStageResolver stages,
-            IAuditService audit)
+            IAuditService audit,
+            IRecordScopeService scope)
         {
             _db = db;
+            _scope = scope;
             _currentUserService = currentUserService;
             _stages = stages;
             _audit = audit;
@@ -535,8 +594,12 @@ namespace MerkaiTrial.Application.Commands.Deals
             if (!Guid.TryParse(tenantId, out var tenantGuid))
                 throw new ArgumentException($"Invalid tenantId: {tenantId}");
 
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted);
+                .Where(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted)
+                .VisibleTo(access)
+                .FirstOrDefaultAsync();
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
@@ -642,14 +705,17 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly ICurrentUserService _currentUserService;
         private readonly IStageResolver _stages;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
 
         public UpdateDealStageHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             IStageResolver stages,
-            IAuditService audit)
+            IAuditService audit,
+            IRecordScopeService scope)
         {
             _db = db;
+            _scope = scope;
             _currentUserService = currentUserService;
             _stages = stages;
             _audit = audit;
@@ -666,10 +732,14 @@ namespace MerkaiTrial.Application.Commands.Deals
                 ?? throw new ArgumentException(
                     $"'{newStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
 
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d => d.Id == dealId
-                                       && d.TenantId == tenantGuid
-                                       && !d.IsDeleted);
+                .Where(d => d.Id == dealId
+                         && d.TenantId == tenantGuid
+                         && !d.IsDeleted)
+                .VisibleTo(access)
+                .FirstOrDefaultAsync();
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
@@ -724,18 +794,25 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly FlowDbContext       _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
 
-        public DeleteDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
+        public DeleteDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit,
+            IRecordScopeService scope)
         {
             _db                 = db;
+            _scope              = scope;
             _currentUserService = currentUserService;
             _audit              = audit;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId)
         {
+            var access = await _scope.GetAsync(RecordModules.Deals);
+
             var deal = await _db.Deals
-                .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId.ToString() == tenantId && !d.IsDeleted);
+                .Where(d => d.Id == dealId && d.TenantId.ToString() == tenantId && !d.IsDeleted)
+                .VisibleTo(access)
+                .FirstOrDefaultAsync();
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
@@ -758,10 +835,19 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealNotesHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealNotesHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealNotesHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<DealNoteDto>> HandleAsync(string tenantId, Guid dealId)
         {
+            if (!Guid.TryParse(tenantId, out var t) || !await _scope.CanSeeDealAsync(_db, t, dealId))
+                return new List<DealNoteDto>();
+
             return await _db.DealNotes
                 .Where(n => n.DealId == dealId && n.TenantId.ToString() == tenantId && !n.IsDeleted)
                 .OrderByDescending(n => n.CreatedAtUtc)
@@ -773,10 +859,20 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class CreateDealNoteHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public CreateDealNoteHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public CreateDealNoteHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task HandleAsync(CreateDealNoteDto dto)
         {
+            // Also stops a note being attached to another tenant's deal id,
+            // which the old code allowed.
+            await _scope.EnsureDealVisibleAsync(_db, dto.TenantId, dto.DealId);
+
             _db.DealNotes.Add(new DealNote
             {
                 Id           = Guid.NewGuid(),
@@ -796,10 +892,19 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealActivitiesHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealActivitiesHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealActivitiesHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<DealActivityDto>> HandleAsync(string tenantId, Guid dealId)
         {
+            if (!Guid.TryParse(tenantId, out var t) || !await _scope.CanSeeDealAsync(_db, t, dealId))
+                return new List<DealActivityDto>();
+
             return await _db.DealActivities
                 .Where(a => a.DealId == dealId && a.TenantId.ToString() == tenantId && !a.IsDeleted)
                 .OrderByDescending(a => a.ActivityDate)
@@ -814,10 +919,18 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class CreateDealActivityHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public CreateDealActivityHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public CreateDealActivityHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task HandleAsync(CreateDealActivityDto dto)
         {
+            await _scope.EnsureDealVisibleAsync(_db, dto.TenantId, dto.DealId);
+
             _db.DealActivities.Add(new DealActivity
             {
                 Id           = Guid.NewGuid(),
@@ -841,10 +954,19 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealRemindersHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealRemindersHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealRemindersHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<DealReminderDto>> HandleAsync(string tenantId, Guid dealId)
         {
+            if (!Guid.TryParse(tenantId, out var t) || !await _scope.CanSeeDealAsync(_db, t, dealId))
+                return new List<DealReminderDto>();
+
             return await _db.DealReminders
                 .Where(r => r.DealId == dealId && r.TenantId.ToString() == tenantId && !r.IsDeleted)
                 .OrderBy(r => r.ReminderDate)
@@ -859,10 +981,18 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class CreateDealReminderHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public CreateDealReminderHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public CreateDealReminderHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task HandleAsync(CreateDealReminderDto dto)
         {
+            await _scope.EnsureDealVisibleAsync(_db, dto.TenantId, dto.DealId);
+
             _db.DealReminders.Add(new DealReminder
             {
                 Id           = Guid.NewGuid(),
@@ -883,14 +1013,21 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class CompleteDealReminderHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public CompleteDealReminderHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public CompleteDealReminderHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task HandleAsync(string tenantId, Guid reminderId)
         {
             var reminder = await _db.DealReminders
                 .FirstOrDefaultAsync(r => r.Id == reminderId && r.TenantId.ToString() == tenantId && !r.IsDeleted);
 
-            if (reminder is null)
+            if (reminder is null ||
+                !await _scope.CanSeeDealAsync(_db, reminder.TenantId, reminder.DealId))
                 throw new KeyNotFoundException($"Reminder {reminderId} not found");
 
             reminder.IsCompleted    = true;
@@ -905,10 +1042,19 @@ namespace MerkaiTrial.Application.Commands.Deals
     public class GetDealStageHistoryHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
-        public GetDealStageHistoryHandler(FlowDbContext db) => _db = db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealStageHistoryHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<DealStageHistoryDto>> HandleAsync(GetDealStageHistoryRequest request)
         {
+            if (!Guid.TryParse(request.TenantId, out var t) || !await _scope.CanSeeDealAsync(_db, t, request.DealId))
+                return new List<DealStageHistoryDto>();
+
             return await _db.DealStageHistory
                 .Where(h => h.TenantId.ToString() == request.TenantId && h.DealId == request.DealId)
                 .OrderByDescending(h => h.ChangedAtUtc)
@@ -950,6 +1096,42 @@ namespace MerkaiTrial.Application.Commands.Deals
             }
 
             return sources;
+        }
+    }
+
+    // ==================== ACCESS (for the attachment endpoints) ====================
+
+    /// <summary>
+    /// DealsController asks this before the attachment endpoints, whose
+    /// handlers live in a separate file. Keeps "can this user see that
+    /// deal?" in one place instead of reimplementing it per handler.
+    /// </summary>
+    public class DealAccessHandler : ICommandHandler
+    {
+        private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
+
+        public DealAccessHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
+
+        public Task<bool> CanSeeDealAsync(Guid tenantId, Guid dealId, CancellationToken ct = default)
+            => _scope.CanSeeDealAsync(_db, tenantId, dealId, ct);
+
+        /// <summary>The attachment belongs to a deal the user can see.</summary>
+        public async Task<bool> CanSeeDealAttachmentAsync(Guid tenantId, Guid attachmentId, CancellationToken ct = default)
+        {
+            var access = await _scope.GetAsync(RecordModules.Deals, ct);
+            var visibleDealIds = _db.Deals
+                .Where(d => d.TenantId == tenantId && !d.IsDeleted)
+                .VisibleTo(access)
+                .Select(d => d.Id);
+
+            return await _db.Attachments.AsNoTracking()
+                .AnyAsync(a => a.Id == attachmentId && a.TenantId == tenantId && !a.IsDeleted &&
+                               visibleDealIds.Contains(a.EntityId), ct);
         }
     }
 }

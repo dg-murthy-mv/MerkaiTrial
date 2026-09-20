@@ -13,8 +13,14 @@
 //   • Converted is IsSystem: renameable, but not deletable, not
 //     deactivatable, and not offered in any dropdown.
 //   • A status holding leads cannot be deleted — only retired.
+//
+// RECORD VISIBILITY (014): LeadCount in the list is what the CURRENT USER
+// can see (it drives the Leads page tab counts). A rep with Own scope sees
+// counts of their own leads. Delete/retire checks below still count every
+// lead in the tenant — they are about data integrity, not display.
 // =====================================================================
 
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -146,8 +152,13 @@ public class LeadStatusResolver : ILeadStatusResolver
 public class GetLeadStatusesHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
+    private readonly IRecordScopeService _scope;
 
-    public GetLeadStatusesHandler(FlowDbContext db) => _db = db;
+    public GetLeadStatusesHandler(FlowDbContext db, IRecordScopeService scope)
+    {
+        _db = db;
+        _scope = scope;
+    }
 
     public async Task<List<LeadStatusDto>> Handle(
         Guid tenantId, bool selectableOnly = false, CancellationToken ct = default)
@@ -159,8 +170,13 @@ public class GetLeadStatusesHandler : ICommandHandler
 
         var statuses = await q.OrderBy(s => s.SortOrder).ToListAsync(ct);
 
+        // Counts respect record visibility — they are the Leads page's tab
+        // counts, and must agree with the list the user will see.
+        var access = await _scope.GetAsync(RecordModules.Leads, ct);
+
         var counts = await _db.Leads.AsNoTracking()
             .Where(l => l.TenantId == tenantId && !l.IsDeleted)
+            .VisibleTo(access)
             .GroupBy(l => l.Status)
             .Select(g => new { Status = g.Key, N = g.Count() })
             .ToDictionaryAsync(x => x.Status, x => x.N, ct);

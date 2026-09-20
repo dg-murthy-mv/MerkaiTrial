@@ -1,9 +1,19 @@
-﻿// =====================================================================
+// =====================================================================
 // LEAD REMINDERS HANDLERS
 // Location: MerkaiTrial.Application/Commands/Leads/LeadReminderHandlers.cs
+//
+// COMPLETE FILE — replaces the existing one.
+// LEGACY: reminders are tasks in the Activities table now. These handlers
+// stay only because an endpoint still reaches them — scoped all the same.
+//
+// RECORD VISIBILITY (015): every handler here checks the current user can
+// see the lead first (RecordScopeGuards). Writes on a lead outside scope
+// → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
+// answer as for a lead that doesn't exist.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +25,13 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class CreateLeadReminderHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<CreateLeadReminderHandler> _logger;
 
-        public CreateLeadReminderHandler(FlowDbContext context, ILogger<CreateLeadReminderHandler> logger)
+        public CreateLeadReminderHandler(FlowDbContext context, IRecordScopeService scope, ILogger<CreateLeadReminderHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -27,12 +39,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
-                // Verify lead exists
-                var leadExists = await _context.Leads
-                    .AnyAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
-
-                if (!leadExists)
-                    throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+                await _scope.EnsureLeadVisibleAsync(_context, dto.TenantId, dto.LeadId, cancellationToken);
 
                 var reminder = new LeadReminder
                 {
@@ -80,11 +87,13 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class GetLeadRemindersHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadRemindersHandler> _logger;
 
-        public GetLeadRemindersHandler(FlowDbContext context, ILogger<GetLeadRemindersHandler> logger)
+        public GetLeadRemindersHandler(FlowDbContext context, IRecordScopeService scope, ILogger<GetLeadRemindersHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -92,6 +101,9 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                if (!await _scope.CanSeeLeadAsync(_context, tenantId, leadId, cancellationToken))
+                    return new List<LeadReminderDto>();
+
                 var reminders = await _context.Set<LeadReminder>()
                     .AsNoTracking()
                     .Where(r => r.LeadId == leadId && r.TenantId == tenantId && !r.IsDeleted)
@@ -123,11 +135,13 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class CompleteReminderHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<CompleteReminderHandler> _logger;
 
-        public CompleteReminderHandler(FlowDbContext context, ILogger<CompleteReminderHandler> logger)
+        public CompleteReminderHandler(FlowDbContext context, IRecordScopeService scope, ILogger<CompleteReminderHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -138,7 +152,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var reminder = await _context.Set<LeadReminder>()
                     .FirstOrDefaultAsync(r => r.Id == dto.ReminderId && r.TenantId == dto.TenantId && !r.IsDeleted, cancellationToken);
 
-                if (reminder == null)
+                if (reminder == null ||
+                    !await _scope.CanSeeLeadAsync(_context, dto.TenantId, reminder.LeadId, cancellationToken))
                     throw new KeyNotFoundException($"Reminder {dto.ReminderId} not found");
 
                 reminder.IsCompleted = true;

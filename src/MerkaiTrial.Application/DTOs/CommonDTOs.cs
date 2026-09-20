@@ -384,6 +384,7 @@ namespace MerkaiTrial.Application.DTOs
         int UnqualifiedLeads,
         int ConvertedLeads,
         int OverdueReminders,
-        int TodayActivities
+        int TodayActivities,
+        int QuotaUsed = 0
     );
 }

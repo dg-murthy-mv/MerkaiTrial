@@ -4,22 +4,32 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// LEAD STATUSES (this pass):
-//   1. Status filter options come from the tenant's lead statuses
-//      (ILeadStatusService), not Enum.GetValues<LeadStatus>(). Value = Key
-//      (what's stored on Lead.Status), Text = Name (what the tenant calls it).
-//      Retired and system (Converted) statuses are INCLUDED — you still need
-//      to filter old leads sitting in a retired status.
-//   2. LeadListItem.Status is now the KEY. The view must show
-//      @Model.StatusName(lead.Status), never lead.Status directly, or a tenant
-//      that renamed "Working" to "กำลังติดต่อ" still sees "Working".
-//   3. Badge colour is decided by CATEGORY, not name — renaming a status
-//      never breaks its colour, and a new tenant status gets the right one.
-//   4. Delete guard uses lead.IsConverted instead of Status == "Converted"
-//      (the Converted key's display name is tenant-editable).
-//   5. `using MerkaiTrial.Domain.Enums` removed — the LeadStatus enum is gone.
+// STATUS TABS (this pass)
+//   The Status dropdown and the fixed New/Working/Qualified/Converted cards
+//   are replaced by one tab per tenant status, with counts. The cards were
+//   hardcoded: a tenant that added "Site Visit Booked" got no card for it.
 //
-// Earlier passes: AuthorizedPageModel, Leads.Read on GET, Leads.Delete on POST.
+//   Tabs, left to right:
+//     Active  — default. Every lead still being worked: Open + Qualified
+//               categories. Hides Converted and Not-pursuing clutter.
+//     <each tenant status in its SortOrder>  — retired ones only if they
+//               still hold leads.
+//     All
+//
+//   StatusFilter (in the URL, so it survives paging and bookmarks):
+//     empty      → Active
+//     "all"      → All
+//     <key>      → that status
+//
+//   The API receives a comma-separated key list for Active
+//   (status=New,Working,Qualified). GetLeadsPaginatedHandler must accept
+//   that — see the snippet in the notes.
+//
+//   Counts come from /api/lead-statuses (LeadCount per status) — no new
+//   endpoint.
+//
+// Earlier passes: tenant statuses (ILeadStatusService), StatusName helper,
+// category-based badges, IsConverted delete guard, AuthorizedPageModel.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -31,12 +41,13 @@ using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
 
 namespace MerkaiTrial.Admin.Web.Pages.Leads
 {
     public class IndexModel : AuthorizedPageModel
     {
+        public const string AllTab = "all";
+
         private readonly ILeadService _leadService;
         private readonly ILeadStatusService _statusService;
         private readonly ICurrentUserService _currentUserService;
@@ -64,21 +75,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public PaginatedResult<LeadListItem> PaginatedLeads { get; set; }
             = new PaginatedResult<LeadListItem>();
 
+        // Still needed: TotalLeads drives the quota bar and the Add Lead limit.
         public LeadStatsDto Stats { get; set; } = new LeadStatsDto(0, 0, 0, 0, 0, 0, 0, 0);
 
-        /// <summary>
-        /// All of this tenant's lead statuses (including retired and Converted),
-        /// used for the filter dropdown, display names and badge colours.
-        /// </summary>
+        /// <summary>All of this tenant's statuses, including retired and Converted.</summary>
         public List<LeadStatusDto> Statuses { get; private set; } = new();
 
-        // Tenant context — use these in the view, never hardcode.
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrency { get; private set; } = string.Empty;
 
         [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
-        [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }   // status KEY
+        [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }   // "", "all" or a status KEY
         [BindProperty(SupportsGet = true)] public string? AssignedToFilter { get; set; }
 
         [TempData] public string? SuccessMessage { get; set; }
@@ -86,16 +94,33 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public int TotalLeads => PaginatedLeads.TotalCount;
 
-        public SelectList StatusOptions => new SelectList(
-            Statuses
-                .OrderBy(s => s.SortOrder)
-                .Select(s => new SelectListItem
-                {
-                    Value = s.Key,
-                    Text = s.IsActive ? s.Name : $"{s.Name} (retired)",
-                    Selected = s.Key == StatusFilter
-                }),
-            "Value", "Text", StatusFilter);
+        // ── Tabs ──────────────────────────────────────────────────────────
+
+        public bool IsActiveTab => string.IsNullOrEmpty(StatusFilter);
+        public bool IsAllTab => string.Equals(StatusFilter, AllTab, StringComparison.OrdinalIgnoreCase);
+        public bool IsStatusTab(string key) => StatusFilter == key;
+
+        /// <summary>
+        /// Statuses whose leads still need work: Open + Qualified categories.
+        /// Retired ones included — a lead sitting in a retired status is still active.
+        /// </summary>
+        public IEnumerable<LeadStatusDto> ActiveStatuses => Statuses.Where(s =>
+            s.Category == LeadStatusCategory.Open ||
+            s.Category == LeadStatusCategory.Qualified);
+
+        /// <summary>One tab per status, in the tenant's order. Retired only while they hold leads.</summary>
+        public IEnumerable<LeadStatusDto> TabStatuses => Statuses
+            .Where(s => s.IsActive || s.IsSystem || s.LeadCount > 0)
+            .OrderBy(s => s.SortOrder);
+
+        public int ActiveCount => ActiveStatuses.Sum(s => s.LeadCount);
+        public int AllCount => Statuses.Sum(s => s.LeadCount);
+
+        /// <summary>Heading for the empty state and page context.</summary>
+        public string CurrentTabName =>
+            IsActiveTab ? "Active" :
+            IsAllTab    ? "All"    :
+            StatusName(StatusFilter);
 
         public async Task<IActionResult> OnGetAsync()
         {
@@ -104,8 +129,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
             await InitializePermissionsAsync();
 
-            // Statuses first and outside the main try: a failure here must not
-            // blank the lead list — the helpers fall back to showing the key.
+            // Statuses first: the tab decides which keys the list asks for.
             await LoadStatusesAsync();
 
             try
@@ -120,7 +144,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     pageNumber: PageNumber,
                     pageSize: 10,
                     searchTerm: SearchTerm,
-                    status: StatusFilter,
+                    status: ResolveStatusQuery(),
                     assignedTo: AssignedToFilter
                 );
 
@@ -150,6 +174,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             }
         }
 
+        /// <summary>
+        /// Turns the selected tab into the API's status parameter.
+        ///   All            → null (no filter)
+        ///   Active         → "New,Working,Qualified" (comma-separated keys)
+        ///   a status tab   → that key
+        /// If statuses failed to load, Active falls back to All rather than
+        /// showing an empty list that looks like "you have no leads".
+        /// </summary>
+        private string? ResolveStatusQuery()
+        {
+            if (IsAllTab) return null;
+
+            if (IsActiveTab)
+            {
+                var keys = ActiveStatuses.Select(s => s.Key).ToList();
+                return keys.Count == 0 ? null : string.Join(",", keys);
+            }
+
+            return StatusFilter;
+        }
+
         public async Task<IActionResult> OnPostDeleteAsync(Guid id)
         {
             var permissionCheck = await ValidatePermissionAsync(Actions.Delete);
@@ -163,14 +208,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 if (lead == null)
                 {
                     TempData["ErrorMessage"] = "Lead not found.";
-                    return RedirectToPage();
+                    return RedirectToPage(new { StatusFilter });
                 }
 
-                // By flag, not by name — the Converted status can be renamed.
                 if (lead.IsConverted)
                 {
                     TempData["ErrorMessage"] = "Converted leads cannot be deleted. Manage this record via the associated Deal.";
-                    return RedirectToPage();
+                    return RedirectToPage(new { StatusFilter });
                 }
 
                 await _leadService.DeleteAsync(tenantId, id);
@@ -181,7 +225,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 _logger.LogError(ex, "Error deleting lead {Id}", id);
                 TempData["ErrorMessage"] = "Failed to delete lead. Please try again.";
             }
-            return RedirectToPage();
+
+            // Stay on the tab the user was on
+            return RedirectToPage(new { StatusFilter });
         }
 
         private async Task LoadStatusesAsync()
@@ -199,11 +245,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         // ── View helpers — call these in cshtml, never format inline ──
 
-        /// <summary>
-        /// Use: @Model.StatusName(lead.Status)
-        /// Lead.Status holds the KEY; this returns the tenant's display name.
-        /// Falls back to the key if statuses failed to load.
-        /// </summary>
+        /// <summary>Use: @Model.StatusName(lead.Status). Falls back to the key.</summary>
         public string StatusName(string? key)
         {
             if (string.IsNullOrEmpty(key)) return "—";
@@ -211,40 +253,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         }
 
         /// <summary>
-        /// Use: class="badge @Model.GetStatusBadgeClass(lead.Status)"
-        /// Colour follows the status CATEGORY, so renamed or tenant-added
-        /// statuses still get the right colour.
+        /// True when the key is the tenant's Converted (system) status.
+        /// Use instead of lead.Status == "Converted" — the name is editable.
         /// </summary>
+        public bool IsConvertedStatus(string? key) =>
+            Statuses.FirstOrDefault(s => s.Key == key)?.Category == LeadStatusCategory.Converted;
+
+        /// <summary>Badge colour by CATEGORY, so renamed/new statuses stay correct.</summary>
         public string GetStatusBadgeClass(string? key)
         {
             var status = Statuses.FirstOrDefault(s => s.Key == key);
             if (status == null) return "bg-dark";
-
-            return status.Category switch
-            {
-                LeadStatusCategory.Qualified => "bg-success",
-                LeadStatusCategory.Disqualified => "bg-secondary",
-                LeadStatusCategory.Converted => "bg-warning text-dark",
-                _ => "bg-primary"   // Open
-            };
+            return CategoryBadgeClass(status.Category);
         }
 
-        /// <summary>Use: @Model.FormatDate(item.CreatedAtUtc)</summary>
+        public static string CategoryBadgeClass(LeadStatusCategory category) => category switch
+        {
+            LeadStatusCategory.Qualified    => "bg-success",
+            LeadStatusCategory.Disqualified => "bg-secondary",
+            LeadStatusCategory.Converted    => "bg-warning text-dark",
+            _                               => "bg-primary"   // Open
+        };
+
+        /// <summary>Small coloured dot for tab labels.</summary>
+        public static string CategoryDotClass(LeadStatusCategory category) => category switch
+        {
+            LeadStatusCategory.Qualified    => "text-success",
+            LeadStatusCategory.Disqualified => "text-secondary",
+            LeadStatusCategory.Converted    => "text-warning",
+            _                               => "text-primary"
+        };
+
         public string FormatDate(DateTime utcDateTime)
             => _tenantService.FormatDate(utcDateTime);
 
-        /// <summary>Use: @Model.FormatCurrency(item.EstimatedValue)</summary>
         public string FormatCurrency(decimal amount)
             => _tenantService.FormatCurrency(amount);
 
-        /// <summary>
-        /// Use: @Model.FormatCurrency(item.EstimatedValue, 0) — whole-number money
-        /// for compact list/tile displays. Same shape as Pipeline/Index.cshtml.cs.
-        /// </summary>
+        /// <summary>Whole-number money for compact list displays. Same shape as Pipeline/Index.</summary>
         public string FormatCurrency(decimal amount, int decimals)
             => _tenantService.FormatCurrency(amount, decimals);
 
-        /// <summary>Use: @Model.FormatDateTime(item.CreatedAtUtc)</summary>
         public string FormatDateTime(DateTime utcDateTime)
             => _tenantService.FormatDateTime(utcDateTime);
     }

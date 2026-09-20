@@ -2,7 +2,26 @@
 // Pipeline/Index.cshtml.cs
 // Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Index.cshtml.cs
 //
-// CHANGES:
+// CHANGES (017):
+//   ✅ DealQuotaUsed — every deal in the workspace (GetDealsResponse.QuotaUsed),
+//      for the Deal Quota bar and the "Deal Limit Reached" button. They
+//      used TotalDeals, which is only the deals THIS user can see, so a rep
+//      on Own saw "0 / 500 used" while the Dashboard said 8 / 500 — and
+//      could never hit the limit button however full the workspace was.
+//
+// CHANGES (deals visibility round):
+//   ✅ Loads deals with pageSize 500. It used the default 20, so the board
+//      silently stopped at 20 deals and every stage total / win rate on
+//      the page was computed from those 20. The API now clamps at 500
+//      instead of resetting anything over 100 back to 20.
+//   ✅ The board shows only deals this user can see (Own / Team / All) —
+//      the API does it; nothing to change here.
+//   ✅ Stage drag on a deal outside scope → the API returns 404. If your
+//      API client raises KeyNotFoundException for 404, the user now gets
+//      "Deal not found." instead of raw exception text; otherwise the
+//      existing catch handles it as before.
+//
+// EARLIER CHANGES:
 //   ✅ Removed duplicate ICurrentTenantService (_currentTenantService)
 //      — was injected twice as both _tenantService and _currentTenantService
 //      — kept _tenantService only, removed _currentTenantService everywhere
@@ -65,6 +84,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         // ── Stats ──────────────────────────────────────────────────────
         public int TotalDeals => Deals.Count;
+
+        /// <summary>Every deal in the workspace — for the plan quota bar and the New Deal limit.</summary>
+        public int DealQuotaUsed { get; private set; }
         public decimal TotalValue => Deals.Sum(d => d.ExpectedValue);
       
 
@@ -121,13 +143,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     tenantId, TenantCurrencyCode);
 
                 var dealsTask = _dealService.GetAllAsync(tenantId, stage: StageFilter,
-                                        search: SearchTerm, ownerUserId: OwnerFilter);
+                                        search: SearchTerm, ownerUserId: OwnerFilter,
+                                        pageSize: 500);
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
                 var stagesTask = _stageService.GetAsync(activeOnly: true);
 
                 await Task.WhenAll(dealsTask, salesTeamTask, stagesTask);
 
-                Deals = (await dealsTask).Items;
+                var dealsResponse = await dealsTask;
+                Deals = dealsResponse.Items;
+                DealQuotaUsed = dealsResponse.QuotaUsed;
                 SalesTeam = await salesTeamTask;
                 Stages = await stagesTask;
 
@@ -159,6 +184,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 await _dealService.UpdateStageAsync(tenantId, dealId, stage);
                 return new JsonResult(new { success = true });
+            }
+            catch (KeyNotFoundException)
+            {
+                return new JsonResult(new { success = false, error = "Deal not found." }) { StatusCode = 404 };
             }
             catch (Exception ex)
             {

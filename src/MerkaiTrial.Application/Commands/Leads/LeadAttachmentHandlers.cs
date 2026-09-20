@@ -2,9 +2,17 @@
 // LeadAttachmentHandlers.cs
 // Location: MerkaiTrial.Application/Commands/Leads/LeadAttachmentHandlers.cs
 // DTOs live in MerkaiTrial.Application.DTOs.AttachmentDtos — not here.
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (015): every handler here checks the current user can
+// see the lead first (RecordScopeGuards). Writes on a lead outside scope
+// → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
+// answer as for a lead that doesn't exist.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services.Storage;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -20,13 +28,16 @@ public class UploadLeadAttachmentHandler : ICommandHandler
     private readonly FlowDbContext                       _db;
     private readonly IFileStorageService                 _storage;
     private readonly ILogger<UploadLeadAttachmentHandler> _logger;
+    private readonly IRecordScopeService                 _scope;
 
     public UploadLeadAttachmentHandler(
         FlowDbContext db,
         IFileStorageService storage,
+        IRecordScopeService scope,
         ILogger<UploadLeadAttachmentHandler> logger)
     {
         _db      = db;
+        _scope   = scope;
         _storage = storage;
         _logger  = logger;
     }
@@ -34,11 +45,9 @@ public class UploadLeadAttachmentHandler : ICommandHandler
     public async Task<AttachmentDto> Handle(
         UploadLeadAttachmentDto dto, CancellationToken ct = default)
     {
-        var leadExists = await _db.Leads
-            .AnyAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, ct);
-
-        if (!leadExists)
-            throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+        // Checked BEFORE the file is written to storage — no orphan files
+        // from a refused upload.
+        await _scope.EnsureLeadVisibleAsync(_db, dto.TenantId, dto.LeadId, ct);
 
         var result = await _storage.SaveAsync(
             dto.TenantId, AttachmentEntityType.Lead, dto.File, ct);
@@ -87,12 +96,15 @@ public class GetLeadAttachmentsHandler : ICommandHandler
     private readonly FlowDbContext                      _db;
     private readonly ILogger<GetLeadAttachmentsHandler> _logger;
     private readonly IFileStorageService _storage;
+    private readonly IRecordScopeService _scope;
     public GetLeadAttachmentsHandler(
         FlowDbContext db,
-         IFileStorageService storage,
+        IFileStorageService storage,
+        IRecordScopeService scope,
         ILogger<GetLeadAttachmentsHandler> logger)
     {
         _db     = db;
+        _scope  = scope;
         _storage = storage;
         _logger = logger;
     }
@@ -102,6 +114,9 @@ public class GetLeadAttachmentsHandler : ICommandHandler
     {
         try
         {
+            if (!await _scope.CanSeeLeadAsync(_db, tenantId, leadId, ct))
+                return new List<AttachmentDto>();
+
             var rows = await _db.Attachments
                 .AsNoTracking()
                 .Where(a =>
@@ -142,13 +157,16 @@ public class DeleteLeadAttachmentHandler : ICommandHandler
     private readonly FlowDbContext                        _db;
     private readonly IFileStorageService                  _storage;
     private readonly ILogger<DeleteLeadAttachmentHandler> _logger;
+    private readonly IRecordScopeService                  _scope;
 
     public DeleteLeadAttachmentHandler(
         FlowDbContext db,
         IFileStorageService storage,
+        IRecordScopeService scope,
         ILogger<DeleteLeadAttachmentHandler> logger)
     {
         _db      = db;
+        _scope   = scope;
         _storage = storage;
         _logger  = logger;
     }
@@ -162,6 +180,13 @@ public class DeleteLeadAttachmentHandler : ICommandHandler
                 !a.IsDeleted, ct);
 
         if (attachment == null)
+            throw new KeyNotFoundException($"Attachment {attachmentId} not found");
+
+        // This handler serves the Lead page. An attachment on a lead the
+        // user can't see — or on something that isn't a lead — isn't theirs
+        // to delete from here.
+        if (attachment.EntityType != AttachmentEntityType.Lead ||
+            !await _scope.CanSeeLeadAsync(_db, tenantId, attachment.EntityId, ct))
             throw new KeyNotFoundException($"Attachment {attachmentId} not found");
 
         var leadId = attachment.EntityId;

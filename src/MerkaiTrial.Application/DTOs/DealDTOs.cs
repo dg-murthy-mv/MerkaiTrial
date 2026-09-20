@@ -50,7 +50,8 @@ namespace MerkaiTrial.Application.DTOs
         List<DealListItem> Items,
         int TotalCount,
         int Page,
-        int PageSize
+        int PageSize,
+        int QuotaUsed = 0
     );
 
     // ==================== DETAIL ====================

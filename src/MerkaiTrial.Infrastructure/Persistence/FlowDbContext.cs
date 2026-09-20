@@ -14,6 +14,9 @@
 //      something each query must remember.
 //   4. AssertEveryTenantEntityIsCovered — startup guard. An entity with
 //      a TenantId and no filter fails the build of the model, by name.
+//   5. (014) Teams + RoleRecordScopes — record visibility. Both strictly
+//      tenant-owned, both filtered.
+//   6. (015) TeamManagers — which teams a user manages. Filtered.
 //
 // FAIL CLOSED: with no tenant resolved, CurrentTenantId is Guid.Empty and
 // filtered queries return nothing. The legitimately tenant-less queries
@@ -87,6 +90,9 @@ public class FlowDbContext : DbContext
     public DbSet<DealStageHistory> DealStageHistory { get; set; }
     public DbSet<LeadNote> LeadNotes => Set<LeadNote>();
     public DbSet<LeadActivity> LeadActivities => Set<LeadActivity>();
+    public DbSet<Team> Teams => Set<Team>();
+    public DbSet<RoleRecordScope> RoleRecordScopes => Set<RoleRecordScope>();
+    public DbSet<TeamManager> TeamManagers => Set<TeamManager>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -142,6 +148,12 @@ public class FlowDbContext : DbContext
         b.Entity<TaxRate>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantSettings>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<PipelineStage>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Record visibility (014). A tenant's teams and its scope overrides
+        // are its own — including overrides of the shared built-in roles.
+        b.Entity<Team>()            .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<RoleRecordScope>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<TeamManager>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,

@@ -1,0 +1,350 @@
+@page "/Settings/Visibility"
+@using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel
+@{
+    ViewData["Title"] = "Record Visibility";
+}
+@* =====================================================================
+   RECORD VISIBILITY
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/Visibility/Index.cshtml
+   NEW FILE (rename to Index.cshtml).
+
+   Top:    which leads each role can see — Own / Team / All.
+           Tenant Administrator is locked to All.
+   Bottom: teams; who BELONGS to which (one each) and who MANAGES which
+           (any number).
+   ===================================================================== *@
+
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">Record Visibility</h1>
+        <p class="text-muted mb-0" style="font-size:13.5px;">
+            Decide whose records each role can see. Permissions decide what
+            people can <em>do</em>; this decides <em>which</em> records they do it to.
+        </p>
+    </div>
+    <a asp-page="/Settings/Roles/Index" class="btn btn-outline-secondary">
+        <i class="bi bi-shield me-1"></i>Roles &amp; Permissions
+    </a>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+
+        <!-- ── Scope matrix ─────────────────────────────────────────── -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-eye me-2"></i>What each role can see
+            </div>
+
+            @if (!Model.Matrix.Roles.Any())
+            {
+                <div class="card-body text-muted">No roles found.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Role</th>
+                                <th class="text-center">People</th>
+                                @foreach (var module in Model.Matrix.Modules)
+                                {
+                                    <th style="min-width:180px;">@module</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var role in Model.Matrix.Roles)
+                            {
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">@role.DisplayName</div>
+                                        <small class="text-muted">
+                                            @(role.IsSystemRole ? "Built-in" : "Custom")
+                                        </small>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-light text-dark border">@role.UserCount</span>
+                                    </td>
+
+                                    @foreach (var module in Model.Matrix.Modules)
+                                    {
+                                        var current = role.Scopes.TryGetValue(module, out var c) ? c : RecordScope.All;
+                                        var isDefault = role.Defaults.TryGetValue(module, out var d) && d == current;
+
+                                        <td>
+                                            @if (role.IsLocked)
+                                            {
+                                                <span class="badge bg-dark">
+                                                    <i class="bi bi-lock-fill me-1"></i>All (always)
+                                                </span>
+                                            }
+                                            else if (Model.CanUpdate)
+                                            {
+                                                <form method="post" asp-page-handler="Scope" class="d-flex align-items-center gap-2">
+                                                    <input type="hidden" name="roleId" value="@role.RoleId" />
+                                                    <input type="hidden" name="module" value="@module" />
+                                                    <select name="scope" class="form-select form-select-sm"
+                                                            onchange="this.form.submit()"
+                                                            title="@MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ScopeHint(current)">
+                                                        @foreach (var s in MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.AllScopes)
+                                                        {
+                                                            <option value="@s" selected="@(s == current)">
+                                                                @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Describe(s)
+                                                            </option>
+                                                        }
+                                                    </select>
+                                                    <noscript><button class="btn btn-sm btn-primary">Save</button></noscript>
+                                                </form>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">
+                                                    @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Describe(current)
+                                                </span>
+                                            }
+                                            <div class="small text-muted mt-1">
+                                                @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ScopeHint(current)
+                                                @if (role.IsLocked)
+                                                {
+                                                    <span class="ms-1 badge bg-light text-muted border">can't be changed</span>
+                                                }
+                                                else if (isDefault)
+                                                {
+                                                    <span class="ms-1 badge bg-light text-muted border">default</span>
+                                                }
+                                            </div>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="card-footer small text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                Workspace admins always see everything. New roles start at
+                <strong>Own</strong> — widen them here. Someone with more than one
+                role gets the widest of them. Changes apply on their next click —
+                nobody is signed out.
+            </div>
+        </div>
+
+        <!-- ── Teams ─────────────────────────────────────────────────── -->
+        <div class="card mb-4" id="teams">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-people me-2"></i>Teams</span>
+                <span class="badge bg-secondary">@Model.TeamsOverview.Teams.Count</span>
+            </div>
+
+            @if (!Model.TeamsOverview.Teams.Any())
+            {
+                <div class="card-body text-muted small">
+                    No teams yet. Until someone is in a team, <strong>Team</strong>
+                    visibility shows them their own records plus unassigned ones.
+                </div>
+            }
+            else
+            {
+                <div class="list-group list-group-flush">
+                    @foreach (var team in Model.TeamsOverview.Teams)
+                    {
+                        <div class="list-group-item">
+                            @if (Model.IsRenaming(team))
+                            {
+                                <form method="post" asp-page-handler="RenameTeam" class="row g-2 align-items-end">
+                                    <input type="hidden" name="teamId" value="@team.Id" />
+                                    <div class="col-md-5">
+                                        <label class="form-label small mb-1">Name</label>
+                                        <input name="name" value="@team.Name" class="form-control form-control-sm" required maxlength="100" />
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label small mb-1">Description</label>
+                                        <input name="description" value="@team.Description" class="form-control form-control-sm" maxlength="500" />
+                                    </div>
+                                    <div class="col-md-2 d-flex gap-1">
+                                        <button class="btn btn-sm btn-primary flex-fill">Save</button>
+                                        <a asp-page="./Index" asp-fragment="teams" class="btn btn-sm btn-outline-secondary">✕</a>
+                                    </div>
+                                </form>
+                            }
+                            else
+                            {
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="flex-grow-1">
+                                        <div class="fw-semibold">@team.Name</div>
+                                        <div class="small text-muted">
+                                            @(team.MemberCount + " member" + (team.MemberCount == 1 ? "" : "s"))
+
+                                            @if (team.ManagerCount > 0)
+                                            {
+                                                <span class="mx-1">·</span>
+                                                @(team.ManagerCount + " manager" + (team.ManagerCount == 1 ? "" : "s"))
+                                            }
+
+                                            @if (!string.IsNullOrEmpty(team.Description))
+                                            {
+                                                <span class="mx-1">·</span>
+                                                @team.Description
+                                            }
+                                        </div>
+                                    </div>
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <div class="btn-group btn-group-sm">
+                                            <a class="btn btn-outline-secondary" title="Rename"
+                                               asp-page="./Index" asp-route-RenameId="@team.Id" asp-fragment="teams">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                            <form method="post" asp-page-handler="DeleteTeam"
+                                                  onsubmit="return confirm('Remove the @team.Name team? Its members stay, but will be in no team.');">
+                                                <input type="hidden" name="teamId" value="@team.Id" />
+                                                <button class="btn btn-sm btn-outline-danger" title="Remove">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- ── People → team ─────────────────────────────────────────── -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-person-lines-fill me-2"></i>Who is in which team
+            </div>
+            <div class="px-3 pt-2 small text-muted">
+                <strong>Belongs to</strong> — one team per person.
+                <strong>Manages</strong> — any number; with <em>Team</em> visibility
+                they see the records of everyone in the teams they manage.
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Person</th>
+                            <th style="min-width:180px;">Belongs to</th>
+                            <th style="min-width:220px;">Manages</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in Model.TeamsOverview.Users)
+                        {
+                            <tr class="@(u.IsActive ? "" : "opacity-50")">
+                                <td>
+                                    <div class="fw-semibold">
+                                        @u.FullName
+                                        @if (u.IsTenantAdmin)
+                                        {
+                                            <span class="badge bg-warning text-dark ms-1">Admin</span>
+                                        }
+                                        @if (!u.IsActive)
+                                        {
+                                            <span class="badge bg-light text-dark border ms-1">Inactive</span>
+                                        }
+                                    </div>
+                                    <small class="text-muted">@u.Email</small>
+                                </td>
+                                <td>
+                                    @if (Model.CanUpdate && Model.TeamsOverview.Teams.Any())
+                                    {
+                                        <form method="post" asp-page-handler="UserTeam">
+                                            <input type="hidden" name="userId" value="@u.Id" />
+                                            <select name="teamId" class="form-select form-select-sm" onchange="this.form.submit()">
+                                                <option value="" selected="@(!u.TeamId.HasValue)">No team</option>
+                                                @foreach (var t in Model.TeamsOverview.Teams)
+                                                {
+                                                    <option value="@t.Id" selected="@(u.TeamId == t.Id)">@t.Name</option>
+                                                }
+                                            </select>
+                                            <noscript><button class="btn btn-sm btn-primary mt-1">Save</button></noscript>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">@Model.TeamName(u.TeamId)</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (u.IsTenantAdmin)
+                                    {
+                                        <span class="text-muted small">Sees everything</span>
+                                    }
+                                    else if (Model.CanUpdate && Model.TeamsOverview.Teams.Any())
+                                    {
+                                        <form method="post" asp-page-handler="ManagedTeams" class="d-flex flex-wrap align-items-center gap-2">
+                                            <input type="hidden" name="userId" value="@u.Id" />
+                                            @foreach (var t in Model.TeamsOverview.Teams)
+                                            {
+                                                var boxId = $"m-{u.Id:N}-{t.Id:N}";
+                                                <div class="form-check form-check-inline mb-0 me-1">
+                                                    <input class="form-check-input" type="checkbox" id="@boxId"
+                                                           name="teamIds" value="@t.Id"
+                                                           checked="@(u.ManagedTeamIds.Contains(t.Id))" />
+                                                    <label class="form-check-label small" for="@boxId">@t.Name</label>
+                                                </div>
+                                            }
+                                            <button class="btn btn-sm btn-outline-primary py-0">Save</button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">@Model.ManagedTeamNames(u)</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Side panel ───────────────────────────────────────────────── -->
+    <div class="col-lg-4">
+        @if (Model.CanUpdate)
+        {
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Add a team</div>
+                <div class="card-body">
+                    <form method="post" asp-page-handler="CreateTeam">
+                        <div class="mb-3">
+                            <label class="form-label">Name <span class="text-danger">*</span></label>
+                            <input name="name" class="form-control" placeholder="e.g. Bangkok Sales" required maxlength="100" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <input name="description" class="form-control" placeholder="Optional" maxlength="500" />
+                        </div>
+                        <button class="btn btn-primary w-100">
+                            <i class="bi bi-plus-lg me-1"></i>Add team
+                        </button>
+                    </form>
+                </div>
+            </div>
+        }
+
+        <div class="card">
+            <div class="card-body small text-muted">
+                <p class="mb-2"><strong>Own</strong> — only leads assigned to them.
+                A lead they create without choosing an owner is assigned to them.</p>
+                <p class="mb-2"><strong>Team</strong> — leads assigned to anyone in
+                their team or a team they manage, plus unassigned leads, so new
+                enquiries can be picked up.</p>
+                <p class="mb-2"><strong>All</strong> — every lead in the workspace.</p>
+                <p class="mb-0">A record someone can't see behaves as if it doesn't
+                exist — it isn't in the lead list, tab counts or stats, and opening its
+                link says "not found".</p>
+            </div>
+        </div>
+    </div>
+</div>

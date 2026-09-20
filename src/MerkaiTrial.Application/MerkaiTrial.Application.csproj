@@ -13,6 +13,7 @@
     <Folder Include="Commands\Leads\Import\" />
     <Folder Include="Commands\Meta\" />
     <Folder Include="Commands\LeadStatuses\" />
+    <Folder Include="Commands\RecordVisibility\" />
     <Folder Include="Commands\PipelineStages\" />
     <Folder Include="Commands\Reports\" />
     <Folder Include="Commands\Plans\" />

@@ -6,6 +6,14 @@
 //   1. CreateLeadHandler    — Currency falls back to ICurrentTenantService
 //   2. ConvertLeadHandler   — Country no longer hardcoded to "IN"
 //   3. UpdateLeadHandler    — OwnerUserId string→Guid fix (index-safe)
+//   4. RECORD VISIBILITY (014)
+//        • Create: a lead with no owner is assigned to whoever created it,
+//          so a rep with "Own" scope never loses a lead they just added.
+//        • Update / status / delete / convert: the lead is loaded through
+//          .VisibleTo(access). Outside your scope = KeyNotFound = 404,
+//          the same answer as another tenant's lead.
+//   5. DeleteLeadHandler refuses converted leads server-side (the Index
+//      page hid the button, but a direct API call still went through).
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
@@ -13,7 +21,7 @@ using DocumentFormat.OpenXml.Spreadsheet;
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
-using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Security;   // IRecordScopeService, VisibleTo
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
@@ -113,7 +121,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     Channel     = Channel.Web,
                     Source      = dto.SourceId.HasValue ? "Dynamic" : "widget",
                     EstimatedValue = dto.EstimatedValue ?? 0,
-                    OwnerUserId = dto.OwnerUserId,
+                    // No owner chosen → the creator owns it. Without this a
+                    // rep with "Own" scope would add a lead and immediately
+                    // lose sight of it.
+                    OwnerUserId = string.IsNullOrWhiteSpace(dto.OwnerUserId)
+                                    ? currentUserId.ToString()
+                                    : dto.OwnerUserId,
                     Status      = startStatus.Key,
                     Score       = 0,
                     IsConverted = false,
@@ -179,6 +192,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;                       // ✅ AUDIT
         private readonly ILeadStatusResolver _statusResolver;
+        private readonly IRecordScopeService _scope;
 
         public UpdateLeadHandler(
             FlowDbContext context,
@@ -187,8 +201,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             ILeadScoringService scoring,
             IAuditService audit,                                     // ✅ AUDIT
             ILeadStatusResolver statusResolver,
+            IRecordScopeService scope,
             ILogger<UpdateLeadHandler> logger)
         {
+            _scope = scope;
             _context = context;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
@@ -202,8 +218,12 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var lead = await _context.Leads
-                    .FirstOrDefaultAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
+                    .Where(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted)
+                    .VisibleTo(access)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
@@ -385,10 +405,12 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
 
         public UpdateLeadStatusHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<UpdateLeadStatusHandler> logger, 
-            IAuditService audit, ILeadStatusResolver statuses)
+            IAuditService audit, ILeadStatusResolver statuses, IRecordScopeService scope)
         {
+            _scope = scope;
             _context = context;
             _scoring = scoring;
             _logger  = logger;
@@ -400,8 +422,12 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var lead = await _context.Leads
-                    .FirstOrDefaultAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
+                    .Where(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted)
+                    .VisibleTo(access)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
@@ -454,22 +480,36 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly FlowDbContext _context;
         private readonly ILogger<DeleteLeadHandler> _logger;
         private readonly IAuditService _audit;
-        public DeleteLeadHandler(FlowDbContext context, ILogger<DeleteLeadHandler> logger, IAuditService audit)
+        private readonly IRecordScopeService _scope;
+        public DeleteLeadHandler(FlowDbContext context, ILogger<DeleteLeadHandler> logger, IAuditService audit,
+            IRecordScopeService scope)
         {
             _context = context;
             _logger  = logger;
             _audit   = audit;
+            _scope   = scope;
         }
 
         public async Task Handle(DeleteLeadCommand command, CancellationToken cancellationToken = default)
         {
             try
             {
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var lead = await _context.Leads
-                    .FirstOrDefaultAsync(l => l.Id == command.LeadId && l.TenantId == command.TenantId && !l.IsDeleted, cancellationToken);
+                    .Where(l => l.Id == command.LeadId && l.TenantId == command.TenantId && !l.IsDeleted)
+                    .VisibleTo(access)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {command.LeadId} not found");
+
+                // Server-side guard. The Index page hides Delete for converted
+                // leads, but a direct API call used to go straight through and
+                // orphan the deal's history.
+                if (lead.IsConverted)
+                    throw new InvalidOperationException(
+                        "Converted leads cannot be deleted. Manage this record via the associated deal.");
 
                 lead.IsDeleted    = true;
                 lead.UpdatedAtUtc = DateTime.UtcNow;
@@ -484,6 +524,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 _logger.LogInformation("Deleted lead {LeadId}", command.LeadId);
             }
             catch (KeyNotFoundException) { throw; }
+            catch (InvalidOperationException) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting lead {LeadId}", command.LeadId);
@@ -516,13 +557,16 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILogger<ConvertLeadHandler> _logger;
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
         public ConvertLeadHandler(
             FlowDbContext         context,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadHandler> logger,
             IAuditService audit,
-            ILeadStatusResolver statuses  )
+            ILeadStatusResolver statuses,
+            IRecordScopeService scope)
         {
+            _scope         = scope;
             _context       = context;
             _tenantService = tenantService;
             _logger        = logger;
@@ -536,8 +580,12 @@ namespace MerkaiTrial.Application.Commands.Leads
 
             try
             {
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var lead = await _context.Leads
-                    .FirstOrDefaultAsync(l => l.Id == cmd.LeadId && l.TenantId == cmd.TenantId && !l.IsDeleted, cancellationToken);
+                    .Where(l => l.Id == cmd.LeadId && l.TenantId == cmd.TenantId && !l.IsDeleted)
+                    .VisibleTo(access)
+                    .FirstOrDefaultAsync(cancellationToken);
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {cmd.LeadId} not found");

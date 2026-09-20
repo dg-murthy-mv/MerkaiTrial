@@ -1,3 +1,16 @@
+// =====================================================================
+// ConvertLeadToDealHandler.cs
+// Location: MerkaiTrial.Application/Commands/Leads/ConvertLeadToDealHandler.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (015): the lead is loaded through .VisibleTo(access).
+// A rep who can't see a lead can't convert it either — a pasted id gets
+// "not found", the same as another tenant's lead.
+//
+// Nothing else changed.
+// =====================================================================
+
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
@@ -21,14 +34,17 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IAuditService _audit;
         private readonly IStageResolver _stages;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
         public ConvertLeadToDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadToDealHandler> logger,
             IAuditService audit,
-            IStageResolver stages, ILeadStatusResolver statuses)
+            IStageResolver stages, ILeadStatusResolver statuses,
+            IRecordScopeService scope)
         {
+            _scope = scope;
             _db = db;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
@@ -47,12 +63,17 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 // ── STEP 1: VALIDATE LEAD ─────────────────────────────────────
 
+                // Record visibility: outside your scope = not found.
+                var access = await _scope.GetAsync(RecordModules.Leads);
+
                 var lead = await _db.Leads
                     .Include(l => l.Contact)
-                    .FirstOrDefaultAsync(l =>
+                    .Where(l =>
                         l.Id == dto.LeadId &&
                         l.TenantId == dto.TenantId &&
-                        !l.IsDeleted);
+                        !l.IsDeleted)
+                    .VisibleTo(access)
+                    .FirstOrDefaultAsync();
                 var statuses = await _statuses.GetAsync(dto.TenantId);
 
                 if (lead == null)

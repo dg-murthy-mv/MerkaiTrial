@@ -1,9 +1,17 @@
-﻿// =====================================================================
+// =====================================================================
 // LEAD NOTES HANDLERS
 // Location: MerkaiTrial.Application/Commands/Leads/LeadNoteHandlers.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// RECORD VISIBILITY (015): every handler here checks the current user can
+// see the lead first (RecordScopeGuards). Writes on a lead outside scope
+// → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
+// answer as for a lead that doesn't exist.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -17,11 +25,14 @@ namespace MerkaiTrial.Application.Commands.Leads
     {
         private readonly FlowDbContext _context;
         private readonly ILeadScoringService _scoring;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<CreateLeadNoteHandler> _logger;
 
-        public CreateLeadNoteHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<CreateLeadNoteHandler> logger)
+        public CreateLeadNoteHandler(FlowDbContext context, ILeadScoringService scoring,
+            IRecordScopeService scope, ILogger<CreateLeadNoteHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _scoring = scoring;
             _logger = logger;
         }
@@ -30,12 +41,8 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
-                // Verify lead exists
-                var leadExists = await _context.Leads
-                    .AnyAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
-
-                if (!leadExists)
-                    throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+                // Lead exists AND the current user may see it.
+                await _scope.EnsureLeadVisibleAsync(_context, dto.TenantId, dto.LeadId, cancellationToken);
 
                 var note = new LeadNote
                 {
@@ -79,11 +86,13 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class GetLeadNotesHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadNotesHandler> _logger;
 
-        public GetLeadNotesHandler(FlowDbContext context, ILogger<GetLeadNotesHandler> logger)
+        public GetLeadNotesHandler(FlowDbContext context, IRecordScopeService scope, ILogger<GetLeadNotesHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -91,6 +100,9 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                if (!await _scope.CanSeeLeadAsync(_context, tenantId, leadId, cancellationToken))
+                    return new List<LeadNoteDto>();
+
                 var notes = await _context.Set<LeadNote>()
                     .AsNoTracking()
                     .Where(n => n.LeadId == leadId && n.TenantId == tenantId && !n.IsDeleted)
@@ -120,9 +132,12 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly FlowDbContext _context;
         private readonly ILogger<DeleteLeadNoteHandler> _logger;
         private readonly ILeadScoringService _scoring;
-        public DeleteLeadNoteHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<DeleteLeadNoteHandler> logger)
+        private readonly IRecordScopeService _scope;
+        public DeleteLeadNoteHandler(FlowDbContext context, ILeadScoringService scoring,
+            IRecordScopeService scope, ILogger<DeleteLeadNoteHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _scoring = scoring;
             _logger = logger;
         }
@@ -139,6 +154,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                     throw new KeyNotFoundException($"Note {noteId} not found");
 
                 var leadId = note.LeadId;
+
+                // A note on a lead you can't see is a note that doesn't exist.
+                if (!await _scope.CanSeeLeadAsync(_context, tenantId, leadId, cancellationToken))
+                    throw new KeyNotFoundException($"Note {noteId} not found");
 
                 note.IsDeleted = true;
                 note.UpdatedAtUtc = DateTime.UtcNow;

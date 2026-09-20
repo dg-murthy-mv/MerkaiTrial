@@ -15,6 +15,14 @@
 //   A status column now matches on NAME or KEY, so a file exported from
 //   the CRM (keys) and a file typed by hand (names) both work.
 //
+// RECORD VISIBILITY (015)
+//   • A row with no owner is assigned to the IMPORTER when the importer
+//     can't see every lead (Own / Team). Otherwise a rep importing their
+//     own list would watch it vanish on commit. An admin (All) importing
+//     leaves them unassigned — the pool managers pick from.
+//   • "Update existing" only touches leads the importer can see. A match
+//     on a lead outside their scope is skipped, never modified.
+//
 // ORIGINAL NOTES, STILL TRUE
 //
 // WHAT THE OLD IMPORTER DID WRONG (all fixed here)
@@ -39,6 +47,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -607,15 +616,18 @@ public class CommitLeadImportHandler : ICommandHandler
     private readonly FlowDbContext _db;
     private readonly IImportSessionStore _sessions;
     private readonly ILeadStatusResolver _statusResolver;
+    private readonly IRecordScopeService _scope;
     private readonly ILogger<CommitLeadImportHandler> _logger;
 
     public CommitLeadImportHandler(
         FlowDbContext db,
         IImportSessionStore sessions,
         ILeadStatusResolver statusResolver,
+        IRecordScopeService scope,
         ILogger<CommitLeadImportHandler> logger)
     {
         _db = db;
+        _scope = scope;
         _sessions = sessions;
         _statusResolver = statusResolver;
         _logger = logger;
@@ -657,6 +669,11 @@ public class CommitLeadImportHandler : ICommandHandler
         var imported = 0;
         var updated = 0;
 
+        // Who ends up owning rows that name no owner, and which existing
+        // leads "Update" may touch.
+        var access = await _scope.GetAsync(RecordModules.Leads, ct);
+        var defaultOwner = access.SeesAll ? null : access.UserId;
+
         // ── One transaction: 400 good rows and one bad one means nothing
         //    is written, rather than a half-loaded list nobody can trust.
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
@@ -670,8 +687,12 @@ public class CommitLeadImportHandler : ICommandHandler
                 if (r.ExistingLeadId.HasValue && request.Duplicates == DuplicateAction.Update)
                 {
                     var existing = await _db.Leads
-                        .FirstOrDefaultAsync(l => l.Id == r.ExistingLeadId.Value &&
-                                                  l.TenantId == request.TenantId && !l.IsDeleted, ct);
+                        .Where(l => l.Id == r.ExistingLeadId.Value &&
+                                    l.TenantId == request.TenantId && !l.IsDeleted)
+                        .VisibleTo(access)
+                        .FirstOrDefaultAsync(ct);
+
+                    // Not found, or outside the importer's scope → skipped.
                     if (existing is null) continue;
 
                     // FILL BLANKS ONLY. Never overwrite something a person
@@ -717,7 +738,7 @@ public class CommitLeadImportHandler : ICommandHandler
                     Score = r.Score,
                     EstimatedValue = r.EstimatedValue,
                     Currency = r.Currency,
-                    OwnerUserId = r.OwnerUserId,
+                    OwnerUserId = r.OwnerUserId ?? defaultOwner,
                     ContactId = null,                   // created at conversion, not here
                     CompanyId = null,
                     IsConverted = false,

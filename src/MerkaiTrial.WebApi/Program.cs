@@ -1,298 +1,91 @@
 // =====================================================================
-// FILE: MerkaiTrial.WebApi/Program.cs   — COMPLETE, corrected
+// FILE: MerkaiTrial.WebApi/Program.cs   — COMPLETE, restructured
 //
-// FIXES APPLIED
-//   1. builder.AddMerkaiApiAuthentication() ADDED. Without it the app
-//      THROWS ON STARTUP: UseAuthentication() needs
-//      IAuthenticationSchemeProvider, which only AddAuthentication
-//      registers. The Demo scheme was removed and nothing replaced it —
-//      this compiles fine and dies on run.
-//   2. IRoleScope registered. The role handlers live here, Scrutor wires
-//      them up, and they take IRoleScope — without it every /api/roles
-//      call fails with a DI resolution error.
-//   3. ClaimsTransformer removed. The JWT already carries the full claim
-//      set; the transformer does nothing.
-//   4. Bare AddAuthorization() removed — the extension registers it with
-//      the FallbackPolicy so an endpoint missing [Authorize] is closed by
-//      default rather than open.
-//   5. Swagger gated behind IsDevelopment(). It was published at the API
-//      root: a browsable catalogue of every endpoint on a public host.
-//   6. /health marked AllowAnonymous, or Azure's probe gets 401 under the
-//      fallback policy and the App Service reports unhealthy.
-//   7. PublicLinkService registration removed — dead code with a second,
-//      unused token scheme (see below).
-//   8. DevelopmentTenantContext binding removed; nothing reads it now
-//      that ApiCurrentUserService is claims-based.
+// Same services, same pipeline, same order as before. What moved where:
 //
-// PREREQUISITE: ApiAuthenticationSetup.cs in WebApi/Startup, and the
-// NuGet package Microsoft.AspNetCore.Authentication.JwtBearer.
+//   Startup/ApiServiceRegistration.cs   every builder.Services.* line,
+//                                       grouped by area
+//   Startup/ApiPipeline.cs              correlation id, swagger, exception
+//                                       handler, / and /health
+//   Startup/ApiAuthenticationSetup.cs   unchanged (JWT)
+//
+// NEW: ValidateOnBuild in EVERY environment. A service whose dependency
+// is not registered now stops the app at startup, naming both types —
+// instead of a 500 the first time someone opens that page in production.
+// (Development already did this by default; Production did not.)
 //
 // CONFIG (App Service settings or Key Vault, NOT appsettings.json):
 //   Jwt__SigningKey  = 64+ random chars, IDENTICAL to Admin.Web
 //   Jwt__Issuer      = merkaitrial-admin
 //   Jwt__Audience    = merkaitrial-api
-// If the keys differ between the two apps, every API call returns 401 and
-// the dashboard goes blank with no obvious cause.
 // =====================================================================
 
-using MerkaiTrial.Admin.Web.Services.UserManagement;
-using MerkaiTrial.Application;
-using MerkaiTrial.Application.Authorization;
-using MerkaiTrial.Application.Commands.Activities;
-using MerkaiTrial.Application.Commands.Leads.Import;
-using MerkaiTrial.Application.Commands.LeadStatuses;
-using MerkaiTrial.Application.Commands.PipelineStages;
-using MerkaiTrial.Application.Commands.Tenants;
-using MerkaiTrial.Application.Commands.Users;
-using MerkaiTrial.Application.Queries;
-using MerkaiTrial.Application.Security;
-using MerkaiTrial.Application.Services;
-using MerkaiTrial.Application.Services.Pdf;
-using MerkaiTrial.Application.Services.Storage;
-using MerkaiTrial.Application.Services.Tenants;
-using MerkaiTrial.Infrastructure.Payments;
-using MerkaiTrial.Infrastructure.Persistence;
-using MerkaiTrial.Infrastructure.Tax;
-using MerkaiTrial.Infrastructure.Tenancy;
-using MerkaiTrial.WebApi.Filters;
 using MerkaiTrial.WebApi.Middleware;
-using MerkaiTrial.WebApi.Services;
 using MerkaiTrial.WebApi.Startup;
-using MerkaiTrial.WebApi.SwaggerGen;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi.Models;
 using OfficeOpenXml;
-using QuestPDF.Infrastructure;
 using Serilog;
-using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ---------------- Logging ----------------
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .CreateLogger();
 builder.Host.UseSerilog();
 
-// ---------------- Controllers & JSON ----------------
-builder.Services.AddControllers(options =>
+// ---------------- Fail fast on missing registrations ----------------
+builder.Host.UseDefaultServiceProvider(o =>
 {
-    options.Filters.Add<TrialActiveActionFilter>();
-})
-    .AddJsonOptions(o =>
-    {
-        o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
-        o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-    });
-builder.Services.AddProblemDetails();
-builder.Services.AddHttpContextAccessor();
-
-// ---------------- Swagger (registration only; exposure is gated below) ----
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "MerkaiTrial.WebApi", Version = "v1" });
-    c.CustomSchemaIds(t => t.FullName!.Replace('+', '.'));
-    c.OperationFilter<FileUploadOperationFilter>();
-    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
-    c.MapType<DateOnly>(() => new OpenApiSchema { Type = "string", Format = "date" });
-    c.MapType<TimeOnly>(() => new OpenApiSchema { Type = "string", Format = "time" });
+    o.ValidateScopes = true;
+    o.ValidateOnBuild = true;
 });
 
-builder.Services.AddScoped<GetSalesTeamHandler>();
+// ---------------- Services ----------------
+builder.AddMerkaiApiAuthentication();          // JWT — must exist before UseAuthentication()
 
-// ========== AUTO-REGISTER ALL HANDLERS (Scrutor) ==========
-builder.Services.Scan(scan => scan
-    .FromAssemblyOf<ICommandHandler>()
-    .AddClasses(classes => classes.AssignableTo<ICommandHandler>())
-    .AsSelf()
-    .WithScopedLifetime());
+builder.Services
+    .AddApiControllers()                       // controllers, JSON, problem details
+    .AddApiSwagger()                           // registered always, exposed in Development only
+    .AddApiAuthorization()                     // "Module.Action" policies
+    .AddApiPersistence(builder.Configuration)  // ITenantProvider + FlowDbContext
+    .AddApiHandlers()                          // every ICommandHandler (scan)
+    .AddApiDomainServices()                    // current user, resolvers, audit, PDFs, …
+    .AddTaxAndPayments();                      // per-country tax + payment providers
 
-Console.WriteLine("✅ Auto-registered all command handlers via Scrutor");
-
-// ---------------- Authentication (JWT) ----------------
-// MUST be present. UseAuthentication() below needs the scheme provider
-// this registers, and ApiCurrentUserService reads the claims it produces.
-builder.AddMerkaiApiAuthentication();
-
-// ---------------- Authorization plumbing ----------------
-builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
-builder.Services.AddSingleton<IAuthorizationHandler, PermissionHandler>();
-
-// ========== DATABASE ==========
-var conn = builder.Configuration.GetConnectionString("Default");
-
-// Feeds the global query filters. Register BEFORE AddDbContext.
-builder.Services.AddScoped<ITenantProvider, HttpTenantProvider>();
-
-builder.Services.AddDbContext<FlowDbContext>(opt => opt.UseSqlServer(conn));
-
-// ========== TAX CALCULATORS ==========
-builder.Services.AddScoped<IndiaTaxCalculator>();
-builder.Services.AddScoped<ThailandTaxCalculator>();
-builder.Services.AddScoped<PhilippinesTaxCalculator>();
-builder.Services.AddScoped<ITaxCalculatorFactory, TaxCalculatorFactory>();
-
-// ========== PAYMENT PROVIDERS ==========
-builder.Services.AddScoped<IPaymentProvider, RazorpayProvider>();
-builder.Services.AddScoped<IPaymentProvider, XenditProvider>();
-builder.Services.AddScoped<IPaymentProvider, PayMongoProvider>();
-builder.Services.AddScoped<IPaymentProvider, PromptPayProvider>();
-builder.Services.AddScoped<IPaymentProviderFactory, PaymentProviderFactory>();
-builder.Services.AddScoped<GetAuditLogsHandler>();
-builder.Services.AddScoped<GetAuditFiltersHandler>();
-
-builder.Services.AddScoped<ILeadStatusResolver, LeadStatusResolver>();
-builder.Services.AddScoped<GetLeadStatusesHandler>();
-builder.Services.AddScoped<CreateLeadStatusHandler>();
-builder.Services.AddScoped<UpdateLeadStatusDefHandler>();
-builder.Services.AddScoped<ReorderLeadStatusesHandler>();
-builder.Services.AddScoped<SetDefaultLeadStatusHandler>();
-builder.Services.AddScoped<DeleteLeadStatusHandler>();
-
-
-// ========== APP SERVICES ==========
-builder.Services.AddScoped<QuoteService>();
-builder.Services.AddScoped<InvoiceService>();
-builder.Services.AddSingleton<UiContext>();
-builder.Services.AddScoped<GetAssigneesHandler>();
-builder.Services.AddScoped<SetActivityOutcomeHandler>();
-builder.Services.AddScoped<ReassignActivityHandler>();
-builder.Services.AddScoped<IStageResolver, StageResolver>();
-
-builder.Services.AddScoped<ICurrentUserService, ApiCurrentUserService>();
-builder.Services.AddScoped<ICurrentTenantService, CurrentTenantService>();
-builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
-builder.Services.AddScoped<ILeadScoringService, LeadScoringService>();
-builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
-builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
-builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<GetActivityAccessHandler>();
-builder.Services.AddScoped<GetTimelineHandler>();
-
-
-// Required by the tenant-scoped role handlers, which run in THIS host.
-builder.Services.AddScoped<IRoleScope, RoleScope>();
-
+// ---------------- Third-party licences ----------------
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 ExcelPackage.License.SetNonCommercialPersonal("MerkaiTrial");
-builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<IImportSessionStore, ImportSessionStore>();
-builder.Services.AddScoped<UploadLeadImportHandler>();
-builder.Services.AddScoped<PreviewLeadImportHandler>();
-builder.Services.AddScoped<CommitLeadImportHandler>();
+
 // =====================================================================
 var app = builder.Build();
 
 await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
     .WarmUpAsync(app.Services, "WebApi");
 
+// ---------------- Pipeline — order matters ----------------
 app.UseSerilogRequestLogging();
-
-app.Use(async (ctx, next) =>
-{
-    var cid = ctx.Request.Headers.ContainsKey("X-Correlation-Id")
-        ? ctx.Request.Headers["X-Correlation-Id"].ToString()
-        : Guid.NewGuid().ToString("N");
-    ctx.Items["CorrelationId"] = cid;
-    ctx.Response.Headers["X-Correlation-Id"] = cid;
-    using (Serilog.Context.LogContext.PushProperty("CorrelationId", cid))
-        await next();
-});
-
-// ---------------- Swagger — DEVELOPMENT ONLY ----------------
-// Previously served unconditionally with the API root redirecting to it,
-// which published a browsable list of every endpoint to anyone who found
-// the hostname.
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "MerkaiTrial.WebApi v1");
-        c.RoutePrefix = "swagger";
-    });
-}
-
-// Global exception handler
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
-        var ex = feature?.Error;
-        Log.Error(ex, "Unhandled exception");
-
-        var problem = new ProblemDetails
-        {
-            Title = "Unexpected error",
-            Status = StatusCodes.Status500InternalServerError,
-            Detail = app.Environment.IsDevelopment() ? ex?.ToString() : null,
-            Instance = context.TraceIdentifier
-        };
-        context.Response.StatusCode = problem.Status.Value;
-        context.Response.ContentType = "application/problem+json";
-        await context.Response.WriteAsJsonAsync(problem);
-    });
-});
+app.UseCorrelationId();
+app.UseApiSwaggerInDevelopment();
+app.UseApiExceptionHandler();
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.UsePermissionAuthorizationMessages();
 
 app.MapControllers();
+app.MapApiUtilityEndpoints();
 
-// ---------------- Convenience endpoints ----------------
-if (app.Environment.IsDevelopment())
-{
-    app.MapGet("/", () => Results.Redirect("/swagger")).AllowAnonymous();
-}
-else
-{
-    // Say nothing about what runs here.
-    app.MapGet("/", () => Results.NotFound()).AllowAnonymous();
-}
-
-// Anonymous on purpose: Azure's health probe carries no bearer token, and
-// under the FallbackPolicy it would get 401 and mark the app unhealthy.
-app.MapGet("/health", () => Results.Ok(new { ok = true, now = DateTime.UtcNow }))
-   .AllowAnonymous();
-
-Console.WriteLine("✅ MerkaiTrial.WebApi started successfully");
+Log.Information("MerkaiTrial.WebApi started");
 
 app.Run();
 
 /* =====================================================================
-   ALSO DELETE — PublicLinkService.cs
-
-   Its registration is removed above. The class is dead code and
-   misleading: it builds HMAC tokens from tenant.PublicLinkSecret, while
-   the live flow generates a different random token in
-   UpdateQuoteStatusHandler and stores it in Quote.PublicLinkToken — that
-   is what /q/{token} actually resolves. Two schemes, one wired up.
-
-   It could not serve the public route anyway: ValidateAsync needs a
-   tenantId the public URL does not carry, and it throws a
-   NullReferenceException on any tenant whose PublicLinkSecret is null.
-
-   =====================================================================
    ENDPOINTS THAT MUST STAY [AllowAnonymous] under the FallbackPolicy
-
      GET  /api/quotes/public/{token}
      PUT  /api/quotes/public/{token}/status
      GET  /health
 
-   The two quote endpoints already have the attribute. They also need
-   IgnoreQueryFilters in their handlers — see PublicQuote_Fixes.cs — or
-   they return 404 and 500 respectively once filters are on.
-
-   =====================================================================
-   AZURE, NOT CODE
-
-   Restrict this App Service's inbound access to Admin.Web's outbound IP
-   addresses. The JWT is the primary control; the IP restriction means an
-   attacker cannot reach the endpoint to try. Both, not either.
+   AZURE, NOT CODE: restrict this App Service's inbound access to
+   Admin.Web's outbound IP addresses. The JWT is the primary control; the
+   IP restriction means an attacker cannot reach the endpoint to try.
    ===================================================================== */

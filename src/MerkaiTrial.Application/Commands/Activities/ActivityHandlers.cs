@@ -29,6 +29,20 @@
 //   • Every date in and out is UTC. Pages convert user input with
 //     ICurrentTenantService.LocalToUtc and display with UtcToLocal.
 //
+// RECORD VISIBILITY (015 leads, 016 deals)
+//   An activity on a LEAD or DEAL is visible when that record is visible to the
+//   current user (Own / Team / All) — OR when the activity is a task
+//   ASSIGNED to them. Being given a task means you can see and finish that
+//   task, even if the lead itself belongs to someone else's pipeline.
+//     • Create on a lead outside scope          → 404
+//     • Activities tab for a lead outside scope → empty
+//     • Complete / outcome / edit / reassign / delete → the controller
+//       asks GetActivityAccessHandler first; it returns null ("not
+//       found") unless the lead is visible or the task is yours
+//     • Timeline for a lead outside scope       → empty
+//     • Tasks page: unchanged — it already shows only YOUR tasks to
+//       non-admins
+//
 // GLOBAL QUERY FILTERS: nothing here uses IgnoreQueryFilters. Every query
 // also carries an explicit TenantId, which the filter agrees with, so the
 // two layers never contradict each other.
@@ -117,6 +131,21 @@ namespace MerkaiTrial.Application.Commands.Activities
                 ActivityEntityType.Contact => db.Contacts.AnyAsync(x => x.Id == entityId && x.TenantId == tenantId && !x.IsDeleted, ct),
                 ActivityEntityType.Company => db.Companies.AnyAsync(x => x.Id == entityId && x.TenantId == tenantId && !x.IsDeleted, ct),
                 _ => Task.FromResult(false)
+            };
+
+        /// <summary>
+        /// Exists AND the current user may see it. Leads and deals go
+        /// through record visibility; contacts and companies are not scoped,
+        /// so for them this is the plain existence check.
+        /// </summary>
+        public static async Task<bool> EntityVisibleAsync(
+            FlowDbContext db, IRecordScopeService scope,
+            Guid tenantId, string entityType, Guid entityId, CancellationToken ct)
+            => entityType switch
+            {
+                ActivityEntityType.Lead => await scope.CanSeeLeadAsync(db, tenantId, entityId, ct),
+                ActivityEntityType.Deal => await scope.CanSeeDealAsync(db, tenantId, entityId, ct),
+                _ => await EntityExistsAsync(db, tenantId, entityType, entityId, ct)
             };
 
         /// <summary>
@@ -316,13 +345,16 @@ namespace MerkaiTrial.Application.Commands.Activities
         private readonly ILeadScoringService _scoring;
         private readonly ILogger<CreateActivityHandler> _logger;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
         public CreateActivityHandler(
             FlowDbContext db,
             ILeadScoringService scoring,
             ILogger<CreateActivityHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            IRecordScopeService scope)
         {
             _db      = db;
+            _scope   = scope;
             _scoring = scoring;
             _logger  = logger;
             _audit   = audit;
@@ -356,7 +388,9 @@ namespace MerkaiTrial.Application.Commands.Activities
             if (string.IsNullOrWhiteSpace(dto.CreatedBy))
                 throw new InvalidOperationException("CreatedBy must be set by the controller.");
 
-            if (!await ActivityGuards.EntityExistsAsync(_db, dto.TenantId, dto.EntityType, dto.EntityId, ct))
+            // Exists AND visible to the current user — a record you can't
+            // see is a record that doesn't exist.
+            if (!await ActivityGuards.EntityVisibleAsync(_db, _scope, dto.TenantId, dto.EntityType, dto.EntityId, ct))
                 throw new KeyNotFoundException($"{dto.EntityType} {dto.EntityId} not found");
 
             var assignee = string.IsNullOrWhiteSpace(dto.AssignedToUserId)
@@ -432,12 +466,25 @@ namespace MerkaiTrial.Application.Commands.Activities
     public class GetActivitiesHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
 
-        public GetActivitiesHandler(FlowDbContext db) => _db = db;
+        public GetActivitiesHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
         public async Task<List<ActivityDto>> Handle(GetActivitiesQuery query, CancellationToken ct = default)
         {
             if (!ActivityEntityType.IsValid(query.EntityType)) return new List<ActivityDto>();
+
+            // A lead or deal outside the user's scope has no activity to show.
+            // (A deal the user CAN see still shows its source lead's history,
+            // even if that lead belongs to someone else — the deal owner needs
+            // the story of how it got here.)
+            if ((query.EntityType == ActivityEntityType.Lead || query.EntityType == ActivityEntityType.Deal) &&
+                !await ActivityGuards.EntityVisibleAsync(_db, _scope, query.TenantId, query.EntityType, query.EntityId, ct))
+                return new List<ActivityDto>();
 
             // A deal shows its own activity AND the history of the lead it
             // came from. Nothing is copied at conversion; the lead's rows are
@@ -520,15 +567,44 @@ namespace MerkaiTrial.Application.Commands.Activities
     public class GetActivityAccessHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
 
-        public GetActivityAccessHandler(FlowDbContext db) => _db = db;
+        public GetActivityAccessHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
 
-        public Task<ActivityAccessInfo?> Handle(Guid tenantId, Guid activityId, CancellationToken ct = default)
-            => _db.Activities.AsNoTracking()
+        /// <summary>
+        /// Every by-id action in ActivitiesController asks this first, so
+        /// returning null here is what makes an activity on an invisible
+        /// lead "not found" for complete, outcome, edit, reassign and delete.
+        ///
+        /// Exception: a task assigned to the caller is always theirs to see
+        /// and act on — it's on their Tasks page, so it must work from there.
+        /// </summary>
+        public async Task<ActivityAccessInfo?> Handle(Guid tenantId, Guid activityId, CancellationToken ct = default)
+        {
+            var info = await _db.Activities.AsNoTracking()
                 .Where(a => a.Id == activityId && a.TenantId == tenantId && !a.IsDeleted)
                 .Select(a => new ActivityAccessInfo(
                     a.EntityType, a.EntityId, a.AssignedToUserId, a.CreatedBy, a.IsTask, a.IsCompleted))
                 .FirstOrDefaultAsync(ct);
+
+            if (info is null) return null;
+            if (info.EntityType != ActivityEntityType.Lead && info.EntityType != ActivityEntityType.Deal)
+                return info;
+
+            var module = info.EntityType == ActivityEntityType.Lead ? RecordModules.Leads : RecordModules.Deals;
+            var access = await _scope.GetAsync(module, ct);
+            if (access.SeesAll) return info;
+
+            if (string.Equals(info.AssignedToUserId, access.UserId, StringComparison.OrdinalIgnoreCase))
+                return info;
+
+            return await ActivityGuards.EntityVisibleAsync(_db, _scope, tenantId, info.EntityType, info.EntityId, ct)
+                ? info : null;
+        }
     }
 
     // =====================================================================
@@ -833,11 +909,13 @@ namespace MerkaiTrial.Application.Commands.Activities
     public class GetTimelineHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetTimelineHandler> _logger;
 
-        public GetTimelineHandler(FlowDbContext db, ILogger<GetTimelineHandler> logger)
+        public GetTimelineHandler(FlowDbContext db, IRecordScopeService scope, ILogger<GetTimelineHandler> logger)
         {
             _db = db;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -1022,10 +1100,20 @@ namespace MerkaiTrial.Application.Commands.Activities
             var t = query.TenantId;
             var id = query.EntityId;
 
+            // A lead or deal outside the user's scope has no creation event,
+            // so the whole timeline comes back empty — same as a missing one.
+            var leadAccess = query.EntityType == ActivityEntityType.Lead
+                ? await _scope.GetAsync(RecordModules.Leads, ct)
+                : null;
+            var dealAccess = query.EntityType == ActivityEntityType.Deal
+                ? await _scope.GetAsync(RecordModules.Deals, ct)
+                : null;
+
             return query.EntityType switch
             {
                 ActivityEntityType.Lead => await _db.Leads.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
+                    .VisibleTo(leadAccess!)
                     .Select(x => new TimelineItemDto(x.Id, "Created", "Lead created",
                         "Lead '" + x.FullName + "' was created",
                         x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))
@@ -1033,6 +1121,7 @@ namespace MerkaiTrial.Application.Commands.Activities
 
                 ActivityEntityType.Deal => await _db.Deals.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
+                    .VisibleTo(dealAccess!)
                     .Select(x => new TimelineItemDto(x.Id, "Created", "Deal created",
                         "Deal '" + x.Title + "' was created",
                         x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))

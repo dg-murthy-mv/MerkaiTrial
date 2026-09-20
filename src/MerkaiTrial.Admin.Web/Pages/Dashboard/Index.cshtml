@@ -1,5 +1,8 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages
+@* RECORD VISIBILITY (015): the Lead Quota bar and the Add Lead limit use
+   Model.LeadQuotaUsed (whole workspace). The Total Leads card still uses
+   Model.TotalLeads (what this user can see). *@
 @model MerkaiTrial.Admin.Web.Pages.Dashboard.IndexModel
 @{
     ViewData["Title"] = "Dashboard";
@@ -269,7 +272,7 @@
             @* ✅ Add Lead — hidden for roles without create permission *@
             @if (Model.UserCanCreate("leads"))
             {
-                @if (!AuthorizedPageModel.IsAtLimit(Model.TotalLeads, Model.MaxLeads))
+                @if (!AuthorizedPageModel.IsAtLimit(Model.LeadQuotaUsed, Model.MaxLeads))
                 {
                     <a href="/Leads/Create" class="btn btn-light btn-sm fw-500">
                         <i class="bi bi-plus-circle me-1"></i>Add Lead
@@ -290,8 +293,8 @@
     @* ✅ Quota bars — shown in header so always visible on Dashboard *@
     <div class="row g-2 mt-3">
         @{
-            var leadPct = AuthorizedPageModel.QuotaPercent(Model.TotalLeads, Model.MaxLeads);
-            var dealPct = AuthorizedPageModel.QuotaPercent(Model.ActiveDeals, Model.MaxDeals);
+            var leadPct = AuthorizedPageModel.QuotaPercent(Model.LeadQuotaUsed, Model.MaxLeads);
+            var dealPct = AuthorizedPageModel.QuotaPercent(Model.DealQuotaUsed, Model.MaxDeals);
             var leadColor = leadPct >= 90 ? "#ef4444" : leadPct >= 70 ? "#f59e0b" : "#10b981";
             var dealColor = dealPct >= 90 ? "#ef4444" : dealPct >= 70 ? "#f59e0b" : "#10b981";
         }
@@ -303,7 +306,7 @@
                          style="width:@leadPct%;background:@leadColor;"></div>
                 </div>
                 <div class="quota-text">
-                    @Model.TotalLeads / @Model.MaxLeads leads used
+                    @Model.LeadQuotaUsed / @Model.MaxLeads leads used
                     @if (leadPct >= 90)
                     {
                         <span class="ms-1" style="color:#fca5a5;font-weight:600;">
@@ -321,7 +324,7 @@
                          style="width:@dealPct%;background:@dealColor;"></div>
                 </div>
                 <div class="quota-text">
-                    @Model.ActiveDeals / @Model.MaxDeals deals used
+                    @Model.DealQuotaUsed / @Model.MaxDeals deals used
                     @if (dealPct >= 90)
                     {
                         <span class="ms-1" style="color:#fca5a5;font-weight:600;">

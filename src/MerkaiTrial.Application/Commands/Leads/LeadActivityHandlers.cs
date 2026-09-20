@@ -1,9 +1,20 @@
-﻿// =====================================================================
+// =====================================================================
 // LEAD ACTIVITIES HANDLERS
 // Location: MerkaiTrial.Application/Commands/Leads/LeadActivityHandlers.cs
+//
+// COMPLETE FILE — replaces the existing one.
+// LEGACY: writes to LeadActivities. The Lead page uses the unified
+// Activities table (ActivityHandlers). Kept and scoped because an
+// endpoint still reaches it.
+//
+// RECORD VISIBILITY (015): every handler here checks the current user can
+// see the lead first (RecordScopeGuards). Writes on a lead outside scope
+// → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
+// answer as for a lead that doesn't exist.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -18,9 +29,12 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly FlowDbContext _context;
         private readonly ILogger<CreateLeadActivityHandler> _logger;
         private readonly ILeadScoringService _scoring;
-        public CreateLeadActivityHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<CreateLeadActivityHandler> logger)
+        private readonly IRecordScopeService _scope;
+        public CreateLeadActivityHandler(FlowDbContext context, ILeadScoringService scoring,
+            IRecordScopeService scope, ILogger<CreateLeadActivityHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _scoring = scoring;
             _logger = logger;
         }
@@ -29,12 +43,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
-                // Verify lead exists
-                var leadExists = await _context.Leads
-                    .AnyAsync(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
-
-                if (!leadExists)
-                    throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+                await _scope.EnsureLeadVisibleAsync(_context, dto.TenantId, dto.LeadId, cancellationToken);
 
                 var activity = new LeadActivity
                 {
@@ -86,11 +95,13 @@ namespace MerkaiTrial.Application.Commands.Leads
     public class GetLeadActivitiesHandler : ICommandHandler
     {
         private readonly FlowDbContext _context;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadActivitiesHandler> _logger;
 
-        public GetLeadActivitiesHandler(FlowDbContext context, ILogger<GetLeadActivitiesHandler> logger)
+        public GetLeadActivitiesHandler(FlowDbContext context, IRecordScopeService scope, ILogger<GetLeadActivitiesHandler> logger)
         {
             _context = context;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -98,6 +109,9 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                if (!await _scope.CanSeeLeadAsync(_context, tenantId, leadId, cancellationToken))
+                    return new List<LeadActivityDto>();
+
                 var activities = await _context.Set<LeadActivity>()
                     .AsNoTracking()
                     .Where(a => a.LeadId == leadId && a.TenantId == tenantId && !a.IsDeleted)

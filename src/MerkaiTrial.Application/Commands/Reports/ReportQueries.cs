@@ -1,11 +1,24 @@
 // =====================================================================
 // ReportQueries.cs
 // Location: MerkaiTrial.Application/Commands/Reports/ReportQueries.cs
+//
+// CHANGES (deals visibility round)
+//   ✅ Every report now respects record visibility. A rep on Own sees
+//      reports built from HIS leads and deals only; Team sees the team's;
+//      All (and tenant admin) sees the whole tenant — same as before.
+//        Leads            → .VisibleTo(leadAccess)
+//        Deals            → .VisibleTo(dealAccess)
+//        Quotes/Invoices  → .WithVisibleDeal(_db, dealAccess)
+//        Notes/activities → only those on leads/deals the user can see
+//   ✅ Sales funnel: PaidInvoices counted UNPAID invoices (!= Paid). Fixed.
+//   ✅ Lead source: removed the unused BuildItem() local that still did
+//      (int)l.Status >= 2 on a string status (would throw if ever called).
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -22,12 +35,15 @@ namespace MerkaiTrial.Application.Commands.Reports
 
         private readonly ILogger<GetSalesFunnelHandler> _logger;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
 
-        public GetSalesFunnelHandler(FlowDbContext db, ILogger<GetSalesFunnelHandler> logger, ILeadStatusResolver statuses)
+        public GetSalesFunnelHandler(FlowDbContext db, ILogger<GetSalesFunnelHandler> logger,
+            ILeadStatusResolver statuses, IRecordScopeService scope)
         {
             _db     = db;
             _logger = logger;
             _statuses = statuses;
+            _scope  = scope;
         }
 
         public async Task<SalesFunnelReportDto> HandleAsync(
@@ -38,7 +54,11 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from     = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to       = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var leadAccess = await _scope.GetAsync(RecordModules.Leads, ct);
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var leads = await _db.Leads
+                .VisibleTo(leadAccess)
                 .Where(l => l.TenantId.ToString()== tenantId &&
                             !l.IsDeleted &&
                             l.CreatedAtUtc >= from && l.CreatedAtUtc <= to &&
@@ -46,18 +66,21 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .ToListAsync(ct);
 
             var deals = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId &&
                             !d.IsDeleted &&
                             d.CreatedAtUtc >= from && d.CreatedAtUtc <= to)
                 .ToListAsync(ct);
 
             var quotes = await _db.Quotes
+                .WithVisibleDeal(_db, dealAccess)
                 .Where(q => q.TenantId.ToString() == tenantId &&
                             !q.IsDeleted &&
                             q.CreatedAtUtc >= from && q.CreatedAtUtc <= to)
                 .ToListAsync(ct);
 
             var invoices = await _db.Invoices
+                .WithVisibleDeal(_db, dealAccess)
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
                             i.CreatedAtUtc >= from && i.CreatedAtUtc <= to)
@@ -80,7 +103,8 @@ namespace MerkaiTrial.Application.Commands.Reports
             var totalQuotes    = quotes.Count;
             var acceptedQuotes = quotes.Count(q => q.Status.ToString() == "Accepted");
             var totalInvoices  = invoices.Count;
-            var paidInvoices   = invoices.Count(i => i.Status != InvoiceStatus.Paid); // 4 = Paid
+            // Was != Paid — counted the UNPAID ones as paid.
+            var paidInvoices   = invoices.Count(i => i.Status == InvoiceStatus.Paid);
 
             return new SalesFunnelReportDto
             {
@@ -108,11 +132,13 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetPipelineSummaryHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
-        public GetPipelineSummaryHandler(FlowDbContext db, ILogger<GetPipelineSummaryHandler> logger)
+        public GetPipelineSummaryHandler(FlowDbContext db, ILogger<GetPipelineSummaryHandler> logger, IRecordScopeService scope)
         {
             _db     = db;
             _logger = logger;
+            _scope  = scope;
         }
 
         public async Task<PipelineSummaryReportDto> HandleAsync(
@@ -122,7 +148,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from     = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to       = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var stages = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId &&
                             !d.IsDeleted &&
                             d.CreatedAtUtc >= from && d.CreatedAtUtc <= to &&
@@ -173,11 +202,13 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetRevenueByPeriodHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
-        public GetRevenueByPeriodHandler(FlowDbContext db, ILogger<GetRevenueByPeriodHandler> logger)
+        public GetRevenueByPeriodHandler(FlowDbContext db, ILogger<GetRevenueByPeriodHandler> logger, IRecordScopeService scope)
         {
             _db     = db;
             _logger = logger;
+            _scope  = scope;
         }
 
         public async Task<RevenueByPeriodReportDto> HandleAsync(
@@ -187,7 +218,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from     = filter.FromDate ?? DateTime.UtcNow.AddMonths(-11);
             var to       = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var invoices = await _db.Invoices
+                .WithVisibleDeal(_db, dealAccess)
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
                             i.IssueDateUtc >= from && i.IssueDateUtc <= to)
@@ -229,11 +263,13 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetWinLossHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
-        public GetWinLossHandler(FlowDbContext db, ILogger<GetWinLossHandler> logger)
+        public GetWinLossHandler(FlowDbContext db, ILogger<GetWinLossHandler> logger, IRecordScopeService scope)
         {
             _db     = db;
             _logger = logger;
+            _scope  = scope;
         }
 
         public async Task<WinLossReportDto> HandleAsync(
@@ -243,7 +279,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from     = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to       = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var deals = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId &&
                             !d.IsDeleted &&
                             d.UpdatedAtUtc >= from && d.UpdatedAtUtc <= to &&
@@ -305,11 +344,13 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetOutstandingInvoicesHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
-        public GetOutstandingInvoicesHandler(FlowDbContext db, ILogger<GetOutstandingInvoicesHandler> logger)
+        public GetOutstandingInvoicesHandler(FlowDbContext db, ILogger<GetOutstandingInvoicesHandler> logger, IRecordScopeService scope)
         {
             _db     = db;
             _logger = logger;
+            _scope  = scope;
         }
 
         public async Task<OutstandingInvoicesReportDto> HandleAsync(
@@ -318,7 +359,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var tenantId = filter.TenantId;
             var today    = DateTime.UtcNow.Date;
 
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var invoices = await _db.Invoices
+                .WithVisibleDeal(_db, dealAccess)
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
                             i.Balance > 0 &&
@@ -393,13 +437,16 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetRevenueByVerticalHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetRevenueByVerticalHandler(
             FlowDbContext db,
-            ILogger<GetRevenueByVerticalHandler> logger)
+            ILogger<GetRevenueByVerticalHandler> logger,
+            IRecordScopeService scope)
         {
             _db = db;
             _logger = logger;
+            _scope = scope;
         }
 
         public async Task<RevenueByVerticalReportDto> HandleAsync(
@@ -409,8 +456,13 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
-            // ── Pull all deals in range ───────────────────────────────
+            // ── Pull all deals in range the user can see ─────────────
+            // Invoices below are filtered to these deal ids, so they are
+            // scoped automatically.
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var deals = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId &&
                             !d.IsDeleted &&
                             d.CreatedAtUtc >= from && d.CreatedAtUtc <= to)
@@ -498,10 +550,11 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetSalesRepPerformanceHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetSalesRepPerformanceHandler(FlowDbContext db,
-            ILogger<GetSalesRepPerformanceHandler> logger)
-        { _db = db; _logger = logger; }
+            ILogger<GetSalesRepPerformanceHandler> logger, IRecordScopeService scope)
+        { _db = db; _logger = logger; _scope = scope; }
 
         public async Task<SalesRepPerformanceReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
@@ -510,12 +563,17 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var leadAccess = await _scope.GetAsync(RecordModules.Leads, ct);
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var deals = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId && !d.IsDeleted &&
                             d.CreatedAtUtc >= from && d.CreatedAtUtc <= to)
                 .ToListAsync(ct);
 
             var leads = await _db.Leads
+                .VisibleTo(leadAccess)
                 .Where(l => l.TenantId.ToString() == tenantId && !l.IsDeleted &&
                             l.CreatedAtUtc >= from && l.CreatedAtUtc <= to)
                 .ToListAsync(ct);
@@ -582,9 +640,10 @@ namespace MerkaiTrial.Application.Commands.Reports
         private readonly FlowDbContext _db;
         private readonly ILogger<GetLeadSourceHandler> _logger;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
         public GetLeadSourceHandler(FlowDbContext db,
-            ILogger<GetLeadSourceHandler> logger, ILeadStatusResolver statuses)
-        { _db = db; _logger = logger; _statuses = statuses; }
+            ILogger<GetLeadSourceHandler> logger, ILeadStatusResolver statuses, IRecordScopeService scope)
+        { _db = db; _logger = logger; _statuses = statuses; _scope = scope; }
 
         public async Task<LeadSourceReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
@@ -593,7 +652,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            var leadAccess = await _scope.GetAsync(RecordModules.Leads, ct);
+
             var leads = await _db.Leads
+                .VisibleTo(leadAccess)
                 .Where(l => l.TenantId.ToString() == tenantId && !l.IsDeleted &&
                             l.CreatedAtUtc >= from && l.CreatedAtUtc <= to)
                 .ToListAsync(ct);
@@ -620,18 +682,6 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .Where(s => s.Category is LeadStatusCategory.Qualified or LeadStatusCategory.Converted)
                 .Select(s => s.Key)
                 .ToHashSet();
-
-            LeadSourceItem BuildItem(IGrouping<string, dynamic> g) =>
-                new()
-                {
-                    Name = g.Key,
-                    TotalLeads = g.Count(),
-                    Qualified = g.Count(l => (int)l.Status >= 2),
-                    Converted = g.Count(l => (bool)l.IsConverted),
-                    ConversionRate = g.Count() == 0 ? 0 :
-                        Math.Round(g.Count(l => (bool)l.IsConverted) * 100.0 / g.Count(), 1),
-                    EstimatedValue = g.Sum(l => (decimal?)l.EstimatedValue ?? 0m)
-                };
 
             // Existing grouping logic, but swap out fragile ordinal check
             var byChannel = leads
@@ -698,10 +748,11 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetDealVelocityHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetDealVelocityHandler(FlowDbContext db,
-            ILogger<GetDealVelocityHandler> logger)
-        { _db = db; _logger = logger; }
+            ILogger<GetDealVelocityHandler> logger, IRecordScopeService scope)
+        { _db = db; _logger = logger; _scope = scope; }
 
         public async Task<DealVelocityReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
@@ -710,7 +761,12 @@ namespace MerkaiTrial.Application.Commands.Reports
             var from = filter.FromDate ?? DateTime.UtcNow.AddMonths(-12);
             var to = (filter.ToDate ?? DateTime.UtcNow).Date.AddDays(1).AddTicks(-1);
 
+            // Stage history and deal times below are filtered to these ids,
+            // so they are scoped automatically.
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
             var closedDealIds = await _db.Deals
+                .VisibleTo(dealAccess)
                 .Where(d => d.TenantId.ToString() == tenantId && !d.IsDeleted &&
                             (d.Stage == "ClosedWon" || d.Stage == "Won" ||
                              d.Stage == "ClosedLost" || d.Stage == "Lost") &&
@@ -790,10 +846,11 @@ namespace MerkaiTrial.Application.Commands.Reports
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<GetActivityLeaderboardHandler> _logger;
+        private readonly IRecordScopeService _scope;
 
         public GetActivityLeaderboardHandler(FlowDbContext db,
-            ILogger<GetActivityLeaderboardHandler> logger)
-        { _db = db; _logger = logger; }
+            ILogger<GetActivityLeaderboardHandler> logger, IRecordScopeService scope)
+        { _db = db; _logger = logger; _scope = scope; }
 
         public async Task<ActivityLeaderboardReportDto> HandleAsync(
             ReportFilterDto filter, CancellationToken ct = default)
@@ -810,19 +867,37 @@ namespace MerkaiTrial.Application.Commands.Reports
                     TotalReminders = 0
                 };
 
+            // Count only work logged on leads and deals the user can see.
+            // Activities on other record types (contacts, companies…) are
+            // not owner-scoped yet, so they count as before.
+            var leadAccess = await _scope.GetAsync(RecordModules.Leads, ct);
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
+            var visibleLeadIds = _db.Leads.VisibleTo(leadAccess).Select(l => l.Id);
+            var visibleDealIds = _db.Deals.VisibleTo(dealAccess).Select(d => d.Id);
+            var leadsAll = leadAccess.SeesAll;
+            var dealsAll = dealAccess.SeesAll;
+            var leadType = ActivityEntityType.Lead;
+            var dealType = ActivityEntityType.Deal;
+
             var dealNotes = await _db.DealNotes
                 .Where(n => n.TenantId == tenantId && !n.IsDeleted &&
-                            n.CreatedAtUtc >= from && n.CreatedAtUtc <= to)
+                            n.CreatedAtUtc >= from && n.CreatedAtUtc <= to &&
+                            (dealsAll || visibleDealIds.Contains(n.DealId)))
                 .Select(n => n.CreatedBy).ToListAsync(ct);
 
             var leadNotes = await _db.LeadNotes
                 .Where(n => n.TenantId == tenantId && !n.IsDeleted &&
-                            n.CreatedAtUtc >= from && n.CreatedAtUtc <= to)
+                            n.CreatedAtUtc >= from && n.CreatedAtUtc <= to &&
+                            (leadsAll || visibleLeadIds.Contains(n.LeadId)))
                 .Select(n => n.CreatedBy).ToListAsync(ct);
 
             var activityRows = await _db.Activities
                 .Where(a => a.TenantId == tenantId && !a.IsDeleted &&
-                            a.CreatedAtUtc >= from && a.CreatedAtUtc <= to)
+                            a.CreatedAtUtc >= from && a.CreatedAtUtc <= to &&
+                            (a.EntityType == leadType ? (leadsAll || visibleLeadIds.Contains(a.EntityId))
+                           : a.EntityType == dealType ? (dealsAll || visibleDealIds.Contains(a.EntityId))
+                           : true))
                 .Select(a => new { a.IsTask, a.CreatedBy })
                 .ToListAsync(ct);
 

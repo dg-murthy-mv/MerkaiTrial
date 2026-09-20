@@ -18,7 +18,7 @@
 <div class="row g-4">
     <div class="col-lg-8">
 
-        <!-- Working statuses -->
+        <!-- Open / Qualified / Not-pursuing statuses -->
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-funnel me-2"></i>Your statuses</span>
@@ -203,13 +203,16 @@
                         <div class="mb-3">
                             <label asp-for="Input.Category" class="form-label">Type</label>
                             <select asp-for="Input.Category" class="form-select">
-                                <option value="@((int)LeadStatusCategory.Open)">Working — still being pursued</option>
+                                <option value="@((int)LeadStatusCategory.Open)">Open — still being pursued</option>
                                 <option value="@((int)LeadStatusCategory.Qualified)">Qualified — ready to become a deal</option>
                                 <option value="@((int)LeadStatusCategory.Disqualified)">Not pursuing</option>
                             </select>
                             <div class="form-text">
                                 This decides what the CRM does with the lead, so it
-                                can't be changed later.
+                                can't be changed later. There is no separate "New"
+                                type — add an Open status and click
+                                <i class="bi bi-flag"></i> on it to make new leads
+                                start there.
                             </div>
                         </div>
 

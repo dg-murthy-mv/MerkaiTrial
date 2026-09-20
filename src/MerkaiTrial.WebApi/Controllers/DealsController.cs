@@ -13,6 +13,14 @@
 //   8. Added ID mismatch guard on Update
 //   9. Added uploadedBy from ICurrentUserService in UploadAttachment
 //  10. Moved UpdateDealStageRequest record inside namespace
+//
+// RECORD VISIBILITY (016)
+//  11. Attachment endpoints check the deal is visible first (DealAccessHandler).
+//      Their handlers live in another file; the check sits here so it
+//      doesn't have to be repeated in each.
+//  12. Update and the note/activity/reminder POSTs return 404 for a deal
+//      outside scope (KeyNotFound) and 400 for a rejected change
+//      (InvalidOperation) instead of a generic 500.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Deals;
@@ -48,6 +56,7 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly DeleteDealAttachmentHandler _deleteAttachmentHandler;
         private readonly GetDealsByContactHandler _getDealsByContact;
         private readonly TransitionDealStageHandler _transitionDealStage;
+        private readonly DealAccessHandler _dealAccess;
         private readonly ICurrentUserService _currentUserService;   // ✅ ADDED
         private readonly ILogger<DealsController> _logger;
 
@@ -72,6 +81,7 @@ namespace MerkaiTrial.WebApi.Controllers
             DeleteDealAttachmentHandler deleteAttachmentHandler,
             GetDealsByContactHandler getDealsByContact,
             TransitionDealStageHandler transitionDealStage,
+            DealAccessHandler dealAccess,
             ICurrentUserService currentUserService,           // ✅ ADDED
             ILogger<DealsController> logger)
         {
@@ -95,6 +105,7 @@ namespace MerkaiTrial.WebApi.Controllers
             _deleteAttachmentHandler = deleteAttachmentHandler;
             _getDealsByContact = getDealsByContact;
             _transitionDealStage = transitionDealStage;
+            _dealAccess = dealAccess;
             _currentUserService = currentUserService;             // ✅ ADDED
             _logger = logger;
         }
@@ -120,7 +131,11 @@ namespace MerkaiTrial.WebApi.Controllers
             try
             {
                 if (page < 1) page = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 20;
+                // Was: > 100 → reset to 20, so asking for more returned LESS.
+                // Now clamps. 500 lets the Pipeline board and the dashboard
+                // load a full workspace in one call.
+                if (pageSize < 1) pageSize = 20;
+                if (pageSize > 500) pageSize = 500;
 
                 var result = await _getDealsHandler.HandleAsync(
                     new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize));
@@ -249,6 +264,10 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Deal {id} not found" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
@@ -474,6 +493,10 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 return Ok(new { success = true });
             }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { error = $"Deal {id} not found" });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding note to deal {DealId}", id);
@@ -533,6 +556,10 @@ namespace MerkaiTrial.WebApi.Controllers
                 _logger.LogInformation("Activity added to deal {DealId}", id);
 
                 return Ok(new { success = true });
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { error = $"Deal {id} not found" });
             }
             catch (Exception ex)
             {
@@ -594,6 +621,10 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 return Ok(new { success = true });
             }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { error = $"Deal {id} not found" });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding reminder to deal {DealId}", id);
@@ -651,6 +682,10 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
             try
             {
+                // A deal outside scope has no attachments to show.
+                if (!await _dealAccess.CanSeeDealAsync(Guid.Parse(tenantId), id, cancellationToken))
+                    return Ok(new List<AttachmentDto>());
+
                 var result = await _getAttachmentsHandler.HandleAsync(tenantId, id);
                 return Ok(result);
             }
@@ -681,6 +716,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 if (file == null || file.Length == 0)
                     return BadRequest(new { error = "No file provided" });
+
+                // Checked before the file is stored — no orphan files.
+                if (!await _dealAccess.CanSeeDealAsync(Guid.Parse(tenantId), id, cancellationToken))
+                    return NotFound(new { error = $"Deal {id} not found" });
 
                 var result = await _uploadAttachmentHandler.HandleAsync(
                     tenantId, id, file, cancellationToken);
@@ -721,6 +760,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
             try
             {
+                if (!await _dealAccess.CanSeeDealAttachmentAsync(Guid.Parse(tenantId), attachmentId, cancellationToken))
+                    return NotFound(new { error = $"Attachment {attachmentId} not found" });
+
                 await _deleteAttachmentHandler.HandleAsync(tenantId, attachmentId, cancellationToken);
 
                 _logger.LogInformation("Attachment {AttachmentId} deleted from deal {DealId}",
@@ -754,6 +796,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
             try
             {
+                if (!await _dealAccess.CanSeeDealAttachmentAsync(Guid.Parse(tenantId), attachmentId, cancellationToken))
+                    return NotFound(new { error = $"Attachment {attachmentId} not found" });
+
                 await _deleteAttachmentHandler.HandleAsync(tenantId, attachmentId, cancellationToken);
 
                 _logger.LogInformation("Attachment {AttachmentId} deleted directly", attachmentId);

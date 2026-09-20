@@ -25,6 +25,21 @@
 //   the same pattern is what silently broke PermissionHandler before. UserCan*
 //   compares case-insensitively.
 //
+// RECORD VISIBILITY (015):
+//   The lead KPIs are what THIS user can see (a rep with Own visibility
+//   sees their own leads). The LEAD QUOTA is the whole workspace — the plan
+//   limit counts every lead — so it now reads LeadQuotaUsed (from
+//   LeadStatsDto.QuotaUsed), not TotalLeads. Before, a rep saw "1 / 2000"
+//   while the workspace was at 10.
+//
+// RECORD VISIBILITY — DEALS (016):
+//   Same split for deals. The deal KPIs (Active, Won, Lost, Pipeline value,
+//   Top deals) are what THIS user can see. The DEAL QUOTA bar reads
+//   DealQuotaUsed (GetDealsResponse.QuotaUsed — every deal in the
+//   workspace). It used to read ActiveDeals, which was also wrong before
+//   visibility: it counted only open deals, and only from the first 20.
+//   Deals now load with pageSize 500 so the KPIs cover the whole book.
+//
 // EARLIER FIXES (unchanged):
 //   1. WonValue label clarified — ExpectedValue of ClosedWon deals,
 //      NOT actual collected. Actual collected = PaidAmount (invoices).
@@ -93,6 +108,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
         public int QualifiedLeads  { get; set; }
         public int ConvertedLeads  { get; set; }
 
+        /// <summary>Every lead in the workspace — for the plan quota bar and the Add Lead limit.</summary>
+        public int LeadQuotaUsed   { get; set; }
+
         // ✅ FIX 4: activity counts from lead stats
         public int OverdueReminders { get; set; }
         public int TodayActivities  { get; set; }
@@ -109,6 +127,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
 
         // ── Deal KPIs ─────────────────────────────────────────────────
         public int     ActiveDeals   { get; set; }
+
+        /// <summary>Every deal in the workspace — for the plan quota bar.</summary>
+        public int     DealQuotaUsed { get; set; }
         public int     DealsWon      { get; set; }
         public int     DealsLost     { get; set; }
         public decimal PipelineValue { get; set; }
@@ -187,7 +208,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
                     canLeads, canDeals, canQuotes, canInvoices);
 
             var leadStatsTask    = SafeAsyncIf(canLeads,    () => _leadService.GetStatsAsync(tenantId),         "LeadStats");
-            var dealsTask        = SafeAsyncIf(canDeals,    () => _dealService.GetAllAsync(tenantId),           "Deals");
+            var dealsTask        = SafeAsyncIf(canDeals,    () => _dealService.GetAllAsync(tenantId, pageSize: 500), "Deals");
             var quoteStatsTask   = SafeAsyncIf(canQuotes,   () => _quoteService.GetStatisticsAsync(tenantId),   "QuoteStats");
             var invoiceStatsTask = SafeAsyncIf(canInvoices, () => _invoiceService.GetStatisticsAsync(tenantId), "InvoiceStats");
             var recentQuotesTask = SafeAsyncIf(canQuotes,   () => _quoteService.GetAllAsync(tenantId),          "RecentQuotes");
@@ -205,6 +226,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
                 WorkingLeads    = leadStats.WorkingLeads;
                 QualifiedLeads  = leadStats.QualifiedLeads;
                 ConvertedLeads  = leadStats.ConvertedLeads;
+                LeadQuotaUsed   = leadStats.QuotaUsed;
 
                 // ✅ FIX 4: activity counts for activities panel
                 OverdueReminders = leadStats.OverdueReminders;
@@ -212,7 +234,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             }
 
             // ── Deal KPIs ─────────────────────────────────────────────
-            var deals = (await dealsTask)?.Items ?? new();
+            var dealsResponse = await dealsTask;
+            var deals = dealsResponse?.Items ?? new();
+            DealQuotaUsed = dealsResponse?.QuotaUsed ?? 0;
 
             ActiveDeals   = deals.Count(d =>
                 d.Stage is not ("ClosedWon" or "ClosedLost" or "Won" or "Lost"));

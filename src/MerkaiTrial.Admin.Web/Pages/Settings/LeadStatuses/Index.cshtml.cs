@@ -279,6 +279,6 @@ public class IndexModel : AuthorizedPageModel
         LeadStatusCategory.Qualified    => "Qualified",
         LeadStatusCategory.Disqualified => "Not pursuing",
         LeadStatusCategory.Converted    => "Converted",
-        _ => "Working"
+        _ => "Open"   // was "Working" — it put a "Working" badge on the New status
     };
 }

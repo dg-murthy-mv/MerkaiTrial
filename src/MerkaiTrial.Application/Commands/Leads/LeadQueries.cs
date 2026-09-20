@@ -6,6 +6,14 @@
 //   1. GetLeadsPaginatedHandler  — Currency fallback from ICurrentTenantService
 //   2. GetLeadDetailHandler      — Currency fallback + Guid comparison (index-safe)
 //   3. GetLeadStatsHandler       — DB-side counts (no memory load)
+//   4. GetLeadsPaginatedHandler  — Status accepts a comma-separated key
+//                                  list (Leads page "Active" tab)
+//   5. RECORD VISIBILITY (014)   — list, detail and stats only return the
+//                                  leads the current user's role may see
+//                                  (Own / Team / All). Detail of a lead
+//                                  outside scope → KeyNotFound → 404.
+//                                  Stats.QuotaUsed stays tenant-wide: the
+//                                  plan limit counts every lead.
 // NOTE: Date formatting is NOT done in handlers — UTC always returned.
 //       Call _tenantService.FormatDate(utc) in your Razor Page models.
 // =====================================================================
@@ -19,6 +27,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Security;
 
 namespace MerkaiTrial.Application.Commands.Leads
 {
@@ -36,15 +45,18 @@ namespace MerkaiTrial.Application.Commands.Leads
     {
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 1
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadsPaginatedHandler> _logger;
 
         public GetLeadsPaginatedHandler(
             FlowDbContext context,
             ICurrentTenantService tenantService,
+            IRecordScopeService scope,
             ILogger<GetLeadsPaginatedHandler> logger)
         {
             _context = context;
             _tenantService = tenantService;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -57,9 +69,13 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // FIX 1: Tenant currency resolved once — not hardcoded
                 var tenantCurrency = _tenantService.GetCurrencyCode();
 
+                // Record visibility — Own / Team / All for this user.
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var leadsQuery = _context.Leads
                     .AsNoTracking()
-                    .Where(l => l.TenantId == query.TenantId && !l.IsDeleted);
+                    .Where(l => l.TenantId == query.TenantId && !l.IsDeleted)
+                    .VisibleTo(access);
 
                 if (!string.IsNullOrWhiteSpace(query.SearchTerm))
                 {
@@ -71,8 +87,24 @@ namespace MerkaiTrial.Application.Commands.Leads
                         (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
                 }
 
+                // Status: one key ("Working") or several ("New,Working,Qualified").
+                // The Leads page's Active tab sends several — every Open and
+                // Qualified status for this tenant.
                 if (!string.IsNullOrWhiteSpace(query.Status))
-                    leadsQuery = leadsQuery.Where(l => l.Status == query.Status);
+                {
+                    var keys = query.Status.Split(',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+                    if (keys.Length == 1)
+                    {
+                        var key = keys[0];
+                        leadsQuery = leadsQuery.Where(l => l.Status == key);
+                    }
+                    else if (keys.Length > 1)
+                    {
+                        leadsQuery = leadsQuery.Where(l => keys.Contains(l.Status));
+                    }
+                }
 
                 if (!string.IsNullOrWhiteSpace(query.AssignedTo))
                     leadsQuery = leadsQuery.Where(l => l.OwnerUserId == query.AssignedTo);
@@ -127,17 +159,20 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 2
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadDetailHandler> _logger;
 
         public GetLeadDetailHandler(
             FlowDbContext context,
             ICurrentTenantService tenantService,
             ILeadStatusResolver statuses,
+            IRecordScopeService scope,
             ILogger<GetLeadDetailHandler> logger)
         {
             _context = context;
             _tenantService = tenantService;
             _statuses = statuses;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -147,9 +182,13 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                // Outside the user's scope reads exactly like "does not exist".
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
                 var row = await _context.Leads
                     .AsNoTracking()
                     .Where(l => l.Id == query.LeadId && l.TenantId == query.TenantId && !l.IsDeleted)
+                    .VisibleTo(access)
                     .Select(l => new
                     {
                         Lead = l,
@@ -250,17 +289,20 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenant;
         private readonly ILeadStatusResolver _statuses;
+        private readonly IRecordScopeService _scope;
         private readonly ILogger<GetLeadStatsHandler> _logger;
 
         public GetLeadStatsHandler(
             FlowDbContext context,
             ICurrentTenantService tenant,
             ILeadStatusResolver statuses,
+            IRecordScopeService scope,
             ILogger<GetLeadStatsHandler> logger)
         {
             _context = context;
             _tenant = tenant;
             _statuses = statuses;
+            _scope = scope;
             _logger = logger;
         }
 
@@ -284,8 +326,20 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var disqKeys = statuses.All.Where(s => s.Category == LeadStatusCategory.Disqualified).Select(s => s.Key).ToList();
                 var defaultKey = statuses.Default?.Key ?? "";
 
-                var counts = await _context.Leads
-                    .Where(l => l.TenantId == query.TenantId && !l.IsDeleted)
+                var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
+
+                var tenantLeads = _context.Leads
+                    .Where(l => l.TenantId == query.TenantId && !l.IsDeleted);
+
+                // What THIS user may see — every count below uses it.
+                var visibleLeads = tenantLeads.VisibleTo(access);
+
+                // The plan limit counts every lead in the workspace, whoever
+                // owns it. Kept separate so a rep's quota bar is not "3 of
+                // 2000" when the workspace is actually at 1998.
+                var quotaUsed = await tenantLeads.CountAsync(cancellationToken);
+
+                var counts = await visibleLeads
                     .GroupBy(l => 1)
                     .Select(g => new
                     {
@@ -302,11 +356,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                     })
                     .FirstOrDefaultAsync(cancellationToken);
 
+                // Tasks and activities count only on leads the user can see.
+                var visibleLeadIds = visibleLeads.Select(l => l.Id);
+
                 // Open lead tasks past their due date (reminders are tasks now).
                 var overdueTasks = await _context.Activities
                     .CountAsync(a =>
                         a.TenantId == query.TenantId &&
                         a.EntityType == ActivityEntityType.Lead &&
+                        visibleLeadIds.Contains(a.EntityId) &&
                         a.IsTask && !a.IsCompleted && !a.IsDeleted &&
                         a.DueDate < nowUtc, cancellationToken);
 
@@ -315,6 +373,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .CountAsync(a =>
                         a.TenantId == query.TenantId &&
                         a.EntityType == ActivityEntityType.Lead &&
+                        visibleLeadIds.Contains(a.EntityId) &&
                         !a.IsDeleted &&
                         (!a.IsTask || a.IsCompleted) &&
                         a.ActivityDate >= todayStartUtc &&
@@ -328,7 +387,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                     UnqualifiedLeads: counts?.UnqualifiedLeads ?? 0,
                     ConvertedLeads: counts?.ConvertedLeads ?? 0,
                     OverdueReminders: overdueTasks,
-                    TodayActivities: todayActivities
+                    TodayActivities: todayActivities,
+                    QuotaUsed: quotaUsed
                 );
             }
             catch (Exception ex)
