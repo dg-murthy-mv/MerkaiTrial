@@ -13,6 +13,15 @@
 //   ✅ Sales funnel: PaidInvoices counted UNPAID invoices (!= Paid). Fixed.
 //   ✅ Lead source: removed the unused BuildItem() local that still did
 //      (int)l.Status >= 2 on a string status (would throw if ever called).
+//
+// CHANGES (018 — invoice workflow)
+//   ✅ "Collected" was ALWAYS 0 in Revenue by period and Revenue by
+//      vertical. It read Invoice.TotalPaid — a C# property that adds up the
+//      Payments collection, which these queries never load. Now Collected
+//      = Total − Balance (the balance is kept in step with payments).
+//   ✅ Drafts and void invoices are no longer counted as invoiced revenue,
+//      in the funnel, or as outstanding. A draft isn't owed yet; a void
+//      invoice never will be.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Activities;
@@ -83,6 +92,8 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .WithVisibleDeal(_db, dealAccess)
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
+                            i.Status != InvoiceStatus.Draft &&
+                            i.Status != InvoiceStatus.Cancelled &&
                             i.CreatedAtUtc >= from && i.CreatedAtUtc <= to)
                 .ToListAsync(ct);
 
@@ -224,12 +235,14 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .WithVisibleDeal(_db, dealAccess)
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
+                            i.Status != InvoiceStatus.Draft &&
+                            i.Status != InvoiceStatus.Cancelled &&
                             i.IssueDateUtc >= from && i.IssueDateUtc <= to)
                 .Select(i => new
                 {
                     i.IssueDateUtc,
                     i.Total,
-                    i.TotalPaid,
+                    TotalPaid = i.Total - i.Balance,   // was i.TotalPaid → always 0 here
                     i.Balance
                 })
                 .ToListAsync(ct);
@@ -367,7 +380,8 @@ namespace MerkaiTrial.Application.Commands.Reports
                             !i.IsDeleted &&
                             i.Balance > 0 &&
                             i.Status != InvoiceStatus.Paid &&
-                            i.Status != InvoiceStatus.Cancelled)
+                            i.Status != InvoiceStatus.Cancelled &&
+                            i.Status != InvoiceStatus.Draft)
                 .Select(i => new
                 {
                     i.Id,
@@ -486,13 +500,15 @@ namespace MerkaiTrial.Application.Commands.Reports
             var invoices = await _db.Invoices
                 .Where(i => i.TenantId.ToString() == tenantId &&
                             !i.IsDeleted &&
+                            i.Status != InvoiceStatus.Draft &&
+                            i.Status != InvoiceStatus.Cancelled &&
                             i.DealId.HasValue &&
                             dealIds.Contains(i.DealId.Value))
                 .Select(i => new
                 {
                     i.DealId,
                     i.Total,
-                    i.TotalPaid
+                    TotalPaid = i.Total - i.Balance   // was i.TotalPaid → always 0 here
                 })
                 .ToListAsync(ct);
 

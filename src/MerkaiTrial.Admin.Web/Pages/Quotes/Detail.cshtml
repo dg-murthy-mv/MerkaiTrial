@@ -1,5 +1,13 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
+@* =====================================================================
+   Quotes/Detail.cshtml
+   (017) Approval panel (_QuoteApprovalPanel), status text for Pending
+         approval / Approved / Revised, Send only when the quote may go
+         out (Model.CanChangeStatus), Edit only for Draft/Revised/Approved.
+   (018) Invoice box: a DRAFT invoice says "draft — issue it"; a void
+         invoice no longer blocks creating a new one.
+   ===================================================================== *@
 @{
     ViewData["Title"] = $"Quote {Model.Quote?.Number}";
 }
@@ -197,6 +205,10 @@
                                 @if (Model.CanUpdate && Model.UserCanCreate("invoices"))
                                 {
                                     <text>Customer accepted. You can now create an invoice.</text>
+                                    @if (Model.VoidInvoiceCount > 0)
+                                    {
+                                        <text> (The previous invoice was voided.)</text>
+                                    }
                                 }
                                 else
                                 {
@@ -225,15 +237,22 @@
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div>
                             <h6 class="mb-1">
-                                <i class="bi bi-receipt me-2"></i>Invoice Created
+                                <i class="bi bi-receipt me-2"></i>@(Model.InvoiceIsDraft ? "Draft Invoice" : "Invoice Issued")
                             </h6>
                             <p class="mb-0 small">
-                                Invoice <strong>@Model.Invoice.Number</strong> has been created.
+                                @if (Model.InvoiceIsDraft)
+                                {
+                                    <text>A draft invoice exists for this quote. Open it to check the dates and issue it.</text>
+                                }
+                                else
+                                {
+                                    <text>Invoice <strong>@Model.Invoice.Number</strong> has been issued.</text>
+                                }
                             </p>
                         </div>
                         <a href="/Invoices/Detail?id=@Model.Invoice.Id"
                            class="btn btn-primary btn-sm flex-shrink-0">
-                            <i class="bi bi-arrow-right-circle me-1"></i>View Invoice
+                            <i class="bi bi-arrow-right-circle me-1"></i>@(Model.InvoiceIsDraft ? "Open Draft" : "View Invoice")
                         </a>
                     </div>
                 </div>
@@ -245,10 +264,29 @@
                 <div class="alert alert-secondary mb-3 py-2">
                     <span class="small">
                         <i class="bi bi-info-circle me-1"></i>
-                        <strong>@Model.Quote.Status</strong> —
+                        <strong>@MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel.StatusLabel(Model.Quote.Status)</strong> —
                         @if (Model.Quote.Status == "Draft")
                         {
-                            <text>Send this quote to the customer to get started.</text>
+                            @if (Model.Approval?.RequiresApproval == true && Model.Approval?.IsExempt != true)
+                            {
+                                <text>This quote needs approval before it can be sent — see below.</text>
+                            }
+                            else
+                            {
+                                <text>Send this quote to the customer to get started.</text>
+                            }
+                        }
+                        else if (Model.Quote.Status == "PendingApproval")
+                        {
+                            <text>Waiting for a manager to approve it before it can be sent.</text>
+                        }
+                        else if (Model.Quote.Status == "Approved")
+                        {
+                            <text>Approved — send it to the customer.</text>
+                        }
+                        else if (Model.Quote.Status == "Revised")
+                        {
+                            <text>Being revised. Edit it, then send it again.</text>
                         }
                         else if (Model.Quote.Status == "Sent")
                         {
@@ -269,6 +307,9 @@
                     </span>
                 </div>
             }
+
+            @* (017) Approval panel — draws nothing when there's nothing to say *@
+            <partial name="_QuoteApprovalPanel" model="Model" />
 
             @* Customer link — visible when Sent or Viewed *@
             @if ((Model.Quote.Status == "Sent" || Model.Quote.Status == "Viewed")
@@ -328,7 +369,7 @@
                         <p class="mb-0 small">
                             <strong>Status:</strong>
                             <span class="badge @Model.GetStatusBadgeClass(Model.Quote.Status) ms-1">
-                                @Model.Quote.Status
+                                @MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel.StatusLabel(Model.Quote.Status)
                             </span>
                         </p>
                     </div>
@@ -500,8 +541,10 @@
             <!-- ✅ Action Bar — role-based permission gates -->
             <div class="action-bar">
 
-                @* Send to Customer — only if Draft AND has update permission *@
-                @if (Model.Quote.Status == "Draft" && Model.CanUpdate)
+                @* Send to Customer — Draft/Revised within the rules (or admin), or Approved.
+                   Model.CanChangeStatus applies the approval gate. *@
+                @if (Model.Quote.Status is "Draft" or "Revised" or "Approved" && Model.CanUpdate
+                     && Model.CanChangeStatus(Model.Quote.Status, "Sent"))
                 {
                     <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id">
                         <input type="hidden" name="newStatus" value="Sent" />
@@ -523,6 +566,17 @@
                     </form>
                 }
 
+                @* Revise — a rejected or expired quote can be reworked and sent again *@
+                @if (Model.Quote.Status is "Expired" or "Rejected" && Model.CanUpdate && Model.Invoice == null)
+                {
+                    <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id">
+                        <input type="hidden" name="newStatus" value="Revised" />
+                        <button type="submit" class="btn btn-outline-primary">
+                            <i class="bi bi-arrow-repeat me-1"></i>Revise
+                        </button>
+                    </form>
+                }
+
                 @if (!Model.IsLocked)
                 {
                     @* PDF download — always visible (read is enough) *@
@@ -534,8 +588,8 @@
                         <i class="bi bi-file-earmark-pdf me-1"></i>PDF
                     </a>
 
-                    @* ✅ Edit — only if has update permission *@
-                    @if (Model.CanUpdate)
+                    @* ✅ Edit — update permission AND an editable status (Draft/Revised/Approved) *@
+                    @if (Model.CanUpdate && Model.IsEditableStatus)
                     {
                         <a asp-page="/Quotes/Edit" asp-route-id="@Model.Id"
                            class="btn btn-outline-primary">

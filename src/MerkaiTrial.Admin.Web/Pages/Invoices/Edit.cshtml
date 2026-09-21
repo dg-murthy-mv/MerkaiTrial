@@ -1,6 +1,9 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Invoices.EditModel
 @using System.Text.Json
+@* (018) Invoice raised from a quote: lines shown read-only (they're the
+   quote's) — only due date and notes change. New lines use the tenant's
+   tax rate; catalog lines use the product's. *@
 @{
     ViewData["Title"] = $"Edit Invoice - {Model.ExistingInvoice?.Number}";
     
@@ -154,6 +157,49 @@
 
                 <hr class="my-4" />
 
+                @if (Model.IsFromQuote)
+                {
+                    <div class="alert alert-info">
+                        <i class="bi bi-lock me-2"></i>
+                        These lines come from the accepted quote and can't be changed here. To invoice different
+                        items, delete this draft and create a manual invoice — or revise the quote.
+                    </div>
+                    <div class="table-responsive mb-4">
+                        <table class="table table-bordered line-items-table">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th class="text-center">Qty</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">Tax %</th>
+                                    <th class="text-end">Discount</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var line in itemsForJson)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@line.Name</strong>
+                                            @if (!string.IsNullOrWhiteSpace(line.Description))
+                                            {
+                                                <div class="text-muted small">@line.Description</div>
+                                            }
+                                        </td>
+                                        <td class="text-center">@line.Quantity</td>
+                                        <td class="text-end">@Model.FormatCurrency(line.UnitPrice)</td>
+                                        <td class="text-end">@((line.TaxRate * 100).ToString("0.##"))%</td>
+                                        <td class="text-end">@Model.FormatCurrency(line.LineDiscount)</td>
+                                        <td class="text-end fw-semibold">@Model.FormatCurrency(line.LineGrandTotal)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+
+                <div id="lineEditor" style="@(Model.IsFromQuote ? "display:none;" : "")">
                 <!-- Line Items -->
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5><i class="bi bi-list-ul me-2"></i>Line Items</h5>
@@ -216,6 +262,8 @@
                     </div>
                 </div>
 
+                </div>@* /lineEditor *@
+
                 <!-- Action Buttons -->
                 <div class="d-flex justify-content-between mt-4">
                     <a href="/Invoices/Detail?id=@Model.Id" class="btn btn-secondary">
@@ -254,7 +302,7 @@
                                     <div class="small">Price: @Model.FormatCurrency(product.ListPrice)</div>
                                 </div>
                                 <button type="button" class="btn btn-sm btn-primary"
-                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice)">
+                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), @(Convert.ToDecimal(product.TaxRate).ToString(System.Globalization.CultureInfo.InvariantCulture)))">
                                     <i class="bi bi-plus"></i> Add
                                 </button>
                             </div>
@@ -277,11 +325,16 @@
     //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
     //    culture, so client and server now agree by construction.
     const fmtMoney = (x) => window.MerkaiCurrency.format(x);
+    // (018) was 0 for new lines
+    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    const fromQuote = @(Model.IsFromQuote ? "true" : "false");
 
     // ==================== LOAD EXISTING ITEMS ====================
     console.log('=== Loading Existing Items ===');
     
-    const existingItemsJson = @Html.Raw(JsonSerializer.Serialize(itemsForJson));
+    // (018) camelCase — the script below reads item.name / item.unitPrice. The
+    // default (PascalCase) loaded every existing line blank.
+    const existingItemsJson = @Html.Raw(JsonSerializer.Serialize(itemsForJson, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
     console.log('Existing items:', existingItemsJson);
 
     if (existingItemsJson && Array.isArray(existingItemsJson)) {
@@ -310,12 +363,13 @@
             quantity: 1,
             unitPrice: 0,
             lineDiscount: 0,
-            taxRate: 0
+            taxRate: defaultTaxRate
         });
         renderLineItems();
     }
 
-    function addProductFromCatalog(productId, name, description, price) {
+    function addProductFromCatalog(productId, name, description, price, taxFraction) {
+        const tax = parseFloat(taxFraction);
         lineItems.push({
             id: nextId++,
             productId: productId,
@@ -324,7 +378,8 @@
             quantity: 1,
             unitPrice: parseFloat(price),
             lineDiscount: 0,
-            taxRate: 0
+            // product tax is stored as a fraction (0.07); fall back to the tenant rate
+            taxRate: (tax > 0 ? tax * 100 : defaultTaxRate)
         });
         renderLineItems();
         bootstrap.Modal.getInstance(document.getElementById('catalogModal')).hide();
@@ -419,6 +474,12 @@
 
     // ==================== SUBMIT ====================
     function submitInvoice() {
+        // (018) A quote's invoice sends no lines — the API keeps the quote's.
+        if (fromQuote) {
+            document.getElementById('itemsJson').value = '[]';
+            document.getElementById('editInvoiceForm').submit();
+            return;
+        }
         if (lineItems.length === 0) {
             alert('⚠️ Please add at least one item');
             return;

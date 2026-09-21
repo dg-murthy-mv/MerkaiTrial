@@ -7,8 +7,19 @@
 // RECORD VISIBILITY (016) — READ SIDE ONLY, on purpose.
 //   Invoices follow their deal (directly, or through the quote they were
 //   raised from). The invoice LIST and STATISTICS now only include
-//   invoices on deals the user can see. Invoice by-id is unchanged — part
-//   of the quotes/invoices round.
+//   invoices on deals the user can see. By-id is guarded in
+//   InvoicesController (InvoiceAccessHandler).
+//
+// INVOICE WORKFLOW (018)
+//   ✅ Reversed payments don't count: TotalPaid on the detail page sums
+//      captured payments only (reversed ones still show in the history).
+//   ✅ Overdue never includes drafts or void invoices (list, detail, stats).
+//   ✅ Status filter "Overdue" is worked out from the due date — the stored
+//      Overdue status is rarely set, so filtering on it showed almost
+//      nothing. "Void" is accepted as another name for Cancelled.
+//   ✅ Statistics count ISSUED invoices: TotalInvoices / TotalAmount /
+//      Unpaid no longer include drafts (not owed yet) or void invoices
+//      (never owed). Drafts are still counted in DraftInvoices.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
@@ -75,7 +86,27 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     query = query.Where(i => i.DealId == request.DealId.Value);
 
                 if (!string.IsNullOrEmpty(request.Status))
-                    query = query.Where(i => i.Status.ToString() == request.Status);
+                {
+                    var draftStatus = Domain.Enums.InvoiceStatus.Draft;
+                    var voidStatus  = Domain.Enums.InvoiceStatus.Cancelled;
+
+                    if (string.Equals(request.Status, "Overdue", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Computed, like everywhere else — not the stored status.
+                        var now = DateTime.UtcNow;
+                        query = query.Where(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 &&
+                                                 i.Status != draftStatus && i.Status != voidStatus);
+                    }
+                    else
+                    {
+                        var wanted = string.Equals(request.Status, "Void", StringComparison.OrdinalIgnoreCase)
+                            ? "Cancelled"
+                            : request.Status;
+
+                        if (Enum.TryParse<Domain.Enums.InvoiceStatus>(wanted, ignoreCase: true, out var st))
+                            query = query.Where(i => i.Status == st);
+                    }
+                }
 
                 if (request.FromDate.HasValue)
                     query = query.Where(i => i.IssueDateUtc >= request.FromDate.Value);
@@ -107,7 +138,8 @@ namespace MerkaiTrial.Application.Queries.Invoices
                                    i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Title : null,
                         QuoteNumber = i.Quote != null ? i.Quote.Number : null,
                         ItemCount = i.Lines.Count(l => !l.IsDeleted),
-                        IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 && i.Status != Domain.Enums.InvoiceStatus.Cancelled,
+                        IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
+                                    i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
                         CreatedAtUtc = i.CreatedAtUtc
                     })
                     .ToListAsync(cancellationToken);
@@ -186,7 +218,8 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     TaxTotal = invoice.TaxTotal,
                     GrandTotal = invoice.Subtotal + invoice.TaxTotal - invoice.DiscountTotal,
                     Balance = invoice.Balance,
-                    TotalPaid = invoice.Payments.Where(p => !p.IsDeleted).Sum(p => p.Amount),
+                    // Reversed payments stay in the list below but don't count (018).
+                    TotalPaid = invoice.Payments.Where(p => !p.IsDeleted && p.Status == PaymentStatusNames.Captured).Sum(p => p.Amount),
                     QuoteNumber = invoice.Quote?.Number,
                     DealTitle = invoice.Deal?.Title ?? invoice.Quote?.Deal?.Title,
                     CompanyName = invoice.Deal?.Contact?.FirstName ?? invoice.Quote?.Deal?.Contact?.FirstName,
@@ -230,7 +263,8 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     CreatedBy = invoice.CreatedBy,
                     UpdatedAtUtc = invoice.UpdatedAtUtc,
                     UpdatedBy = invoice.UpdatedBy,
-                    IsOverdue = invoice.DueDateUtc.HasValue && invoice.DueDateUtc.Value < DateTime.UtcNow && invoice.Balance > 0,
+                    IsOverdue = invoice.DueDateUtc.HasValue && invoice.DueDateUtc.Value < DateTime.UtcNow && invoice.Balance > 0 &&
+                                invoice.Status != Domain.Enums.InvoiceStatus.Cancelled && invoice.Status != Domain.Enums.InvoiceStatus.Draft,
                     IsFullyPaid = invoice.Balance <= 0,
                     DaysUntilDue = invoice.DueDateUtc.HasValue ? (invoice.DueDateUtc.Value - DateTime.UtcNow).Days : 0
                 };
@@ -291,6 +325,9 @@ namespace MerkaiTrial.Application.Queries.Invoices
 
                 var dealAccess = await _scope.GetAsync(RecordModules.Deals, cancellationToken);
 
+                // (018) "Issued" = not a draft and not void. Totals, unpaid and
+                // overdue are about issued invoices only — a draft isn't owed
+                // yet and a void invoice never will be.
                 var stats = await _context.Invoices
                     .AsNoTracking()
                     .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
@@ -298,15 +335,18 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     .GroupBy(i => 1)
                     .Select(g => new InvoiceStatisticsDto
                     {
-                        TotalInvoices   = g.Count(),
+                        TotalInvoices   = g.Count(i => i.Status != draft && i.Status != cancelled),
                         DraftInvoices   = g.Count(i => i.Status == draft),
                         SentInvoices    = g.Count(i => i.Status == sent || i.Status == viewed),
                         PaidInvoices    = g.Count(i => i.Status == paid),
-                        OverdueInvoices = g.Count(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 && i.Status != cancelled),
-                        TotalAmount     = g.Sum(i => i.Subtotal + i.TaxTotal - i.DiscountTotal),
+                        OverdueInvoices = g.Count(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 &&
+                                                       i.Status != cancelled && i.Status != draft),
+                        TotalAmount     = g.Where(i => i.Status != draft && i.Status != cancelled)
+                                           .Sum(i => i.Subtotal + i.TaxTotal - i.DiscountTotal),
                         PaidAmount      = g.Where(i => i.Status == paid).Sum(i => i.Subtotal + i.TaxTotal - i.DiscountTotal),
-                        UnpaidAmount    = g.Where(i => i.Balance > 0 && i.Status != cancelled).Sum(i => i.Balance),
-                        OverdueAmount   = g.Where(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 && i.Status != cancelled).Sum(i => i.Balance),
+                        UnpaidAmount    = g.Where(i => i.Balance > 0 && i.Status != cancelled && i.Status != draft).Sum(i => i.Balance),
+                        OverdueAmount   = g.Where(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 &&
+                                                       i.Status != cancelled && i.Status != draft).Sum(i => i.Balance),
                         Currency        = string.Empty  // ✅ Set from tenant in view layer
                     })
                     .FirstOrDefaultAsync(cancellationToken);

@@ -1,6 +1,27 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Quotes/Detail.cshtml.cs
-// FIXES:
+// CHANGES (018 — invoice workflow)
+//   ✅ The invoice shown on the quote is the one that isn't void. A voided
+//      invoice no longer blocks "Create Invoice" — that's how a mistake on
+//      an issued invoice is put right (void, then invoice again).
+//   ✅ "Create Invoice" makes a DRAFT (no number yet) and says so.
+//
+// CHANGES (017 — quote approvals)
+//   ✅ Approval state loaded with the quote (Approval). The panel is drawn
+//      by _QuoteApprovalPanel.cshtml — one line in Detail.cshtml:
+//          <partial name="_QuoteApprovalPanel" model="Model" />
+//   ✅ New handlers: SubmitForApproval, Approve, RequestChanges, Recall.
+//      Approve / RequestChanges need only Quotes.Read — the API decides
+//      whether THIS user may approve THIS quote.
+//   ✅ CanChangeStatus follows the new flow: Draft → Sent only when the
+//      quote needs no approval (or you're an admin); Approved → Sent;
+//      nothing while PendingApproval.
+//   ✅ Status / delete refusals from the API now show their real message
+//      ("This quote needs approval before it can be sent…") instead of
+//      "Failed to update quote status".
+//   ✅ Badge classes and descriptions for PendingApproval / Approved.
+//
+// EARLIER FIXES:
 //   ✅ ICurrentTenantService injected
 //   ✅ FormatDate() / FormatDateTime() / FormatCurrency() helpers
 //   ✅ TenantCurrencySymbol / TenantCurrencyCode for views
@@ -25,6 +46,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly ICurrentUserService    _currentUserService;
         private readonly ICurrentTenantService  _tenantService;
         private readonly IInvoiceService        _invoiceService;
+        private readonly IQuoteApprovalService  _approvals;
         private readonly ILogger<DetailModel>   _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -34,6 +56,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             ICurrentUserService   currentUserService,
             ICurrentTenantService tenantService,
             IInvoiceService       invoiceService,
+            IQuoteApprovalService approvals,
             IAuthorizationService authorizationService,
             ILogger<DetailModel>  logger)
             : base(authorizationService, currentUserService, logger)
@@ -42,6 +65,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
             _invoiceService     = invoiceService;
+            _approvals          = approvals;
             _logger             = logger;
         }
 
@@ -54,6 +78,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public QuoteDto?          Quote       { get; set; }
         public InvoiceDto?        Invoice     { get; set; }
         public List<AttachmentDto> Attachments { get; set; } = new();
+
+        /// <summary>(018) Invoices raised from this quote and then voided.</summary>
+        public int VoidInvoiceCount { get; set; }
+
+        /// <summary>(018) The live invoice is still a draft (no number yet).</summary>
+        public bool InvoiceIsDraft => Invoice?.Status == "Draft";
+
+        /// <summary>Approval panel data. Null if it couldn't be loaded — the page still works.</summary>
+        public QuoteApprovalStateDto? Approval { get; set; }
 
         // ── Level 1: UI lock ──────────────────────────────────────────
         // Accepted quotes with an invoice are part of the financial trail.
@@ -99,7 +132,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 try
                 {
                     var invoiceList  = await _invoiceService.GetAllAsync(tenantId, quoteId: Id);
-                    var firstInvoice = invoiceList?.FirstOrDefault();
+                    // (018) The live invoice — a void one doesn't count.
+                    var firstInvoice = invoiceList?.FirstOrDefault(i => i.Status != "Cancelled");
+                    VoidInvoiceCount = invoiceList?.Count(i => i.Status == "Cancelled") ?? 0;
 
                     if (firstInvoice != null)
                         Invoice = await _invoiceService.GetByIdAsync(tenantId, firstInvoice.Id);
@@ -120,6 +155,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 {
                     _logger.LogWarning(attEx, "Failed to load attachments for quote {QuoteId}", Id);
                     Attachments = new();
+                }
+
+                // ✅ Approval state (017)
+                try
+                {
+                    Approval = await _approvals.GetStateAsync(Id);
+                }
+                catch (Exception apEx)
+                {
+                    _logger.LogWarning(apEx, "Failed to load approval state for quote {QuoteId}", Id);
+                    Approval = null;
                 }
 
                 return Page();
@@ -174,12 +220,94 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 return RedirectToPage(new { id = Id });
             }
+            catch (InvalidOperationException ex)
+            {
+                // The API refused, and said why — e.g. "This quote needs
+                // approval before it can be sent…". Show that, not a generic error.
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id = Id });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update quote status {QuoteId}", Id);
                 ErrorMessage = "Failed to update quote status. Please try again.";
                 return RedirectToPage(new { id = Id });
             }
+        }
+
+        // ── APPROVALS (017) ───────────────────────────────────────────
+
+        public async Task<IActionResult> OnPostSubmitForApprovalAsync(string? comment)
+        {
+            var check = await ValidatePermissionAsync(Actions.Update);
+            if (check != null) return check;
+
+            return await ApprovalActionAsync(
+                () => _approvals.SubmitAsync(Id, comment),
+                "Sent for approval. You'll be able to send the quote once it's approved.");
+        }
+
+        public async Task<IActionResult> OnPostApproveAsync(string? comment)
+        {
+            // Read is enough — the API decides whether this user may approve this quote.
+            var check = await ValidatePermissionAsync(Actions.Read);
+            if (check != null) return check;
+
+            return await ApprovalActionAsync(
+                () => _approvals.ApproveAsync(Id, comment),
+                "Approved. The quote can now be sent to the customer.");
+        }
+
+        public async Task<IActionResult> OnPostRequestChangesAsync(string? comment)
+        {
+            var check = await ValidatePermissionAsync(Actions.Read);
+            if (check != null) return check;
+
+            if (string.IsNullOrWhiteSpace(comment))
+            {
+                ErrorMessage = "Say what needs to change, so the rep knows what to fix.";
+                return RedirectToPage(new { id = Id });
+            }
+
+            return await ApprovalActionAsync(
+                () => _approvals.RequestChangesAsync(Id, comment),
+                "Sent back to draft with your comments.");
+        }
+
+        public async Task<IActionResult> OnPostRecallAsync()
+        {
+            var check = await ValidatePermissionAsync(Actions.Update);
+            if (check != null) return check;
+
+            return await ApprovalActionAsync(
+                () => _approvals.RecallAsync(Id),
+                "Approval request recalled. The quote is back in draft.");
+        }
+
+        private async Task<IActionResult> ApprovalActionAsync(Func<Task> action, string success)
+        {
+            try
+            {
+                if (Id == Guid.Empty)
+                {
+                    ErrorMessage = "Invalid quote ID";
+                    return RedirectToPage("/Quotes/Index");
+                }
+
+                await action();
+                SuccessMessage = success;
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Approval action failed for quote {QuoteId}", Id);
+                ErrorMessage = "That didn't work. Please try again.";
+            }
+
+            return RedirectToPage(new { id = Id });
         }
 
         // ── UPLOAD ATTACHMENT ─────────────────────────────────────────
@@ -262,6 +390,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 await _quoteService.DeleteAsync(tenantId, Id);
                 SuccessMessage = "Quote deleted successfully!";
                 return RedirectToPage("/Quotes/Index");
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id = Id });
             }
             catch (Exception ex)
             {
@@ -355,9 +488,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 }
 
                 var existingInvoices = await _invoiceService.GetAllAsync(tenantId, quoteId: Id);
-                if (existingInvoices != null && existingInvoices.Any())
+                var live = existingInvoices?.FirstOrDefault(i => i.Status != "Cancelled");
+                if (live != null)
                 {
-                    ErrorMessage = $"Invoice {existingInvoices.First().Number} already exists for this quote";
+                    ErrorMessage = live.Status == "Draft"
+                        ? "A draft invoice already exists for this quote — open it from the box above."
+                        : $"Invoice {live.Number} already exists for this quote. Void it first if it needs replacing.";
                     return RedirectToPage("/Quotes/Detail", new { id = Id });
                 }
 
@@ -373,8 +509,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     SendImmediately = false
                 });
 
-                SuccessMessage = $"Invoice {invoice.Number} created successfully!";
+                SuccessMessage = "Draft invoice created. Check the dates, then Issue it — it gets its invoice number then.";
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+                return RedirectToPage("/Quotes/Detail", new { id });
             }
             catch (Exception ex)
             {
@@ -413,39 +554,59 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
         public string GetStatusBadgeClass(string status) => status switch
         {
-            "Draft"    => "bg-secondary",
-            "Sent"     => "bg-primary",
-            "Viewed"   => "bg-info",
-            "Accepted" => "bg-success",
-            "Rejected" => "bg-danger",
-            "Expired"  => "bg-warning text-dark",
-            "Revised"  => "bg-dark",
-            _          => "bg-secondary"
+            "Draft"           => "bg-secondary",
+            "PendingApproval" => "bg-warning text-dark",
+            "Approved"        => "bg-success-subtle text-success-emphasis border border-success",
+            "Sent"            => "bg-primary",
+            "Viewed"          => "bg-info",
+            "Accepted"        => "bg-success",
+            "Rejected"        => "bg-danger",
+            "Expired"         => "bg-warning text-dark",
+            "Revised"         => "bg-dark",
+            _                 => "bg-secondary"
         };
 
+        /// <summary>"PendingApproval" → "Pending approval" for badges.</summary>
+        public static string StatusLabel(string status) => status switch
+        {
+            "PendingApproval" => "Pending approval",
+            _                 => status
+        };
+
+        /// <summary>
+        /// Same moves the API allows (QuoteWorkflow.CanMove), plus the
+        /// approval gate: Draft/Revised → Sent only when Approval.CanSend.
+        /// If the approval state couldn't be loaded, the Send button still
+        /// shows and the API has the final say.
+        /// </summary>
         public bool CanChangeStatus(string currentStatus, string targetStatus) =>
             currentStatus switch
             {
-                "Draft"    => targetStatus == "Sent",
+                "Draft"    => targetStatus == "Sent" && (Approval?.CanSend ?? true),
+                "Revised"  => targetStatus == "Sent" && (Approval?.CanSend ?? true),
+                "Approved" => targetStatus == "Sent",
                 "Sent"     => targetStatus is "Viewed" or "Accepted" or "Rejected" or "Expired",
                 "Viewed"   => targetStatus is "Accepted" or "Rejected" or "Expired",
-                "Accepted" => false,
                 "Rejected" => targetStatus == "Revised",
                 "Expired"  => targetStatus == "Revised",
-                "Revised"  => targetStatus == "Sent",
-                _          => false
+                _          => false   // Accepted, PendingApproval
             };
 
         public string GetStatusDescription(string status) => status switch
         {
-            "Draft"    => "Quote is being prepared",
-            "Sent"     => "Quote has been sent to customer",
-            "Viewed"   => "Customer has viewed the quote",
-            "Accepted" => "Customer accepted the quote",
-            "Rejected" => "Customer rejected the quote",
-            "Expired"  => "Quote has expired",
-            "Revised"  => "Quote has been revised",
-            _          => "Unknown status"
+            "Draft"           => "Quote is being prepared",
+            "PendingApproval" => "Waiting for a manager to approve it",
+            "Approved"        => "Approved — ready to send to the customer",
+            "Sent"            => "Quote has been sent to customer",
+            "Viewed"          => "Customer has viewed the quote",
+            "Accepted"        => "Customer accepted the quote",
+            "Rejected"        => "Customer rejected the quote",
+            "Expired"         => "Quote has expired",
+            "Revised"         => "Quote has been revised",
+            _                 => "Unknown status"
         };
+
+        /// <summary>Edit shows for these only — the API refuses the rest.</summary>
+        public bool IsEditableStatus => Quote?.Status is "Draft" or "Revised" or "Approved";
     }
 }

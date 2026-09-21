@@ -17,6 +17,8 @@
 //   5. (014) Teams + RoleRecordScopes — record visibility. Both strictly
 //      tenant-owned, both filtered.
 //   6. (015) TeamManagers — which teams a user manages. Filtered.
+//   7. (017) QuoteApprovalSettings + QuoteApprovalRequests — quote
+//      approval rules and history. Both filtered.
 //
 // FAIL CLOSED: with no tenant resolved, CurrentTenantId is Guid.Empty and
 // filtered queries return nothing. The legitimately tenant-less queries
@@ -93,6 +95,12 @@ public class FlowDbContext : DbContext
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<RoleRecordScope> RoleRecordScopes => Set<RoleRecordScope>();
     public DbSet<TeamManager> TeamManagers => Set<TeamManager>();
+    public DbSet<PipelineRuleSettings> PipelineRuleSettings => Set<PipelineRuleSettings>();
+
+
+    // Quote approvals (017)
+    public DbSet<QuoteApprovalSettings> QuoteApprovalSettings => Set<QuoteApprovalSettings>();
+    public DbSet<QuoteApprovalRequest> QuoteApprovalRequests => Set<QuoteApprovalRequest>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -127,6 +135,7 @@ public class FlowDbContext : DbContext
         b.Entity<LeadStatusDefinition>()
             .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
+        b.Entity<PipelineRuleSettings>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
         b.Entity<Deal>()            .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<DealNote>()        .HasQueryFilter(e => e.TenantId == CurrentTenantId);
@@ -154,6 +163,10 @@ public class FlowDbContext : DbContext
         b.Entity<Team>()            .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<RoleRecordScope>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TeamManager>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Quote approvals (017) — a tenant's rules and approval history.
+        b.Entity<QuoteApprovalSettings>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<QuoteApprovalRequest>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,

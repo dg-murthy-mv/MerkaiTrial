@@ -1,12 +1,41 @@
 // =====================================================================
 // DEALS COMMAND HANDLERS
 // Location: MerkaiTrial.Application/Commands/Deals/DealsCommandHandlers.cs
-// Changes:
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (019 — transition rules)
+//   ✅ All three stage-change paths now go through StageTransitionGuard:
+//        UpdateDealHandler          (the Edit page)
+//        UpdateDealStageHandler     (kanban drag)
+//        TransitionDealStageHandler (quote accepted / invoice paid)
+//      They used to disagree about almost everything. The kanban could
+//      close a deal as Lost with no reason at all, and either of the
+//      first two could drag a closed, invoiced deal back into the
+//      pipeline.
+//
+//   ✅ UpdateDealStageHandler takes a lost reason and a reopen reason.
+//      Without them a card dragged to Lost recorded nothing about why.
+//
+//   ✅ REOPEN BUG FIXED. Every handler used `??=` on ActualCloseDateUtc
+//      and ActualValue, so reopening a deal left the old closing figures
+//      on it and closing it again kept the ORIGINAL date. A deal reopened
+//      in April and won again in June was reported as June revenue at an
+//      April date. The guard now clears them on the way out of a closed
+//      stage and sets them fresh on the way back in.
+//
+//   ✅ Removed `using DocumentFormat.OpenXml.Presentation;` — a stray
+//      import from an unrelated paste. It brought a type called `Deal`
+//      into scope in a file about deals, which is a compile error waiting
+//      for the first person to drop the namespace qualifier.
+//
+// MANUAL DTO EDIT REQUIRED — see SETUP.md:
+//      UpdateDealDto needs `public string? ReopenReason { get; set; }`
+//
+// CHANGES (017 / 016 — unchanged, kept for context)
 //   ✅ GetDealDetailHandler — joins CompanyVerticals, populates VerticalId/VerticalName
 //   ✅ CreateDealHandler    — sets VerticalId from CreateDealDto
 //   ✅ UpdateDealHandler    — sets VerticalId from UpdateDealDto
-//
-// COMPLETE FILE — replaces the existing one.
 //
 // RECORD VISIBILITY (016) — deals follow the same Own / Team / All rule
 // as leads, on Deal.OwnerUserId.
@@ -21,7 +50,6 @@
 //     plan quota bar — the list itself is scoped.
 // =====================================================================
 
-using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
@@ -92,24 +120,45 @@ namespace MerkaiTrial.Application.Commands.Deals
             return deals;
         }
     }
+
+    // ==================== TRANSITION DEAL STAGE (automatic) ====================
+
     public class TransitionDealStageDto
     {
         public string Stage { get; set; } = string.Empty;
         public int Probability { get; set; }
     }
+
+    /// <summary>
+    /// The SYSTEM path: a quote was accepted, or an invoice was paid in
+    /// full. Nobody clicked anything.
+    ///
+    /// It skips the entry requirements and the reopen permission on
+    /// purpose — see StageTransitionGuard. The event that triggered the
+    /// move is the very thing a requirement would ask about, and a manual
+    /// invoice has no quote to point at. It still runs the same
+    /// bookkeeping, so the close date and final value end up in the same
+    /// state a person's move would leave them.
+    /// </summary>
     public class TransitionDealStageHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
         private readonly IStageResolver _stages;
+        private readonly StageTransitionGuard _guard;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
 
         public TransitionDealStageHandler(
-            FlowDbContext db, IStageResolver stages, IAuditService audit, IRecordScopeService scope)
+            FlowDbContext db,
+            IStageResolver stages,
+            StageTransitionGuard guard,
+            IAuditService audit,
+            IRecordScopeService scope)
         {
             _db = db;
             _scope = scope;
             _stages = stages;
+            _guard = guard;
             _audit = audit;
         }
 
@@ -123,8 +172,7 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var stages = await _stages.GetAsync(tenantGuid);
 
-            var target = stages.Find(toStage);
-            if (target is null)
+            if (stages.Find(toStage) is null)
                 throw new ArgumentException(
                     $"'{toStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
 
@@ -139,32 +187,28 @@ namespace MerkaiTrial.Application.Commands.Deals
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
             // Already won or lost — an automatic advance must not reopen it.
+            // A person can, through the board or the Edit page, where the
+            // reopen rules apply to them.
             if (stages.IsTerminal(deal.Stage)) return;
 
             // No-op guard. Without it, accepting a quote on a deal already in
             // that stage wrote a Negotiation → Negotiation history row.
             if (deal.Stage == toStage) return;
 
+            var decision = await _guard.CheckAsync(new StageMoveRequest(
+                TenantId: tenantGuid,
+                Deal: Snapshot(deal),
+                ToStageKey: toStage,
+                IsSystemMove: true));
+
             var fromStage = deal.Stage;
 
-            deal.Stage = toStage;
-            // Caller-supplied probability wins when given, otherwise the
-            // tenant's configured value for that stage.
-            deal.Probability = probability > 0 ? probability : target.Probability;
-            deal.UpdatedAtUtc = DateTime.UtcNow;
-            deal.UpdatedBy = changedBy;
+            StageTransitionGuard.ApplyToDeal(
+                deal, decision, changedBy,
+                probabilityOverride: probability > 0 ? probability : null);
 
-            _db.DealStageHistory.Add(new DealStageHistory
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantGuid,      // was never set — rows were invisible
-                                            // under the global query filter
-                DealId = dealId,
-                FromStage = fromStage,
-                ToStage = toStage,
-                ChangedAtUtc = DateTime.UtcNow,
-                ChangedBy = changedBy
-            });
+            _db.DealStageHistory.Add(
+                StageTransitionGuard.HistoryFor(tenantGuid, dealId, decision, changedBy));
 
             await _db.SaveChangesAsync();
 
@@ -172,7 +216,11 @@ namespace MerkaiTrial.Application.Commands.Deals
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
                 new { from = fromStage, to = toStage, automatic = true });
         }
+
+        private static DealStageSnapshot Snapshot(Deal d) => new(
+            d.Id, d.Stage, d.ExpectedValue, d.ExpectedCloseDateUtc, d.OwnerUserId);
     }
+
     // ==================== GET DEALS LIST ====================
 
     public class GetDealsHandler : ICommandHandler
@@ -461,6 +509,11 @@ namespace MerkaiTrial.Application.Commands.Deals
             // so an unknown value would surface as a foreign key violation.
             // Resolving here turns that into something a person can act on,
             // and honours a tenant who renamed or reordered their pipeline.
+            //
+            // 019: entry requirements are NOT checked on create. A brand
+            // new deal cannot have a quote, and the tenant's default stage
+            // is an open one by construction. Requirements are about
+            // MOVING a deal somewhere it has not earned.
             var stages = await _stages.GetAsync(tenantGuid);
 
             var chosen = stages.ResolveOrDefault(dto.Stage)
@@ -572,6 +625,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly IStageResolver _stages;
+        private readonly StageTransitionGuard _guard;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
 
@@ -579,6 +633,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             FlowDbContext db,
             ICurrentUserService currentUserService,
             IStageResolver stages,
+            StageTransitionGuard guard,
             IAuditService audit,
             IRecordScopeService scope)
         {
@@ -586,6 +641,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             _scope = scope;
             _currentUserService = currentUserService;
             _stages = stages;
+            _guard = guard;
             _audit = audit;
         }
 
@@ -607,6 +663,9 @@ namespace MerkaiTrial.Application.Commands.Deals
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var stages = await _stages.GetAsync(tenantGuid);
 
+            // The ordinary fields first. A rep who fills in the value AND
+            // moves the deal to Won in one save should be judged on the
+            // value they just typed, not the one that was there before.
             deal.Title = dto.Title;
             deal.Description = dto.Description;
             deal.ExpectedValue = dto.ExpectedValue;
@@ -627,43 +686,35 @@ namespace MerkaiTrial.Application.Commands.Deals
             }
 
             // ── Stage change + history ───────────────────────────────────
-            // A stage the tenant does not have is now an ERROR rather than a
+            // A stage the tenant does not have is an ERROR rather than a
             // silent skip. The old code ignored an unknown stage, so a typo
             // or a stale dropdown looked like it worked and changed nothing.
+            //
+            // 019: the whole move now goes through the guard. It decides
+            // whether the move is allowed and then does the bookkeeping,
+            // so this path, the kanban and the automatic path can no
+            // longer drift apart.
             if (!string.IsNullOrWhiteSpace(dto.Stage) && deal.Stage != dto.Stage)
             {
-                var target = stages.Find(dto.Stage)
-                    ?? throw new InvalidOperationException(
-                        $"'{dto.Stage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
-
                 var previousStage = deal.Stage;
-                var isLost = target.Category == StageCategory.Lost;
-                var isClosing = target.Category is StageCategory.Won or StageCategory.Lost;
 
-                _db.DealStageHistory.Add(new DealStageHistory
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tenantGuid,
-                    DealId = dealId,
-                    FromStage = previousStage,
-                    ToStage = dto.Stage,
-                    ChangedAtUtc = DateTime.UtcNow,
-                    ChangedBy = currentUser.FullName,
-                    // Category, not the key: a tenant's own "Walked Away"
-                    // stage should carry its reason just as ClosedLost does.
-                    Note = isLost ? dto.LostReason : null
-                });
+                var decision = await _guard.CheckAsync(new StageMoveRequest(
+                    TenantId: tenantGuid,
+                    Deal: new DealStageSnapshot(
+                        deal.Id, deal.Stage, deal.ExpectedValue,
+                        deal.ExpectedCloseDateUtc, deal.OwnerUserId),
+                    ToStageKey: dto.Stage!,
+                    LostReason: dto.LostReason,
+                    ReopenReason: dto.ReopenReason));
 
-                deal.Stage = dto.Stage;
+                _db.DealStageHistory.Add(StageTransitionGuard.HistoryFor(
+                    tenantGuid, dealId, decision, currentUser.FullName));
 
-                if (isClosing)
-                {
-                    deal.ActualCloseDateUtc ??= dto.ActualCloseDateUtc ?? DateTime.UtcNow;
-                    deal.ActualValue ??= dto.ActualValue ?? deal.ExpectedValue;
-                }
-
-                if (isLost && !string.IsNullOrEmpty(dto.LostReason))
-                    deal.LostReason = dto.LostReason;
+                StageTransitionGuard.ApplyToDeal(
+                    deal, decision, currentUser.FullName,
+                    actualValue: dto.ActualValue,
+                    actualCloseDateUtc: dto.ActualCloseDateUtc,
+                    probabilityOverride: dto.Probability);
 
                 await _audit.WriteAsync(
                     AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
@@ -671,8 +722,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                     {
                         title = deal.Title,
                         from = stages.NameOf(previousStage),
-                        to = target.Name,
-                        value = deal.ExpectedValue
+                        to = decision.To.Name,
+                        value = deal.ExpectedValue,
+                        reopened = decision.IsReopen,
+                        note = decision.HistoryNote
                     });
             }
 
@@ -697,13 +750,14 @@ namespace MerkaiTrial.Application.Commands.Deals
         }
     }
 
-    // ==================== UPDATE DEAL STAGE ====================
+    // ==================== UPDATE DEAL STAGE (kanban drag) ====================
 
     public class UpdateDealStageHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUserService;
         private readonly IStageResolver _stages;
+        private readonly StageTransitionGuard _guard;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
 
@@ -711,6 +765,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             FlowDbContext db,
             ICurrentUserService currentUserService,
             IStageResolver stages,
+            StageTransitionGuard guard,
             IAuditService audit,
             IRecordScopeService scope)
         {
@@ -718,18 +773,30 @@ namespace MerkaiTrial.Application.Commands.Deals
             _scope = scope;
             _currentUserService = currentUserService;
             _stages = stages;
+            _guard = guard;
             _audit = audit;
         }
 
-        public async Task HandleAsync(string tenantId, Guid dealId, string newStage)
+        /// <summary>
+        /// 019: takes the two reasons a move can need. Before this round a
+        /// card dragged onto the Lost column closed the deal with no
+        /// reason recorded anywhere, while the same move through the Edit
+        /// page at least saved one if the page happened to send it.
+        /// </summary>
+        public async Task HandleAsync(
+            string tenantId,
+            Guid dealId,
+            string newStage,
+            string? lostReason = null,
+            string? reopenReason = null)
         {
             if (!Guid.TryParse(tenantId, out var tenantGuid))
                 throw new ArgumentException($"Invalid tenantId: {tenantId}");
 
             var stages = await _stages.GetAsync(tenantGuid);
 
-            var target = stages.Find(newStage)
-                ?? throw new ArgumentException(
+            if (stages.Find(newStage) is null)
+                throw new ArgumentException(
                     $"'{newStage}' is not a stage in this workspace. Valid: {stages.ValidKeysText}");
 
             var access = await _scope.GetAsync(RecordModules.Deals);
@@ -749,29 +816,21 @@ namespace MerkaiTrial.Application.Commands.Deals
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var previousStage = deal.Stage;
 
-            _db.DealStageHistory.Add(new DealStageHistory
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantGuid,
-                DealId = dealId,
-                FromStage = previousStage,
-                ToStage = newStage,
-                ChangedAtUtc = DateTime.UtcNow,
-                ChangedBy = currentUser.FullName
-            });
+            var decision = await _guard.CheckAsync(new StageMoveRequest(
+                TenantId: tenantGuid,
+                Deal: new DealStageSnapshot(
+                    deal.Id, deal.Stage, deal.ExpectedValue,
+                    deal.ExpectedCloseDateUtc, deal.OwnerUserId),
+                ToStageKey: newStage,
+                LostReason: lostReason,
+                ReopenReason: reopenReason));
 
-            deal.Stage = newStage;
-            // The tenant's own figure for that stage, not a hardcoded table.
-            deal.Probability = target.Probability;
+            _db.DealStageHistory.Add(StageTransitionGuard.HistoryFor(
+                tenantGuid, dealId, decision, currentUser.FullName));
 
-            if (target.Category is StageCategory.Won or StageCategory.Lost)
-            {
-                deal.ActualCloseDateUtc ??= DateTime.UtcNow;
-                deal.ActualValue ??= deal.ExpectedValue;
-            }
-
-            deal.UpdatedAtUtc = DateTime.UtcNow;
-            deal.UpdatedBy = currentUser.FullName;
+            // No probability override: a drag says nothing about how likely
+            // the deal is, so the stage's own figure applies.
+            StageTransitionGuard.ApplyToDeal(deal, decision, currentUser.FullName);
 
             await _db.SaveChangesAsync();
 
@@ -781,8 +840,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 {
                     title = deal.Title,
                     from = stages.NameOf(previousStage),
-                    to = target.Name,
-                    value = deal.ExpectedValue
+                    to = decision.To.Name,
+                    value = deal.ExpectedValue,
+                    reopened = decision.IsReopen,
+                    note = decision.HistoryNote
                 });
         }
     }

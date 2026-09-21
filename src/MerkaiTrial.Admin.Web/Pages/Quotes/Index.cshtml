@@ -1,5 +1,7 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Quotes.IndexModel
+@* (017) + "Awaiting approval" and "Approved" columns, "Approvals (n)" and
+   "Approval rules" buttons in the header. *@
 @{
     ViewData["Title"] = "Quotes";
 }
@@ -141,6 +143,26 @@
         color: #000;
     }
 
+    .status-pending .column-count {
+        background: #fd7e14;
+        color: white;
+    }
+
+    .status-approved .column-count {
+        background: #20c997;
+        color: white;
+    }
+
+    .approval-chip {
+        display: inline-block;
+        font-size: .75rem;
+        font-weight: 600;
+        padding: .1rem .5rem;
+        border-radius: 20px;
+        background: #fff3cd;
+        color: #664d03;
+    }
+
     .empty-state {
         text-align: center;
         padding: 2rem 1rem;
@@ -189,6 +211,24 @@
                         <a asp-page="/Pipeline/Index" class="btn btn-outline-light">
                             <i class="bi bi-kanban me-2"></i>View Pipeline
                         </a>
+
+                        @* (017) Requests waiting for MY decision *@
+                        <a asp-page="/Quotes/Approvals" class="btn btn-outline-light position-relative">
+                            <i class="bi bi-patch-check me-2"></i>Approvals
+                            @if (Model.PendingForMeCount > 0)
+                            {
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                    @Model.PendingForMeCount
+                                </span>
+                            }
+                        </a>
+
+                        @if (Model.IsWorkspaceAdmin)
+                        {
+                            <a asp-page="/Settings/QuoteApprovals/Index" class="btn btn-outline-light" title="Approval rules">
+                                <i class="bi bi-sliders"></i>
+                            </a>
+                        }
 
                         @* ✅ Create Quote — permission aware (tied to Deals module) *@
                         @if (Model.CanCreate)
@@ -278,7 +318,7 @@
                     <div class="column-title">
                         <i class="bi bi-file-earmark me-2"></i>Draft
                     </div>
-                    <span class="column-count">@Model.Statistics.DraftQuotes</span>
+                    <span class="column-count">@(Model.GetQuotesByStatus("Draft").Count)</span>
                 </div>
                 @{
                     var draftQuotes = Model.GetQuotesByStatus("Draft");
@@ -321,6 +361,91 @@
                     <div class="empty-state">
                         <i class="bi bi-inbox d-block"></i>
                         <div>No draft quotes</div>
+                    </div>
+                }
+            </div>
+
+            <!-- (017) Awaiting Approval Column -->
+            <div class="status-column status-pending">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-hourglass-split me-2"></i>Awaiting approval
+                    </div>
+                    <span class="column-count">@(Model.GetQuotesByStatus("PendingApproval").Count)</span>
+                </div>
+                @{
+                    var pendingQuotes = Model.GetQuotesByStatus("PendingApproval");
+                }
+                @if (pendingQuotes.Any())
+                {
+                    foreach (var quote in pendingQuotes)
+                    {
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="quote-number">@quote.Number</div>
+                                <span class="approval-chip">Needs sign-off</span>
+                            </div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
+                                <span>@quote.ItemCount items</span>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>Nothing waiting for approval</div>
+                    </div>
+                }
+            </div>
+
+            <!-- (017) Approved Column -->
+            <div class="status-column status-approved">
+                <div class="column-header">
+                    <div class="column-title">
+                        <i class="bi bi-patch-check me-2"></i>Approved
+                    </div>
+                    <span class="column-count">@(Model.GetQuotesByStatus("Approved").Count)</span>
+                </div>
+                @{
+                    var approvedQuotes = Model.GetQuotesByStatus("Approved");
+                }
+                @if (approvedQuotes.Any())
+                {
+                    foreach (var quote in approvedQuotes)
+                    {
+                        <div class="quote-card"
+                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
+                            <div class="quote-number">@quote.Number</div>
+                            <div class="quote-deal">
+                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                            </div>
+                            <div class="quote-deal">@quote.DealTitle</div>
+                            <div class="quote-amount mb-2">
+                                @Model.FormatCurrency(quote.GrandTotal)
+                            </div>
+                            <div class="d-flex justify-content-between text-muted small">
+                                <span><i class="bi bi-send me-1"></i>Ready to send</span>
+                                <span>@quote.ItemCount items</span>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <i class="bi bi-inbox d-block"></i>
+                        <div>No approved quotes waiting to go out</div>
                     </div>
                 }
             </div>

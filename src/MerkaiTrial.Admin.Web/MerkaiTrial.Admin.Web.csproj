@@ -14,6 +14,8 @@
     <Folder Include="Filters\" />
     <Folder Include="Pages\Settings\AuditLogs\" />
     <Folder Include="Pages\Settings\LeadStatuses\" />
+    <Folder Include="Pages\Settings\PipelineRules\" />
+    <Folder Include="Pages\Settings\QuoteApprovals\" />
     <Folder Include="Pages\Settings\Visibility\" />
     <Folder Include="Pages\Settings\Pipeline\" />
     <Folder Include="Pages\Tasks\" />

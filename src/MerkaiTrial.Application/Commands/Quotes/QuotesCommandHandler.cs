@@ -4,20 +4,40 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// RECORD VISIBILITY (016) — READ SIDE ONLY, on purpose.
-//   A quote has no owner of its own; it follows its deal. The quote LIST
-//   (Quotes page, Pipeline cards, Dashboard "Recent Quotes") and the quote
-//   STATISTICS (Dashboard) now only include quotes on deals the user can
-//   see. A rep's dashboard no longer shows the whole workspace's quotes.
+// QUOTE APPROVALS (017)
+//   ✅ Create: the deal must be one the user can see (404 otherwise), and
+//      Subtotal is now the GROSS amount (before line discounts) — same as
+//      Update already did. Create used to store the NET amount, so
+//      Subtotal − Discount + Tax did not add up on the quote page, and the
+//      invoice raised from it showed the discount taken off twice.
+//      Grand totals were always right. 017 repairs existing rows.
+//   ✅ Create no longer builds GetQuoteByIdHandler with `new` — injected.
+//   ✅ Line checks: quantity > 0, price ≥ 0, discount not above the line.
+//   ✅ Status: only allowed moves (QuoteWorkflow.CanMove). Draft/Revised →
+//      Sent is refused when the quote breaks an approval rule, unless the
+//      user is a workspace admin. PendingApproval / Approved can't be set
+//      here — they belong to api/quote-approvals.
+//   ✅ Status: removed the two "DealStageFailed" audit entries that were
+//      written after EVERY accepted/rejected quote, including successful
+//      ones — the audit log said the deal move failed when it hadn't.
+//   ✅ Update: only Draft, Revised and Approved quotes can be edited (Sent
+//      and Accepted quotes were editable before — the customer's copy could
+//      change under them). Editing an Approved quote returns it to Draft
+//      and marks the approval Superseded.
+//   ✅ Delete: refused while the quote has an invoice (the page checked
+//      this; the API did not). A pending approval is closed as Recalled.
+//   ✅ Statistics: DraftQuotes now counts every not-yet-sent quote (Draft,
+//      PendingApproval, Approved) so the buckets still add up.
+//   ✅ Public link: works only while the quote is Sent/Viewed/Accepted/
+//      Rejected/Expired — not while it's being revised or approved.
 //
-//   Quote by-id, create, update, status and delete are UNCHANGED — they are
-//   part of the quotes/invoices round you planned alongside the approval
-//   workflow. GetQuoteByIdHandler in particular keeps its one-argument
-//   constructor: CreateQuoteHandler builds it with `new`.
+// RECORD VISIBILITY (016): the list and statistics follow deal visibility.
+// By-id, update, status, delete, attachments and PDF are guarded in
+// QuotesController with QuoteApprovalEngine.CanRead/CanWriteQuoteAsync —
+// the controller, not the handlers, because the customer's public link
+// uses the same status handler with no signed-in user.
 // =====================================================================
 
-using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
-using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -167,30 +187,47 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<CreateQuoteHandler> _logger;
         private readonly IAuditService _audit;
+        private readonly IRecordScopeService _scope;
+        private readonly GetQuoteByIdHandler _getById;
+
         public CreateQuoteHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ILogger<CreateQuoteHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            IRecordScopeService scope,
+            GetQuoteByIdHandler getById)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
             _audit = audit;
+            _scope = scope;
+            _getById = getById;
         }
 
         public async Task<QuoteDto> Handle(CreateQuoteDto dto)
         {
+            // A quote is raised on a deal — the deal must be one this user can see.
+            await _scope.EnsureDealVisibleAsync(_db, dto.TenantId, dto.DealId);
+
+            if (dto.Items == null || dto.Items.Count == 0)
+                throw new InvalidOperationException("Add at least one item to the quote.");
+
+            QuoteLineChecks.Validate(dto.Items.Select(i => (i.Name, i.UnitPrice, i.Quantity, i.LineDiscount, i.TaxRate)));
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
             // ── Generate quote number ──────────────────────────────────
             var quoteNumber = await GenerateQuoteNumberAsync(dto.TenantId);
 
             // ── Calculate totals ───────────────────────────────────────
-            var subtotal      = dto.Items.Sum(i => (i.UnitPrice * i.Quantity) - i.LineDiscount);
-            var taxTotal      = dto.Items.Sum(i => ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate);
+            // Subtotal is GROSS (before line discounts), matching Update and
+            // the invoice handlers: Grand = Subtotal − Discount + Tax.
+            var subtotal      = dto.Items.Sum(i => i.UnitPrice * i.Quantity);
             var discountTotal = dto.Items.Sum(i => i.LineDiscount);
-            var grandTotal    = subtotal + taxTotal;
+            var taxTotal      = dto.Items.Sum(i => ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate);
+            var grandTotal    = subtotal - discountTotal + taxTotal;
 
             var quote = new Quote
             {
@@ -244,7 +281,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // ── ✅ AUTO-ADVANCE: Quote created → Deal moves to Proposal ─
             await AdvanceDealToProposalAsync(dto.DealId, dto.TenantId, currentUser.FullName);
 
-            return await new GetQuoteByIdHandler(_db).Handle(dto.TenantId, quote.Id);
+            return await _getById.Handle(dto.TenantId, quote.Id);
         }
 
         // ── Advance deal from early stages → Proposal ─────────────────
@@ -383,16 +420,20 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<UpdateQuoteStatusHandler> _logger;
         private readonly IAuditService _audit;
+        private readonly QuoteApprovalEngine _approvals;
+
         public UpdateQuoteStatusHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ILogger<UpdateQuoteStatusHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            QuoteApprovalEngine approvals)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
             _audit = audit;
+            _approvals = approvals;
         }
 
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
@@ -408,16 +449,44 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (!Enum.TryParse<QuoteStatus>(dto.Status, ignoreCase: true, out var newStatus))
                 throw new ArgumentException($"Invalid quote status: {dto.Status}");
 
-            string changedBy;
+            // Same status again (double click, customer re-opening the link) — nothing to do.
+            if (newStatus == quote.Status) return;
+
+            if (!QuoteWorkflow.CanMove(quote.Status, newStatus))
+            {
+                throw new InvalidOperationException(newStatus is QuoteStatus.PendingApproval or QuoteStatus.Approved
+                    ? "Use Submit for approval / Approve on the quote page to change the approval status."
+                    : quote.Status == QuoteStatus.PendingApproval
+                        ? "This quote is waiting for approval. Recall the request first if you need to change it."
+                        : $"A {QuoteWorkflow.Label(quote.Status)} quote can't be marked {QuoteWorkflow.Label(newStatus)}.");
+            }
+
+            // The customer's public link has no signed-in user — that path
+            // only ever moves Sent/Viewed → Accepted/Rejected.
+            CurrentUserContext? currentUser = null;
             try
             {
-                var currentUser = await _currentUserService.GetCurrentUserAsync();
-                changedBy = currentUser.FullName;
+                currentUser = await _currentUserService.GetCurrentUserAsync();
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Could not resolve current user — using DTO value");
-                changedBy = !string.IsNullOrEmpty(dto.UpdatedBy) ? dto.UpdatedBy : "System";
+            }
+
+            var changedBy = currentUser?.FullName
+                ?? (!string.IsNullOrEmpty(dto.UpdatedBy) ? dto.UpdatedBy : "System");
+
+            // ── APPROVAL GATE ─────────────────────────────────────────────
+            // Draft/Revised → Sent needs the quote to be within the rules,
+            // unless a workspace admin is sending it. Approved → Sent is
+            // always fine: that IS the approval.
+            if (newStatus == QuoteStatus.Sent && QuoteWorkflow.IsPreSend(quote.Status) &&
+                currentUser?.IsTenantAdmin != true)
+            {
+                var rules = await _approvals.EvaluateAsync(tenantId, quoteId);
+                if (rules.RequiresApproval)
+                    throw new InvalidOperationException(
+                        "This quote needs approval before it can be sent. " + string.Join(" ", rules.Reasons));
             }
 
             // ✅ When sending to customer — generate unique public link token
@@ -470,10 +539,6 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 await TransitionDealStageAsync(
                     quote.DealId, tenantId,
                     toStage: "Negotiation", probability: 80, changedBy: changedBy, actualValue: quote.GrandTotal);
-                await _audit.WriteAsync(
-                    AuditAction.DealStageFailed, AuditEntityType.Deal, quote.DealId, tenantId,
-                    new { attemptedStage = "Negotiation", reason = "Quote accepted" },
-                    CancellationToken.None);
 
             }
             else if (newStatus == QuoteStatus.Rejected)
@@ -482,10 +547,6 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 await TransitionDealStageAsync(
                     quote.DealId, tenantId,
                     toStage: "ClosedLost", probability: 0, changedBy: changedBy);
-                await _audit.WriteAsync(
-                    AuditAction.DealStageFailed, AuditEntityType.Deal, quote.DealId, tenantId,
-                    new { attemptedStage = "ClosedLost", reason = "Quote rejected" },
-                    CancellationToken.None);
 
             }
         }
@@ -555,6 +616,16 @@ namespace MerkaiTrial.Application.Commands.Quotes
             {
                 _logger.LogError(ex,
                     "Failed to transition Deal {DealId} to {Stage}", dealId, toStage);
+
+                // Only here — when the move really failed.
+                try
+                {
+                    await _audit.WriteAsync(
+                        AuditAction.DealStageFailed, AuditEntityType.Deal, dealId, tenantId,
+                        new { attemptedStage = toStage, error = ex.Message },
+                        CancellationToken.None);
+                }
+                catch { /* the audit write must never mask the original failure */ }
             }
         }
     }
@@ -584,8 +655,36 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found");
 
+            if (quote.Status == QuoteStatus.PendingApproval)
+                throw new InvalidOperationException("This quote is waiting for approval. Recall the request before editing it.");
+
+            if (!QuoteWorkflow.IsEditable(quote.Status))
+                throw new InvalidOperationException(
+                    $"A {QuoteWorkflow.Label(quote.Status)} quote can't be edited — the customer may already have it. " +
+                    "Create a new quote instead.");
+
+            if (dto.Items == null || dto.Items.Count == 0)
+                throw new InvalidOperationException("Add at least one item to the quote.");
+
+            QuoteLineChecks.Validate(dto.Items.Select(i => (i.Name ?? "", i.UnitPrice, i.Quantity, i.LineDiscount, i.TaxRate)));
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var userName = currentUser?.FullName ?? "System";
+
+            // What was approved is no longer what would be sent.
+            if (quote.Status == QuoteStatus.Approved)
+            {
+                quote.Status = QuoteStatus.Draft;
+
+                var approved = await _db.QuoteApprovalRequests
+                    .Where(r => r.QuoteId == quoteId && r.TenantId == tenantId &&
+                                r.Status == QuoteApprovalRequestStatus.Approved)
+                    .OrderByDescending(r => r.DecidedAtUtc)
+                    .FirstOrDefaultAsync();
+
+                if (approved != null)
+                    approved.Status = QuoteApprovalRequestStatus.Superseded;
+            }
 
             quote.IssueDateUtc = dto.IssueDateUtc;
             quote.ExpiresAtUtc = dto.ExpiresAtUtc;
@@ -711,6 +810,14 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             if (quote == null) return null;
 
+            // (017) The link only works while the quote is in the customer's
+            // hands. A quote pulled back to Revised / Draft / approval is
+            // being edited — the customer must not see it half-changed.
+            // Re-sending it reuses the same token, so the same link works again.
+            if (quote.Status is not (QuoteStatus.Sent or QuoteStatus.Viewed or QuoteStatus.Accepted
+                                     or QuoteStatus.Rejected or QuoteStatus.Expired))
+                return null;
+
             // ── Auto-set Viewed when the customer opens the link ─────────
             if (quote.Status == QuoteStatus.Sent)
             {
@@ -803,7 +910,31 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found");
 
+            var invoiceNumber = await _db.Invoices
+                .Where(i => i.QuoteId == quoteId && i.TenantId == tenantId && !i.IsDeleted)
+                .Select(i => i.Number)
+                .FirstOrDefaultAsync();
+
+            if (invoiceNumber != null)
+                throw new InvalidOperationException($"Invoice {invoiceNumber} was raised from this quote, so it can't be deleted.");
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
+
+            // Close any open approval request — nobody should be asked to
+            // approve a quote that no longer exists.
+            var pending = await _db.QuoteApprovalRequests
+                .Where(r => r.QuoteId == quoteId && r.TenantId == tenantId &&
+                            r.Status == QuoteApprovalRequestStatus.Pending)
+                .ToListAsync();
+
+            foreach (var r in pending)
+            {
+                r.Status = QuoteApprovalRequestStatus.Recalled;
+                r.DecidedByUserId = currentUser.UserId;
+                r.DecidedByName = currentUser.FullName;
+                r.DecidedAtUtc = DateTime.UtcNow;
+                r.DecisionComment = "Quote deleted";
+            }
 
             quote.IsDeleted    = true;
             quote.UpdatedAtUtc = DateTime.UtcNow;
@@ -845,6 +976,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // invoice statistics: collapse into one query with conditional
             // aggregates, single round-trip, only aggregates cross the wire.
             var draft    = QuoteStatus.Draft;
+            var pendingApproval = QuoteStatus.PendingApproval;
+            var approved = QuoteStatus.Approved;
             var sent     = QuoteStatus.Sent;
             var viewed   = QuoteStatus.Viewed;
             var accepted = QuoteStatus.Accepted;
@@ -860,7 +993,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .Select(g => new QuoteStatisticsDto
                 {
                     TotalQuotes    = g.Count(),
-                    DraftQuotes    = g.Count(q => q.Status == draft),
+                    // "Not sent yet" — Draft plus the two approval states, so
+                    // the buckets still add up to TotalQuotes (017).
+                    DraftQuotes    = g.Count(q => q.Status == draft || q.Status == pendingApproval || q.Status == approved),
                     SentQuotes     = g.Count(q => q.Status == sent || q.Status == viewed),
                     AcceptedQuotes = g.Count(q => q.Status == accepted),
                     RejectedQuotes = g.Count(q => q.Status == rejected),
@@ -879,6 +1014,34 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 AcceptedQuotes = 0, RejectedQuotes = 0, ExpiredQuotes = 0,
                 TotalValue = 0, AcceptedValue = 0, PendingValue = 0
             };
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // LINE CHECKS — shared by Create and Update. The pages check these
+    // too, but the API is the one that must not accept nonsense.
+    // ─────────────────────────────────────────────────────────────────
+    public static class QuoteLineChecks
+    {
+        public static void Validate(IEnumerable<(string Name, decimal UnitPrice, int Quantity, decimal LineDiscount, decimal TaxRate)> lines)
+        {
+            foreach (var l in lines)
+            {
+                var name = string.IsNullOrWhiteSpace(l.Name) ? "An item" : $"\"{l.Name.Trim()}\"";
+
+                if (string.IsNullOrWhiteSpace(l.Name))
+                    throw new InvalidOperationException("All items must have a name.");
+                if (l.Quantity <= 0)
+                    throw new InvalidOperationException($"{name}: quantity must be at least 1.");
+                if (l.UnitPrice < 0)
+                    throw new InvalidOperationException($"{name}: price can't be negative.");
+                if (l.LineDiscount < 0)
+                    throw new InvalidOperationException($"{name}: discount can't be negative.");
+                if (l.LineDiscount > l.UnitPrice * l.Quantity)
+                    throw new InvalidOperationException($"{name}: the discount is more than the line amount.");
+                if (l.TaxRate < 0 || l.TaxRate > 1)
+                    throw new InvalidOperationException($"{name}: tax rate must be between 0% and 100%.");
+            }
         }
     }
 }

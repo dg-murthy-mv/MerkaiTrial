@@ -1,11 +1,24 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Commands/Invoices/GenerateInvoicePdfHandler.cs
+//
+// CHANGES (018 — invoice workflow)
+//   ✅ A DRAFT prints "DRAFT – not a tax invoice" where the number goes,
+//      instead of its internal placeholder (DRAFT-3F9A1C2B). A customer
+//      must never receive a draft that looks like a real invoice.
+//   ✅ A VOID invoice prints its number with "(VOID)" after it.
+//   ✅ Reversed payments are left off the PDF and don't count towards
+//      "Paid" — only captured payments do, same as the rest of the app.
+//   ✅ Overdue is never printed on a draft or a void invoice.
+//   ✅ GrandTotal = Subtotal − Discount + Tax (same formula as before,
+//      written in the same order as everywhere else).
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Pdf;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Domain.Entities;
+using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -72,10 +85,22 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     ? $"{invoice.Quote.Deal.Contact.FirstName} {invoice.Quote.Deal.Contact.LastName}".Trim()
                     : null;
 
+            // (018) What goes where the invoice number is printed.
+            var isDraft = invoice.Status == InvoiceStatus.Draft;
+            var isVoid  = invoice.Status == InvoiceStatus.Cancelled;
+            var printedNumber = isDraft
+                ? "DRAFT – not a tax invoice"
+                : isVoid ? $"{invoice.Number} (VOID)" : invoice.Number;
+
+            // Only captured payments count and are listed; reversed ones don't.
+            var captured = invoice.Payments
+                .Where(p => !p.IsDeleted && p.Status == PaymentStatusNames.Captured)
+                .ToList();
+
             var dto = new InvoiceDto
             {
                 Id            = invoice.Id,
-                Number        = invoice.Number,
+                Number        = printedNumber,
                 IssueDateUtc  = invoice.IssueDateUtc,
                 DueDateUtc    = invoice.DueDateUtc,
                 Currency      = invoice.Currency,
@@ -83,15 +108,16 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 Subtotal      = invoice.Subtotal,
                 DiscountTotal = invoice.DiscountTotal,
                 TaxTotal      = invoice.TaxTotal,
-                GrandTotal    = invoice.Subtotal + invoice.TaxTotal - invoice.DiscountTotal,
+                GrandTotal    = invoice.Subtotal - invoice.DiscountTotal + invoice.TaxTotal,
                 Balance       = invoice.Balance,
-                TotalPaid     = invoice.Payments.Where(p => !p.IsDeleted).Sum(p => p.Amount),
+                TotalPaid     = captured.Sum(p => p.Amount),
                 DealTitle     = invoice.Deal?.Title ?? invoice.Quote?.Deal?.Title,
                 CompanyName   = invoice.Deal?.Contact?.FirstName ?? invoice.Quote?.Deal?.Contact?.FirstName,
                 ContactName   = contactName,
                 QuoteNumber   = invoice.Quote?.Number,
                 Notes         = invoice.Notes,
-                IsOverdue     = invoice.DueDateUtc.HasValue
+                IsOverdue     = !isDraft && !isVoid
+                                && invoice.DueDateUtc.HasValue
                                 && invoice.DueDateUtc.Value < DateTime.UtcNow
                                 && invoice.Balance > 0,
                 Lines = invoice.Lines.Select(l => new InvoiceLineDto
@@ -107,7 +133,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     LineTax        = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,
                     LineGrandTotal = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * (1 + l.TaxRate)
                 }).ToList(),
-                Payments = invoice.Payments.Select(p => new PaymentDto
+                Payments = captured.Select(p => new PaymentDto
                 {
                     Id            = p.Id,
                     Amount        = p.Amount,

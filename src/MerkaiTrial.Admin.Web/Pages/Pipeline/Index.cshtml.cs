@@ -2,6 +2,23 @@
 // Pipeline/Index.cshtml.cs
 // Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Index.cshtml.cs
 //
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (019 — transition rules):
+//   ✅ Loads the tenant's transition rules alongside the stages, so the
+//      board can ask for a lost reason or a reopen reason BEFORE it posts
+//      rather than posting, being refused, and asking afterwards.
+//   ✅ OnPostUpdateStageAsync takes those two reasons and goes through
+//      the new IDealStageService, which can carry them. IDealService is
+//      untouched and still used everywhere else.
+//   ✅ The refusal message from the server is passed straight back to the
+//      browser. It is written for a salesperson ("This deal isn't ready
+//      for Closed Won yet — it needs an accepted quote"), and replacing
+//      it with "Failed to update deal stage" was throwing away the only
+//      useful part of the response.
+//   ✅ StageName / StageCategoryOf helpers so the table view stops
+//      matching hard-coded stage keys.
+//
 // CHANGES (017):
 //   ✅ DealQuotaUsed — every deal in the workspace (GetDealsResponse.QuotaUsed),
 //      for the Deal Quota bar and the "Deal Limit Reached" button. They
@@ -16,10 +33,7 @@
 //      instead of resetting anything over 100 back to 20.
 //   ✅ The board shows only deals this user can see (Own / Team / All) —
 //      the API does it; nothing to change here.
-//   ✅ Stage drag on a deal outside scope → the API returns 404. If your
-//      API client raises KeyNotFoundException for 404, the user now gets
-//      "Deal not found." instead of raw exception text; otherwise the
-//      existing catch handles it as before.
+//   ✅ Stage drag on a deal outside scope → the API returns 404.
 //
 // EARLIER CHANGES:
 //   ✅ Removed duplicate ICurrentTenantService (_currentTenantService)
@@ -45,31 +59,39 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
     public class IndexModel : AuthorizedPageModel
     {
         private readonly IDealService _dealService;
+        private readonly IDealStageService _dealStageService;          // ✅ 019
         private readonly IUserService _userService;
         private readonly IQuoteService _quoteService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;          // ✅ ONE service only
         private readonly ILogger<IndexModel> _logger;
         private readonly IPipelineStageService _stageService;
+        private readonly IPipelineRuleService _ruleService;             // ✅ 019
+
         protected override string ModuleName => Modules.Deals;
 
         public IndexModel(
             IDealService dealService,
+            IDealStageService dealStageService,                          // ✅ 019
             IUserService userService,
             IQuoteService quoteService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,                        // ✅ ONE param only
             IAuthorizationService authorizationService,
-            ILogger<IndexModel> logger, IPipelineStageService stageService)
+            ILogger<IndexModel> logger,
+            IPipelineStageService stageService,
+            IPipelineRuleService ruleService)                           // ✅ 019
             : base(authorizationService, currentUserService, logger)
         {
             _dealService = dealService;
+            _dealStageService = dealStageService;
             _userService = userService;
             _quoteService = quoteService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
             _stageService = stageService;
+            _ruleService = ruleService;
         }
 
         // ── View Properties ────────────────────────────────────────────
@@ -82,13 +104,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public string TenantCurrencyCode { get; set; } = string.Empty;
         public List<PipelineStageDto> Stages { get; private set; } = new();
 
+        /// <summary>
+        /// The tenant's transition rules. Null only when the call failed —
+        /// the board still works, it just posts without pre-asking and
+        /// lets the server explain.
+        /// </summary>
+        public PipelineRulesDto? Rules { get; private set; }
+
         // ── Stats ──────────────────────────────────────────────────────
         public int TotalDeals => Deals.Count;
 
         /// <summary>Every deal in the workspace — for the plan quota bar and the New Deal limit.</summary>
         public int DealQuotaUsed { get; private set; }
         public decimal TotalValue => Deals.Sum(d => d.ExpectedValue);
-      
 
         private HashSet<string> KeysWith(StageCategory c) =>
             Stages.Where(s => s.Category == c).Select(s => s.Key).ToHashSet();
@@ -147,14 +175,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                                         pageSize: 500);
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
                 var stagesTask = _stageService.GetAsync(activeOnly: true);
+                var rulesTask = _ruleService.GetAsync();
 
-                await Task.WhenAll(dealsTask, salesTeamTask, stagesTask);
+                await Task.WhenAll(dealsTask, salesTeamTask, stagesTask, rulesTask);
 
                 var dealsResponse = await dealsTask;
                 Deals = dealsResponse.Items;
                 DealQuotaUsed = dealsResponse.QuotaUsed;
                 SalesTeam = await salesTeamTask;
                 Stages = await stagesTask;
+                Rules = await rulesTask;
 
                 await LoadQuoteStatusForDealsAsync(tenantId);
 
@@ -174,25 +204,45 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         }
 
         // ── POST: Update Stage (Kanban drag & drop) ────────────────────
-        public async Task<IActionResult> OnPostUpdateStageAsync(Guid dealId, string stage)
+
+        /// <summary>
+        /// 019: carries the reason the move needs. The board asks for it
+        /// first when its copy of the rules says one is wanted, but the
+        /// server is the authority — if the board's copy is stale, the
+        /// refusal below explains exactly what is missing.
+        /// </summary>
+        public async Task<IActionResult> OnPostUpdateStageAsync(
+            Guid dealId, string stage, string? lostReason, string? reopenReason)
         {
             if (!await CanUpdateAsync())
                 return new JsonResult(new { success = false, error = "You do not have permission to update deal stages." }) { StatusCode = 403 };
 
             try
             {
-                var tenantId = _currentUserService.GetCurrentTenantId();
-                await _dealService.UpdateStageAsync(tenantId, dealId, stage);
+                await _dealStageService.MoveAsync(dealId, stage, lostReason, reopenReason);
                 return new JsonResult(new { success = true });
             }
             catch (KeyNotFoundException)
             {
                 return new JsonResult(new { success = false, error = "Deal not found." }) { StatusCode = 404 };
             }
+            // IApiService turns a 400 or 403 { "error": "..." } body into
+            // this, carrying the server's own wording. That wording is
+            // written for the rep and is the whole point of the round —
+            // showing it beats "Failed to update deal stage."
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation(
+                    "Stage move refused for deal {DealId} -> {Stage}: {Message}", dealId, stage, ex.Message);
+
+                return new JsonResult(new { success = false, error = ex.Message, refused = true })
+                { StatusCode = 400 };
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update stage for deal {DealId}", dealId);
-                return new JsonResult(new { success = false, error = ex.Message }) { StatusCode = 500 };
+                return new JsonResult(new { success = false, error = "Something went wrong moving that deal. Please try again." })
+                { StatusCode = 500 };
             }
         }
 
@@ -210,6 +260,38 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public int GetStageCount(string stage) => Deals.Count(d => d.Stage == stage);
         public decimal GetStageValue(string stage) => Deals.Where(d => d.Stage == stage).Sum(d => d.ExpectedValue);
         public QuoteStatusInfo? GetQuoteStatus(Guid dealId) => DealQuoteStatus.TryGetValue(dealId, out var s) ? s : null;
+
+        // ── ✅ 019: stage lookups for the table view ───────────────────
+        // The table used to switch on the literal strings "Discovery",
+        // "ClosedWon" and so on, so a tenant who renamed a stage saw their
+        // own name on the board and ours in the table.
+
+        public string StageName(string? key) =>
+            string.IsNullOrEmpty(key) ? "—"
+            : (Stages.FirstOrDefault(s => s.Key == key)?.Name ?? key);
+
+        public StageCategory StageCategoryOf(string? key) =>
+            Stages.FirstOrDefault(s => s.Key == key)?.Category ?? StageCategory.Open;
+
+        public bool IsClosedStage(string? key) =>
+            StageCategoryOf(key) is StageCategory.Won or StageCategory.Lost;
+
+        public string StageBadgeClass(string? key) => StageCategoryOf(key) switch
+        {
+            StageCategory.Won => "bg-success",
+            StageCategory.Lost => "bg-danger",
+            _ => "bg-secondary"
+        };
+
+        /// <summary>
+        /// Does moving INTO this stage need a lost reason? Read from the
+        /// tenant's rules so the board asks before posting.
+        /// </summary>
+        public bool StageNeedsLostReason(string key) =>
+            Rules?.Stages.FirstOrDefault(s => s.Key == key) is { RequiresLostReason: true, Category: StageCategory.Lost };
+
+        /// <summary>Does moving OUT of a closed stage need a reason?</summary>
+        public bool ReopenNeedsReason => Rules?.ReopenRequiresReason ?? false;
 
         // ── Load Quote Status for Kanban Cards ─────────────────────────
         private async Task LoadQuoteStatusForDealsAsync(Guid tenantId)

@@ -1,4 +1,17 @@
-﻿using MerkaiTrial.Admin.Web.Services.Core;
+// =====================================================================
+// InvoiceService.cs
+// Location: MerkaiTrial.Admin.Web/Services/Invoices/InvoiceService.cs
+//
+// CHANGES (018 — invoice workflow)
+//   + GetWorkflowAsync   — what can happen next (issue / void / reverse…)
+//   + IssueAsync         — draft → INV-nnnn, locked; returns the number
+//   + VoidAsync          — issued → Void, with a reason
+//   + ReversePaymentAsync — take a mistaken payment back out, with a reason
+//   API refusals (400/403 with {error}) arrive as InvalidOperationException
+//   carrying the API's message — show it as is.
+// =====================================================================
+
+using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Invoices
@@ -30,6 +43,12 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
         Task DeleteAsync(Guid tenantId, Guid id);
 
         Task<byte[]> DownloadPdfAsync(Guid tenantId, Guid invoiceId);
+
+        // ── Workflow (018) ────────────────────────────────────────────
+        Task<InvoiceWorkflowDto> GetWorkflowAsync(Guid invoiceId);
+        Task<string> IssueAsync(Guid invoiceId);
+        Task VoidAsync(Guid invoiceId, string reason);
+        Task ReversePaymentAsync(Guid invoiceId, Guid paymentId, string reason);
     }
     public class InvoiceService : IInvoiceService
     {
@@ -144,6 +163,28 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
             // Use raw HttpClient to get the binary response
             // IApiService.GetBytesAsync needs to be added OR use HttpClient directly
             return await _apiService.GetBytesAsync(url);
+        }
+    
+        // ==================== WORKFLOW (018) ====================
+
+        public async Task<InvoiceWorkflowDto> GetWorkflowAsync(Guid invoiceId)
+            => await _apiService.GetAsync<InvoiceWorkflowDto>($"api/invoices/{invoiceId}/workflow");
+
+        public async Task<string> IssueAsync(Guid invoiceId)
+        {
+            var result = await _apiService.PostAsync<IssueResult>($"api/invoices/{invoiceId}/issue", new { });
+            return result?.Number ?? string.Empty;
+        }
+
+        public async Task VoidAsync(Guid invoiceId, string reason)
+            => await _apiService.PostVoidAsync($"api/invoices/{invoiceId}/void", new VoidInvoiceDto(reason));
+
+        public async Task ReversePaymentAsync(Guid invoiceId, Guid paymentId, string reason)
+            => await _apiService.PostVoidAsync($"api/invoices/{invoiceId}/payments/{paymentId}/reverse", new ReversePaymentDto(reason));
+
+        private sealed class IssueResult
+        {
+            public string? Number { get; set; }
         }
     }
 }

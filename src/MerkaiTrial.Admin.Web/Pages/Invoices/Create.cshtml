@@ -1,5 +1,7 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Invoices.CreateModel
+@* (018) "Create & Issue" (was "Create & Send"); catalog prices/tax rendered
+   culture-proof; new custom lines use the tenant's tax rate. *@
 @{
     ViewData["Title"] = Model.Mode == "FromQuote" ? "Create Invoice from Quote" : "Create Invoice";
 }
@@ -177,8 +179,8 @@
                                     {
                                         <option value="@product.Id" 
                                                 data-name="@product.Name" 
-                                                data-price="@product.ListPrice" 
-                                                data-tax="@product.TaxRate">
+                                                data-price="@product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)" 
+                                                data-tax="@(Convert.ToDecimal(product.TaxRate).ToString(System.Globalization.CultureInfo.InvariantCulture))">
                                             @product.Name - @Model.FormatCurrency(product.ListPrice)
                                         </option>
                                     }
@@ -277,8 +279,9 @@
                             <i class="bi bi-save me-2"></i>Save as Draft
                         </button>
                         <button type="submit" name="sendImmediately" value="true" class="btn btn-success w-100">
-                            <i class="bi bi-send me-2"></i>Create & Send Invoice
+                            <i class="bi bi-send-check me-2"></i>Create &amp; Issue Invoice
                         </button>
+                        <div class="small text-muted mt-2">Issuing gives it its invoice number and locks it.</div>
                     </form>
                 }
                 else
@@ -295,8 +298,12 @@
                             <i class="bi bi-save me-2"></i>Save as Draft
                         </button>
                         <button type="submit" name="sendImmediately" value="true" class="btn btn-success w-100">
-                            <i class="bi bi-send me-2"></i>Create & Send Invoice
+                            <i class="bi bi-send-check me-2"></i>Create &amp; Issue Invoice
                         </button>
+                        <div class="small text-muted mt-2">
+                            Issuing gives it its invoice number and locks it. If it's over your workspace's
+                            discount limits it is saved as a draft for a manager to issue.
+                        </div>
                     </form>
                 }
             </div>
@@ -316,6 +323,8 @@
     //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
     //    culture, so client and server now agree by construction.
     const fmtMoney = (x) => window.MerkaiCurrency.format(x);
+    // (018) was 18 — Indian GST for every tenant
+    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     function setDueDays(days) {
         const issueDate = new Date(document.getElementById('IssueDate').value || new Date());
@@ -360,7 +369,7 @@
             unitPrice: 0,
             quantity: 1,
             lineDiscount: 0,
-            taxRate: 18
+            taxRate: defaultTaxRate
         };
 
         lineItems.push(item);

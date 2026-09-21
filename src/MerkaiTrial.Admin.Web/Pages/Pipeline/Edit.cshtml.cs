@@ -1,7 +1,29 @@
 // =====================================================================
-// EDIT DEAL PAGE MODEL - FIXED
+// EDIT DEAL PAGE MODEL
 // Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Edit.cshtml.cs
-// Fixes:
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (019 — transition rules)
+//   ✅ Stages come from the TENANT's pipeline. The page had six stage
+//      buttons hard-coded in the markup and a matching GetStageProbability
+//      switch here, both still saying "Discovery / Qualification /
+//      Proposal / Negotiation / ClosedWon / ClosedLost". A client who
+//      renamed or added a stage saw their own pipeline on the board and
+//      ours on this page — and saving pushed the deal back into one of
+//      the six, which since the stage round is an outright error rather
+//      than a silent no-op.
+//   ✅ A lost-reason box, shown when the chosen stage is a Lost one, and
+//      required when that stage asks for it.
+//   ✅ A reopen-reason box, shown when the deal is currently closed.
+//   ✅ The server's refusal message is shown as it stands. "Failed to
+//      update deal. Please try again." was thrown over the top of "This
+//      deal isn't ready for Closed Won yet — it needs an accepted quote",
+//      which is the only sentence that would have helped.
+//   ✅ GetStageProbability removed. The tenant's own figure travels with
+//      the stage.
+//
+// EARLIER FIXES (kept)
 //   - Currency = deal.Currency (was hardcoded "USD")
 //   - ICurrentTenantService injected for consistency
 // =====================================================================
@@ -9,11 +31,14 @@
 using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -29,6 +54,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICountryService _countryService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _currentTenantService;
+        private readonly IPipelineStageService _stageService;   // ✅ 019
+        private readonly IPipelineRuleService _ruleService;      // ✅ 019
         private readonly ILogger<EditModel> _logger;
 
         protected override string ModuleName => Modules.Deals;
@@ -40,6 +67,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICountryService countryService,
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
+            IPipelineStageService stageService,                 // ✅ 019
+            IPipelineRuleService ruleService,                   // ✅ 019
             IAuthorizationService authorizationService,
             ILogger<EditModel> logger)
             : base(authorizationService, currentUserService, logger)
@@ -50,6 +79,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _countryService = countryService;
             _currentUserService = currentUserService;
             _currentTenantService = currentTenantService;
+            _stageService = stageService;
+            _ruleService = ruleService;
             _logger = logger;
         }
 
@@ -61,10 +92,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<SelectListItem> SalesTeam { get; set; } = new();
         public List<CountryListItem> Countries { get; set; } = new();
 
+        /// <summary>The tenant's own stages, in their own order.</summary>
+        public List<PipelineStageDto> Stages { get; set; } = new();
+
+        /// <summary>What each stage asks of a deal, plus the reopen rules.</summary>
+        public PipelineRulesDto? Rules { get; set; }
+
         public Guid DealId { get; set; }
         public string ContactName { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public string? CreatedBy { get; set; }
+
+        /// <summary>
+        /// The stage the deal was in when the page loaded — NOT the one
+        /// picked in the form. Whether a reopen reason is wanted depends on
+        /// where the deal is coming FROM.
+        /// </summary>
+        [BindProperty]
+        public string OriginalStage { get; set; } = string.Empty;
 
         [TempData]
         public string? SuccessMessage { get; set; }
@@ -94,9 +139,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             [Display(Name = "Currency")]
             public string Currency { get; set; } = "INR";
 
+            // No default: the tenant's pipeline supplies it. A literal
+            // "Discovery" here was a stage some clients do not have.
             [Required(ErrorMessage = "Please select a stage")]
             [Display(Name = "Stage")]
-            public string Stage { get; set; } = "Discovery";
+            public string Stage { get; set; } = string.Empty;
 
             [Range(0, 100, ErrorMessage = "Probability must be between 0 and 100")]
             [Display(Name = "Probability (%)")]
@@ -111,7 +158,70 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             public Guid? SourceId { get; set; }
             public string? Tags { get; set; }
+
+            // ── 019 ───────────────────────────────────────────────────
+            // Validated on the server, not with [Required] here: whether
+            // either is needed depends on the tenant's rules and on which
+            // stage was picked, which an attribute cannot see.
+
+            [Display(Name = "Why was this deal lost?")]
+            [StringLength(1000)]
+            public string? LostReason { get; set; }
+
+            [Display(Name = "Why are you reopening this deal?")]
+            [StringLength(1000)]
+            public string? ReopenReason { get; set; }
         }
+
+        // ==================== VIEW HELPERS ====================
+
+        public PipelineStageDto? StageByKey(string? key) =>
+            string.IsNullOrEmpty(key) ? null : Stages.FirstOrDefault(s => s.Key == key);
+
+        public StageCategory CategoryOf(string? key) =>
+            StageByKey(key)?.Category ?? StageCategory.Open;
+
+        /// <summary>The deal was already Won or Lost when this page loaded.</summary>
+        public bool IsCurrentlyClosed =>
+            CategoryOf(OriginalStage) is StageCategory.Won or StageCategory.Lost;
+
+        public bool ReopenNeedsReason => Rules?.ReopenRequiresReason ?? false;
+
+        /// <summary>Does this stage insist on a reason for losing the deal?</summary>
+        public bool StageNeedsLostReason(string key) =>
+            Rules?.Stages.FirstOrDefault(s => s.Key == key)
+                is { RequiresLostReason: true, Category: StageCategory.Lost };
+
+        /// <summary>What a stage asks of a deal, as a short phrase for the UI.</summary>
+        public string RequirementsText(string key)
+        {
+            var r = Rules?.Stages.FirstOrDefault(s => s.Key == key);
+            if (r is null) return string.Empty;
+
+            var parts = new List<string>();
+            if (r.RequiresAcceptedQuote) parts.Add("an accepted quote");
+            else if (r.RequiresQuote) parts.Add("a quote");
+            if (r.RequiresValue) parts.Add("a value above zero");
+            if (r.RequiresCloseDate) parts.Add("a close date");
+            if (r.RequiresLostReason && r.Category == StageCategory.Lost) parts.Add("a reason");
+
+            return parts.Count == 0 ? string.Empty : "Needs " + string.Join(", ", parts);
+        }
+
+        /// <summary>Colour class for a stage button, by what the stage MEANS.</summary>
+        public string StageButtonClass(PipelineStageDto s) => s.Category switch
+        {
+            StageCategory.Won => "stage-won",
+            StageCategory.Lost => "stage-lost",
+            _ => "stage-open"
+        };
+
+        public string StageIcon(PipelineStageDto s) => s.Category switch
+        {
+            StageCategory.Won => "bi-trophy",
+            StageCategory.Lost => "bi-x-circle",
+            _ => "bi-circle"
+        };
 
         // ==================== GET HANDLER ====================
 
@@ -130,12 +240,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var dealTask      = _dealService.GetByIdAsync(tenantId, id);
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
                 var countriesTask = _countryService.GetActiveAsync();
+                // activeOnly: false — a deal can sit in a retired stage, and
+                // the page has to be able to show where it currently is.
+                var stagesTask    = _stageService.GetAsync(activeOnly: false);
+                var rulesTask     = _ruleService.GetAsync();
 
-                await Task.WhenAll(dealTask, salesTeamTask, countriesTask);
+                await Task.WhenAll(dealTask, salesTeamTask, countriesTask, stagesTask, rulesTask);
 
                 var deal      = await dealTask;
                 var salesTeam = await salesTeamTask;
                 Countries     = await countriesTask;
+                Stages        = await stagesTask;
+                Rules         = await rulesTask;
 
                 try
                 {
@@ -147,7 +263,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     ContactName = "Unknown Contact";
                 }
 
-                // ✅ FIXED: Currency = deal.Currency (was hardcoded "USD")
+                OriginalStage = deal.Stage;
+
+                // ✅ FIXED earlier: Currency = deal.Currency (was hardcoded "USD")
                 Input = new DealInputModel
                 {
                     Title             = deal.Title,
@@ -193,7 +311,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             if (!ModelState.IsValid)
             {
-                await OnGetAsync(id);
+                await ReloadListsAsync(id);
                 return Page();
             }
 
@@ -214,7 +332,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     OwnerUserId          = Input.OwnerUserId,
                     SourceId             = Input.SourceId,
                     Tags                 = Input.Tags,
-                    UpdatedBy            = currentUser.FullName
+                    UpdatedBy            = currentUser.FullName,
+
+                    // ✅ 019 — sent only when the stage actually changed.
+                    // A reason typed, then abandoned by switching back to
+                    // the original stage, should not be saved against a
+                    // move that never happened.
+                    LostReason   = Input.Stage != OriginalStage ? Input.LostReason : null,
+                    ReopenReason = Input.Stage != OriginalStage ? Input.ReopenReason : null
                 };
 
                 await _dealService.UpdateAsync(tenantId, id, updateDto);
@@ -222,11 +347,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 SuccessMessage = $"Deal '{Input.Title}' updated successfully!";
                 return RedirectToPage("/Pipeline/Detail", new { id });
             }
+            // ✅ 019 — IApiService turns the API's 400/403 { "error": ... }
+            // into this, carrying the guard's own wording. That sentence
+            // names the missing piece; the old generic message did not, and
+            // a rep could only guess.
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation("Deal {DealId} update refused: {Message}", id, ex.Message);
+
+                ModelState.AddModelError(string.Empty, ex.Message);
+                ErrorMessage = ex.Message;
+
+                await ReloadListsAsync(id);
+                return Page();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update deal {DealId}", id);
                 ErrorMessage = "Failed to update deal. Please try again.";
-                await OnGetAsync(id);
+                await ReloadListsAsync(id);
                 return Page();
             }
         }
@@ -254,7 +393,60 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        // ==================== HELPER METHODS ====================
+        // ==================== HELPERS ====================
+
+        /// <summary>
+        /// Re-fills the dropdowns and stage buttons after a failed post.
+        ///
+        /// Deliberately NOT a call to OnGetAsync: that overwrote Input with
+        /// the values from the database, so a rep whose save was refused
+        /// lost every edit they had just made and had to type them again.
+        /// This leaves Input — and whatever they wrote in the reason box —
+        /// exactly as they posted it.
+        /// </summary>
+        private async Task ReloadListsAsync(Guid id)
+        {
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+
+                var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
+                var countriesTask = _countryService.GetActiveAsync();
+                var stagesTask    = _stageService.GetAsync(activeOnly: false);
+                var rulesTask     = _ruleService.GetAsync();
+
+                await Task.WhenAll(salesTeamTask, countriesTask, stagesTask, rulesTask);
+
+                Countries = await countriesTask;
+                Stages    = await stagesTask;
+                Rules     = await rulesTask;
+
+                SalesTeam = (await salesTeamTask).Select(u => new SelectListItem
+                {
+                    Value    = u.Id.ToString(),
+                    Text     = u.FullName,
+                    Selected = u.Id.ToString() == Input.OwnerUserId
+                }).ToList();
+
+                try
+                {
+                    var deal = await _dealService.GetByIdAsync(tenantId, id);
+                    CreatedAt = deal.CreatedAtUtc.ToLocalTime();
+                    CreatedBy = deal.CreatedBy;
+
+                    var contact = await _contactService.GetByIdAsync(tenantId, deal.ContactId);
+                    ContactName = $"{contact.FirstName} {contact.LastName}".Trim();
+                }
+                catch
+                {
+                    ContactName = "Unknown Contact";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reload lists for deal {DealId}", id);
+            }
+        }
 
         public string GetCurrencySymbol(string currencyCode)
         {
@@ -279,17 +471,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             };
         }
 
-        public int GetStageProbability(string stage) => stage switch
-        {
-            "Discovery"     => 20,
-            "Qualification" => 30,
-            "Proposal"      => 40,
-            "Negotiation"   => 60,
-            "ClosedWon"     => 100,
-            "ClosedLost"    => 0,
-            _               => 20
-        };
-
-
+        // GetStageProbability(string) deleted. It hard-coded the six old
+        // stages and their percentages, so a tenant who set Negotiation to
+        // 75% still had this page snap the slider back to 60. Each stage
+        // now carries its own figure, rendered into the button.
     }
 }

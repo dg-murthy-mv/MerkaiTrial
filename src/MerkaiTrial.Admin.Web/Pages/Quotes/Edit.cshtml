@@ -6,7 +6,12 @@
     
     // ✅ Prepare items for JavaScript (safe serialization)
     var itemsForJson = Model.ExistingQuote?.Items ?? new List<MerkaiTrial.Application.DTOs.QuoteItemDto>();
+
+    // (017) productId → list price, so the approval hint can measure
+    // discounts against list price for existing lines too.
+    var listPrices = Model.Products.ToDictionary(p => p.Id.ToString(), p => p.ListPrice);
 }
+@* (017) Live approval hint + tenant tax default + read-only deal. See Edit.cshtml.cs header. *@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
@@ -75,6 +80,16 @@
         cursor: pointer;
     }
 
+    .approval-hint {
+        border-left: 4px solid #fd7e14;
+        background: #fff7ed;
+        border-radius: 8px;
+        padding: .85rem 1rem;
+        margin-top: 1.5rem;
+    }
+    .approval-hint ul { margin: .35rem 0 0; padding-left: 1.1rem; }
+    .line-over-limit td { background: #fff7ed !important; }
+
     .form-control.is-invalid {
         border-color: #dc3545 !important;
     }
@@ -121,7 +136,7 @@
         @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here.
            Model.ErrorMessage is [TempData]-backed, so rendering it here produced a second banner. *@
 
-        @if (!Model.IsEditable && !string.IsNullOrEmpty(Model.StatusWarning))
+        @if (!string.IsNullOrEmpty(Model.StatusWarning))
         {
             <div class="alert alert-warning">
                 <h5><i class="bi bi-exclamation-triangle me-2"></i>Quote Status: @Model.ExistingQuote?.Status</h5>
@@ -155,20 +170,15 @@
             <form method="post" id="editQuoteForm">
                 <input type="hidden" name="itemsJson" id="itemsJson" />
 
-                <!-- Deal Selection -->
+                <!-- Deal (read-only: a quote stays on the deal it was raised for) -->
                 <div class="mb-4">
-                    <label asp-for="Input.DealId" class="form-label">
-                        <i class="bi bi-briefcase me-2"></i>Deal <span class="text-danger">*</span>
+                    <label class="form-label">
+                        <i class="bi bi-briefcase me-2"></i>Deal
                     </label>
-                    <select asp-for="Input.DealId" class="form-select" id="dealSelect">
-                        <option value="">-- Select Deal --</option>
-                        @foreach (var deal in Model.AvailableDeals)
-                        {
-                            <option value="@deal.Value" selected="@deal.Selected">@deal.Text</option>
-                        }
-                    </select>
-                    <span asp-validation-for="Input.DealId" class="text-danger"></span>
-                    <small class="text-muted">You can change the deal for this quote</small>
+                    <input type="text" class="form-control" value="@Model.DealDisplay" readonly
+                           style="background-color: #e9ecef;" />
+                    <input type="hidden" asp-for="Input.DealId" />
+                    <small class="text-muted">A quote stays on the deal it was created for. To quote another deal, create a new quote from that deal.</small>
                 </div>
 
                 <!-- Dates & Currency -->
@@ -237,6 +247,12 @@
                     <p class="mt-2">No items added yet. Click "Add Custom Item" or "Add from Catalog" to get started.</p>
                 </div>
 
+                <div id="approvalHint" class="approval-hint" style="display:none;">
+                    <div class="fw-semibold"><i class="bi bi-shield-exclamation me-2" style="color:#fd7e14"></i><span id="approvalHintTitle">This quote will need approval</span></div>
+                    <ul id="approvalHintList"></ul>
+                    <div class="small text-muted mt-1" id="approvalHintFoot">You can still save it. Submit it for approval from the quote page.</div>
+                </div>
+
                 <!-- Totals -->
                 <div class="row">
                     <div class="col-md-6 offset-md-6">
@@ -299,7 +315,7 @@
                                     <div class="small">Price: @Model.FormatCurrency(product.ListPrice)</div>
                                 </div>
                                 <button type="button" class="btn btn-sm btn-primary"
-                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice)">
+                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture))">
                                     <i class="bi bi-plus"></i> Add
                                 </button>
                             </div>
@@ -322,7 +338,12 @@
     //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
     //    culture, so client and server now agree by construction.
     const fmtMoney = (x) => window.MerkaiCurrency.format(x);
-    const defaultTaxRate = 18;
+    // ✅ (017) was: const defaultTaxRate = 18;  — Indian GST for every tenant.
+    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // (017) { enabled, maxDiscountPercent, maxQuoteTotal, exempt } and productId → list price
+    const approvalRules = @Html.Raw(Model.ApprovalRulesJson);
+    const listPrices = @Html.Raw(JsonSerializer.Serialize(listPrices));
 
     // ✅ Safe tax normalize:
     // - if backend gives 0.18 => 18
@@ -362,6 +383,7 @@
                 id: nextId++,     // UI id (always number)
                 itemId: id,       // DB id (Guid or null)
                 productId: productId,
+                listPrice: productId ? (listPrices[String(productId).toLowerCase()] ?? null) : null,
                 name: name,
                 description: description,
                 quantity: quantity,
@@ -398,6 +420,7 @@
             id: nextId++,
             itemId: null,
             productId: productId,
+            listPrice: parseFloat(price) || 0,   // (017) discount is measured against this
             name: name,
             description: description || '',
             quantity: 1,
@@ -498,6 +521,61 @@
         document.getElementById('discountDisplay').textContent = fmtMoney(discount);
         document.getElementById('taxDisplay').textContent = fmtMoney(tax);
         document.getElementById('grandTotalDisplay').textContent = fmtMoney(grandTotal);
+
+        updateApprovalHint(grandTotal);
+    }
+
+    // ── (017) Approval hint — same maths as QuoteApprovalRules ──────
+    function lineDiscountPct(item) {
+        const qty  = parseFloat(item.quantity) || 0;
+        const unit = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.lineDiscount) || 0;
+        const refUnit = (item.listPrice && item.listPrice > 0) ? item.listPrice : unit;
+        const reference = refUnit * qty;
+        if (reference <= 0) return 0;
+        const pct = (reference - (unit * qty - disc)) / reference * 100;
+        return pct > 0 ? pct : 0;
+    }
+
+    function updateApprovalHint(grandTotal) {
+        const box = document.getElementById('approvalHint');
+        const list = document.getElementById('approvalHintList');
+        if (!box || !list) return;
+
+        const reasons = [];
+        const overIds = new Set();
+
+        if (approvalRules && approvalRules.enabled) {
+            const limit = approvalRules.maxDiscountPercent;
+            if (limit !== null && limit !== undefined) {
+                lineItems.forEach(item => {
+                    const pct = lineDiscountPct(item);
+                    if (pct > limit + 0.0001) {
+                        overIds.add(item.id);
+                        reasons.push(`"${escapeHtml(item.name || 'Unnamed item')}" is ${pct.toFixed(1)}% below list price (limit ${limit}%).`);
+                    }
+                });
+            }
+            const maxTotal = approvalRules.maxQuoteTotal;
+            if (maxTotal !== null && maxTotal !== undefined && grandTotal > maxTotal) {
+                reasons.push(`Total ${fmtMoney(grandTotal)} is above the ${fmtMoney(maxTotal)} limit.`);
+            }
+        }
+
+        lineItems.forEach(item => {
+            const row = document.getElementById(`name-${item.id}`)?.closest('tr');
+            if (row) row.classList.toggle('line-over-limit', overIds.has(item.id));
+        });
+
+        box.style.display = reasons.length > 0 ? 'block' : 'none';
+        list.innerHTML = reasons.map(r => `<li>${r}</li>`).join('');
+
+        const exempt = approvalRules && approvalRules.exempt;
+        document.getElementById('approvalHintTitle').textContent =
+            exempt ? 'Over your workspace\'s limits' : 'This quote will need approval';
+        document.getElementById('approvalHintFoot').textContent = exempt
+            ? "You're a workspace admin, so you can still send it."
+            : 'You can still save it. Submit it for approval from the quote page.';
     }
 
     // ==================== RENDER UI ====================

@@ -1,6 +1,12 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Quotes/Index.cshtml.cs
-// FIXES:
+// CHANGES (017 — quote approvals)
+//   ✅ "Awaiting approval" and "Approved" columns on the board.
+//   ✅ Header shows "Approvals (n)" — requests waiting for YOUR decision —
+//      linking to /Quotes/Approvals; admins also get "Approval rules".
+//   ✅ Status / delete refusals show the API's message.
+//
+// EARLIER FIXES:
 //   ✅ ICurrentTenantService injected — tenant currency/symbol/dates
 //   ✅ FormatDate() / FormatCurrency() helpers for views
 //   ✅ TenantCurrencySymbol / TenantCurrencyCode exposed as properties
@@ -22,6 +28,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly IQuoteService            _quoteService;
         private readonly ICurrentUserService      _currentUserService;
         private readonly ICurrentTenantService    _tenantService;
+        private readonly IQuoteApprovalService    _approvals;
         private readonly ILogger<IndexModel>      _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -30,6 +37,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             IQuoteService         quoteService,
             ICurrentUserService   currentUserService,
             ICurrentTenantService tenantService,
+            IQuoteApprovalService approvals,
             IAuthorizationService authorizationService,
             ILogger<IndexModel>   logger)
             : base(authorizationService, currentUserService, logger)
@@ -37,12 +45,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _quoteService       = quoteService;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
+            _approvals          = approvals;
             _logger             = logger;
         }
 
         // ── Data ──────────────────────────────────────────────────────
         public List<QuoteListItem>  Quotes     { get; set; } = new();
         public QuoteStatisticsDto   Statistics { get; set; } = new();
+
+        /// <summary>Approval requests waiting for the current user's decision.</summary>
+        public int PendingForMeCount { get; private set; }
+
+        /// <summary>Workspace admin — sees the "Approval rules" link.</summary>
+        public bool IsWorkspaceAdmin { get; private set; }
 
         // ── Tenant context (use in view, never hardcode ₹ / $ / INR) ─
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
@@ -77,6 +92,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 Quotes = await _quoteService.GetAllAsync(
                     tenantId, null, StatusFilter, FromDate, ToDate);
 
+                // (017) Approvals badge — never blocks the page.
+                try
+                {
+                    PendingForMeCount = (await _approvals.GetPendingAsync()).Count;
+                    IsWorkspaceAdmin = (await _currentUserService.GetCurrentUserAsync()).IsTenantAdmin;
+                }
+                catch (Exception apEx)
+                {
+                    _logger.LogWarning(apEx, "Could not load pending approvals count");
+                }
+
                 return Page();
             }
             catch (Exception ex)
@@ -100,6 +126,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 SuccessMessage = "Quote deleted successfully!";
                 return RedirectToPage();
             }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+                return RedirectToPage();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete quote {QuoteId}", quoteId);
@@ -119,6 +150,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 await _quoteService.UpdateStatusAsync(tenantId, quoteId, status);
                 SuccessMessage = $"Quote status updated to {status}!";
+                return RedirectToPage();
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
                 return RedirectToPage();
             }
             catch (Exception ex)
@@ -159,6 +195,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public string GetStatusBadgeClass(string status) => status switch
         {
             "Draft"    => "bg-secondary",
+            "PendingApproval" => "bg-warning text-dark",
+            "Approved" => "bg-success-subtle text-success-emphasis border border-success",
             "Sent"     => "bg-primary",
             "Viewed"   => "bg-info",
             "Accepted" => "bg-success",

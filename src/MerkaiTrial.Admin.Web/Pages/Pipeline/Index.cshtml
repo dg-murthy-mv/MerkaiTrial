@@ -7,7 +7,12 @@
     ViewData["Title"] = "Pipeline";
 }
 @* (017) Quota bar and New Deal limit use Model.DealQuotaUsed (whole
-   workspace), not Model.TotalDeals (deals this user can see). *@
+   workspace), not Model.TotalDeals (deals this user can see).
+
+   (019) Dropping a card onto a stage that wants a reason now opens a
+   small dialog BEFORE posting, and a refused move puts the card back
+   where it came from instead of reloading the whole board and leaving
+   the rep to work out what happened. *@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
@@ -104,6 +109,20 @@
     .column-count { background: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; font-weight: 600; }
     .column-value { font-size: 0.875rem; color: #6c757d; margin-top: 0.25rem; }
 
+    /* ✅ 019 — a stage with entry requirements says so in its header, so a
+       rep learns the rule from the board rather than from a refusal. */
+    .column-gate {
+        font-size: 0.7rem;
+        color: #6c757d;
+        margin-top: 0.15rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .deals-container { min-height: 120px; border-radius: 8px; transition: background-color 0.15s; }
+    .deals-container.drag-over { background-color: rgba(102,126,234,0.08); outline: 2px dashed rgba(102,126,234,0.45); }
+
     .deal-card {
         background: white;
         border-radius: 8px;
@@ -120,6 +139,15 @@
 
         .deal-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .deal-card.dragging { opacity: 0.5; }
+
+        /* Briefly marks the card that bounced back, so the rep's eye finds
+           it again after a refused drop. */
+        .deal-card.move-refused { animation: refuseFlash 1.4s ease-out; }
+
+    @@keyframes refuseFlash {
+        0%   { box-shadow: 0 0 0 3px rgba(220,53,69,0.55); }
+        100% { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    }
 
     .deal-title   { font-weight: 600; color: #212529; margin-bottom: 0.5rem; }
     .deal-company { font-size: 0.875rem; color: #6c757d; margin-bottom: 0.5rem; }
@@ -166,6 +194,10 @@
 
     .quote-alert.alert-success { background-color: #d1f2d1; border-color: #28a745; color: #155724; }
     .quote-alert.alert-info    { background-color: #d1ecf1; border-color: #17a2b8; color: #0c5460; }
+
+    /* ✅ 019 — a refused move explains itself here rather than in a
+       browser alert() the rep dismisses without reading. */
+    #moveRefusedBanner { position: sticky; top: 0.5rem; z-index: 1030; }
 </style>
 
 <!-- Page Header -->
@@ -203,6 +235,13 @@
 <div class="container-fluid">
 
     @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+
+    @* ✅ 019 — where a refused drag explains itself. Hidden until needed. *@
+    <div id="moveRefusedBanner" class="alert alert-warning alert-dismissible d-none" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="moveRefusedText"></span>
+        <button type="button" class="btn-close" onclick="hideMoveRefused()"></button>
+    </div>
 
     <!-- Stats Row -->
     <div class="row g-3 mb-3">
@@ -314,6 +353,13 @@
                 <i class="bi bi-table me-1"></i>Table
             </button>
         </div>
+
+        @if (Model.Rules is { ForwardOnly: true })
+        {
+            <small class="text-muted">
+                <i class="bi bi-arrow-right-circle me-1"></i>This workspace moves deals forward only
+            </small>
+        }
     </div>
 
     <!-- Content Area -->
@@ -341,7 +387,16 @@
 
                 var dealsHere = Model.GetDealsByStage(stage.Key);
 
-                <div class="kanban-column @columnClass" data-stage="@stage.Key">
+                // 019 — what this stage asks of a deal, straight from the
+                // tenant's rules. The board uses it to decide whether to
+                // put the reason box up before posting.
+                var req = Model.Rules?.Stages.FirstOrDefault(s => s.Key == stage.Key);
+
+                <div class="kanban-column @columnClass"
+                     data-stage="@stage.Key"
+                     data-stage-name="@stage.Name"
+                     data-category="@((int)stage.Category)"
+                     data-needs-lost-reason="@((req?.RequiresLostReason == true && isLost).ToString().ToLowerInvariant())">
                     <div class="column-header">
                         <div>
                             <div class="column-title">
@@ -350,6 +405,22 @@
                             <div class="column-value">
                                 @Model.FormatCurrency(Model.GetStageValue(stage.Key), 0)
                             </div>
+                            @if (req is not null)
+                            {
+                                var gates = new List<string>();
+                                if (req.RequiresAcceptedQuote) { gates.Add("accepted quote"); }
+                                else if (req.RequiresQuote) { gates.Add("a quote"); }
+                                if (req.RequiresValue) { gates.Add("a value"); }
+                                if (req.RequiresCloseDate) { gates.Add("a close date"); }
+                                if (req.RequiresLostReason && isLost) { gates.Add("a reason"); }
+
+                                if (gates.Count > 0)
+                                {
+                                    <div class="column-gate" title="A deal needs @string.Join(", ", gates) before it can enter this stage.">
+                                        <i class="bi bi-shield-check"></i>needs @string.Join(", ", gates)
+                                    </div>
+                                }
+                            }
                         </div>
                         <span class="column-count">@dealsHere.Count</span>
                     </div>
@@ -364,7 +435,8 @@
                             <div class="deal-card @cardClass"
                                  draggable="@(canDrag ? "true" : "false")"
                                  @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                                 data-deal-id="@deal.Id">
+                                 data-deal-id="@deal.Id"
+                                 data-deal-title="@deal.Title">
 
                                 @* Quote alerts only matter on open deals —
                                    a won deal's quote was obviously accepted. *@
@@ -448,19 +520,13 @@
                             <td class="fw-semibold">@deal.Title</td>
                             <td>@deal.CompanyName</td>
                             <td>
-                                @{
-                                    var stageBadge = deal.Stage switch
-                                    {
-                                        "Discovery"    => ("bg-secondary", "Discovery"),
-                                        "Qualification"=> ("bg-info",      "Qualification"),
-                                        "Proposal"     => ("bg-primary",   "Proposal"),
-                                        "Negotiation"  => ("bg-warning text-dark", "Negotiation"),
-                                        "ClosedWon"    => ("bg-success",   "Won"),
-                                        "ClosedLost"   => ("bg-danger",    "Lost"),
-                                        _              => ("bg-secondary", deal.Stage)
-                                    };
-                                }
-                                <span class="badge @stageBadge.Item1">@stageBadge.Item2</span>
+                                @* ✅ 019 — resolved through the tenant's own stages. This
+                                   used to switch on the literal keys "Discovery",
+                                   "ClosedWon" and so on, so a client who renamed a stage
+                                   saw their name on the board and ours in the table. *@
+                                <span class="badge @Model.StageBadgeClass(deal.Stage)">
+                                    @Model.StageName(deal.Stage)
+                                </span>
                             </td>
                             <td class="fw-semibold">@Model.FormatCurrency(deal.ExpectedValue, 0)</td>
                             <td>@deal.Probability%</td>
@@ -473,10 +539,10 @@
                                        class="btn btn-primary" title="View">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    @* ✅ Edit — only if not closed AND has update permission *@
-                                    @if (Model.CanUpdate &&
-                                         deal.Stage != "ClosedWon" &&
-                                         deal.Stage != "ClosedLost")
+                                    @* ✅ Edit — only if not closed AND has update permission.
+                                       Category-driven, so a tenant's own "Contract Signed"
+                                       counts as closed just like "ClosedWon" did. *@
+                                    @if (Model.CanUpdate && !Model.IsClosedStage(deal.Stage))
                                     {
                                         <a asp-page="/Pipeline/Edit" asp-route-id="@deal.Id"
                                            class="btn btn-outline-primary" title="Edit">
@@ -494,9 +560,48 @@
     </div>
 </div>
 
+@* ===================================================================
+   019 — the reason dialog. One modal serves both cases: a deal being
+   marked lost, and a closed deal being reopened. They never happen at
+   once, and two nearly identical modals would drift apart.
+   =================================================================== *@
+<div class="modal fade" id="moveReasonModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="moveReasonTitle">Why?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2" id="moveReasonHelp"></p>
+                <textarea id="moveReasonText" class="form-control" rows="3" maxlength="1000"
+                          placeholder="A sentence is enough."></textarea>
+                <div class="invalid-feedback d-block text-danger small d-none" id="moveReasonError">
+                    Please write a reason.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="moveReasonConfirm">
+                    <i class="bi bi-check-lg me-1"></i>Save &amp; move
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form id="stageUpdateForm" method="post" style="display:none;">
+    @Html.AntiForgeryToken()
+</form>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+    // Whether reopening a closed deal needs a written reason. Rendered from
+    // the tenant's saved rules. The SERVER is the authority — this only
+    // decides whether we ask before posting or let the server explain.
+    const REOPEN_NEEDS_REASON = @(Model.ReopenNeedsReason ? "true" : "false");
+
     // View Switching
     function switchView(view) {
         const boardView = document.getElementById('boardView');
@@ -516,18 +621,30 @@
             tableBtn.classList.add('active');
         }
     }
-</script>
 
-<form id="stageUpdateForm" method="post" style="display:none;">
-    @Html.AntiForgeryToken()
-</form>
+    // ── refusal banner ────────────────────────────────────────────────
+    function showMoveRefused(message) {
+        const banner = document.getElementById('moveRefusedBanner');
+        document.getElementById('moveRefusedText').textContent = message;
+        banner.classList.remove('d-none');
+        banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    function hideMoveRefused() {
+        document.getElementById('moveRefusedBanner').classList.add('d-none');
+    }
+</script>
 
 <script>
     let draggedElement = null;
+    let sourceContainer = null;   // where the card came from, so a refused
+                                  // move can put it back without a reload
 
     function drag(event) {
         draggedElement = event.target.closest('[data-deal-id]');
-        if (draggedElement) draggedElement.classList.add('dragging');
+        if (draggedElement) {
+            sourceContainer = draggedElement.closest('.deals-container');
+            draggedElement.classList.add('dragging');
+        }
     }
 
     function allowDrop(event) {
@@ -539,19 +656,63 @@
     function drop(event) {
         event.preventDefault();
         const container = event.target.closest('.deals-container');
+        if (!container || !draggedElement) return;
 
-        if (container && draggedElement) {
-            container.classList.remove('drag-over');
-            container.appendChild(draggedElement);
+        container.classList.remove('drag-over');
+
+        const targetColumn = container.closest('.kanban-column');
+        const fromColumn   = sourceContainer ? sourceContainer.closest('.kanban-column') : null;
+
+        // Dropped back where it started — nothing to do, and posting would
+        // write a Stage → same Stage history row.
+        if (fromColumn && targetColumn && fromColumn === targetColumn) {
             draggedElement.classList.remove('dragging');
-
-            const newStage = container.closest('.kanban-column').dataset.stage;
-            const dealId   = draggedElement.dataset.dealId;
-
-            if (!dealId) { console.error('drag: no dealId'); location.reload(); return; }
-
-            updateDealStage(dealId, newStage);
+            return;
         }
+
+        const card = draggedElement;
+        const from = sourceContainer;
+
+        container.appendChild(card);
+        card.classList.remove('dragging');
+
+        const newStage = targetColumn.dataset.stage;
+        const dealId   = card.dataset.dealId;
+
+        if (!dealId) { console.error('drag: no dealId'); location.reload(); return; }
+
+        hideMoveRefused();
+
+        // ── does this move need a reason? ─────────────────────────────
+        // Category: 0 Open, 1 Won, 2 Lost. Leaving a Won or Lost column is
+        // a reopen, whatever the stage is called.
+        const leavingClosed = fromColumn && fromColumn.dataset.category !== '0';
+        const needsLost     = targetColumn.dataset.needsLostReason === 'true';
+
+        if (leavingClosed && REOPEN_NEEDS_REASON) {
+            askForReason({
+                title: 'Reopen this deal?',
+                help: `"${card.dataset.dealTitle}" is currently in ${fromColumn.dataset.stageName}. `
+                    + `Reopening it changes which period its value falls in, so the reason is kept on `
+                    + `the deal's stage history.`,
+                onConfirm: (reason) => submitMove(card, from, dealId, newStage, { reopenReason: reason }),
+                onCancel:  () => revertCard(card, from)
+            });
+            return;
+        }
+
+        if (needsLost) {
+            askForReason({
+                title: `Mark as ${targetColumn.dataset.stageName}`,
+                help: `Why was "${card.dataset.dealTitle}" lost? This shows up in the pipeline report, `
+                    + `so a few honest words are worth more than "no reason given".`,
+                onConfirm: (reason) => submitMove(card, from, dealId, newStage, { lostReason: reason }),
+                onCancel:  () => revertCard(card, from)
+            });
+            return;
+        }
+
+        submitMove(card, from, dealId, newStage, {});
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -585,7 +746,58 @@
         });
     });
 
-    async function updateDealStage(dealId, newStage) {
+    // ── the reason dialog ─────────────────────────────────────────────
+    let reasonModal = null;
+    let reasonHandlers = { onConfirm: null, onCancel: null };
+    let reasonSettled = false;
+
+    function askForReason({ title, help, onConfirm, onCancel }) {
+        const el = document.getElementById('moveReasonModal');
+
+        document.getElementById('moveReasonTitle').textContent = title;
+        document.getElementById('moveReasonHelp').textContent = help;
+        document.getElementById('moveReasonText').value = '';
+        document.getElementById('moveReasonError').classList.add('d-none');
+
+        reasonHandlers = { onConfirm, onCancel };
+        reasonSettled = false;
+
+        reasonModal = reasonModal || new bootstrap.Modal(el);
+        reasonModal.show();
+        setTimeout(() => document.getElementById('moveReasonText').focus(), 250);
+    }
+
+    document.getElementById('moveReasonConfirm').addEventListener('click', function () {
+        const text = document.getElementById('moveReasonText').value.trim();
+
+        if (!text) {
+            document.getElementById('moveReasonError').classList.remove('d-none');
+            return;
+        }
+
+        reasonSettled = true;
+        reasonModal.hide();
+        if (reasonHandlers.onConfirm) reasonHandlers.onConfirm(text);
+    });
+
+    // Cancel, Escape and the X all land here. Without this the card would
+    // sit in its new column having never been saved, and the next refresh
+    // would silently undo what the rep thought they had done.
+    document.getElementById('moveReasonModal').addEventListener('hidden.bs.modal', function () {
+        if (reasonSettled) return;
+        if (reasonHandlers.onCancel) reasonHandlers.onCancel();
+    });
+
+    // ── posting the move ──────────────────────────────────────────────
+    function revertCard(card, fromContainer) {
+        if (card && fromContainer) {
+            fromContainer.appendChild(card);
+            card.classList.add('move-refused');
+            setTimeout(() => card.classList.remove('move-refused'), 1500);
+        }
+    }
+
+    async function submitMove(card, fromContainer, dealId, newStage, reasons) {
         try {
             const token = document.querySelector('#stageUpdateForm input[name="__RequestVerificationToken"]')?.value;
             if (!token) { console.error('Antiforgery token not found'); location.reload(); return; }
@@ -593,6 +805,8 @@
             const formData = new FormData();
             formData.append('dealId', dealId);
             formData.append('stage', newStage);
+            if (reasons.lostReason)   formData.append('lostReason', reasons.lostReason);
+            if (reasons.reopenReason) formData.append('reopenReason', reasons.reopenReason);
 
             const response = await fetch('?handler=UpdateStage', {
                 method: 'POST',
@@ -601,23 +815,26 @@
             });
 
             if (response.ok) {
+                // Reload so the column totals, win rate and weighted value
+                // all catch up with the move.
                 location.reload();
-            } else {
-                const text = await response.text();
-                console.error('Stage update failed:', response.status, text);
-                alert('Failed to update deal stage. Please try again.');
-                location.reload();
+                return;
             }
+
+            // A refusal is an ANSWER, not a failure. Put the card back and
+            // show what the server said — it is written for the rep.
+            let message = 'That move was not allowed.';
+            try {
+                const body = await response.json();
+                if (body && body.error) message = body.error;
+            } catch { /* non-JSON error body — keep the fallback */ }
+
+            revertCard(card, fromContainer);
+            showMoveRefused(message);
         } catch (error) {
             console.error('Error updating stage:', error);
-            alert('Failed to update deal stage. Please try again.');
-            location.reload();
-        }
-    }
-
-    function moveDealToNegotiation(dealId, dealTitle) {
-        if (confirm(`Move "${dealTitle}" to Negotiation stage?`)) {
-            updateDealStage(dealId, 'Negotiation');
+            revertCard(card, fromContainer);
+            showMoveRefused('Something went wrong moving that deal. Please try again.');
         }
     }
 </script>

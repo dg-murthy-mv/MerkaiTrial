@@ -1,0 +1,237 @@
+@* =====================================================================
+   _QuoteApprovalPanel.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/_QuoteApprovalPanel.cshtml
+
+   NEW FILE (017). The approval box on the quote Detail page. Add ONE line
+   to Pages/Quotes/Detail.cshtml, just above the line items card (or
+   wherever the status buttons are):
+
+       <partial name="_QuoteApprovalPanel" model="Model" />
+
+   It draws nothing when there's nothing to say (rules off, quote within
+   limits and never submitted). Forms post to the Detail page's handlers
+   (SubmitForApproval / Approve / RequestChanges / Recall).
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
+@{
+    var a = Model.Approval;
+    var status = a?.QuoteStatus ?? Model.Quote?.Status ?? "";
+    var isPreSend = status is "Draft" or "Revised";
+    var show = a != null && (
+        a.Pending != null ||
+        status == "Approved" ||
+        (isPreSend && a.RequiresApproval) ||
+        a.History.Any());
+}
+
+@if (show && a != null)
+{
+    <style>
+        .qa-panel { background:#fff; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.08); padding:1.25rem 1.5rem; margin-bottom:1.5rem; border-left:5px solid #6c757d; }
+        .qa-panel.qa-needs   { border-left-color:#fd7e14; }
+        .qa-panel.qa-pending { border-left-color:#ffc107; }
+        .qa-panel.qa-ok      { border-left-color:#198754; }
+        .qa-title { font-weight:600; font-size:1.05rem; margin-bottom:.35rem; }
+        .qa-reasons { margin:.5rem 0 0; padding-left:1.1rem; }
+        .qa-reasons li { margin-bottom:.15rem; }
+        .qa-meta { color:#6c757d; font-size:.875rem; }
+        .qa-quote { background:#f8f9fa; border-radius:8px; padding:.5rem .75rem; margin-top:.5rem; font-size:.9rem; white-space:pre-line; }
+        .qa-history { font-size:.875rem; }
+        .qa-history .qa-row { padding:.5rem 0; border-top:1px solid #eef0f2; }
+        .qa-history .qa-row:first-child { border-top:0; }
+    </style>
+
+    @* ── 1. PENDING ───────────────────────────────────────────────── *@
+    @if (a.Pending != null)
+    {
+        var p = a.Pending;
+        <div class="qa-panel qa-pending">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                    <div class="qa-title"><i class="bi bi-hourglass-split me-2 text-warning"></i>Waiting for approval</div>
+                    <div class="qa-meta">
+                        Asked by <strong>@p.RequestedByName</strong> on @Model.FormatDateTime(p.RequestedAtUtc)
+                        @if (a.ApproverNames.Any())
+                        {
+                            <span> · can approve: @string.Join(", ", a.ApproverNames)</span>
+                        }
+                    </div>
+                </div>
+                <span class="badge bg-warning text-dark fs-6">Pending approval</span>
+            </div>
+
+            @if (p.Reasons.Any())
+            {
+                <ul class="qa-reasons">
+                    @foreach (var r in p.Reasons) { <li>@r</li> }
+                </ul>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(p.RequestComment))
+            {
+                <div class="qa-quote"><i class="bi bi-chat-left-text me-1"></i>@p.RequestComment</div>
+            }
+
+            @if (a.CanApprove)
+            {
+                <form method="post" class="mt-3" id="qaDecideForm">
+                    <label class="form-label small text-muted mb-1" for="qaComment">
+                        Comment <span class="text-muted">(required to send it back)</span>
+                    </label>
+                    <textarea class="form-control mb-2" id="qaComment" name="comment" rows="2" maxlength="1000"
+                              placeholder="e.g. OK at 15% because they're signing for 2 years — or: max 10%, please revise"></textarea>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-success"
+                                asp-page-handler="Approve" asp-route-id="@Model.Id">
+                            <i class="bi bi-check2-circle me-1"></i>Approve
+                        </button>
+                        <button type="submit" class="btn btn-outline-danger"
+                                asp-page-handler="RequestChanges" asp-route-id="@Model.Id"
+                                onclick="return qaNeedComment();">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Request changes
+                        </button>
+                    </div>
+                </form>
+                <script>
+                    function qaNeedComment() {
+                        var c = document.getElementById('qaComment');
+                        if (!c.value.trim()) {
+                            c.classList.add('is-invalid');
+                            c.focus();
+                            return false;
+                        }
+                        return true;
+                    }
+                </script>
+            }
+
+            @if (a.CanRecall)
+            {
+                <form method="post" class="mt-3" asp-page-handler="Recall" asp-route-id="@Model.Id"
+                      onsubmit="return confirm('Recall this approval request? The quote goes back to draft.');">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i>Recall request
+                    </button>
+                </form>
+            }
+        </div>
+    }
+    else if (status == "Approved")
+    {
+        @* ── 2. APPROVED ── *@
+        var last = a.History.FirstOrDefault(h => h.Status == "Approved");
+        <div class="qa-panel qa-ok">
+            <div class="qa-title"><i class="bi bi-patch-check-fill me-2 text-success"></i>Approved — ready to send</div>
+            @if (last != null)
+            {
+                <div class="qa-meta">
+                    Approved by <strong>@last.DecidedByName</strong>
+                    @if (last.DecidedAtUtc.HasValue) { <span>on @Model.FormatDateTime(last.DecidedAtUtc.Value)</span> }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(last.DecisionComment))
+                {
+                    <div class="qa-quote"><i class="bi bi-chat-left-text me-1"></i>@last.DecisionComment</div>
+                }
+            }
+            <div class="qa-meta mt-2">Editing the quote now sends it back to draft — it may need approval again.</div>
+        </div>
+    }
+    else if (isPreSend && a.RequiresApproval)
+    {
+        @* ── 3. NEEDS APPROVAL (draft / revised, rules broken) ── *@
+        var sentBack = a.History.FirstOrDefault();
+        <div class="qa-panel qa-needs">
+            <div class="qa-title">
+                <i class="bi bi-shield-exclamation me-2" style="color:#fd7e14"></i>
+                @(a.IsExempt ? "Over your workspace's limits" : "This quote needs approval before it can be sent")
+            </div>
+            <ul class="qa-reasons">
+                @foreach (var r in a.Reasons) { <li>@r</li> }
+            </ul>
+
+            @if (sentBack != null && sentBack.Status == "ChangesRequested")
+            {
+                <div class="qa-quote mt-2">
+                    <strong>@sentBack.DecidedByName asked for changes:</strong>
+                    @sentBack.DecisionComment
+                </div>
+            }
+
+            @if (a.IsExempt)
+            {
+                <div class="qa-meta mt-2">You're a workspace admin, so you can send it without approval.</div>
+            }
+            else if (a.CanSubmit)
+            {
+                <form method="post" class="mt-3" asp-page-handler="SubmitForApproval" asp-route-id="@Model.Id">
+                    <label class="form-label small text-muted mb-1" for="qaSubmitComment">Note for the approver (optional)</label>
+                    <textarea class="form-control mb-2" id="qaSubmitComment" name="comment" rows="2" maxlength="1000"
+                              placeholder="Why this price? e.g. competitor offered 12%, 3-year commitment"></textarea>
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-send-check me-1"></i>Submit for approval
+                        </button>
+                        @if (a.ApproverNames.Any())
+                        {
+                            <span class="qa-meta">Goes to: @string.Join(", ", a.ApproverNames)</span>
+                        }
+                    </div>
+                </form>
+            }
+            else if (!a.ApproverNames.Any())
+            {
+                <div class="qa-meta mt-2">
+                    Nobody is set up to approve this quote. Ask your workspace admin to set a manager for the
+                    deal owner's team (Settings → Record visibility → Manages).
+                </div>
+            }
+            else
+            {
+                <div class="qa-meta mt-2">Only someone who can edit this quote can send it for approval.</div>
+            }
+        </div>
+    }
+
+    @* ── HISTORY (always, when there is any) ─────────────────────── *@
+    @if (a.History.Any())
+    {
+        <div class="qa-panel">
+            <a class="qa-title text-decoration-none text-body d-block" data-bs-toggle="collapse" href="#qaHistory" role="button" aria-expanded="false">
+                <i class="bi bi-clock-history me-2"></i>Approval history
+                <span class="badge bg-light text-dark ms-1">@a.History.Count</span>
+                <i class="bi bi-chevron-down float-end"></i>
+            </a>
+            <div class="collapse" id="qaHistory">
+                <div class="qa-history mt-2">
+                    @foreach (var h in a.History)
+                    {
+                        var (label, cls) = h.Status switch
+                        {
+                            "Approved"         => ("Approved", "bg-success"),
+                            "ChangesRequested" => ("Changes requested", "bg-danger"),
+                            "Recalled"         => ("Recalled", "bg-secondary"),
+                            "Superseded"       => ("Approved, then edited", "bg-light text-dark border"),
+                            _                  => (h.Status, "bg-secondary")
+                        };
+                        <div class="qa-row">
+                            <span class="badge @cls me-2">@label</span>
+                            Asked by <strong>@h.RequestedByName</strong> on @Model.FormatDateTime(h.RequestedAtUtc)
+                            @if (!string.IsNullOrWhiteSpace(h.DecidedByName))
+                            {
+                                <span> · @h.DecidedByName</span>
+                                @if (h.DecidedAtUtc.HasValue) { <span> on @Model.FormatDateTime(h.DecidedAtUtc.Value)</span> }
+                            }
+                            <div class="qa-meta">
+                                Total @Model.FormatCurrency(h.QuoteTotal) · deepest discount @h.MaxLineDiscountPercent.ToString("0.##")%
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(h.DecisionComment))
+                            {
+                                <div class="qa-quote">@h.DecisionComment</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}

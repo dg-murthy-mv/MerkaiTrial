@@ -1,3 +1,25 @@
+// =====================================================================
+// QuotesController.cs
+// Location: MerkaiTrial.WebApi/Controllers/QuotesController.cs
+//
+// CHANGES (017 — approvals + record visibility)
+//   ✅ Every by-id endpoint checks the quote is visible to the caller —
+//      quotes follow their deal (Own / Team / All). Outside scope = 404,
+//      exactly like another tenant's quote.
+//        read  (GET, PDF, attachments list) → CanReadQuoteAsync — also
+//              lets an approver open a quote they were asked to approve
+//        write (PUT, status, DELETE, upload/delete attachment) →
+//              CanWriteQuoteAsync
+//   ✅ Delete attachment checks the attachment hangs on a quote the caller
+//      can change (looked up from the attachment, not the URL). Before,
+//      any attachment id in the tenant could be deleted this way.
+//   ✅ Refusals (InvalidOperationException) → 400 with the message, so the
+//      page can show "This quote needs approval before it can be sent…"
+//      instead of "Failed to update quote status". Create / Update /
+//      Delete / Status all do this now.
+//   Public token endpoints are unchanged.
+// =====================================================================
+
 using MerkaiTrial.Application.Commands.Quotes;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
@@ -23,6 +45,7 @@ public class QuotesController : ControllerBase
     private readonly DeleteQuoteAttachmentHandler  _deleteAttachmentHandler;
     private readonly GenerateQuotePdfHandler _generatePdf;
     private readonly GetQuoteByTokenHandler _getByTokenHandler;
+    private readonly QuoteApprovalEngine           _access;
     private readonly ICurrentUserService           _currentUserService;
     private readonly ILogger<QuotesController>     _logger;
 
@@ -39,6 +62,7 @@ public class QuotesController : ControllerBase
         DeleteQuoteAttachmentHandler  deleteAttachmentHandler,
          GenerateQuotePdfHandler      generatePdf,
             GetQuoteByTokenHandler       getByTokenHandler,
+        QuoteApprovalEngine           access,
         ICurrentUserService            currentUserService,
         ILogger<QuotesController>     logger)
     {
@@ -53,6 +77,7 @@ public class QuotesController : ControllerBase
         _uploadAttachmentHandler   = uploadAttachmentHandler;
         _deleteAttachmentHandler   = deleteAttachmentHandler;
         _getByTokenHandler         = getByTokenHandler;
+        _access                    = access;
         _generatePdf = generatePdf;
         _currentUserService        = currentUserService;
         _logger                    = logger;
@@ -89,6 +114,9 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            if (!await _access.CanReadQuoteAsync(tenantId, id))
+                return NotFound(new { error = $"Quote {id} not found" });
+
             var quote = await _getQuoteByIdHandler.Handle(tenantId, id);
             return Ok(quote);
         }
@@ -116,6 +144,14 @@ public class QuotesController : ControllerBase
             return CreatedAtAction(nameof(GetById),
                 new { id = quote.Id, tenantId = dto.TenantId }, quote);
         }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new { error = "Deal not found" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to create quote");
@@ -131,12 +167,19 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            if (!await _access.CanWriteQuoteAsync(tenantId, id))
+                return NotFound(new { error = $"Quote {id} not found" });
+
             await _updateQuoteHandler.Handle(tenantId, id, dto);
             return Ok(new { message = "Quote updated successfully" });
         }
         catch (KeyNotFoundException)
         {
             return NotFound(new { error = $"Quote {id} not found" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
@@ -153,12 +196,19 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            if (!await _access.CanWriteQuoteAsync(tenantId, id))
+                return NotFound(new { error = $"Quote {id} not found" });
+
             await _deleteQuoteHandler.Handle(tenantId, id);
             return Ok(new { message = "Quote deleted successfully" });
         }
         catch (KeyNotFoundException)
         {
             return NotFound(new { error = $"Quote {id} not found" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
@@ -175,6 +225,9 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            if (!await _access.CanWriteQuoteAsync(tenantId, id))
+                return NotFound(new { error = $"Quote {id} not found" });
+
             await _updateQuoteStatusHandler.Handle(tenantId, id, dto);
             return Ok(new { message = "Quote status updated successfully" });
         }
@@ -183,6 +236,10 @@ public class QuotesController : ControllerBase
             return NotFound(new { error = $"Quote {id} not found" });
         }
         catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
@@ -221,6 +278,10 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            // Not visible → empty list, same as a quote with no files.
+            if (!await _access.CanReadQuoteAsync(tenantId, id))
+                return Ok(new List<AttachmentDto>());
+
             var result = await _getAttachmentsHandler.HandleAsync(tenantId, id);
             return Ok(result);
         }
@@ -245,6 +306,9 @@ public class QuotesController : ControllerBase
         {
             if (file == null || file.Length == 0)
                 return BadRequest(new { error = "No file provided" });
+
+            if (!await _access.CanWriteQuoteAsync(tenantId, id, ct))
+                return NotFound(new { error = $"Quote {id} not found" });
 
             var result = await _uploadAttachmentHandler.HandleAsync(tenantId, id, file, ct);
             return Ok(result);
@@ -273,6 +337,11 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            // Checked from the attachment's own quote, not the {id} in the
+            // URL — the page's client doesn't always send the real quote id.
+            if (!await _access.CanWriteQuoteAttachmentAsync(tenantId, attachmentId, ct))
+                return NotFound(new { error = $"Attachment {attachmentId} not found" });
+
             await _deleteAttachmentHandler.HandleAsync(tenantId, attachmentId, ct);
             return NoContent();
         }
@@ -342,6 +411,10 @@ public class QuotesController : ControllerBase
 
             return NoContent();
         }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update quote status by token {Token}", token);
@@ -358,6 +431,9 @@ public class QuotesController : ControllerBase
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
+            if (!await _access.CanReadQuoteAsync(tenantId, id, ct))
+                return NotFound(new { error = $"Quote {id} not found" });
+
             var pdfBytes = await _generatePdf.HandleAsync(tenantId, id, ct);
 
             // Resolve quote number for a clean download filename

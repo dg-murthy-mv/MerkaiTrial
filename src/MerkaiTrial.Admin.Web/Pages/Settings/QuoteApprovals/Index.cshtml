@@ -1,0 +1,170 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel
+@* =====================================================================
+   QUOTE APPROVAL RULES (017)
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/QuoteApprovals/Index.cshtml
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "Quote approval rules";
+    var s = Model.Settings;
+    var disabled = Model.CanEdit ? null : "disabled";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+<style>
+    .qa-settings { max-width: 980px; }
+    .qa-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 1.5rem; margin-bottom: 1.25rem; }
+    .qa-rule { border: 1px solid #e9ecef; border-radius: 10px; padding: 1rem 1.25rem; margin-top: 1rem; }
+    .qa-rule.is-off { opacity: .55; }
+    .qa-help { color: #6c757d; font-size: .875rem; }
+    .qa-flow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .875rem; }
+    .qa-flow .step { background: #f1f3f5; border-radius: 20px; padding: .25rem .75rem; font-weight: 600; }
+    .qa-flow .step.warn { background: #fff3cd; color: #664d03; }
+    .qa-flow .step.ok { background: #d1e7dd; color: #0f5132; }
+    .qa-flow i { color: #adb5bd; }
+    .qa-example { background: #f8f9fa; border-radius: 8px; padding: .75rem 1rem; font-size: .875rem; }
+</style>
+
+<div class="container-fluid py-4 qa-settings">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-patch-check me-2"></i>Quote approval rules</h2>
+            <p class="text-muted mb-0">When does a quote need a manager's sign-off before it goes to the customer?</p>
+        </div>
+        <a asp-page="/Quotes/Approvals" class="btn btn-outline-primary">
+            <i class="bi bi-inbox me-1"></i>Waiting for my approval
+        </a>
+    </div>
+
+    @if (!Model.CanEdit)
+    {
+        <div class="alert alert-info">
+            <i class="bi bi-lock me-1"></i>Only a workspace admin can change these rules. You can see them so you know the limits.
+        </div>
+    }
+
+    @if (s == null)
+    {
+        <div class="alert alert-danger">The approval rules couldn't be loaded. Please refresh the page.</div>
+    }
+    else
+    {
+        <form method="post">
+            <div class="qa-card">
+                <div class="form-check form-switch fs-5">
+                    <input class="form-check-input" type="checkbox" role="switch" id="IsEnabled"
+                           asp-for="IsEnabled" disabled="@disabled" onchange="qaToggle()" />
+                    <label class="form-check-label fw-semibold" for="IsEnabled">Require approval for quotes over the limits</label>
+                </div>
+                <div class="qa-help mt-1">
+                    Off = every quote can be sent straight away.
+                    @if (s.IsDefault)
+                    {
+                        <span class="badge bg-light text-dark border ms-1">Using the defaults — not saved yet</span>
+                    }
+                    else if (s.UpdatedAtUtc.HasValue)
+                    {
+                        <span class="ms-1">Last changed by @s.UpdatedBy on @Model.FormatDateTime(s.UpdatedAtUtc.Value).</span>
+                    }
+                </div>
+
+                <div id="qaRules">
+                    @* Discount rule *@
+                    <div class="qa-rule" id="ruleDiscount">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="UseDiscountRule"
+                                   asp-for="UseDiscountRule" disabled="@disabled" onchange="qaToggle()" />
+                            <label class="form-check-label fw-semibold" for="UseDiscountRule">Discount limit</label>
+                        </div>
+                        <div class="row g-2 align-items-center mt-1">
+                            <div class="col-auto">A quote needs approval when any line is more than</div>
+                            <div class="col-auto" style="width:120px">
+                                <div class="input-group">
+                                    <input type="number" class="form-control" asp-for="MaxDiscountPercent"
+                                           min="0" max="100" step="0.5" disabled="@disabled" />
+                                    <span class="input-group-text">%</span>
+                                </div>
+                            </div>
+                            <div class="col-auto">below its list price.</div>
+                        </div>
+                        <div class="qa-help mt-2">
+                            Catalog items are measured against the product's list price — lowering the unit price counts
+                            the same as a discount. Custom items use their line discount.
+                        </div>
+                    </div>
+
+                    @* Total rule *@
+                    <div class="qa-rule" id="ruleTotal">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="UseTotalRule"
+                                   asp-for="UseTotalRule" disabled="@disabled" onchange="qaToggle()" />
+                            <label class="form-check-label fw-semibold" for="UseTotalRule">Large quote limit</label>
+                        </div>
+                        <div class="row g-2 align-items-center mt-1">
+                            <div class="col-auto">A quote needs approval when its total (incl. tax) is above</div>
+                            <div class="col-auto" style="width:220px">
+                                <div class="input-group">
+                                    <span class="input-group-text">@Model.TenantCurrencySymbol</span>
+                                    <input type="number" class="form-control" asp-for="MaxQuoteTotal"
+                                           min="1" step="1" disabled="@disabled" placeholder="e.g. 500000" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="qa-help mt-2">Leave unticked for no limit on size.</div>
+                    </div>
+                </div>
+
+                @if (Model.CanEdit)
+                {
+                    <div class="d-flex justify-content-end mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i>Save rules
+                        </button>
+                    </div>
+                }
+            </div>
+        </form>
+
+        <div class="qa-card">
+            <h5 class="mb-3">How it works</h5>
+            <div class="qa-flow mb-3">
+                <span class="step">Draft</span><i class="bi bi-arrow-right"></i>
+                <span class="step warn">Pending approval</span><i class="bi bi-arrow-right"></i>
+                <span class="step ok">Approved</span><i class="bi bi-arrow-right"></i>
+                <span class="step">Sent</span><i class="bi bi-arrow-right"></i>
+                <span class="step">Accepted / Rejected</span>
+            </div>
+            <ul class="mb-3">
+                <li>A quote <strong>within</strong> the limits skips approval and can be sent straight away.</li>
+                <li><strong>Who approves:</strong> the managers of the deal owner's team (set under
+                    <a asp-page="/Settings/Visibility/Index">Record visibility → Manages</a>), and any workspace admin.
+                    Nobody approves their own quote.</li>
+                <li>The approver can <strong>approve</strong> or <strong>request changes</strong> (with a comment). Changes send it back to draft.</li>
+                <li><strong>Editing an approved quote</strong> sends it back to draft — what was approved is no longer what would be sent.</li>
+                <li><strong>Workspace admins</strong> aren't held by these limits.</li>
+            </ul>
+            <div class="qa-example">
+                <strong>Example (limit 10%):</strong> list price @Model.TenantCurrencySymbol 50,000, quoted at
+                @Model.TenantCurrencySymbol 44,000 → 12% below list → needs approval.
+                Quoted at @Model.TenantCurrencySymbol 46,000 with a @Model.TenantCurrencySymbol 1,000 line discount → 10% → fine.
+            </div>
+        </div>
+    }
+</div>
+
+<script>
+    function qaToggle() {
+        var on = document.getElementById('IsEnabled');
+        var rules = document.getElementById('qaRules');
+        if (!on || !rules) return;
+        rules.style.opacity = on.checked ? '1' : '.45';
+
+        [['UseDiscountRule', 'ruleDiscount'], ['UseTotalRule', 'ruleTotal']].forEach(function (pair) {
+            var box = document.getElementById(pair[0]);
+            var card = document.getElementById(pair[1]);
+            if (box && card) card.classList.toggle('is-off', !box.checked);
+        });
+    }
+    document.addEventListener('DOMContentLoaded', qaToggle);
+</script>

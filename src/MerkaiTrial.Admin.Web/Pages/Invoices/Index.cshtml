@@ -13,6 +13,14 @@
    PROPERTIES populated by InitializePermissionsAsync(), whereas AppPageModel had
    them as Can*(module) methods.
    No quota bar — no MaxInvoices in any plan/settings table.
+
+   ✅ 018 — INVOICE WORKFLOW
+     • Draft → "Issue" button (was "Send"): gives the INV number, locks it.
+     • Delete only on drafts; issued invoices show a lock (void them from
+       the invoice page).
+     • Stats: Total/Unpaid/Overdue count ISSUED invoices; drafts are
+       mentioned under the Issued card.
+     • Labels: "Issued" for Sent, "Void" for Cancelled; drafts show "Draft".
    ===================================================================== *@
 
 @page
@@ -70,9 +78,13 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <p class="text-muted text-uppercase mb-1" style="font-size:0.75rem;font-weight:600;">Total Invoices</p>
+                        <p class="text-muted text-uppercase mb-1" style="font-size:0.75rem;font-weight:600;">Issued Invoices</p>
                         <h3 class="mb-0">@Model.Statistics.TotalInvoices</h3>
                         <small class="text-muted">@Model.FormatCurrency(Model.Statistics.TotalAmount)</small>
+                        @if (Model.Statistics.DraftInvoices > 0)
+                        {
+                            <div><small class="text-muted">+ @Model.Statistics.DraftInvoices @(Model.Statistics.DraftInvoices == 1 ? "draft" : "drafts") not issued</small></div>
+                        }
                     </div>
                     <div class="text-primary" style="font-size:2.5rem;opacity:0.3;">
                         <i class="bi bi-receipt"></i>
@@ -140,12 +152,12 @@
                 <select name="StatusFilter" class="form-select" asp-for="StatusFilter">
                     <option value="">All Statuses</option>
                     <option value="Draft">Draft</option>
-                    <option value="Sent">Sent</option>
+                    <option value="Sent">Issued</option>
                     <option value="Viewed">Viewed</option>
                     <option value="PartiallyPaid">Partially Paid</option>
                     <option value="Paid">Paid</option>
                     <option value="Overdue">Overdue</option>
-                    <option value="Cancelled">Cancelled</option>
+                    <option value="Cancelled">Void</option>
                 </select>
             </div>
             <div class="col-md-3">
@@ -196,7 +208,7 @@ else
                             <div class="col-md-3">
                                 <div class="d-flex align-items-center mb-2">
                                     <i class="bi @Model.GetStatusIcon(invoice.Status) me-2 text-muted"></i>
-                                    <h5 class="mb-0" style="font-family:'Courier New',monospace;">@invoice.Number</h5>
+                                    <h5 class="mb-0" style="font-family:'Courier New',monospace;">@MerkaiTrial.Admin.Web.Pages.Invoices.IndexModel.DisplayNumber(invoice.Number)</h5>
                                 </div>
                                 <span class="badge @Model.GetStatusBadgeClass(invoice.Status)">
                                     @Model.GetStatusDisplay(invoice.Status)
@@ -265,9 +277,10 @@ else
                                         <i class="bi bi-eye me-1"></i>View
                                     </a>
 
-                                    @* ✅ Payment — only if has update permission AND balance > 0 *@
+                                    @* ✅ Payment — issued (not draft/void), money owed, update permission *@
                                     @if (invoice.Balance > 0
                                                                 && invoice.Status != "Cancelled"
+                                                                && invoice.Status != "Draft"
                                                                 && Model.CanUpdate)
                                     {
                                         <a href="/Invoices/Detail?id=@invoice.Id#payment"
@@ -276,33 +289,31 @@ else
                                         </a>
                                     }
 
-                                    @* ✅ Send — only if Draft AND has update permission *@
+                                    @* ✅ (018) Issue — only a Draft, with update permission *@
                                     @if (invoice.Status == "Draft" && Model.CanUpdate)
                                     {
                                         <button type="button" class="btn btn-sm btn-info"
-                                                onclick="updateStatus('@invoice.Id', 'Sent')">
-                                            <i class="bi bi-send me-1"></i>Send
+                                                onclick="issueInvoice('@invoice.Id')">
+                                            <i class="bi bi-send-check me-1"></i>Issue
                                         </button>
                                     }
 
-                                    @* ✅ Delete — record lock (Paid/PartiallyPaid) + role permission *@
-                                    @if (invoice.Status != "Paid" && invoice.Status != "PartiallyPaid")
+                                    @* ✅ (018) Delete — drafts only (issued invoices are voided) *@
+                                    @if (invoice.Status == "Draft")
                                     {
                                         @if (Model.CanDelete)
                                         {
                                             <button type="button"
                                                     class="btn btn-sm btn-outline-danger"
-                                                    onclick="confirmDelete('@invoice.Id', '@invoice.Number')">
+                                                    onclick="confirmDelete('@invoice.Id', 'this draft')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         }
-                                        @* If no delete permission — button hidden silently *@
                                     }
                                     else
                                     {
-                                        @* Paid/PartiallyPaid — always locked regardless of role *@
                                         <span class="btn btn-sm btn-outline-secondary disabled pe-none"
-                                              title="@(invoice.Status == "Paid" ? "Paid invoices cannot be deleted" : "Invoices with payments cannot be deleted")">
+                                              title="@(invoice.Status == "Cancelled" ? "Void invoices stay on record" : "Issued invoices can't be deleted — void it from the invoice page")">
                                             <i class="bi bi-lock"></i>
                                         </span>
                                     }
@@ -328,7 +339,7 @@ else
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Are you sure you want to delete invoice <strong id="deleteInvoiceNumber"></strong>?</p>
+                <p>Delete <strong id="deleteInvoiceNumber"></strong>? It was never issued, so no invoice number is lost.</p>
                 <p class="text-danger mb-0">This action cannot be undone.</p>
             </div>
             <div class="modal-footer">
@@ -348,10 +359,9 @@ else
     </div>
 </div>
 
-<!-- Update Status Form (Hidden) -->
-<form id="statusForm" method="post" asp-page-handler="UpdateStatus" style="display:none;">
-    <input type="hidden" name="invoiceId" id="statusInvoiceId" />
-    <input type="hidden" name="newStatus" id="newStatus" />
+<!-- (018) Issue Form (Hidden) -->
+<form id="issueForm" method="post" asp-page-handler="Issue" style="display:none;">
+    <input type="hidden" name="invoiceId" id="issueInvoiceId" />
 </form>
 
 @section Scripts {
@@ -369,10 +379,10 @@ else
             new bootstrap.Modal(document.getElementById('deleteModal')).show();
         }
 
-        function updateStatus(invoiceId, newStatus) {
-            document.getElementById('statusInvoiceId').value = invoiceId;
-            document.getElementById('newStatus').value = newStatus;
-            document.getElementById('statusForm').submit();
+        function issueInvoice(invoiceId) {
+            if (!confirm('Issue this invoice? It gets its invoice number now and can no longer be edited.')) return;
+            document.getElementById('issueInvoiceId').value = invoiceId;
+            document.getElementById('issueForm').submit();
         }
     </script>
 }

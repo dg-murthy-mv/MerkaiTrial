@@ -2,6 +2,24 @@
 // FILE: MerkaiTrial.WebApi/Controllers/InvoicesController.cs
 // PURPOSE: Invoice API Controller - MATCHES YOUR EXISTING HANDLERS
 // FIXED: Works with your mixed DTO/Command pattern
+//
+// CHANGES (017 — record visibility)
+//   ✅ Every by-id endpoint (GET, PUT, status, payments, DELETE, PDF)
+//      checks the invoice is visible to the caller — invoices follow their
+//      deal. Outside scope = 404, like another tenant's invoice.
+//   ✅ Create / from-quote: visibility is checked in the handlers; a
+//      refusal ("Link this invoice to a deal") now comes back as 400 with
+//      the message, not 500.
+//   ✅ Status: InvoiceStatusRules refusals ("Record the payment instead")
+//      were InvalidOperationException, which this action did not catch —
+//      the user got "Failed to update invoice status". Now 400 + message.
+//
+// CHANGES (018 — invoice workflow)
+//   GET  api/invoices/{id}/workflow                     Invoices.Read   what can happen next
+//   POST api/invoices/{id}/issue                        Invoices.Update draft → INV-nnnn, locked
+//   POST api/invoices/{id}/void            {reason}     Invoices.Update issued → Void
+//   POST api/invoices/{id}/payments/{pid}/reverse {reason} Invoices.Update take a payment back out
+//   ✅ Delete refusals (issued invoices can't be deleted) → 400 + message.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Invoices;
@@ -38,6 +56,11 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly AddPaymentHandler _addPayment;
         private readonly DeleteInvoiceHandler _deleteInvoice;
 
+        private readonly InvoiceAccessHandler _access;
+        private readonly IssueInvoiceHandler _issue;
+        private readonly VoidInvoiceHandler _void;
+        private readonly ReversePaymentHandler _reversePayment;
+        private readonly GetInvoiceWorkflowHandler _workflow;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<InvoicesController> _logger;
 
@@ -56,6 +79,11 @@ namespace MerkaiTrial.WebApi.Controllers
             AddPaymentHandler addPayment,
             DeleteInvoiceHandler deleteInvoice,
             GenerateInvoicePdfHandler generatePdf,
+            InvoiceAccessHandler access,
+            IssueInvoiceHandler issue,
+            VoidInvoiceHandler voidInvoice,
+            ReversePaymentHandler reversePayment,
+            GetInvoiceWorkflowHandler workflow,
             ICurrentUserService currentUserService,
             ILogger<InvoicesController> logger)
         {
@@ -69,6 +97,11 @@ namespace MerkaiTrial.WebApi.Controllers
             _addPayment = addPayment;
             _deleteInvoice = deleteInvoice;
             _generatePdf = generatePdf;
+            _access = access;
+            _issue = issue;
+            _void = voidInvoice;
+            _reversePayment = reversePayment;
+            _workflow = workflow;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -128,6 +161,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
+                if (!await _access.CanSeeInvoiceAsync(tenantId, id, cancellationToken))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
                 var query = new GetInvoiceByIdQuery
                 {
                     TenantId = tenantId,
@@ -190,6 +226,12 @@ namespace MerkaiTrial.WebApi.Controllers
                 // Server-resolved identity always wins over whatever the client sent in the body.
                 dto.TenantId = _currentUserService.GetCurrentTenantId();
 
+                // (018) A MANUAL invoice is never "from a quote" — that path
+                // (POST from-quote) checks the quote is accepted, copies its
+                // lines and skips the approval limits. Accepting a QuoteId here
+                // would let any lines ride on a quote's approval.
+                dto.QuoteId = null;
+
                 // ✅ Handler signature: Handle(CreateInvoiceDto dto)
                 var invoice = await _createInvoice.Handle(dto);
 
@@ -199,6 +241,14 @@ namespace MerkaiTrial.WebApi.Controllers
                     nameof(GetById),
                     new { id = invoice.Id, tenantId = invoice.TenantId },
                     invoice);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { error = "Deal not found" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
@@ -272,6 +322,9 @@ namespace MerkaiTrial.WebApi.Controllers
                 // Server-resolved identity always wins over whatever the client sent in the body.
                 dto.TenantId = _currentUserService.GetCurrentTenantId();
 
+                if (!await _access.CanSeeInvoiceAsync(dto.TenantId, id, cancellationToken))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
                 // ✅ Handler signature: Handle(UpdateInvoiceCommand command, CancellationToken ct)
                 // Map DTO → Command
                 var command = new UpdateInvoiceCommand
@@ -322,6 +375,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
+                if (!await _access.CanSeeInvoiceAsync(tenantId, id))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
                 dto.Id       = id;
                 dto.TenantId = tenantId;
                 if (string.IsNullOrEmpty(dto.UpdatedBy))
@@ -338,6 +394,10 @@ namespace MerkaiTrial.WebApi.Controllers
                 return NotFound(new { error = $"Invoice {id} not found" });
             }
             catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
             {
                 return BadRequest(new { error = ex.Message });
             }
@@ -370,6 +430,9 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 // Server-resolved identity always wins over whatever the client sent in the body.
                 dto.TenantId = _currentUserService.GetCurrentTenantId();
+
+                if (!await _access.CanSeeInvoiceAsync(dto.TenantId, id))
+                    return NotFound(new { error = $"Invoice {id} not found" });
 
                 // ✅ Handler signature: Handle(CreatePaymentDto dto)
                 var payment = await _addPayment.Handle(dto);
@@ -410,6 +473,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
+                if (!await _access.CanSeeInvoiceAsync(tenantId, id))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
                 // ✅ Handler signature: Handle(Guid tenantId, Guid invoiceId, string? deletedBy)
                 await _deleteInvoice.Handle(tenantId, id, deletedBy);
 
@@ -421,10 +487,70 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = $"Invoice {id} not found" });
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting invoice {Id}", id);
                 return StatusCode(500, new { error = "Failed to delete invoice" });
+            }
+        }
+
+        // ==================== WORKFLOW (018) ====================
+
+        [HttpGet("{id:guid}/workflow")]
+        [Authorize(Policy = "Invoices.Read")]
+        [ProducesResponseType(typeof(InvoiceWorkflowDto), StatusCodes.Status200OK)]
+        public Task<IActionResult> GetWorkflow(Guid id, CancellationToken ct)
+            => RunGuarded(id, async tenantId => Ok(await _workflow.Handle(tenantId, id, ct)), "reading invoice workflow", ct);
+
+        [HttpPost("{id:guid}/issue")]
+        [Authorize(Policy = "Invoices.Update")]
+        public Task<IActionResult> Issue(Guid id, CancellationToken ct)
+            => RunGuarded(id, async tenantId =>
+            {
+                var number = await _issue.Handle(tenantId, id, ct);
+                return Ok(new { number });
+            }, "issuing invoice", ct);
+
+        [HttpPost("{id:guid}/void")]
+        [Authorize(Policy = "Invoices.Update")]
+        public Task<IActionResult> Void(Guid id, [FromBody] VoidInvoiceDto dto, CancellationToken ct)
+            => RunGuarded(id, async tenantId =>
+            {
+                await _void.Handle(tenantId, id, dto?.Reason, ct);
+                return Ok();
+            }, "voiding invoice", ct);
+
+        [HttpPost("{id:guid}/payments/{paymentId:guid}/reverse")]
+        [Authorize(Policy = "Invoices.Update")]
+        public Task<IActionResult> ReversePayment(Guid id, Guid paymentId, [FromBody] ReversePaymentDto dto, CancellationToken ct)
+            => RunGuarded(id, async tenantId =>
+            {
+                await _reversePayment.Handle(tenantId, id, paymentId, dto?.Reason, ct);
+                return Ok();
+            }, "reversing payment", ct);
+
+        /// <summary>Visibility check + the usual exception → status mapping.</summary>
+        private async Task<IActionResult> RunGuarded(
+            Guid id, Func<Guid, Task<IActionResult>> body, string what, CancellationToken ct)
+        {
+            var tenantId = _currentUserService.GetCurrentTenantId();
+            try
+            {
+                if (!await _access.CanSeeInvoiceAsync(tenantId, id, ct))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
+                return await body(tenantId);
+            }
+            catch (KeyNotFoundException ex)      { return NotFound(new { error = ex.Message }); }
+            catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error {What} {Id}", what, id);
+                return StatusCode(500, new { error = "Something went wrong. Please try again." });
             }
         }
 
@@ -439,6 +565,9 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
+                if (!await _access.CanSeeInvoiceAsync(tenantId, id, ct))
+                    return NotFound(new { error = $"Invoice {id} not found" });
+
                 var pdfBytes = await _generatePdf.HandleAsync(tenantId, id, ct);
 
                 // Suggest filename to browser / WhatsApp share sheet

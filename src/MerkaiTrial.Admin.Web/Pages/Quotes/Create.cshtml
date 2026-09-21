@@ -1,5 +1,9 @@
-﻿@page
+@page
 @model MerkaiTrial.Admin.Web.Pages.Quotes.CreateModel
+@* (017) Live approval hint: #approvalHint banner + the Send button turns
+   into "Save & submit for approval" when a line is over the discount
+   limit or the total is over the total limit. The API enforces the same
+   rules; this only tells the rep before they click. *@
 @using System.Text.Json
 @{
     ViewData["Title"] = "Create Quote";
@@ -80,6 +84,16 @@
         color: #dc3545;
         cursor: pointer;
     }
+
+    .approval-hint {
+        border-left: 4px solid #fd7e14;
+        background: #fff7ed;
+        border-radius: 8px;
+        padding: .85rem 1rem;
+        margin-top: 1.5rem;
+    }
+    .approval-hint ul { margin: .35rem 0 0; padding-left: 1.1rem; }
+    .line-over-limit td { background: #fff7ed !important; }
 
     .form-control.is-invalid {
         border-color: #dc3545 !important;
@@ -266,6 +280,12 @@
                     </div>
                 </div>
 
+                <div id="approvalHint" class="approval-hint" style="display:none;">
+                    <div class="fw-semibold"><i class="bi bi-shield-exclamation me-2" style="color:#fd7e14"></i><span id="approvalHintTitle">This quote will need approval</span></div>
+                    <ul id="approvalHintList"></ul>
+                    <div class="small text-muted mt-1" id="approvalHintFoot">You can still save it. "Save &amp; submit for approval" sends it to your manager.</div>
+                </div>
+
                 <div class="row">
                     <div class="col-md-6 offset-md-6">
                         <div class="totals-section">
@@ -296,7 +316,7 @@
                     <button type="button" class="btn btn-outline-primary" onclick="submitQuote(false)">
                         <i class="bi bi-save me-2"></i>Save as Draft
                     </button>
-                    <button type="button" class="btn btn-primary" onclick="submitQuote(true)">
+                    <button type="button" class="btn btn-primary" id="sendBtn" onclick="submitQuote(true)">
                         <i class="bi bi-send me-2"></i>Send to Customer
                     </button>
                 </div>
@@ -328,7 +348,7 @@
 
                             <button type="button"
                                     class="list-group-item list-group-item-action"
-                                    onclick='addProductToQuote("@product.Id", @nameJson, @descJson, @product.ListPrice)'>
+                                    onclick='addProductToQuote("@product.Id", @nameJson, @descJson, @product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture))'>
                                 <div class="d-flex justify-content-between align-items-start">
                                     <div class="me-3">
                                         <h6 class="mb-1">@product.Name</h6>
@@ -365,7 +385,10 @@
     //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
     //    culture, so client and server now agree by construction.
     const fmtMoney = (x) => window.MerkaiCurrency.format(x);
-    const defaultTaxRate = @Model.DefaultTaxRate;
+    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    // (017) { enabled, maxDiscountPercent, maxQuoteTotal, exempt }
+    const approvalRules = @Html.Raw(Model.ApprovalRulesJson);
 
     function addCustomItem() {
         const item = {
@@ -399,6 +422,7 @@
             description: description || '',
             quantity: 1,
             unitPrice: parseFloat(unitPrice) || 0,
+            listPrice: parseFloat(unitPrice) || 0,   // (017) discount is measured against this
             lineDiscount: 0,
             taxRate: defaultTaxRate
         };
@@ -506,6 +530,72 @@
         discountEl.textContent = fmtMoney(discount);
         taxEl.textContent = fmtMoney(tax);
         grandEl.textContent = fmtMoney(grandTotal);
+
+        updateApprovalHint(grandTotal);
+    }
+
+    // ── (017) Approval hint — same maths as QuoteApprovalRules ──────
+    function lineDiscountPct(item) {
+        const qty  = parseFloat(item.quantity) || 0;
+        const unit = parseFloat(item.unitPrice) || 0;
+        const disc = parseFloat(item.lineDiscount) || 0;
+        const refUnit = (item.listPrice && item.listPrice > 0) ? item.listPrice : unit;
+        const reference = refUnit * qty;
+        if (reference <= 0) return 0;
+        const pct = (reference - (unit * qty - disc)) / reference * 100;
+        return pct > 0 ? pct : 0;
+    }
+
+    function updateApprovalHint(grandTotal) {
+        const box = document.getElementById('approvalHint');
+        const list = document.getElementById('approvalHintList');
+        const btn = document.getElementById('sendBtn');
+        if (!box || !list) return;
+
+        const reasons = [];
+        const overIds = new Set();
+
+        if (approvalRules && approvalRules.enabled) {
+            const limit = approvalRules.maxDiscountPercent;
+            if (limit !== null && limit !== undefined) {
+                lineItems.forEach(item => {
+                    const pct = lineDiscountPct(item);
+                    if (pct > limit + 0.0001) {
+                        overIds.add(item.id);
+                        reasons.push(`"${escapeHtml(item.name || 'Unnamed item')}" is ${pct.toFixed(1)}% below list price (limit ${limit}%).`);
+                    }
+                });
+            }
+            const maxTotal = approvalRules.maxQuoteTotal;
+            if (maxTotal !== null && maxTotal !== undefined && grandTotal > maxTotal) {
+                reasons.push(`Total ${fmtMoney(grandTotal)} is above the ${fmtMoney(maxTotal)} limit.`);
+            }
+        }
+
+        // Highlight the offending rows
+        lineItems.forEach(item => {
+            const row = document.getElementById(`name-${item.id}`)?.closest('tr');
+            if (row) row.classList.toggle('line-over-limit', overIds.has(item.id));
+        });
+
+        const needs = reasons.length > 0;
+        box.style.display = needs ? 'block' : 'none';
+        list.innerHTML = reasons.map(r => `<li>${r}</li>`).join('');
+
+        const exempt = approvalRules && approvalRules.exempt;
+        document.getElementById('approvalHintTitle').textContent =
+            exempt ? 'Over your workspace\'s limits' : 'This quote will need approval';
+        document.getElementById('approvalHintFoot').textContent = exempt
+            ? "You're a workspace admin, so you can still send it."
+            : 'You can still save it. "Save & submit for approval" sends it to your manager.';
+
+        if (btn) {
+            btn.innerHTML = (needs && !exempt)
+                ? '<i class="bi bi-send-check me-2"></i>Save &amp; submit for approval'
+                : '<i class="bi bi-send me-2"></i>Send to Customer';
+            btn.classList.toggle('btn-warning', needs && !exempt);
+            btn.classList.toggle('btn-primary', !(needs && !exempt));
+        }
     }
 
     function escapeHtml(str) {

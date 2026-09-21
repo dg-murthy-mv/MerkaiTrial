@@ -2,6 +2,17 @@
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Index.cshtml.cs
 // Invoice Index Page Backend - List with filters and statistics
 //
+// CHANGES (018 — invoice workflow)
+//   ✅ "Send" on a draft is now ISSUE (OnPostIssue): it gets its INV number
+//      and is locked. A manual invoice over the approval limits comes back
+//      with the reason and who can issue it.
+//   ✅ Delete is for drafts only (the API refuses the rest).
+//   ✅ Removed the page-side "Paid → deal Won" transition: Paid can't be
+//      set by hand any more; the API moves the deal when payments cover
+//      the invoice. (IDealService no longer injected.)
+//   ✅ Labels: Sent → "Issued", Cancelled → "Void"; drafts show "Draft"
+//      instead of their DRAFT-XXXX placeholder.
+//
 // ✅ SESSION 5 — PERMISSION MIGRATION
 //   1. AppPageModel  →  AuthorizedPageModel   (ModuleName = Modules.Invoices)
 //   2. OnGet was UNGATED — now invoices.read, plus InitializePermissionsAsync()
@@ -25,7 +36,6 @@
 //   deals.update.
 // =====================================================================
 
-using MerkaiTrial.Admin.Web.Services.Deals;        // injected for deal transition
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.DTOs;
@@ -45,21 +55,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly IInvoiceService _invoiceService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
-        private readonly IDealService _dealService;
         private readonly ILogger<IndexModel> _logger;
 
         public IndexModel(
             IInvoiceService invoiceService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
-            IDealService dealService,
             IAuthorizationService authorizationService,
             ILogger<IndexModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
             _invoiceService = invoiceService;
             _currentUserService = currentUserService;
-            _dealService = dealService;
             _tenantService = tenantService;
             _logger = logger;
         }
@@ -147,16 +154,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
-                // Guard: block delete if payments have been recorded
+                // (018) Drafts only — the API refuses the rest; this is the
+                // friendly early answer.
                 var invoice = await _invoiceService.GetByIdAsync(tenantId, id);
-                if (invoice?.Status is "Paid" or "PartiallyPaid")
+                if (invoice != null && invoice.Status != "Draft")
                 {
-                    ErrorMessage = $"Invoice {invoice.Number} cannot be deleted — payments have been recorded against it.";
+                    ErrorMessage = $"Invoice {invoice.Number} has been issued, so it can't be deleted. Open it and void it instead.";
                     return RedirectToPage();
                 }
 
                 await _invoiceService.DeleteAsync(tenantId, id);
-                SuccessMessage = "Invoice deleted successfully!";
+                SuccessMessage = "Draft invoice deleted.";
+                return RedirectToPage();
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
                 return RedirectToPage();
             }
             catch (Exception ex)
@@ -167,83 +180,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             }
         }
 
-        // ==================== UPDATE STATUS ====================
-        public async Task<IActionResult> OnPostUpdateStatus(Guid invoiceId, string newStatus)
+        // ==================== ISSUE (018) ====================
+        public async Task<IActionResult> OnPostIssue(Guid invoiceId)
         {
-            // ✅ Was: if (!CanUpdate("Invoices")) return Forbid();
             var permissionCheck = await ValidatePermissionAsync(Actions.Update);
             if (permissionCheck != null) return permissionCheck;
 
             try
             {
-                var tenantId = _currentUserService.GetCurrentTenantId();
-                await _invoiceService.UpdateStatusAsync(tenantId, invoiceId, newStatus);
-
-                // BUG 2 FIX: When invoice is marked Paid, auto-transition
-                //    the linked deal to Won.
-                //    Path: Invoice → QuoteId → Quote.DealId → Deal.Stage = Won
-                if (string.Equals(newStatus, "Paid", StringComparison.OrdinalIgnoreCase))
-                {
-                    await TransitionLinkedDealToWonAsync(tenantId, invoiceId);
-                }
-
-                SuccessMessage = $"Invoice status updated to {newStatus}!";
-                return RedirectToPage();
+                var number = await _invoiceService.IssueAsync(invoiceId);
+                SuccessMessage = $"Invoice issued as {number}.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                // e.g. "This invoice is over your workspace's limits, so … needs to issue it."
+                ErrorMessage = ex.Message;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating invoice status");
-                ErrorMessage = "Failed to update status. Please try again.";
-                return RedirectToPage();
+                _logger.LogError(ex, "Error issuing invoice {Id}", invoiceId);
+                ErrorMessage = "Failed to issue the invoice. Please try again.";
             }
-        }
 
-        private async Task TransitionLinkedDealToWonAsync(Guid tenantId, Guid invoiceId)
-        {
-            try
-            {
-                var invoice = await _invoiceService.GetByIdAsync(tenantId, invoiceId);
-                if (invoice == null)
-                {
-                    _logger.LogWarning("TransitionLinkedDeal: invoice {Id} not found", invoiceId);
-                    return;
-                }
-
-                Guid? dealId = invoice.DealId;
-                if (!dealId.HasValue || dealId == Guid.Empty)
-                {
-                    _logger.LogInformation(
-                        "Invoice {Id} has no linked Deal — skipping Won transition", invoiceId);
-                    return;
-                }
-
-                var deal = await _dealService.GetByIdAsync(tenantId, dealId.Value);
-                if (deal == null)
-                {
-                    _logger.LogWarning("TransitionLinkedDeal: deal {DealId} not found", dealId);
-                    return;
-                }
-
-                if (deal.Stage is "Won" or "Lost" or "ClosedWon" or "ClosedLost")
-                {
-                    _logger.LogInformation(
-                        "Deal {DealId} already in terminal stage {Stage} — skipping",
-                        dealId, deal.Stage);
-                    return;
-                }
-
-                await _dealService.TransitionStageAsync(
-                    tenantId.ToString(), dealId.Value, "Won", probability: 100);
-
-                _logger.LogInformation(
-                    "✅ Invoice Paid — Deal {DealId} auto-transitioned {From} → Won",
-                    dealId, deal.Stage);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to auto-transition deal to Won after invoice {Id} paid", invoiceId);
-            }
+            return RedirectToPage();
         }
 
         // ==================== HELPER METHODS ====================
@@ -315,13 +274,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         public string GetStatusDisplay(string status) => status switch
         {
             "Draft" => "Draft",
-            "Sent" => "Sent",
+            "Sent" => "Issued",
             "Viewed" => "Viewed",
             "PartiallyPaid" => "Partially Paid",
             "Paid" => "Paid",
             "Overdue" => "Overdue",
-            "Cancelled" => "Cancelled",
+            "Cancelled" => "Void",
             _ => status
         };
+
+        /// <summary>A draft's DRAFT-XXXX placeholder isn't a number people should quote.</summary>
+        public static string DisplayNumber(string number)
+            => number.StartsWith("DRAFT-", StringComparison.Ordinal) ? "Draft" : number;
     }
 }

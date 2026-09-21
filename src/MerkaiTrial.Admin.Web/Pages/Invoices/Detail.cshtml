@@ -17,12 +17,20 @@
        sales_manager has deals.delete but NO invoices.delete
                      → saw the Delete Invoice button (confirmed in testing)
      Now bound to this page's own module via the base-class Can* properties.
+
+   ✅ 018 — INVOICE WORKFLOW
+     • Draft: "Draft invoice" instead of the DRAFT-XXXX placeholder, an
+       Issue box (or who needs to issue it), Edit, Delete.
+     • Issued: Record payment, Reverse payment (per payment, with reason),
+       Void (with reason). No Edit, no Delete.
+     • Void: a banner with who/when/why; only PDF.
+     • Status shown as people say it: Sent → "Issued", Cancelled → "Void".
    ===================================================================== *@
 
 @page
 @model MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel
 @{
-    ViewData["Title"] = $"Invoice {Model.Invoice?.Number}";
+    ViewData["Title"] = $"Invoice {Model.DisplayNumber}";
 }
 
 <!-- Page Header -->
@@ -31,11 +39,11 @@
     <div class="d-flex justify-content-between align-items-center">
         <div>
             <h2 class="mb-2" style="font-family:'Courier New',monospace;font-size:2.5rem;">
-                <i class="bi bi-receipt me-2"></i>@Model.Invoice?.Number
+                <i class="bi bi-receipt me-2"></i>@Model.DisplayNumber
             </h2>
             <div class="d-flex align-items-center gap-2">
                 <span class="badge @Model.GetStatusBadgeClass(Model.Invoice?.Status ?? "Draft")" style="font-size:1rem;">
-                    @Model.Invoice?.Status
+                    @MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel.StatusLabel(Model.Invoice?.Status)
                 </span>
                 @if (Model.IsOverdue())
                 {
@@ -43,7 +51,7 @@
                         <i class="bi bi-exclamation-triangle me-1"></i>OVERDUE
                     </span>
                 }
-                @if (Model.Invoice?.IsFullyPaid == true)
+                @if (Model.Invoice?.IsFullyPaid == true && !Model.IsDraft && !Model.IsVoid)
                 {
                     <span class="badge bg-success" style="font-size:1rem;">
                         <i class="bi bi-check-circle-fill me-1"></i>PAID
@@ -70,6 +78,69 @@
 </div>
 
 @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+
+@* ── (018) VOID banner ───────────────────────────────────────────── *@
+@if (Model.IsVoid)
+{
+    <div class="alert alert-dark d-flex gap-3 align-items-start mb-4">
+        <i class="bi bi-slash-circle fs-3"></i>
+        <div>
+            <div class="fw-bold">This invoice is void</div>
+            @if (Model.Workflow?.VoidedAtUtc != null)
+            {
+                <div class="small">
+                    Voided by @Model.Workflow.VoidedBy on @Model.FormatDateTime(Model.Workflow.VoidedAtUtc.Value)
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.Workflow?.VoidReason))
+            {
+                <div class="small mt-1"><strong>Reason:</strong> @Model.Workflow.VoidReason</div>
+            }
+            <div class="small text-muted mt-1">It stays on record and isn't owed. Raise a new invoice if the customer still owes something.</div>
+        </div>
+    </div>
+}
+
+@* ── (018) DRAFT: issue box ─────────────────────────────────────── *@
+@if (Model.IsDraft)
+{
+    <div class="alert @(Model.Workflow?.CanIssue == false ? "alert-warning" : "alert-secondary") mb-4">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div style="max-width:720px;">
+                <div class="fw-bold mb-1"><i class="bi bi-pencil-square me-2"></i>Draft — not yet a tax invoice</div>
+                <div class="small">
+                    It gets its invoice number and today's date when you issue it. After that it can't be edited
+                    — only voided.
+                    @if (Model.Workflow?.FromQuote == true)
+                    {
+                        <span>Lines come from the accepted quote and can't be changed.</span>
+                    }
+                </div>
+
+                @if (Model.Workflow != null && !Model.Workflow.CanIssue && !string.IsNullOrWhiteSpace(Model.Workflow.IssueBlockedReason))
+                {
+                    <div class="small mt-2"><i class="bi bi-shield-exclamation me-1"></i>@Model.Workflow.IssueBlockedReason</div>
+                }
+                else if (Model.Workflow?.IssueRuleReasons.Any() == true)
+                {
+                    <div class="small mt-2 text-muted">
+                        <i class="bi bi-info-circle me-1"></i>Over your workspace's limits — you can issue it because you approve for this deal.
+                    </div>
+                }
+            </div>
+
+            @if (Model.CanUpdate && (Model.Workflow?.CanIssue ?? true))
+            {
+                <form method="post" asp-page-handler="Issue" asp-route-id="@Model.Invoice!.Id"
+                      onsubmit="return confirm('Issue this invoice? It gets its number now and can no longer be edited.');">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-send-check me-2"></i>Issue invoice
+                    </button>
+                </form>
+            }
+        </div>
+    </div>
+}
 
 <div class="row">
     <!-- Left Column: Invoice Details -->
@@ -243,6 +314,7 @@
                                     <th>Status</th>
                                     <th>Notes</th>
                                     <th>Recorded By</th>
+                                    <th></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -265,6 +337,20 @@
                                             }
                                         </td>
                                         <td><small class="text-muted">@payment.CreatedBy</small></td>
+                                        <td class="text-end">
+                                            @* (018) Reverse a mistaken payment — kept in history, stops counting *@
+                                            @if (Model.HasRecordPaymentPermission && Model.CanReversePayment(payment.Id))
+                                            {
+                                                <form method="post" asp-page-handler="ReversePayment" asp-route-id="@Model.Invoice!.Id"
+                                                      class="d-inline" onsubmit="return askReason(this, 'Why are you reversing this payment?');">
+                                                    <input type="hidden" name="paymentId" value="@payment.Id" />
+                                                    <input type="hidden" name="reason" />
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Reverse payment">
+                                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                                    </button>
+                                                </form>
+                                            }
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
@@ -369,13 +455,32 @@
                             <input type="hidden" asp-for="Id" value="@Model.Invoice!.Id" />
                             <input type="hidden" name="newStatus" value="@status" />
                             <button type="submit" class="btn btn-outline-primary w-100">
-                                <i class="bi bi-arrow-right-circle me-2"></i>Mark as @status
+                                <i class="bi bi-arrow-right-circle me-2"></i>Mark as @MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel.StatusLabel(status)
                             </button>
                         </form>
                     }
                 }
 
-                @* ✅ Delete — role permission required *@
+                @* (018) Void — issued, not void, no payments left *@
+                @if (Model.CanUpdate && !Model.IsDraft && !Model.IsVoid)
+                {
+                    @if (Model.Workflow?.CanVoid ?? true)
+                    {
+                        <button type="button" class="btn btn-outline-dark w-100 mb-2"
+                                data-bs-toggle="modal" data-bs-target="#voidModal">
+                            <i class="bi bi-slash-circle me-2"></i>Void Invoice
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="btn btn-outline-secondary w-100 mb-2 disabled pe-none"
+                              title="@Model.Workflow?.VoidBlockedReason">
+                            <i class="bi bi-slash-circle me-2"></i>Void — reverse payments first
+                        </span>
+                    }
+                }
+
+                @* ✅ Delete — drafts only, and role permission *@
                 @if (Model.CanDelete && Model.IsDeletableState)
                 {
                     <button type="button" class="btn btn-outline-danger w-100"
@@ -390,7 +495,7 @@
                        same pattern Index.cshtml already uses. *@
                     <span class="btn btn-outline-secondary w-100 disabled pe-none"
                           title="@Model.DeleteBlockedReason">
-                        <i class="bi bi-lock me-2"></i>Delete Locked
+                        <i class="bi bi-lock me-2"></i>Issued — can't be deleted
                     </span>
                 }
 
@@ -459,6 +564,32 @@
     </div>
 </div>
 
+<!-- (018) Void Modal -->
+<div class="modal fade" id="voidModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="bi bi-slash-circle me-2"></i>Void @Model.DisplayNumber</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" asp-page-handler="Void" asp-route-id="@Model.Invoice!.Id">
+                <div class="modal-body">
+                    <p class="mb-2">A void invoice stays on record with its number, but is no longer owed. This can't be undone.</p>
+                    <label class="form-label fw-bold" for="voidReason">Reason *</label>
+                    <textarea id="voidReason" name="reason" class="form-control" rows="3" maxlength="500" required
+                              placeholder="e.g. Wrong quantity — replaced by a new invoice"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-dark">
+                        <i class="bi bi-slash-circle me-2"></i>Void Invoice
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteModal" tabindex="-1">
     <div class="modal-dialog">
@@ -468,7 +599,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p>Are you sure you want to delete invoice <strong>@Model.Invoice?.Number</strong>?</p>
+                <p>Delete this <strong>draft</strong> invoice? It was never issued, so no invoice number is lost.</p>
                 @* ✅ SESSION 5: this used to WARN that deleting would also destroy the
                    payment rows, then let you proceed — while Index.OnPostDelete refused
                    the same operation outright. The server-side guard in
@@ -511,6 +642,16 @@
 @section Scripts {
     <script>
         // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+
+        // (018) Ask for a reason and put it in the form's hidden "reason" field.
+        function askReason(form, question) {
+            var r = window.prompt(question);
+            if (r === null) return false;
+            r = r.trim();
+            if (!r) { alert('A reason is required.'); return false; }
+            form.querySelector('input[name="reason"]').value = r;
+            return true;
+        }
 
         document.addEventListener('DOMContentLoaded', function () {
             if (window.location.hash === '#payment') {

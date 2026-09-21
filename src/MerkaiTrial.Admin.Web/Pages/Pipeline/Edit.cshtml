@@ -1,8 +1,13 @@
 @page "/Pipeline/Edit/{id}"
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.EditModel
+@using MerkaiTrial.Domain.Entities
 @{
     ViewData["Title"] = "Edit Deal";
 }
+@* (019) The six hard-coded stage buttons are gone. Stages, their
+   probabilities and their entry requirements all come from the tenant's
+   own pipeline, so a client who renamed "Proposal" to "Quotation" or
+   added "Site Visit" sees it here as well as on the board. *@
 
 <style>
 .page-header {
@@ -54,7 +59,8 @@
 }
 .currency-input { padding-left: 35px !important; }
 
-/* ✅ FIXED: stage colors now match Create.cshtml exactly */
+/* ✅ 019 — colours by what a stage MEANS, not by its name. A client's
+   "Contract Signed" is green because its category is Won. */
 .stage-badge {
     display: inline-block;
     padding: 0.5rem 1rem;
@@ -69,12 +75,11 @@
 }
 .stage-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
 .stage-badge.active { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.25); }
-.stage-discovery    { background-color: #6c757d; color: white; }      /* gray     */
-.stage-qualification{ background-color: #17a2b8; color: white; }      /* teal     */
-.stage-proposal     { background-color: #0d6efd; color: white; }      /* blue     */
-.stage-negotiation  { background-color: #ffc107; color: #000; }       /* yellow   */
-.stage-won          { background-color: #198754; color: white; }      /* green    */
-.stage-lost         { background-color: #dc3545; color: white; }      /* red      */
+.stage-open { background-color: #6c757d; color: white; }
+.stage-won  { background-color: #198754; color: white; }
+.stage-lost { background-color: #dc3545; color: white; }
+.stage-badge.retired { opacity: 0.55; }
+.stage-gate { display: block; font-size: 0.7rem; font-weight: 500; opacity: 0.85; margin-top: 0.1rem; }
 
 .probability-display { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
 .probability-value { font-size: 2rem; font-weight: 700; color: #667eea; min-width: 80px; }
@@ -118,6 +123,22 @@
     <div class="form-container">
         @* alerts handled by _Layout.cshtml TempData rendering *@
 
+        @* ✅ 019 — a refused save says exactly what was missing. The
+           validation summary is the only place that sentence appears, so
+           it is not hidden behind "see above". *@
+        @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+        {
+            <div class="alert alert-warning d-flex gap-2" role="alert">
+                <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                <div>
+                    @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                    {
+                        <div>@err.ErrorMessage</div>
+                    }
+                </div>
+            </div>
+        }
+
         <!-- Created info -->
         <div class="info-box">
             <div class="row">
@@ -135,6 +156,9 @@
         <form method="post" id="editDealForm" asp-route-id="@Model.DealId">
             <input type="hidden" asp-for="Input.Stage" id="stageInput" />
             <input type="hidden" asp-for="Input.Probability" id="probabilityInput" />
+            @* Where the deal was when this page loaded. The server uses it
+               to work out whether the save is a reopen. *@
+            <input type="hidden" asp-for="OriginalStage" id="originalStage" />
 
             <!-- Basic Information -->
             <div class="form-section">
@@ -196,36 +220,99 @@
 
             <!-- Stage & Timeline -->
             <div class="form-section">
-                <div class="section-title"><i class="bi bi-funnel"></i>Stage & Timeline</div>
+                <div class="section-title"><i class="bi bi-funnel"></i>Stage &amp; Timeline</div>
+
+                @if (Model.IsCurrentlyClosed)
+                {
+                    var closedStage = Model.StageByKey(Model.OriginalStage);
+                    <div class="alert alert-secondary d-flex gap-2" role="alert">
+                        <i class="bi bi-lock-fill mt-1"></i>
+                        <div>
+                            This deal is closed — it is in <strong>@(closedStage?.Name ?? Model.OriginalStage)</strong>.
+                            Moving it to an open stage reopens it, which changes the period its value falls in.
+                            @if (Model.Rules?.ReopenRestrictedToManagers == true)
+                            {
+                                <text>Only a manager of the deal owner's team, or a workspace admin, can do that.</text>
+                            }
+                        </div>
+                    </div>
+                }
 
                 <div class="mb-3">
                     <label class="form-label">Deal Stage <span class="text-danger">*</span></label>
-                    <div class="stage-selector">
-                        <div class="stage-badge stage-discovery @(Model.Input.Stage == "Discovery" ? "active" : "")"
-                             data-stage="Discovery" data-probability="20">
-                            <i class="bi bi-search me-1"></i>Discovery (20%)
+
+                    @if (!Model.Stages.Any())
+                    {
+                        <div class="alert alert-warning mb-0">
+                            This workspace has no pipeline stages set up.
+                            <a asp-page="/Settings/Pipeline/Index">Add them under Settings</a>.
                         </div>
-                        <div class="stage-badge stage-qualification @(Model.Input.Stage == "Qualification" ? "active" : "")"
-                             data-stage="Qualification" data-probability="30">
-                            <i class="bi bi-check-circle me-1"></i>Qualification (30%)
+                    }
+                    else
+                    {
+                        <div class="stage-selector">
+                            @foreach (var stage in Model.Stages.OrderBy(s => s.SortOrder))
+                            {
+                                @* A retired stage is offered only when the deal is
+                                   sitting in it — so the page can show where the deal
+                                   actually is, without inviting anyone to move another
+                                   deal into a stage the tenant has withdrawn. *@
+                                if (!stage.IsActive && stage.Key != Model.Input.Stage) { continue; }
+
+                                var gate = Model.RequirementsText(stage.Key);
+
+                                <div class="stage-badge @Model.StageButtonClass(stage) @(stage.IsActive ? "" : "retired") @(Model.Input.Stage == stage.Key ? "active" : "")"
+                                     data-stage="@stage.Key"
+                                     data-probability="@stage.Probability"
+                                     data-category="@((int)stage.Category)"
+                                     data-needs-lost-reason="@(Model.StageNeedsLostReason(stage.Key).ToString().ToLowerInvariant())"
+                                     title="@gate">
+                                    <i class="bi @Model.StageIcon(stage) me-1"></i>@stage.Name (@stage.Probability%)
+                                    @if (!stage.IsActive)
+                                    {
+                                        <span class="stage-gate">retired</span>
+                                    }
+                                    else if (!string.IsNullOrEmpty(gate))
+                                    {
+                                        <span class="stage-gate"><i class="bi bi-shield-check me-1"></i>@gate</span>
+                                    }
+                                </div>
+                            }
                         </div>
-                        <div class="stage-badge stage-proposal @(Model.Input.Stage == "Proposal" ? "active" : "")"
-                             data-stage="Proposal" data-probability="40">
-                            <i class="bi bi-file-earmark-text me-1"></i>Proposal (40%)
-                        </div>
-                        <div class="stage-badge stage-negotiation @(Model.Input.Stage == "Negotiation" ? "active" : "")"
-                             data-stage="Negotiation" data-probability="60">
-                            <i class="bi bi-handshake me-1"></i>Negotiation (60%)
-                        </div>
-                        <div class="stage-badge stage-won @(Model.Input.Stage == "ClosedWon" ? "active" : "")"
-                             data-stage="ClosedWon" data-probability="100">
-                            <i class="bi bi-trophy me-1"></i>Won (100%)
-                        </div>
-                        <div class="stage-badge stage-lost @(Model.Input.Stage == "ClosedLost" ? "active" : "")"
-                             data-stage="ClosedLost" data-probability="0">
-                            <i class="bi bi-x-circle me-1"></i>Lost (0%)
-                        </div>
-                    </div>
+                        <span asp-validation-for="Input.Stage" class="text-danger small"></span>
+                    }
+                </div>
+
+                @* ── 019: the reason boxes ─────────────────────────────
+                   Both start hidden and are shown by the script below when
+                   the chosen stage calls for them. Rendered always, never
+                   conditionally, so the values survive a failed post. *@
+
+                <div class="mb-3 d-none" id="lostReasonBlock">
+                    <label asp-for="Input.LostReason" class="form-label">
+                        Why was this deal lost? <span class="text-danger">*</span>
+                    </label>
+                    <textarea asp-for="Input.LostReason" class="form-control" rows="2" maxlength="1000"
+                              placeholder="Lost on price to a local supplier..."></textarea>
+                    <small class="text-muted">
+                        This shows up in the pipeline report, so a few honest words are worth
+                        more than "no reason given".
+                    </small>
+                    <span asp-validation-for="Input.LostReason" class="text-danger small"></span>
+                </div>
+
+                <div class="mb-3 d-none" id="reopenReasonBlock">
+                    <label asp-for="Input.ReopenReason" class="form-label">
+                        Why are you reopening this deal?
+                        @if (Model.ReopenNeedsReason)
+                        {
+                            <span class="text-danger">*</span>
+                        }
+                    </label>
+                    <textarea asp-for="Input.ReopenReason" class="form-control" rows="2" maxlength="1000"
+                              placeholder="Client came back after the budget was approved..."></textarea>
+                    <small class="text-muted">Kept on the deal's stage history.</small>
+                    <span asp-validation-for="Input.ReopenReason" class="text-danger small"></span>
                 </div>
 
                 <div class="mb-3">
@@ -298,7 +385,8 @@
                     <div class="alert alert-warning mb-0">
                         <strong>Deal:</strong> @Model.Input.Title<br />
                         <strong>Value:</strong> @Model.GetCurrencySymbol(Model.Input.Currency) @Model.Input.ExpectedValue.ToString("N2")<br />
-                        <strong>Stage:</strong> @Model.Input.Stage
+                        @* The stage's NAME, not its key — "Closed Won", not "ClosedWon". *@
+                        <strong>Stage:</strong> @(Model.StageByKey(Model.Input.Stage)?.Name ?? Model.Input.Stage)
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -328,6 +416,38 @@
         const currencySelect    = document.getElementById('currencySelect');
         const currencySymbol    = document.getElementById('currencySymbol');
 
+        const originalStage     = document.getElementById('originalStage').value;
+        const lostBlock         = document.getElementById('lostReasonBlock');
+        const reopenBlock       = document.getElementById('reopenReasonBlock');
+        const lostText          = lostBlock.querySelector('textarea');
+        const reopenText        = reopenBlock.querySelector('textarea');
+
+        // Was the deal closed when the page loaded? Read off the button for
+        // the ORIGINAL stage — category 1 is Won, 2 is Lost.
+        const originalBadge = document.querySelector(`.stage-badge[data-stage="${CSS.escape(originalStage)}"]`);
+        const startedClosed = originalBadge ? originalBadge.dataset.category !== '0' : false;
+        const reopenRequired = @(Model.ReopenNeedsReason ? "true" : "false");
+
+        // Show whichever reason the CURRENT choice calls for.
+        function syncReasonBoxes() {
+            const chosen = stageInput.value;
+            const badge  = document.querySelector(`.stage-badge[data-stage="${CSS.escape(chosen)}"]`);
+            const moved  = chosen !== originalStage;
+
+            const wantsLost = moved && badge && badge.dataset.needsLostReason === 'true';
+            // Leaving a closed stage for any other stage is a reopen.
+            const isReopen  = moved && startedClosed;
+
+            lostBlock.classList.toggle('d-none', !wantsLost);
+            reopenBlock.classList.toggle('d-none', !isReopen);
+
+            // required is set here rather than in the markup: whether either
+            // box matters depends on the stage picked, which an attribute
+            // cannot know. The server checks again regardless.
+            lostText.required = !!wantsLost;
+            reopenText.required = !!(isReopen && reopenRequired);
+        }
+
         // Stage selection
         stageBadges.forEach(badge => {
             badge.addEventListener('click', function () {
@@ -337,12 +457,14 @@
                 probabilityInput.value  = this.dataset.probability;
                 probabilitySlider.value = this.dataset.probability;
                 probabilityDisplay.textContent = this.dataset.probability + '%';
+                syncReasonBoxes();
             });
         });
 
         // Set initial values from server-side model
         stageInput.value       = '@Model.Input.Stage';
         probabilityInput.value = '@Model.Input.Probability';
+        syncReasonBoxes();
 
         // Probability slider
         probabilitySlider.addEventListener('input', function () {

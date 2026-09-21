@@ -171,6 +171,8 @@ namespace MerkaiTrial.Application.DTOs
         public string? UpdatedBy { get; set; }
         // ✅ Vertical — editable on Edit Deal page
         public Guid? VerticalId { get; set; }
+        public string? ReopenReason { get; set; }
+
     }
 
     // ==================== NOTES ====================

@@ -4,6 +4,8 @@
 // NEW FILE. Everything Admin.Web's Program.cs used to register, grouped
 // by area. Same services, same lifetimes.
 //
+// (017) + IQuoteApprovalService — the only change in this version.
+//
 // WHY THE MODULE SERVICES ARE STILL A LIST (not a scan)
 //   They are thin wrappers over IApiService. A naming-convention scan
 //   ("LeadService implements ILeadService") would also find ApiService and
@@ -176,6 +178,8 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
+        services.AddScoped<IPipelineRuleService, PipelineRuleService>();
+        services.AddScoped<IDealStageService, DealStageService>();
         return services;
     }
 
@@ -190,6 +194,7 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IDealService, DealService>();
         services.AddScoped<IPipelineStageService, PipelineStageService>();
         services.AddScoped<IQuoteService, QuoteService>();
+        services.AddScoped<IQuoteApprovalService, QuoteApprovalService>();   // 017 — quote approvals
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IActivityService, ActivityService>();
 

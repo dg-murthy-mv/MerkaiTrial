@@ -3,6 +3,20 @@
 // PURPOSE: Edit Quote - Multi-Tenant SaaS CRM (Mobile/Tablet Compatible)
 // FEATURES: Edit line items, change deal, draft-only editing
 // FIXES: Added missing QuoteItemData class, proper item serialization
+//
+// CHANGES (017 — quote approvals)
+//   ✅ Only Draft, Revised and Approved quotes open for editing. Anything
+//      else goes back to the Detail page with the reason (the API refuses
+//      the save anyway — before, a Sent or Accepted quote could be edited
+//      and the customer's copy changed under them).
+//   ✅ Editing an Approved quote warns that saving sends it back to draft.
+//   ✅ New lines default to the TENANT's tax rate (DefaultTaxRate). The
+//      view had 18 hard-coded — Thai (7%), UAE (5%) and Philippine (12%)
+//      tenants got Indian GST on every line they added.
+//   ✅ Live approval hint, same as Create (ApprovalRulesJson + list prices).
+//   ✅ The deal is shown read-only. UpdateQuoteDto has no DealId, so the
+//      old "you can change the deal" dropdown never saved anything.
+//   ✅ API refusals show their real message.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Deals;
@@ -31,6 +45,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly IProductService _productService;
         private readonly ICurrentUserService  _currentUserService;
         private readonly ICurrentTenantService  _tenantService;
+        private readonly IQuoteApprovalService  _approvals;
         private readonly ILogger<EditModel>      _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -41,6 +56,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             IProductService productService,
             ICurrentUserService   currentUserService,
             ICurrentTenantService tenantService,
+            IQuoteApprovalService approvals,
             IAuthorizationService authorizationService,
             ILogger<EditModel>    logger)
             : base(authorizationService, currentUserService, logger)
@@ -50,6 +66,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _productService = productService;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
+            _approvals          = approvals;
             _logger             = logger;
         }
 
@@ -71,17 +88,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         [TempData]
         public string? ErrorMessage { get; set; }
 
-        public bool IsEditable => ExistingQuote?.Status == "Draft";
+        /// <summary>Same list as the API's QuoteWorkflow.IsEditable.</summary>
+        public bool IsEditable => ExistingQuote?.Status is "Draft" or "Revised" or "Approved";
+
+        /// <summary>Tenant default tax, as a percentage (7 for Thai VAT) — for new lines.</summary>
+        public decimal DefaultTaxRate { get; private set; }
+
+        /// <summary>JSON for the view's script: { enabled, maxDiscountPercent, maxQuoteTotal, exempt }.</summary>
+        public string ApprovalRulesJson { get; private set; } = "{\"enabled\":false}";
+
+        /// <summary>The deal's title for the read-only deal field.</summary>
+        public string DealDisplay => ExistingQuote == null ? "" : ExistingQuote.DealTitle;
 
         // ✅ Tenant context for views
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode   { get; private set; } = string.Empty;
         public string StatusWarning => ExistingQuote?.Status switch
         {
-            "Sent" => "This quote has been sent to the customer. Editing will create a revised version.",
-            "Accepted" => "This quote has been accepted. Consider creating a new quote instead.",
-            "Rejected" => "This quote was rejected. Consider creating a new quote instead.",
+            "Approved" => "This quote is approved. Saving changes sends it back to draft — if it's still over your workspace's limits it will need approval again.",
+            "Revised"  => "You're revising a quote the customer rejected or let expire. Send it again when you're done.",
             _ => ""
+        };
+
+        /// <summary>Why a quote can't be edited — shown on the Detail page.</summary>
+        private static string NotEditableReason(string? status) => status switch
+        {
+            "PendingApproval" => "This quote is waiting for approval. Recall the request first if you need to change it.",
+            "Sent" or "Viewed" => "This quote has already gone to the customer, so it can't be edited. Create a new quote instead.",
+            "Accepted" => "This quote has been accepted, so it can't be edited. Create a new quote instead.",
+            "Rejected" or "Expired" => "Mark this quote as Revised first, then edit it.",
+            _ => "This quote can't be edited."
         };
 
         // ==================== INPUT MODEL ====================
@@ -142,6 +178,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 _logger.LogInformation("✅ Quote loaded: {Number} - Status: {Status}",
                     ExistingQuote.Number, ExistingQuote.Status);
+
+                if (!IsEditable)
+                {
+                    ErrorMessage = NotEditableReason(ExistingQuote.Status);
+                    return RedirectToPage("/Quotes/Detail", new { id = Id });
+                }
+
+                await LoadTaxAndRulesAsync();
                 _logger.LogInformation("✅ Items count: {Count}", ExistingQuote.Items?.Count ?? 0);
 
                 // Populate form with existing data
@@ -260,8 +304,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 await _quoteService.UpdateAsync(tenantId, Id, updateDto);
                 _logger.LogInformation("✅ Quote {QuoteId} updated successfully", Id);
 
-                SuccessMessage = $"Quote {ExistingQuote.Number} updated successfully!";
+                SuccessMessage = ExistingQuote.Status == "Approved"
+                    ? $"Quote {ExistingQuote.Number} updated. It's back in draft — send it, or submit it for approval again if it's over the limits."
+                    : $"Quote {ExistingQuote.Number} updated successfully!";
                 return RedirectToPage("/Quotes/Detail", new { id = Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The API refused and said why — e.g. the quote isn't editable any more.
+                ErrorMessage = ex.Message;
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                await LoadFormDataAsync(tenantId);
+                return Page();
             }
             catch (Exception ex)
             {
@@ -282,6 +336,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             try
             {
                 ExistingQuote = await _quoteService.GetByIdAsync(tenantId, Id);
+                TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
+                TenantCurrencyCode   = _tenantService.GetCurrencyCode();
+                await LoadTaxAndRulesAsync();
                 await LoadAvailableDealsAsync(tenantId);
                 await LoadProductsAsync(tenantId);
             }
@@ -291,13 +348,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             }
         }
 
+        private async Task LoadTaxAndRulesAsync()
+        {
+            try
+            {
+                // GetDefaultTaxRateAsync may return a fraction (0.07) or a percentage (7).
+                var raw = await _tenantService.GetDefaultTaxRateAsync();
+                DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load the tenant's default tax rate");
+                DefaultTaxRate = 0m;
+            }
+
+            try
+            {
+                var rules = await _approvals.GetSettingsAsync();
+                var me = await _currentUserService.GetCurrentUserAsync();
+
+                ApprovalRulesJson = JsonSerializer.Serialize(new
+                {
+                    enabled = rules.IsEnabled,
+                    maxDiscountPercent = rules.MaxDiscountPercent,
+                    maxQuoteTotal = rules.MaxQuoteTotal,
+                    exempt = me.IsTenantAdmin
+                });
+            }
+            catch (Exception ex)
+            {
+                // The hint is a convenience — the API still enforces the rules.
+                _logger.LogWarning(ex, "Could not load quote approval rules for the live hint");
+            }
+        }
+
         private async Task LoadAvailableDealsAsync(Guid tenantId)
         {
             try
             {
                 _logger.LogInformation("Loading available deals...");
 
-                var allDeals = await _dealService.GetAllAsync(tenantId);
+                var allDeals = await _dealService.GetAllAsync(tenantId, pageSize: 500);
 
                 // Include deals in Proposal, Negotiation, or current deal
                 var availableDeals = allDeals.Items

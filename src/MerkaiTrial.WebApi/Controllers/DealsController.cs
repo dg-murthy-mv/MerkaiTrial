@@ -2,6 +2,19 @@
 // DEALS CONTROLLER
 // Location: MerkaiTrial.WebApi/Controllers/DealsController.cs
 //
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (019 — transition rules)
+//  13. UpdateDealStageRequest carries LostReason and ReopenReason. The
+//      kanban board collects them before it posts, so dragging a card
+//      onto Lost now records why, which it never did before. Both are
+//      optional, so an older client that posts only { stage } still
+//      binds — it just gets a clear 400 when the move needs a reason.
+//  14. UnauthorizedAccessException → 403 on the three write endpoints
+//      that can now raise it. Without this case, "you're not allowed to
+//      reopen a closed deal" reached the browser as a 500 with the text
+//      "Failed to update deal stage", and the rep had no idea why.
+//
 // CONSISTENCY FIXES vs LeadsController:
 //   1. Added ICurrentUserService injection (uploadedBy + future auth)
 //   2. Added try-catch on ALL endpoints
@@ -239,6 +252,7 @@ namespace MerkaiTrial.WebApi.Controllers
         [Authorize(Policy = "Deals.Update")]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> Update(
@@ -264,6 +278,14 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Deal {id} not found" });
+            }
+            // ✅ 019 — "only a manager can reopen a closed deal". Before this
+            // case existed it fell through to the 500 below and the page
+            // showed "Failed to update deal", which told the rep nothing.
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning("Refused stage change on deal {DealId}: {Message}", id, ex.Message);
+                return StatusCode(403, new { error = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -311,12 +333,18 @@ namespace MerkaiTrial.WebApi.Controllers
         // ==================== STAGE ====================
 
         /// <summary>
-        /// PUT /api/deals/{id}/stage - Update deal stage (simple)
+        /// PUT /api/deals/{id}/stage - Move a deal to another stage.
+        ///
+        /// 019: the body may carry a lost reason (moving into a stage that
+        /// requires one) or a reopen reason (moving OUT of a closed stage).
+        /// Both are optional here and enforced by the guard, so the error
+        /// message is written once and every caller gets the same one.
         /// </summary>
         [HttpPut("{id:guid}/stage")]
         [Authorize(Policy = "Deals.Update")]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> UpdateStage(
@@ -330,7 +358,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (string.IsNullOrWhiteSpace(request.Stage))
                     return BadRequest(new { error = "Stage is required" });
 
-                await _updateDealStageHandler.HandleAsync(tenantId, id, request.Stage);
+                await _updateDealStageHandler.HandleAsync(
+                    tenantId, id, request.Stage, request.LostReason, request.ReopenReason);
 
                 _logger.LogInformation("Deal {DealId} stage updated to {Stage}", id, request.Stage);
 
@@ -339,6 +368,18 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Deal {id} not found" });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning("Refused stage change on deal {DealId}: {Message}", id, ex.Message);
+                return StatusCode(403, new { error = ex.Message });
+            }
+            // ArgumentException is what an unknown stage key raises. It was
+            // reaching the 500 below, so a stale kanban column posted after
+            // a stage was retired looked like the server had fallen over.
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -353,11 +394,17 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// <summary>
         /// PATCH /api/deals/{dealId}/stage - Transition deal stage (full pipeline)
+        ///
+        /// The AUTOMATIC path: a quote was accepted, or an invoice was paid
+        /// in full. It skips the entry requirements and the reopen rules on
+        /// purpose — see StageTransitionGuard — but still refuses to touch
+        /// a deal that is already closed.
         /// </summary>
         [HttpPatch("{dealId:guid}/stage")]
         [Authorize(Policy = "Deals.Update")]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> TransitionStage(
@@ -378,6 +425,14 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Deal {dealId} not found" });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { error = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
@@ -846,5 +901,13 @@ namespace MerkaiTrial.WebApi.Controllers
     }
 
     // ✅ Moved inside namespace (was incorrectly at file root)
-    public record UpdateDealStageRequest(string Stage);
+    //
+    // 019: the two reasons a stage move can need. Both nullable and both
+    // defaulted, so `{ "stage": "Proposal" }` from an older caller still
+    // binds exactly as it did — it simply gets a readable 400 if the move
+    // it asked for turns out to need one.
+    public record UpdateDealStageRequest(
+        string Stage,
+        string? LostReason = null,
+        string? ReopenReason = null);
 }

@@ -1,0 +1,131 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Quotes.ApprovalsModel
+@* =====================================================================
+   QUOTE APPROVALS — waiting for my decision (017)
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/Approvals.cshtml
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "Quote approvals";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin: -1rem -1rem 2rem -1rem;
+        border-radius: 0 0 1rem 1rem;
+    }
+
+    .approval-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.08);
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1rem;
+        border-left: 5px solid #ffc107;
+    }
+
+    .approval-number { font-weight: 700; color: #667eea; font-size: 1.1rem; text-decoration: none; }
+    .approval-meta { color: #6c757d; font-size: .875rem; }
+    .approval-total { font-size: 1.35rem; font-weight: 700; color: #212529; }
+    .approval-reasons { margin: .5rem 0 0; padding-left: 1.1rem; }
+    .approval-note { background: #f8f9fa; border-radius: 8px; padding: .5rem .75rem; margin-top: .5rem; font-size: .9rem; white-space: pre-line; }
+
+    .empty-approvals { text-align: center; padding: 3rem 1rem; color: #6c757d; }
+    .empty-approvals i { font-size: 3rem; opacity: .35; display: block; margin-bottom: .75rem; }
+</style>
+
+<div class="container-fluid">
+    <div class="page-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-0"><i class="bi bi-patch-check me-2"></i>Quote approvals</h2>
+                    <p class="mb-0 mt-1 opacity-75">Quotes over your workspace's limits, waiting for your sign-off</p>
+                </div>
+                <a asp-page="/Quotes/Index" class="btn btn-outline-light">
+                    <i class="bi bi-arrow-left me-2"></i>All quotes
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        @* Alert messages are rendered once, globally, by _Layout.cshtml. *@
+
+        @if (Model.LoadFailed)
+        {
+            <div class="alert alert-danger">Couldn't load approvals. Please refresh the page.</div>
+        }
+        else if (!Model.Pending.Any())
+        {
+            <div class="empty-approvals">
+                <i class="bi bi-check2-all"></i>
+                <h5 class="mb-1">Nothing waiting for you</h5>
+                <div>When a rep sends a quote over the discount or total limit, it shows up here.</div>
+            </div>
+        }
+        else
+        {
+            <p class="text-muted mb-3">
+                @Model.Pending.Count @(Model.Pending.Count == 1 ? "quote" : "quotes") waiting — oldest first.
+            </p>
+
+            @foreach (var p in Model.Pending)
+            {
+                <div class="approval-card">
+                    <div class="row g-3 align-items-start">
+                        <div class="col-lg-7">
+                            <a class="approval-number" asp-page="/Quotes/Detail" asp-route-id="@p.QuoteId">@p.QuoteNumber</a>
+                            <div class="fw-semibold">@p.DealTitle</div>
+                            @if (!string.IsNullOrWhiteSpace(p.CustomerName))
+                            {
+                                <div class="approval-meta"><i class="bi bi-person me-1"></i>@p.CustomerName</div>
+                            }
+                            <div class="approval-meta mt-1">
+                                Asked by <strong>@p.RequestedByName</strong> · @MerkaiTrial.Admin.Web.Pages.Quotes.ApprovalsModel.Ago(p.RequestedAtUtc)
+                            </div>
+
+                            @if (p.Reasons.Any())
+                            {
+                                <ul class="approval-reasons">
+                                    @foreach (var r in p.Reasons) { <li>@r</li> }
+                                </ul>
+                            }
+
+                            @if (!string.IsNullOrWhiteSpace(p.RequestComment))
+                            {
+                                <div class="approval-note"><i class="bi bi-chat-left-text me-1"></i>@p.RequestComment</div>
+                            }
+                        </div>
+
+                        <div class="col-lg-5 text-lg-end">
+                            <div class="approval-total">@Model.FormatCurrency(p.QuoteTotal)</div>
+                            <div class="approval-meta mb-3">
+                                Deepest discount <strong>@p.MaxLineDiscountPercent.ToString("0.##")%</strong>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                                <a asp-page="/Quotes/Detail" asp-route-id="@p.QuoteId" class="btn btn-outline-primary">
+                                    <i class="bi bi-eye me-1"></i>Review
+                                </a>
+                                <form method="post" asp-page-handler="Approve" class="d-inline"
+                                      onsubmit="return confirm('Approve @p.QuoteNumber without opening it?');">
+                                    <input type="hidden" name="quoteId" value="@p.QuoteId" />
+                                    <input type="hidden" name="number" value="@p.QuoteNumber" />
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-check2-circle me-1"></i>Approve
+                                    </button>
+                                </form>
+                            </div>
+                            <div class="approval-meta mt-2">To send it back, open it and use <em>Request changes</em>.</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>

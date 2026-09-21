@@ -18,6 +18,16 @@
 //   NOTE: Edit.cshtml itself needs NO changes — page entry is gated here, and
 //   the view contains no permission-dependent buttons (only the form itself,
 //   which is unreachable without passing OnGetAsync).
+//
+// CHANGES (018 — invoice workflow)
+//   ✅ An invoice raised from a QUOTE: only due date and notes can change —
+//      its lines are the accepted (possibly approved) quote's. The API
+//      enforces this too.
+//   ✅ New lines default to the tenant's tax rate (was 0%); catalog lines
+//      take the product's tax rate.
+//   ✅ Due date stored as the calendar date (was ToUniversalTime()).
+//   ✅ Status messages: "Only draft invoices can be edited" now explains
+//      that issued invoices are voided and re-issued.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Invoices;
@@ -85,15 +95,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         // Business-state lock — distinct from the CanUpdate PERMISSION property
         public bool IsEditable => ExistingInvoice?.Status == "Draft";
 
+        /// <summary>(018) Raised from a quote — lines are the quote's and can't be edited here.</summary>
+        public bool IsFromQuote => ExistingInvoice?.QuoteId.HasValue == true;
+
+        /// <summary>Tenant default tax as a percentage (7 for Thai VAT) — for new custom lines.</summary>
+        public decimal DefaultTaxRate { get; private set; }
+
         // ✅ Tenant context
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode { get; private set; } = string.Empty;
         public string StatusWarning => ExistingInvoice?.Status switch
         {
-            "Sent" => "This invoice has been sent. Only draft invoices can be edited.",
-            "Paid" => "This invoice has been paid. Cannot edit paid invoices.",
-            "PartiallyPaid" => "This invoice has payments. Cannot edit after payments received.",
-            _ => ""
+            "Draft" => "",
+            "Cancelled" => "This invoice is void.",
+            _ => "This invoice has been issued, so it can't be changed. If something is wrong, void it and issue a new one."
         };
 
         // ==================== INPUT MODEL ====================
@@ -150,12 +165,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 // Only allow editing Draft invoices (business lock, separate from permission)
                 if (!IsEditable)
                 {
-                    ErrorMessage = $"Cannot edit invoice with status '{ExistingInvoice.Status}'. Only draft invoices can be edited.";
+                    ErrorMessage = StatusWarning;
                     return RedirectToPage("/Invoices/Detail", new { id = Id });
                 }
 
+                await LoadDefaultTaxAsync();
+
                 // Populate form with existing data
-                Input.DueDate = ExistingInvoice.DueDateUtc?.ToLocalTime() ?? DateTime.Today.AddDays(30);
+                // Stored as the calendar date (018) — read it back the same way,
+                // or every save would shift it by the server's time zone.
+                Input.DueDate = ExistingInvoice.DueDateUtc?.Date ?? DateTime.Today.AddDays(30);
                 Input.Notes = ExistingInvoice.Notes;
 
                 // ✅ CROSS-MODULE: the product picker needs products.read.
@@ -212,42 +231,42 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 if (!IsEditable)
                 {
-                    ErrorMessage = "Only draft invoices can be edited";
+                    ErrorMessage = StatusWarning;
                     return RedirectToPage("/Invoices/Detail", new { id = Id });
                 }
 
                 _logger.LogInformation("Updating invoice {InvoiceId}", Id);
 
-                // Validate items
-                if (string.IsNullOrWhiteSpace(itemsJson))
-                {
-                    ErrorMessage = "Please add at least one item to the invoice";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                // (018) A quote's invoice: due date and notes only — no lines
+                // are sent, and the API keeps the quote's lines.
+                var items = new List<InvoiceItemData>();
 
-                // ✅ Case-insensitive JSON deserialization
-                var jsonOptions = new JsonSerializerOptions
+                if (!IsFromQuote)
                 {
-                    PropertyNameCaseInsensitive = true
-                };
+                    if (string.IsNullOrWhiteSpace(itemsJson))
+                    {
+                        ErrorMessage = "Please add at least one item to the invoice";
+                        await LoadFormDataAsync(tenantId);
+                        return Page();
+                    }
 
-                var items = JsonSerializer.Deserialize<List<InvoiceItemData>>(itemsJson, jsonOptions);
+                    var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    items = JsonSerializer.Deserialize<List<InvoiceItemData>>(itemsJson, jsonOptions) ?? new();
 
-                if (items == null || items.Count == 0)
-                {
-                    _logger.LogWarning("No items provided for invoice update");
-                    ErrorMessage = "Please add at least one item to the invoice";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    if (items.Count == 0)
+                    {
+                        _logger.LogWarning("No items provided for invoice update");
+                        ErrorMessage = "Please add at least one item to the invoice";
+                        await LoadFormDataAsync(tenantId);
+                        return Page();
+                    }
 
-                // Validate item names
-                if (items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
-                {
-                    ErrorMessage = "All items must have a name";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
+                    if (items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
+                    {
+                        ErrorMessage = "All items must have a name";
+                        await LoadFormDataAsync(tenantId);
+                        return Page();
+                    }
                 }
 
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
@@ -257,7 +276,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     Id = Id,
                     TenantId = tenantId,
-                    DueDateUtc = Input.DueDate.ToUniversalTime(),
+                    DueDateUtc = DateTime.SpecifyKind(Input.DueDate.Date, DateTimeKind.Utc),
                     Notes = Input.Notes,
                     UpdatedBy = currentUser.FullName,
                     Lines = items.Select(i => new CreateInvoiceLineDto
@@ -280,9 +299,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogError(ex, "❌ Cannot update invoice");
+                // The API refused and said why (a bad line, or it's no longer a draft).
+                _logger.LogWarning(ex, "Invoice update refused");
                 ErrorMessage = ex.Message;
-                return RedirectToPage("/Invoices/Detail", new { id = Id });
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                await LoadFormDataAsync(tenantId);
+                return Page();
             }
             catch (Exception ex)
             {
@@ -303,6 +325,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             try
             {
                 ExistingInvoice = await _invoiceService.GetByIdAsync(tenantId, Id);
+                TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
+                TenantCurrencyCode = _tenantService.GetCurrencyCode();
+                await LoadDefaultTaxAsync();
                 if (UserCanRead(Modules.Products))
                 {
                     await LoadProductsAsync(tenantId);
@@ -311,6 +336,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to reload form data");
+            }
+        }
+
+        private async Task LoadDefaultTaxAsync()
+        {
+            try
+            {
+                // May come back as a fraction (0.07) or a percentage (7).
+                var raw = await _tenantService.GetDefaultTaxRateAsync();
+                DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load the tenant's default tax rate");
+                DefaultTaxRate = 0m;
             }
         }
 

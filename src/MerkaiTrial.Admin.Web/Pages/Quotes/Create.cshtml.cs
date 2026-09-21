@@ -1,6 +1,16 @@
-﻿// =====================================================================
+// =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Quotes/Create.cshtml.cs
-// FIXES:
+// CHANGES (017 — quote approvals)
+//   ✅ "Send to Customer" on a quote that breaks an approval rule now
+//      creates it and SUBMITS IT FOR APPROVAL instead (the API would
+//      refuse to send it). The message says so, and why.
+//   ✅ The page shows the approval limits live while you type: the Send
+//      button turns into "Save & submit for approval" and a banner lists
+//      the lines over the limit (ApprovalRulesJson → the view's script).
+//   ✅ API refusals (bad line, deal not visible) show their real message.
+//   ✅ Deal list loads with pageSize 500 (was the first 20 deals).
+//
+// EARLIER FIXES:
 //   ✅ ICurrentTenantService for tenant currency — no more hardcoded "INR"
 //   ✅ ICurrentTenantService for default tax rate — no more hardcoded 0.11
 //   ✅ Qualification stage added to quotable deals (triggers Proposal advance)
@@ -28,6 +38,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly IProductService _productService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _currentTenantService;
+        private readonly IQuoteApprovalService _approvals;
         private readonly ILogger<CreateModel> _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -38,6 +49,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             IProductService productService,
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
+            IQuoteApprovalService approvals,
             IAuthorizationService authorizationService,
             ILogger<CreateModel> logger)
             : base(authorizationService, currentUserService, logger)
@@ -47,6 +59,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _productService       = productService;
             _currentUserService   = currentUserService;
             _currentTenantService = currentTenantService;
+            _approvals            = approvals;
             _logger               = logger;
         }
 
@@ -73,6 +86,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         [BindProperty] public DateTime ExpiryDate  { get; set; } = DateTime.Today.AddDays(30);
         [BindProperty] public Guid?    SelectedDealId { get; set; }
 
+        // ── Approval rules for the live hint (017) ────────────────────
+        /// <summary>JSON for the view's script: { enabled, maxDiscountPercent, maxQuoteTotal, exempt }.</summary>
+        public string ApprovalRulesJson { get; private set; } = "{\"enabled\":false}";
+
         // ── GET ───────────────────────────────────────────────────────
 
         public async Task<IActionResult> OnGetAsync()
@@ -86,6 +103,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 // ✅ Load tenant defaults first
                 await LoadTenantCurrencyAsync();
+                await LoadApprovalRulesAsync();
 
                 if (!DealId.HasValue || DealId.Value == Guid.Empty)
                 {
@@ -235,8 +253,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 if (sendToCustomer)
                 {
-                    await _quoteService.UpdateStatusAsync(tenantId, quote.Id, "Sent");
-                    SuccessMessage = $"Quote {quote.Number} created and sent to customer!";
+                    SuccessMessage = await SendOrSubmitAsync(tenantId, quote.Id, quote.Number);
                 }
                 else
                 {
@@ -244,6 +261,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 }
 
                 return RedirectToPage("/Quotes/Detail", new { id = quote.Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The API refused and said why (a bad line, a deal you can't see…).
+                ErrorMessage = ex.Message;
+                return DealId.HasValue
+                    ? RedirectToPage(new { DealId = DealId.Value })
+                    : RedirectToPage();
             }
             catch (Exception ex)
             {
@@ -256,6 +281,66 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         }
 
         // ── HELPERS ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// "Send to Customer" after create. Within the rules (or an admin) →
+        /// sent. Over a limit → submitted for approval, and the message says
+        /// why. The quote exists either way, so a failure here is reported
+        /// but never loses it.
+        /// </summary>
+        private async Task<string> SendOrSubmitAsync(Guid tenantId, Guid quoteId, string number)
+        {
+            try
+            {
+                var state = await _approvals.GetStateAsync(quoteId);
+
+                if (state.CanSend)
+                {
+                    await _quoteService.UpdateStatusAsync(tenantId, quoteId, "Sent", $"{Request.Scheme}://{Request.Host}");
+                    return $"Quote {number} created and sent to customer!";
+                }
+
+                if (state.CanSubmit)
+                {
+                    await _approvals.SubmitAsync(quoteId, null);
+                    return $"Quote {number} created and sent for approval — {string.Join(" ", state.Reasons)} " +
+                           "You can send it once it's approved.";
+                }
+
+                return $"Quote {number} created as draft. It needs approval before it can be sent.";
+            }
+            catch (InvalidOperationException ex)
+            {
+                return $"Quote {number} created as draft, but it wasn't sent: {ex.Message}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Quote {Number} created but send/submit failed", number);
+                return $"Quote {number} created as draft, but it couldn't be sent. Open it and try again.";
+            }
+        }
+
+        private async Task LoadApprovalRulesAsync()
+        {
+            try
+            {
+                var rules = await _approvals.GetSettingsAsync();
+                var me = await _currentUserService.GetCurrentUserAsync();
+
+                ApprovalRulesJson = JsonSerializer.Serialize(new
+                {
+                    enabled = rules.IsEnabled,
+                    maxDiscountPercent = rules.MaxDiscountPercent,
+                    maxQuoteTotal = rules.MaxQuoteTotal,
+                    exempt = me.IsTenantAdmin
+                });
+            }
+            catch (Exception ex)
+            {
+                // The hint is a convenience — the API still enforces the rules.
+                _logger.LogWarning(ex, "Could not load quote approval rules for the live hint");
+            }
+        }
 
         // Authoritative currency for a new quote, resolved on the server.
         // Order matches LoadDealAsync so the POST agrees with what the GET
@@ -320,7 +405,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         {
             try
             {
-                var allDeals = await _dealService.GetAllAsync(tenantId);
+                var allDeals = await _dealService.GetAllAsync(tenantId, pageSize: 500);
 
                 var quotableDeals = allDeals.Items
                     .Where(d =>

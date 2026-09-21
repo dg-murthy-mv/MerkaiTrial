@@ -2,7 +2,12 @@
 // PipelineStageConfiguration.cs
 // Location: MerkaiTrial.Infrastructure/Persistence/Configurations/
 //
-// NEW FILE.
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (019)
+//   ✅ The five entry-requirement flags mapped with an explicit default
+//      of false, so EF's generated SQL matches what 019_PipelineTransition
+//      Rules.sql actually created.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -27,6 +32,20 @@ public class PipelineStageConfiguration : IEntityTypeConfiguration<PipelineStage
         // could get wrong, and the category is never shown raw.
         b.Property(s => s.Category).HasConversion<int>();
 
+        // ── Entry requirements (019) ──────────────────────────────────
+        // Every one defaults to false in the database as well as in C#.
+        // A stage inserted by any route — EF, a script, a support fix —
+        // must start out asking nothing of a deal.
+        b.Property(s => s.RequiresQuote)        .HasDefaultValue(false);
+        b.Property(s => s.RequiresAcceptedQuote).HasDefaultValue(false);
+        b.Property(s => s.RequiresCloseDate)    .HasDefaultValue(false);
+        b.Property(s => s.RequiresValue)        .HasDefaultValue(false);
+        b.Property(s => s.RequiresLostReason)   .HasDefaultValue(false);
+
+        // Computed in C# only — there are no such columns.
+        b.Ignore(s => s.IsTerminal);
+        b.Ignore(s => s.HasEntryRequirements);
+
         // The Key must be unique within a tenant — Deal.Stage resolves
         // against it, and the composite FK from Deals depends on this
         // index existing.
@@ -40,7 +59,8 @@ public class PipelineStageConfiguration : IEntityTypeConfiguration<PipelineStage
 }
 
 /* =====================================================================
-   ALSO REQUIRED — FlowDbContext.cs
+   ALSO REQUIRED — FlowDbContext.cs  (unchanged from the stage round,
+   repeated here so this file still stands on its own)
 
    1. DbSet, alongside the others:
 

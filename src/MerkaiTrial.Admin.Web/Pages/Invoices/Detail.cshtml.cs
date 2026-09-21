@@ -1,6 +1,24 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Detail.cshtml.cs
 //
+// CHANGES (018 — invoice workflow)
+//   ✅ Workflow (from api/invoices/{id}/workflow) drives the buttons:
+//        Draft  → Edit, Issue, Delete
+//        Issued → Record payment, Reverse payment, Void
+//        Void   → nothing but PDF
+//   ✅ New handlers: Issue, Void (reason required), ReversePayment (reason
+//      required). Manual invoices over the approval limits can only be
+//      issued by a manager of the deal owner's team or an admin — the page
+//      says who.
+//   ✅ Delete is for drafts only; issued invoices are voided.
+//   ✅ Status buttons: only "Mark as Viewed" is left — Paid/Partly paid come
+//      from payments, Void has its own button.
+//   ✅ API refusals show their real message instead of "Failed to …".
+//   ✅ Removed the page-side deal moves (UpdateStatus AND RecordPayment):
+//      the API's AddPayment moves the deal to ClosedWon when the invoice is
+//      fully paid. The page also moved it — to "Won" (a different stage
+//      name), or back to "Negotiation" on a partial payment.
+//
 // ✅ SESSION 5 — PERMISSION MIGRATION
 //   1. AppPageModel  →  AuthorizedPageModel   (ModuleName = Modules.Invoices)
 //   2. ALL FIVE handlers were previously UNGATED. Every one now has a gate:
@@ -83,6 +101,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         public InvoiceDto? Invoice { get; set; }
 
+        /// <summary>What can happen next. Null if it couldn't be loaded — buttons then fall back to status checks.</summary>
+        public InvoiceWorkflowDto? Workflow { get; set; }
+
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode { get; private set; } = string.Empty;
 
@@ -114,18 +135,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         // ── ✅ BUSINESS-STATE LOCK (naming follows Pipeline/Detail convention) ──
         // Distinct from the CanDelete PERMISSION property on the base class.
         // Both must be true to delete.
-        public bool IsDeletableState =>
-            Invoice != null &&
-            Invoice.Status != "Paid" &&
-            Invoice.Status != "PartiallyPaid";
+        // (018) Only a draft can be deleted — an issued invoice is voided.
+        public bool IsDeletableState => Workflow?.CanDelete ?? Invoice?.Status == "Draft";
 
-        /// <summary>Why deletion is blocked, or null when it isn't. Drives the modal copy.</summary>
-        public string? DeleteBlockedReason => Invoice?.Status switch
-        {
-            "Paid" => "Paid invoices cannot be deleted.",
-            "PartiallyPaid" => "This invoice has payments recorded against it and cannot be deleted.",
-            _ => null
-        };
+        /// <summary>Why deletion is blocked, or null when it isn't. Drives the tooltip.</summary>
+        public string? DeleteBlockedReason => IsDeletableState ? null
+            : Invoice?.Status == "Cancelled"
+                ? "A void invoice stays on record."
+                : "Issued invoices can't be deleted — void it instead.";
+
+        public bool IsDraft => Workflow?.IsDraft ?? Invoice?.Status == "Draft";
+        public bool IsVoid => Workflow?.IsVoid ?? Invoice?.Status == "Cancelled";
+
+        /// <summary>A draft's placeholder number isn't shown to people — "Draft" is.</summary>
+        public string DisplayNumber => Invoice == null ? ""
+            : Invoice.Number.StartsWith("DRAFT-", StringComparison.Ordinal) ? "Draft invoice" : Invoice.Number;
+
+        public bool CanReversePayment(Guid paymentId) =>
+            Workflow?.ReversiblePaymentIds.Contains(paymentId) == true;
 
         // ── GET ──────────────────────────────────────────────────────────────
 
@@ -160,6 +187,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     ErrorMessage = "Invoice not found";
                     return RedirectToPage("/Invoices/Index");
+                }
+
+                try
+                {
+                    Workflow = await _invoiceService.GetWorkflowAsync(Id);
+                }
+                catch (Exception wfEx)
+                {
+                    _logger.LogWarning(wfEx, "Could not load workflow for invoice {Id}", Id);
                 }
 
                 _logger.LogInformation("Loaded invoice {Number}", Invoice.Number);
@@ -211,24 +247,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 await _invoiceService.AddPaymentAsync(dto);
 
-                // ── Re-fetch to get updated Balance / IsFullyPaid ────────────
-                var invoiceAfter = await _invoiceService.GetByIdAsync(tenantId, Id);
-
-                if (invoiceAfter != null)
-                {
-                    if (invoiceAfter.IsFullyPaid || invoiceAfter.Balance <= 0)
-                    {
-                        // ✅ Fully paid → Won
-                        await TransitionLinkedDealAsync(
-                            tenantId, invoiceAfter, "Won", probability: 100);
-                    }
-                    else
-                    {
-                        // ✅ Partial payment → Negotiation
-                        await TransitionLinkedDealAsync(
-                            tenantId, invoiceAfter, "Negotiation", probability: 80);
-                    }
-                }
+                // (018) No deal moves from here any more. The API moves the
+                // deal to ClosedWon when the invoice is fully paid; the page
+                // used to ALSO move it — to "Won" (a second, different stage
+                // name) or, on a partial payment, back to "Negotiation", which
+                // could drag a deal that was further along backwards.
 
                 SuccessMessage =
                     $"Payment of {_tenantService.FormatCurrency(amount)} recorded successfully!";
@@ -261,23 +284,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 await _invoiceService.UpdateStatusAsync(tenantId, Id, newStatus);
 
-                // ── Stage transition based on new invoice status ──────────────
-                if (string.Equals(newStatus, "Paid", StringComparison.OrdinalIgnoreCase))
-                {
-                    // ✅ Fully paid → Won
-                    var invoice = await _invoiceService.GetByIdAsync(tenantId, Id);
-                    await TransitionLinkedDealAsync(tenantId, invoice, "Won", probability: 100);
-                }
-                else if (string.Equals(newStatus, "PartiallyPaid",
-                             StringComparison.OrdinalIgnoreCase))
-                {
-                    // ✅ Partially paid → Negotiation
-                    var invoice = await _invoiceService.GetByIdAsync(tenantId, Id);
-                    await TransitionLinkedDealAsync(
-                        tenantId, invoice, "Negotiation", probability: 80);
-                }
-
-                SuccessMessage = $"Invoice status updated to {newStatus}!";
+                SuccessMessage = $"Invoice marked as {StatusLabel(newStatus).ToLowerInvariant()}.";
+                return RedirectToPage(new { id = Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
                 return RedirectToPage(new { id = Id });
             }
             catch (Exception ex)
@@ -304,20 +316,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 // already had it. This page did not, so deleting from here wiped
                 // the invoice AND its payment rows. Server-side, so a hand-crafted
                 // POST can't skip it.
+                // (018) The API refuses anything but a draft; this is the
+                // friendly early answer.
                 var invoice = await _invoiceService.GetByIdAsync(tenantId, Id);
-                if (invoice?.Status is "Paid" or "PartiallyPaid")
+                if (invoice != null && invoice.Status != "Draft")
                 {
-                    _logger.LogWarning(
-                        "Blocked delete of invoice {Number} — status {Status} has payments recorded",
-                        invoice.Number, invoice.Status);
-                    ErrorMessage =
-                        $"Invoice {invoice.Number} cannot be deleted — payments have been recorded against it.";
+                    ErrorMessage = invoice.Status == "Cancelled"
+                        ? "A void invoice stays on record and can't be deleted."
+                        : $"Invoice {invoice.Number} has been issued, so it can't be deleted. Void it instead.";
                     return RedirectToPage(new { id = Id });
                 }
 
                 await _invoiceService.DeleteAsync(tenantId, Id);
-                SuccessMessage = "Invoice deleted successfully!";
+                SuccessMessage = "Draft invoice deleted.";
                 return RedirectToPage("/Invoices/Index");
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id = Id });
             }
             catch (Exception ex)
             {
@@ -325,6 +342,81 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 ErrorMessage = "Failed to delete invoice. Please try again.";
                 return RedirectToPage(new { id = Id });
             }
+        }
+
+        // ── ISSUE / VOID / REVERSE (018) ─────────────────────────────────────
+
+        public async Task<IActionResult> OnPostIssueAsync()
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            return await WorkflowActionAsync(async () =>
+            {
+                var number = await _invoiceService.IssueAsync(Id);
+                return $"Invoice issued as {number}. It can no longer be edited — void it if something is wrong.";
+            });
+        }
+
+        public async Task<IActionResult> OnPostVoidAsync(string? reason)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                ErrorMessage = "Give a reason for voiding the invoice.";
+                return RedirectToPage(new { id = Id });
+            }
+
+            return await WorkflowActionAsync(async () =>
+            {
+                await _invoiceService.VoidAsync(Id, reason.Trim());
+                return "Invoice voided. It stays on record; raise a new invoice if the customer still owes something.";
+            });
+        }
+
+        public async Task<IActionResult> OnPostReversePaymentAsync(Guid paymentId, string? reason)
+        {
+            var permissionCheck = await ValidateRecordPaymentPermissionAsync();
+            if (permissionCheck != null) return permissionCheck;
+
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                ErrorMessage = "Give a reason for reversing the payment.";
+                return RedirectToPage(new { id = Id });
+            }
+
+            return await WorkflowActionAsync(async () =>
+            {
+                await _invoiceService.ReversePaymentAsync(Id, paymentId, reason.Trim());
+                return "Payment reversed. The balance has been updated.";
+            });
+        }
+
+        private async Task<IActionResult> WorkflowActionAsync(Func<Task<string>> action)
+        {
+            try
+            {
+                if (Id == Guid.Empty)
+                {
+                    ErrorMessage = "Invalid invoice ID";
+                    return RedirectToPage("/Invoices/Index");
+                }
+
+                SuccessMessage = await action();
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Invoice action failed for {Id}", Id);
+                ErrorMessage = "That didn't work. Please try again.";
+            }
+
+            return RedirectToPage(new { id = Id });
         }
 
         // ── DOWNLOAD PDF ──────────────────────────────────────────────────────
@@ -358,48 +450,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             }
         }
 
-        // ── PRIVATE: STAGE TRANSITION ─────────────────────────────────────────
-
-        /// <summary>
-        /// Transitions the deal linked to this invoice.
-        /// Uses InvoiceDto.DealId directly — no chain through QuoteId needed.
-        /// Non-fatal — invoice operation already succeeded before this is called.
-        /// TransitionStageAsync already no-ops if deal is already Won/Lost.
-        /// </summary>
-        private async Task TransitionLinkedDealAsync(
-            Guid tenantId, InvoiceDto? invoice, string toStage, int probability)
-        {
-            try
-            {
-                if (invoice == null)
-                {
-                    _logger.LogWarning(
-                        "TransitionLinkedDeal: invoice null — skipping {Stage}", toStage);
-                    return;
-                }
-
-                if (!invoice.DealId.HasValue || invoice.DealId == Guid.Empty)
-                {
-                    _logger.LogInformation(
-                        "Invoice {Id} has no linked Deal — skipping {Stage}", invoice.Id, toStage);
-                    return;
-                }
-
-                await _dealService.TransitionStageAsync(
-                    tenantId.ToString(), invoice.DealId.Value, toStage, probability);
-
-                _logger.LogInformation(
-                    "✅ Invoice {InvoiceId} → Deal {DealId} → {Stage}",
-                    invoice.Id, invoice.DealId, toStage);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to transition Deal to {Stage} after invoice {Id} update",
-                    toStage, invoice?.Id);
-            }
-        }
-
         // ── VIEW HELPERS ──────────────────────────────────────────────────────
 
         public string FormatDate(DateTime utcDate) => _tenantService.FormatDate(utcDate);
@@ -430,6 +480,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             _ => "bg-secondary"
         };
 
+        /// <summary>What people read: "Cancelled" is shown as "Void", "Sent" as "Issued".</summary>
+        public static string StatusLabel(string? status) => status switch
+        {
+            "Sent" => "Issued",
+            "PartiallyPaid" => "Partially paid",
+            "Cancelled" => "Void",
+            null => "",
+            _ => status
+        };
+
         public string GetPaymentMethodIcon(string method) => method switch
         {
             "BankTransfer" => "bank",
@@ -449,38 +509,33 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             "Captured" => "bg-success",
             "Failed" => "bg-danger",
             "Refunded" => "bg-secondary",
+            "Reversed" => "bg-light text-muted border text-decoration-line-through",
             "Cancelled" => "bg-dark",
             _ => "bg-secondary"
         };
 
         // ── BUSINESS-STATE HELPERS (unchanged — no collision with base Can* props) ──
 
+        // (018) Payments only against an ISSUED, not-void invoice with money owed.
         public bool CanRecordPayment()
         {
             if (Invoice == null) return false;
-            return Invoice.Status != "Paid" &&
-                   Invoice.Status != "Cancelled" &&
-                   Invoice.Balance > 0;
+            if (Workflow != null) return Workflow.CanRecordPayment;
+            return Invoice.Status is not ("Draft" or "Paid" or "Cancelled") && Invoice.Balance > 0;
         }
 
-        public bool CanChangeStatus()
-        {
-            if (Invoice == null) return false;
-            return Invoice.Status != "Paid" &&
-                   Invoice.Status != "Cancelled";
-        }
+        public bool CanChangeStatus() => GetAvailableStatuses().Count > 0;
 
+        /// <summary>
+        /// (018) The only hand-set move left is "Viewed". Issue and Void have
+        /// their own buttons; Paid/Partly paid come from payments.
+        /// </summary>
         public List<string> GetAvailableStatuses()
         {
             if (Invoice == null) return new List<string>();
-            return Invoice.Status switch
-            {
-                "Draft" => new List<string> { "Sent" },
-                "Sent" => new List<string> { "Viewed", "Cancelled" },
-                "Viewed" => new List<string> { "Cancelled" },
-                "PartiallyPaid" => new List<string> { "Cancelled" },
-                _ => new List<string>()
-            };
+            return Invoice.Status is "Sent" or "Unpaid" or "Overdue"
+                ? new List<string> { "Viewed" }
+                : new List<string>();
         }
 
         public string GetRelativeDate(DateTime? date)

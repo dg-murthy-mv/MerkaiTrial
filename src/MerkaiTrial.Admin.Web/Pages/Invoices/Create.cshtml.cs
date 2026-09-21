@@ -22,6 +22,21 @@
 //      all currently UNUSED — the only consumer was the commented-out
 //      GetAllAsync block below. Left in place rather than deleted in case you
 //      intend to restore product loading for the manual path.
+//
+// CHANGES (018 — invoice workflow)
+//   ✅ MANUAL INVOICES HAD BLANK LINES. The line items were read with
+//      JsonSerializer.Deserialize(itemsJson) — case-SENSITIVE — but the
+//      page sends camelCase ("name", "unitPrice"), so every property came
+//      back empty/0. Now case-insensitive.
+//   ✅ The product catalog is loaded again for manual invoices (it had
+//      been commented out, so "Add from Product Catalog" never showed).
+//   ✅ New custom lines default to the TENANT's tax rate (was 18%).
+//   ✅ Dates are stored as the calendar date (was ToUniversalTime(), which
+//      moved an IST date back a day — same fix as quotes).
+//   ✅ "Create & Issue": creates the draft and issues it. A manual invoice
+//      over the approval limits stays a draft and the message says why and
+//      who can issue it.
+//   ✅ API refusals show their message.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Deals;
@@ -122,6 +137,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode { get; private set; } = string.Empty;
+
+        /// <summary>Tenant default tax as a percentage (7 for Thai VAT) — for new custom lines.</summary>
+        public decimal DefaultTaxRate { get; private set; }
         public string Mode => QuoteId.HasValue ? "FromQuote" : "Manual";
 
         public async Task<IActionResult> OnGetAsync()
@@ -190,13 +208,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                         return RedirectToPage("/Pipeline/Index");
                     }
 
-                    //Products = await _productService.GetAllAsync(
-                    //tenantId,
-                    //PageNumber,
-                    //PageSize,
-                    //CategoryFilter,
-                    //IsActiveFilter,
-                    //SearchTerm);
+                    // (018) Catalog for "Add from Product Catalog" — only with products.read.
+                    if (UserCanRead(Modules.Products))
+                    {
+                        try
+                        {
+                            var paginated = await _productService.GetAllAsync(
+                                tenantId: tenantId, pageNumber: 1, pageSize: 1000,
+                                category: null, isActive: true, searchTerm: null);
+                            Products = paginated?.Items ?? new List<ProductListItem>();
+                        }
+                        catch (Exception pex)
+                        {
+                            _logger.LogWarning(pex, "Could not load products for manual invoice");
+                            Products = new List<ProductListItem>();
+                        }
+                    }
+
+                    try
+                    {
+                        var raw = await _tenantService.GetDefaultTaxRateAsync();
+                        DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+                    }
+                    catch (Exception tex)
+                    {
+                        _logger.LogWarning(tex, "Could not load the tenant's default tax rate");
+                    }
 
                     Currency = Deal.Currency ?? _tenantService.GetCurrencyCode();
                 }
@@ -237,8 +274,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     TenantId = tenantId,
                     QuoteId = QuoteId.Value,
-                    IssueDateUtc = IssueDate.ToUniversalTime(),
-                    DueDateUtc = DueDate.ToUniversalTime(),
+                    IssueDateUtc = AsUtcDate(IssueDate),
+                    DueDateUtc = AsUtcDate(DueDate),
                     Notes = Notes,
                     CreatedBy = currentUser.FullName,
                     SendImmediately = sendImmediately
@@ -246,17 +283,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 var invoice = await _invoiceService.CreateFromQuoteAsync(dto);
 
-                SuccessMessage = sendImmediately
-                    ? $"Invoice {invoice.Number} created and sent successfully!"
-                    : $"Invoice {invoice.Number} created as draft!";
-
+                SuccessMessage = ResultMessage(invoice, sendImmediately);
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { QuoteId });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating invoice from quote");
-                ErrorMessage = ex.Message;
-                return RedirectToPage();
+                ErrorMessage = "Failed to create the invoice. Please try again.";
+                return RedirectToPage(new { QuoteId });
             }
         }
 
@@ -274,12 +313,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     return RedirectToPage();
                 }
 
-                var items = JsonSerializer.Deserialize<List<InvoiceItemData>>(itemsJson);
+                // (018) Case-insensitive — the page sends camelCase. Without this
+                // every line arrived with an empty name and zero price.
+                var items = JsonSerializer.Deserialize<List<InvoiceItemData>>(
+                    itemsJson ?? "[]", new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                 if (items == null || items.Count == 0)
                 {
                     ErrorMessage = "Please add at least one item to the invoice";
-                    return RedirectToPage();
+                    return RedirectToPage(new { DealId });
                 }
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -289,8 +331,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     TenantId = tenantId,
                     DealId = DealId.Value,
-                    IssueDateUtc = IssueDate.ToUniversalTime(),
-                    DueDateUtc = DueDate.ToUniversalTime(),
+                    IssueDateUtc = AsUtcDate(IssueDate),
+                    DueDateUtc = AsUtcDate(DueDate),
                     Currency = Currency,
                     Notes = Notes,
                     CreatedBy = currentUser.FullName,
@@ -309,18 +351,37 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 var invoice = await _invoiceService.CreateAsync(dto);
 
-                SuccessMessage = sendImmediately
-                    ? $"Invoice {invoice.Number} created and sent successfully!"
-                    : $"Invoice {invoice.Number} created as draft!";
-
+                SuccessMessage = ResultMessage(invoice, sendImmediately);
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // e.g. a bad line, or a deal this user can't see
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { DealId });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating invoice manually");
                 ErrorMessage = "Failed to create invoice. Please try again.";
-                return RedirectToPage();
+                return RedirectToPage(new { DealId });
             }
+        }
+
+        // ── helpers (018) ─────────────────────────────────────────────
+
+        /// <summary>A date picked on the page is a calendar date — keep it, don't shift it by the server's time zone.</summary>
+        private static DateTime AsUtcDate(DateTime d) => DateTime.SpecifyKind(d.Date, DateTimeKind.Utc);
+
+        /// <summary>Says whether it was issued, and if not, why.</summary>
+        private static string ResultMessage(InvoiceDto invoice, bool wantedToIssue)
+        {
+            if (invoice.Status != "Draft")
+                return $"Invoice {invoice.Number} created and issued.";
+
+            return wantedToIssue
+                ? "Invoice saved as a draft but NOT issued — it's over your workspace's limits, so a manager of this deal's team (or an admin) needs to issue it. Open it to see why."
+                : "Draft invoice created. Issue it when it's ready — it gets its number then.";
         }
 
         // NOTE: this nested InvoiceItemData duplicates the top-level
