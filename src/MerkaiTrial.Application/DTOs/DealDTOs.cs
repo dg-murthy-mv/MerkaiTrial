@@ -2,8 +2,17 @@
 // DEAL DTOs - FINAL
 // Location: MerkaiTrial.Application/DTOs/DealDTOs.cs
 //
-// Stage canonical values (match handlers + DB): New|Qualified|Proposal|Won|Lost
-// Probabilities:  New=10, Qualified=30, Proposal=50, Won=100, Lost=0
+// CHANGES (020)
+//   ✅ DealStageHistoryDto carries Note. The reason a rep typed when they
+//      lost a deal, or a manager typed when they reopened one, was being
+//      written to DealStageHistory.Note and then never read by anything.
+//      Collecting a reason nobody can see is worse than not asking.
+//      Appended with a default, so every existing construction of this
+//      record still compiles.
+//
+// Stage values are NOT canonical here any more — PipelineStages is the
+// source of truth per tenant. DealStages below survives only as the seed
+// vocabulary and as CreateDealDto's fallback; see the note on it.
 // Currency:       stored per-deal on Deal entity (column: Currency nvarchar(8))
 // TenantId:       always string ("BB100001" etc.) — never Guid
 // =====================================================================
@@ -250,7 +259,13 @@ namespace MerkaiTrial.Application.DTOs
         string? FromStage,
         string ToStage,
         DateTime ChangedAtUtc,
-        string? ChangedBy
+        string? ChangedBy,
+        /// <summary>
+        /// Why. The note the transition asked for — a lost reason, a reopen
+        /// reason, whatever the tenant worded their prompt as — or the
+        /// marker that an admin moved this deal outside the process.
+        /// </summary>
+        string? Note = null
     );
 
     public record GetDealStageHistoryRequest(string TenantId, Guid DealId);
@@ -264,9 +279,19 @@ namespace MerkaiTrial.Application.DTOs
     // ==================== STAGE CONSTANTS ====================
 
     /// <summary>
-    /// Single source of truth for stage names.
-    /// These are the values stored in the DB (nvarchar column).
-    /// Use DealStages.New etc — never scatter raw strings.
+    /// NOT the source of truth any more. Since the pipeline stage round,
+    /// each tenant owns their own stages in PipelineStages and code asks
+    /// StageResolver / TenantStages, never this.
+    ///
+    /// What survives here is the DEFAULT VOCABULARY — the keys a new
+    /// workspace is seeded with — and CreateDealDto's fallback. A tenant
+    /// who renamed or removed Discovery is unaffected: CreateDealHandler
+    /// runs the value through stages.ResolveOrDefault, which falls back to
+    /// whatever that tenant's starting stage actually is.
+    ///
+    /// Do not add new checks against these constants. IsTerminal and
+    /// IsQuoteEligible below are the two that are still wrong for a tenant
+    /// with custom stages; both have category-based replacements.
     /// </summary>
     public static class DealStages
     {

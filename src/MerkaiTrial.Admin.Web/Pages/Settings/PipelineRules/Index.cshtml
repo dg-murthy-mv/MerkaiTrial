@@ -2,7 +2,7 @@
 @model MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules.IndexModel
 @using MerkaiTrial.Domain.Entities
 @{
-    ViewData["Title"] = "Pipeline Rules";
+    ViewData["Title"] = "Sales Process";
 }
 @* Alerts are rendered once, globally, by _Layout.cshtml — nothing here. *@
 
@@ -14,15 +14,34 @@
         margin: -1rem -1rem 2rem -1rem;
         border-radius: 0 0 1rem 1rem;
     }
-    .rule-row { padding: 1rem 0; border-bottom: 1px solid #f1f3f5; }
-    .rule-row:last-child { border-bottom: none; }
-    .rule-title { font-weight: 600; color: #212529; }
-    .rule-help  { font-size: 0.85rem; color: #6c757d; margin-top: 0.15rem; }
-    .stage-cell { min-width: 190px; }
-    .req-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .04em; color: #6c757d; }
-    .req-table td, .req-table th { vertical-align: middle; text-align: center; }
-    .req-table td:first-child, .req-table th:first-child { text-align: left; }
-    .req-na { color: #ced4da; }
+
+    .stage-section { margin-bottom: 1.25rem; }
+    .stage-section .card-header { background: #fff; }
+
+    .from-stage-name { font-weight: 600; font-size: 1.05rem; }
+
+    .move-row {
+        padding: 0.85rem 0;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .move-row:last-child { border-bottom: none; }
+    .move-row.is-off { opacity: 0.5; }
+
+    .move-label-input { max-width: 260px; }
+    .req-group { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+    .req-group label { font-size: 0.78rem; color: #495057; white-space: nowrap; }
+    .note-prompt { max-width: 340px; }
+
+    .dead-end {
+        font-size: 0.8rem;
+        color: #b91c1c;
+        background: #fee2e2;
+        border-radius: 6px;
+        padding: 0.35rem 0.6rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
 </style>
 
 <div class="container-fluid">
@@ -30,10 +49,12 @@
         <div class="container">
             <div class="d-flex justify-content-between align-items-center flex-wrap">
                 <div class="mb-3 mb-md-0">
-                    <h1 class="h3 mb-1"><i class="bi bi-shield-check me-2"></i>Pipeline Rules</h1>
-                    <p class="mb-0 opacity-75">What a deal needs before it can move, and who may reopen a closed one</p>
+                    <h1 class="h3 mb-1"><i class="bi bi-diagram-3 me-2"></i>Sales Process</h1>
+                    <p class="mb-0 opacity-75">
+                        Which step follows which, who may take it, and what a deal needs first
+                    </p>
                 </div>
-                <div>
+                <div class="d-flex gap-2">
                     <a asp-page="/Settings/Pipeline/Index" class="btn btn-light">
                         <i class="bi bi-list-ol me-2"></i>Stages &amp; order
                     </a>
@@ -47,9 +68,8 @@
         <div class="alert alert-warning d-flex gap-2" role="alert">
             <i class="bi bi-exclamation-triangle-fill mt-1"></i>
             <div>
-                The pipeline rules could not be loaded, so what you see below is the starting set
-                rather than your workspace's. Refresh the page before changing anything —
-                saving now would overwrite whatever is actually stored.
+                The sales process could not be loaded, so what you see below is not your workspace's.
+                Refresh before changing anything — saving now would overwrite whatever is actually stored.
             </div>
         </div>
     }
@@ -59,249 +79,261 @@
         <div class="alert alert-info d-flex gap-2" role="alert">
             <i class="bi bi-info-circle-fill mt-1"></i>
             <div>
-                These are your workspace's rules, shown so you can see what applies.
-                Only a workspace admin can change them.
+                This is your workspace's sales process, shown so you can see what applies.
+                Only a workspace admin can change it.
             </div>
         </div>
     }
 
-    @if (Model.Rules.IsDefault)
+    @if (Model.Rules.Stages.Count == 0)
     {
-        <div class="alert alert-secondary d-flex gap-2" role="alert">
-            <i class="bi bi-sliders mt-1"></i>
-            <div>
-                These are the starting rules — nobody has changed them yet.
-                Saving this page makes them your workspace's own.
-            </div>
+        <div class="alert alert-warning">
+            This workspace has no pipeline stages yet.
+            <a asp-page="/Settings/Pipeline/Index">Add them first</a>, then come back to set out how deals move between them.
         </div>
     }
-    else if (Model.Rules.UpdatedAtUtc.HasValue)
+    else
     {
-        <p class="text-muted small">
-            <i class="bi bi-clock-history me-1"></i>
-            Last changed @Model.FormatDateTime(Model.Rules.UpdatedAtUtc.Value)
-            @if (!string.IsNullOrEmpty(Model.Rules.UpdatedBy))
-            {
-                <text> by @Model.Rules.UpdatedBy</text>
-            }
-        </p>
-    }
-
-    <form method="post">
-        <fieldset @(Model.CanEditRules ? "" : "disabled")>
-
-            <!-- ============ Whole-pipeline rules ============ -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>How deals move</h5>
-                </div>
-                <div class="card-body py-0">
-
-                    <div class="rule-row">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch"
-                                   asp-for="ForwardOnly" id="forwardOnly" />
-                            <label class="form-check-label rule-title" for="forwardOnly">
-                                Deals only move forward
-                            </label>
-                        </div>
-                        <div class="rule-help">
-                            A deal can't go back from a later open stage to an earlier one.
-                            <strong>Most workspaces should leave this off.</strong> Reps genuinely do move a
-                            deal back when a client goes quiet, and a CRM that refuses just teaches
-                            them to leave the stage wrong — which costs you a worse forecast than the
-                            one you were trying to protect. Closing a deal is never treated as
-                            backwards, whatever order your Won and Lost stages sit in.
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- ============ Reopening ============ -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="bi bi-arrow-counterclockwise me-2"></i>Reopening a closed deal</h5>
-                </div>
-                <div class="card-body py-0">
-
-                    <div class="rule-row">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch"
-                                   asp-for="ReopenRestrictedToManagers" id="reopenManagers" />
-                            <label class="form-check-label rule-title" for="reopenManagers">
-                                Only managers and admins can reopen
-                            </label>
-                        </div>
-                        <div class="rule-help">
-                            A manager of the deal owner's team, or a workspace admin — the same people
-                            who approve an over-limit quote. Reopening moves a deal's value out of the
-                            period it was booked in, so it is a decision worth a second pair of eyes.
-                        </div>
-                    </div>
-
-                    <div class="rule-row">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch"
-                                   asp-for="ReopenRequiresReason" id="reopenReason" />
-                            <label class="form-check-label rule-title" for="reopenReason">
-                                Reopening needs a written reason
-                            </label>
-                        </div>
-                        <div class="rule-help">
-                            Kept on the deal's stage history. "Why is this back in the pipeline?" is
-                            the first thing anyone asks three months later, and the answer is much
-                            better written down at the time than reconstructed afterwards.
-                        </div>
-                    </div>
-
-                    <div class="rule-row">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" role="switch"
-                                   asp-for="BlockReopenWithIssuedInvoice" id="blockInvoiced" />
-                            <label class="form-check-label rule-title" for="blockInvoiced">
-                                An invoiced deal can't be reopened at all
-                            </label>
-                        </div>
-                        <div class="rule-help">
-                            A won deal with an issued invoice that has not been voided stays closed.
-                            The invoice is a tax document that has gone to the customer; reopening the
-                            deal behind it would leave your books saying one thing and your pipeline
-                            another. Void the invoice first — that has its own reason and its own
-                            audit trail. <strong>Turning this off is not recommended</strong> in
-                            India, Thailand, the Philippines or the UAE.
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- ============ Per-stage entry requirements ============ -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="bi bi-box-arrow-in-right me-2"></i>What each stage needs</h5>
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small">
-                        Checked when a person moves a deal in. A move the system makes for you — a
-                        quote being accepted, an invoice being paid in full — is not checked, because
-                        the thing that triggered it is the very thing being asked about.
-                    </p>
-
-                    <div class="table-responsive">
-                        <table class="table req-table align-middle">
-                            <thead>
-                                <tr>
-                                    <th>Stage</th>
-                                    <th title="A quote exists for the deal, in any state">Quote exists</th>
-                                    <th title="A quote on the deal has been accepted by the customer">Accepted quote</th>
-                                    <th title="The expected value is above zero">Value</th>
-                                    <th title="The expected close date is filled in">Close date</th>
-                                    <th title="A reason must be given for losing the deal">Lost reason</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @for (var i = 0; i < Model.StageRules.Count; i++)
-                                {
-                                    var row = Model.StageRules[i];
-
-                                    <tr>
-                                        <td class="stage-cell">
-                                            @* Hidden fields carry the identity of the row back. Without
-                                               StageId the server has no way to tell which stage a set of
-                                               checkboxes belongs to. *@
-                                            <input type="hidden" asp-for="StageRules[i].StageId" />
-                                            <input type="hidden" asp-for="StageRules[i].Key" />
-                                            <input type="hidden" asp-for="StageRules[i].Name" />
-                                            <input type="hidden" asp-for="StageRules[i].Category" />
-                                            <input type="hidden" asp-for="StageRules[i].IsActive" />
-
-                                            <strong>@row.Name</strong>
-                                            <span class="badge @Model.CategoryBadge(row.Category) ms-1">
-                                                @Model.CategoryLabel(row.Category)
-                                            </span>
-                                            @if (!row.IsActive)
-                                            {
-                                                <span class="badge bg-light text-muted border ms-1">retired</span>
-                                            }
-                                        </td>
-
-                                        <td>
-                                            <input class="form-check-input req-quote" type="checkbox"
-                                                   asp-for="StageRules[i].RequiresQuote"
-                                                   data-row="@i" />
-                                        </td>
-                                        <td>
-                                            <input class="form-check-input req-accepted" type="checkbox"
-                                                   asp-for="StageRules[i].RequiresAcceptedQuote"
-                                                   data-row="@i" />
-                                        </td>
-                                        <td>
-                                            <input class="form-check-input" type="checkbox"
-                                                   asp-for="StageRules[i].RequiresValue" />
-                                        </td>
-                                        <td>
-                                            <input class="form-check-input" type="checkbox"
-                                                   asp-for="StageRules[i].RequiresCloseDate" />
-                                        </td>
-                                        <td>
-                                            @* A lost reason only means anything on a Lost stage. Asking
-                                               for one on an open stage would block every deal entering it
-                                               for a reason nobody could give. *@
-                                            @if (row.Category == StageCategory.Lost)
-                                            {
-                                                <input class="form-check-input" type="checkbox"
-                                                       asp-for="StageRules[i].RequiresLostReason" />
-                                            }
-                                            else
-                                            {
-                                                <input type="hidden" asp-for="StageRules[i].RequiresLostReason" />
-                                                <i class="bi bi-dash req-na" title="Only applies to a Lost stage"></i>
-                                            }
-                                        </td>
-                                    </tr>
-                                }
-
-                                @if (Model.StageRules.Count == 0)
-                                {
-                                    <tr>
-                                        <td colspan="6" class="text-center text-muted py-4">
-                                            This workspace has no pipeline stages yet.
-                                            <a asp-page="/Settings/Pipeline/Index">Add them first</a>.
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div class="text-muted small">
+                <i class="bi bi-signpost-split me-1"></i>
+                <strong>@Model.LiveCount</strong> step@(Model.LiveCount == 1 ? "" : "s") switched on
+                across @Model.Rules.Stages.Count(s => s.IsActive) stages.
+                @if (Model.Rules.UpdatedAtUtc.HasValue)
+                {
+                    <text>Last changed @Model.FormatDateTime(Model.Rules.UpdatedAtUtc.Value)</text>
+                    @if (!string.IsNullOrEmpty(Model.Rules.UpdatedBy))
+                    {
+                        <text> by @Model.Rules.UpdatedBy</text>
+                    }
+                    <text>.</text>
+                }
             </div>
 
             @if (Model.CanEditRules)
             {
-                <div class="d-flex justify-content-end gap-2 mb-5">
-                    <a asp-page="/Pipeline/Index" class="btn btn-secondary">
-                        <i class="bi bi-x-circle me-2"></i>Cancel
-                    </a>
-                    <button type="submit" class="btn btn-primary btn-lg">
-                        <i class="bi bi-save me-2"></i>Save rules
+                <form method="post" asp-page-handler="Suggest" class="d-inline"
+                      onsubmit="return confirm('This switches on the steps a normal pipeline wants and switches the rest off. Nothing is deleted — your labels, prompts and requirements stay where they are. Continue?');">
+                    <button type="submit" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-magic me-1"></i>Apply suggested process
                     </button>
+                </form>
+            }
+        </div>
+
+        @if (Model.LiveCount > 0 && Model.Rules.Stages.Count(s => s.IsActive) > 0)
+        {
+            var stuck = Model.Rules.Stages
+                .Where(s => s.IsActive && Model.IsDeadEnd(s.Key))
+                .Select(s => s.Name)
+                .ToList();
+
+            if (stuck.Count > 0)
+            {
+                <div class="alert alert-danger d-flex gap-2" role="alert">
+                    <i class="bi bi-exclamation-octagon-fill mt-1"></i>
+                    <div>
+                        <strong>No way out of @string.Join(", ", stuck).</strong>
+                        A deal in @(stuck.Count == 1 ? "that stage" : "those stages") can only be
+                        moved by a workspace admin using the override on the deal page.
+                        Switch on at least one step out of @(stuck.Count == 1 ? "it" : "each") below.
+                    </div>
                 </div>
             }
+        }
 
-        </fieldset>
-    </form>
+        <form method="post">
+            <fieldset @(Model.CanEditRules ? "" : "disabled")>
+
+                <!-- ============ the one rule that is not a step ============ -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoiced deals</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch"
+                                   asp-for="BlockReopenWithIssuedInvoice" id="blockInvoiced" />
+                            <label class="form-check-label fw-semibold" for="blockInvoiced">
+                                An invoiced deal can't be reopened at all
+                            </label>
+                        </div>
+                        <div class="text-muted small mt-2">
+                            A won deal with an issued invoice that has not been voided stays closed —
+                            <strong>including for workspace admins using the override</strong>. The invoice
+                            is a tax document that has gone to the customer; reopening the deal behind it
+                            would leave your books saying one thing and your pipeline another. Void the
+                            invoice first: that has its own reason and its own audit trail.
+                            <strong>Turning this off is not recommended</strong> in India, Thailand,
+                            the Philippines or the UAE.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ the process ============ -->
+                @foreach (var section in Model.Sections)
+                {
+                    var fromStage = Model.StageByKey(section.Key);
+                    if (fromStage is null) { continue; }
+
+                    var liveHere = section.Count(x => x.Cell.IsActive);
+
+                    <div class="card shadow-sm stage-section">
+                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <span class="from-stage-name">From @fromStage.Name</span>
+                                <span class="badge @Model.CategoryBadge(fromStage.Category) ms-2">
+                                    @Model.CategoryLabel(fromStage.Category)
+                                </span>
+                                @if (!fromStage.IsActive)
+                                {
+                                    <span class="badge bg-light text-muted border ms-1">retired</span>
+                                }
+                            </div>
+                            <div>
+                                @if (liveHere == 0)
+                                {
+                                    <span class="dead-end">
+                                        <i class="bi bi-exclamation-octagon-fill"></i>no way out
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small">@liveHere step@(liveHere == 1 ? "" : "s")</span>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="card-body py-0">
+                            @foreach (var (cell, i) in section)
+                            {
+                                <div class="move-row @(cell.IsActive ? "" : "is-off")" data-row="@i">
+
+                                    @* Identity. Without these the server cannot tell which
+                                       cell a row of checkboxes belongs to. *@
+                                    <input type="hidden" asp-for="Cells[i].FromStageKey" />
+                                    <input type="hidden" asp-for="Cells[i].ToStageKey" />
+                                    <input type="hidden" asp-for="Cells[i].FromStageName" />
+                                    <input type="hidden" asp-for="Cells[i].ToStageName" />
+                                    <input type="hidden" asp-for="Cells[i].ToCategory" />
+                                    <input type="hidden" asp-for="Cells[i].ToIsActive" />
+
+                                    <div class="row g-2 align-items-center">
+
+                                        <div class="col-md-3">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input row-toggle" type="checkbox" role="switch"
+                                                       asp-for="Cells[i].IsActive" data-row="@i" />
+                                                <label class="form-check-label" asp-for="Cells[i].IsActive">
+                                                    → @cell.ToStageName
+                                                    <span class="badge @Model.CategoryBadge(cell.ToCategory) ms-1"
+                                                          style="font-size:.65rem;">
+                                                        @Model.CategoryLabel(cell.ToCategory)
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-md-3">
+                                            <input asp-for="Cells[i].Label" class="form-control form-control-sm move-label-input"
+                                                   maxlength="100" placeholder="Button text" />
+                                        </div>
+
+                                        <div class="col-md-2">
+                                            <select asp-for="Cells[i].Actor" class="form-select form-select-sm">
+                                                <option value="@((int)TransitionActor.Anyone)">Anyone</option>
+                                                <option value="@((int)TransitionActor.DealOwner)">Deal owner</option>
+                                                <option value="@((int)TransitionActor.TeamManagers)">Managers + admins</option>
+                                                <option value="@((int)TransitionActor.Admins)">Admins only</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-md-4">
+                                            <div class="req-group">
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input req-quote" type="checkbox"
+                                                           asp-for="Cells[i].RequiresQuote" data-row="@i" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresQuote">quote</label>
+                                                </div>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input req-accepted" type="checkbox"
+                                                           asp-for="Cells[i].RequiresAcceptedQuote" data-row="@i" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresAcceptedQuote">accepted</label>
+                                                </div>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           asp-for="Cells[i].RequiresValue" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresValue">value</label>
+                                                </div>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           asp-for="Cells[i].RequiresCloseDate" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresCloseDate">date</label>
+                                                </div>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           asp-for="Cells[i].RequiresAttachment" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresAttachment">file</label>
+                                                </div>
+                                                <div class="form-check form-check-inline m-0">
+                                                    <input class="form-check-input req-note" type="checkbox"
+                                                           asp-for="Cells[i].RequiresNote" data-row="@i" />
+                                                    <label class="form-check-label" asp-for="Cells[i].RequiresNote">note</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    @* The question this move asks. Shown only when a note is
+                                       wanted — an empty prompt box on every row would bury the
+                                       grid. *@
+                                    <div class="row g-2 mt-1 note-row @(cell.RequiresNote ? "" : "d-none")" data-note-row="@i">
+                                        <div class="col-md-3 offset-md-3">
+                                            <input asp-for="Cells[i].NotePrompt"
+                                                   class="form-control form-control-sm note-prompt"
+                                                   maxlength="200"
+                                                   placeholder="What to ask — e.g. Why was this deal lost?" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <small class="text-muted">
+                                                Shown above the box when someone takes this step, and kept
+                                                on the deal's stage history.
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @if (Model.CanEditRules)
+                {
+                    <div class="d-flex justify-content-end gap-2 mb-5 sticky-bottom bg-body py-3">
+                        <a asp-page="/Pipeline/Index" class="btn btn-secondary">
+                            <i class="bi bi-x-circle me-2"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-save me-2"></i>Save process
+                        </button>
+                    </div>
+                }
+
+            </fieldset>
+        </form>
+    }
 </div>
 
 @section Scripts {
     <script>
     document.addEventListener('DOMContentLoaded', function () {
-        // "Accepted quote" already means "a quote exists", so ticking it
-        // ticks and disables the weaker one. Without this the two read as
-        // a contradiction the first time someone sets both.
-        function syncRow(rowIndex) {
-            const accepted = document.querySelector(`.req-accepted[data-row="${rowIndex}"]`);
-            const quote    = document.querySelector(`.req-quote[data-row="${rowIndex}"]`);
+
+        // "accepted" already means "a quote exists", so ticking it ticks and
+        // disables the weaker one. Without this the two read as a
+        // contradiction the first time someone sets both.
+        function syncQuote(row) {
+            const accepted = document.querySelector(`.req-accepted[data-row="${row}"]`);
+            const quote    = document.querySelector(`.req-quote[data-row="${row}"]`);
             if (!accepted || !quote) return;
 
             if (accepted.checked) {
@@ -314,16 +346,41 @@
             }
         }
 
-        document.querySelectorAll('.req-accepted').forEach(cb => {
-            syncRow(cb.dataset.row);
-            cb.addEventListener('change', () => syncRow(cb.dataset.row));
+        // The prompt box appears only when a note is wanted.
+        function syncNote(row) {
+            const note = document.querySelector(`.req-note[data-row="${row}"]`);
+            const box  = document.querySelector(`.note-row[data-note-row="${row}"]`);
+            if (!note || !box) return;
+            box.classList.toggle('d-none', !note.checked);
+        }
+
+        // A switched-off step is dimmed, so a long grid reads at a glance.
+        function syncRow(row) {
+            const toggle = document.querySelector(`.row-toggle[data-row="${row}"]`);
+            const container = document.querySelector(`.move-row[data-row="${row}"]`);
+            if (!toggle || !container) return;
+            container.classList.toggle('is-off', !toggle.checked);
+        }
+
+        document.querySelectorAll('.req-accepted').forEach(function (cb) {
+            syncQuote(cb.dataset.row);
+            cb.addEventListener('change', function () { syncQuote(this.dataset.row); });
+        });
+
+        document.querySelectorAll('.req-note').forEach(function (cb) {
+            syncNote(cb.dataset.row);
+            cb.addEventListener('change', function () { syncNote(this.dataset.row); });
+        });
+
+        document.querySelectorAll('.row-toggle').forEach(function (cb) {
+            cb.addEventListener('change', function () { syncRow(this.dataset.row); });
         });
 
         // A disabled checkbox posts nothing, which would silently clear the
         // flag. The server folds RequiresQuote into RequiresAcceptedQuote
-        // anyway, so re-enabling on submit keeps the posted form honest.
+        // anyway, but re-enabling on submit keeps the posted form honest.
         document.querySelector('form')?.addEventListener('submit', function () {
-            document.querySelectorAll('.req-quote[disabled]').forEach(cb => { cb.disabled = false; });
+            document.querySelectorAll('.req-quote[disabled]').forEach(function (cb) { cb.disabled = false; });
         });
     });
     </script>

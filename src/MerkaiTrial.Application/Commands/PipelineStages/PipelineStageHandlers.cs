@@ -2,7 +2,20 @@
 // PipelineStageHandlers.cs
 // Location: MerkaiTrial.Application/Commands/PipelineStages/
 //
-// NEW FILE. Read and write side of the tenant's pipeline.
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (020 — Blueprint transitions)
+//   ✅ CREATE now wires the new stage into the process. Without this, a
+//      tenant who adds "Site Visit" gets a stage no deal can enter or
+//      leave: the board shows an empty column forever and nobody can work
+//      out why. The new transitions are created switched ON — an extra
+//      button is a tidiness problem the tenant fixes in a minute, an
+//      unreachable stage is a support call.
+//   ✅ RETIRE switches off the transitions INTO the stage and leaves the
+//      ones OUT of it alone, so deals parked there can still be moved.
+//   ✅ DELETE clears the stage's transitions first. Since 020 there are
+//      foreign keys onto PipelineStages, so without this a delete fails
+//      with a raw constraint violation instead of doing the right thing.
 //
 // THE RULES, ENFORCED HERE RATHER THAN IN THE UI
 //   • Key is generated once from the name and never changes. Renaming a
@@ -183,13 +196,71 @@ public class CreatePipelineStageHandler : ICommandHandler
         };
 
         _db.PipelineStages.Add(stage);
+
+        // ── 020: wire it into the process ─────────────────────────────
+        // A stage with no transitions is a stage no deal can enter or
+        // leave. The tenant would see an empty column that never fills and
+        // deals that refuse to move, with nothing on screen explaining
+        // why. Created switched ON, for the reason in the file header.
+        var wired = WireIntoProcess(stage, existing, dto.CreatedBy);
+
         await _db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Created pipeline stage {Name} ({Key}) for tenant {TenantId}",
-            stage.Name, stage.Key, dto.TenantId);
+        _logger.LogInformation(
+            "Created pipeline stage {Name} ({Key}) for tenant {TenantId} with {Count} transitions",
+            stage.Name, stage.Key, dto.TenantId, wired);
 
         return new PipelineStageDto(stage.Id, stage.Key, stage.Name, stage.SortOrder,
             stage.Probability, stage.Category, stage.IsActive, stage.IsDefault, 0);
+    }
+
+    /// <summary>
+    /// Links the new stage both ways with every active stage the tenant
+    /// already has. Returns how many rows were added.
+    /// </summary>
+    private int WireIntoProcess(PipelineStage created, List<PipelineStage> existing, string? by)
+    {
+        var count = 0;
+
+        foreach (var other in existing.Where(s => s.IsActive))
+        {
+            // into the new stage
+            _db.ProcessTransitions.Add(NewLink(other, created, by));
+            count++;
+
+            // and back out of it
+            _db.ProcessTransitions.Add(NewLink(created, other, by));
+            count++;
+        }
+
+        return count;
+    }
+
+    private static ProcessTransition NewLink(PipelineStage from, PipelineStage to, string? by)
+    {
+        var isReopen = from.IsTerminal && to.Category == StageCategory.Open;
+
+        return new ProcessTransition
+        {
+            Id = Guid.NewGuid(),
+            TenantId = from.TenantId,
+            FromStageKey = from.Key,
+            ToStageKey = to.Key,
+            Label = TransitionLabels.For(from.Category, to.Category, to.Name),
+            SortOrder = to.SortOrder,
+            IsActive = true,
+
+            // Same shape the migration gives a reopen: managers, with a
+            // reason. Everything else is open to whoever can update deals.
+            Actor = isReopen ? TransitionActor.TeamManagers : TransitionActor.Anyone,
+            RequiresNote = isReopen || to.Category == StageCategory.Lost,
+            NotePrompt = isReopen
+                ? TransitionLabels.ReopenPrompt
+                : to.Category == StageCategory.Lost ? TransitionLabels.LostPrompt : null,
+
+            CreatedAtUtc = DateTime.UtcNow,
+            CreatedBy = by
+        };
     }
 }
 
@@ -215,6 +286,8 @@ public class UpdatePipelineStageHandler : ICommandHandler
             s => s.TenantId == dto.TenantId && s.Id != dto.StageId && s.Name == name, ct);
         if (clash)
             throw new InvalidOperationException($"You already have a stage called \"{name}\".");
+
+        var wasActive = stage.IsActive;
 
         // Retiring a stage: check it would not leave the pipeline unable
         // to close a deal, and warn if deals are sitting in it.
@@ -249,6 +322,41 @@ public class UpdatePipelineStageHandler : ICommandHandler
         stage.UpdatedAtUtc = DateTime.UtcNow;
         stage.UpdatedBy = dto.UpdatedBy;
 
+        // ── 020 ───────────────────────────────────────────────────────
+        if (wasActive && !dto.IsActive)
+        {
+            // Retired: stop offering it as a destination. The transitions
+            // OUT of it stay switched on deliberately — a deal parked here
+            // (or moved here before the retirement) must still have a way
+            // forward, and that is exactly the case buttons-only
+            // navigation would otherwise strand.
+            var into = await _db.ProcessTransitions
+                .Where(t => t.TenantId == dto.TenantId && t.ToStageKey == stage.Key && t.IsActive)
+                .ToListAsync(ct);
+
+            foreach (var t in into)
+            {
+                t.IsActive = false;
+                t.UpdatedAtUtc = DateTime.UtcNow;
+                t.UpdatedBy = dto.UpdatedBy;
+            }
+        }
+        else if (!wasActive && dto.IsActive)
+        {
+            // Brought back. Switch the ways in back on so it is usable
+            // again without a trip to the process settings.
+            var into = await _db.ProcessTransitions
+                .Where(t => t.TenantId == dto.TenantId && t.ToStageKey == stage.Key && !t.IsActive)
+                .ToListAsync(ct);
+
+            foreach (var t in into)
+            {
+                t.IsActive = true;
+                t.UpdatedAtUtc = DateTime.UtcNow;
+                t.UpdatedBy = dto.UpdatedBy;
+            }
+        }
+
         await _db.SaveChangesAsync(ct);
     }
 }
@@ -277,6 +385,20 @@ public class ReorderPipelineStagesHandler : ICommandHandler
             stage.UpdatedAtUtc = DateTime.UtcNow;
             stage.UpdatedBy = dto.UpdatedBy;
         }
+
+        // 020: button order on the deal page follows the target stage's
+        // order, so reordering the pipeline reorders the buttons too.
+        // Without this the board would read left-to-right and the deal
+        // page would not.
+        var byKey = stages.ToDictionary(s => s.Key);
+
+        var transitions = await _db.ProcessTransitions
+            .Where(t => t.TenantId == dto.TenantId)
+            .ToListAsync(ct);
+
+        foreach (var t in transitions)
+            if (byKey.TryGetValue(t.ToStageKey, out var to) && t.SortOrder != to.SortOrder)
+                t.SortOrder = to.SortOrder;
 
         await _db.SaveChangesAsync(ct);
     }
@@ -320,8 +442,13 @@ public class SetDefaultPipelineStageHandler : ICommandHandler
 public class DeletePipelineStageHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
+    private readonly ILogger<DeletePipelineStageHandler> _logger;
 
-    public DeletePipelineStageHandler(FlowDbContext db) => _db = db;
+    public DeletePipelineStageHandler(FlowDbContext db, ILogger<DeletePipelineStageHandler> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public async Task Handle(Guid tenantId, Guid stageId, CancellationToken ct = default)
     {
@@ -351,6 +478,30 @@ public class DeletePipelineStageHandler : ICommandHandler
         if (stage.IsDefault)
             throw new InvalidOperationException(
                 "This is where new deals start. Make another stage the starting point first.");
+
+        // ── 020 ───────────────────────────────────────────────────────
+        // ProcessTransitions has foreign keys onto PipelineStages in both
+        // directions. Without clearing them first, this delete fails with
+        // a raw constraint violation — which is a regression this round
+        // would otherwise have introduced into a handler that previously
+        // gave clean messages for every refusal.
+        //
+        // Deleting the rows outright is right: they describe moves to and
+        // from a stage that is about to stop existing, and nothing refers
+        // back to them. The stage has no deals and no history by the
+        // checks above, so nothing is lost.
+        var links = await _db.ProcessTransitions
+            .Where(t => t.TenantId == tenantId
+                     && (t.FromStageKey == stage.Key || t.ToStageKey == stage.Key))
+            .ToListAsync(ct);
+
+        if (links.Count > 0)
+        {
+            _db.ProcessTransitions.RemoveRange(links);
+            _logger.LogInformation(
+                "Removing {Count} process transitions with stage {Key} for tenant {TenantId}",
+                links.Count, stage.Key, tenantId);
+        }
 
         _db.PipelineStages.Remove(stage);
         await _db.SaveChangesAsync(ct);

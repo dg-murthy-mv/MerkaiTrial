@@ -1,6 +1,8 @@
 @* =====================================================================
    OVERVIEW TAB
    Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_OverviewTab.cshtml
+
+   (020) The stage badge now resolves the key to the tenant's own name.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
 
@@ -31,7 +33,10 @@
             <div class="col-md-6">
                 <label class="text-muted small">Stage</label>
                 <p class="mb-0">
-                    <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage)">@Model.Deal.Stage</span>
+                    @* The tenant's NAME for the stage. This printed the stored
+                       KEY, so a client who renamed "Proposal" to "Quotation" saw
+                       their own word on the board and ours here. *@
+                    <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage)">@Model.StageName(Model.Deal.Stage)</span>
                 </p>
             </div>
             <div class="col-md-6">

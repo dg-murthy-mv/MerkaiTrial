@@ -1013,10 +1013,12 @@
                         </div>
                     }
                 }
-                @if (CanNav("roles") || CanNav("users") || CanNav("audit"))
+                @if (CanNav("leads") || CanNav("deals") || CanNav("roles")
+                                || CanNav("users") || CanNav("audit"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
-                    @if (CanNav("Leads"))
+
+                    @if (CanNav("leads"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/LeadStatuses") ? "active" : "")"
                            asp-page="/Settings/LeadStatuses/Index">
@@ -1024,18 +1026,17 @@
                         </a>
                     }
 
-                    @if (CanNav("Deals"))
+                    @if (CanNav("deals"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"
                            asp-page="/Settings/Pipeline/Index">
                             <i class="bi bi-kanban"></i> Pipeline Stages
                         </a>
-                        <a class="nav-link" asp-page="/Settings/PipelineRules/Index">
-                            <i class="bi bi-shield-check me-2"></i>Pipeline Rules
+                        <a class="lf-nav-item @(IsActive("/Settings/PipelineRules") ? "active" : "")"
+                           asp-page="/Settings/PipelineRules/Index">
+                            <i class="bi bi-diagram-3"></i> Sales Process
                         </a>
-
                     }
-
 
                     @if (CanNav("users"))
                     {
@@ -1052,6 +1053,7 @@
                             <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
                         </a>
                     }
+
                     @if (CanNav("audit"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/AuditLogs") ? "active" : "")"
@@ -1059,9 +1061,7 @@
                             <i class="bi bi-clock-history"></i> Activity Log
                         </a>
                     }
-
                 }
-
                 @* ✅ SuperAdmin — visible to tenant admins only, links to SuperAdmin layout *@
                 @* ✅ FIX: added "&& !isViewingAs" — same reasoning as the Admin Home link above *@
                 @if (Context.User.HasClaim("IsSuperAdmin", "true") && !isViewingAs)

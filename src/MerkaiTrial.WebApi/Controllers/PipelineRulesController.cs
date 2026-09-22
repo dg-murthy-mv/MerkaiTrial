@@ -2,20 +2,18 @@
 // PipelineRulesController.cs
 // Location: MerkaiTrial.WebApi/Controllers/PipelineRulesController.cs
 //
-// NEW FILE (019).
+// COMPLETE FILE — replaces the 019 version.
 //
-//   GET  api/pipeline-rules    the rules and every stage's requirements
-//   PUT  api/pipeline-rules    save both in one call
+//   GET  api/pipeline-rules           the process: stages, the matrix,
+//                                     the invoice rule, and any dead ends
+//   PUT  api/pipeline-rules           save it all in one call
+//   POST api/pipeline-rules/suggest   switch on the sensible moves
 //
-// Deliberately NOT bolted onto PipelineStagesController. That one is
-// about what a stage IS — name, order, probability, category — and is
-// used by every screen that shows a pipeline. This is settings, read by
-// one page and the board, and keeping it separate means the existing
-// stages controller and its DTOs are untouched by this round.
-//
-// Both endpoints are admin-only. The rules decide who may reopen a
-// closed deal, so a rep who could edit them could simply switch the
-// restriction off and reopen it anyway.
+// Reading is open to anyone who can read deals — the pipeline board and
+// the deal page both need the matrix to know which moves to offer. Both
+// writes are admin-only: the process decides who may reopen a closed
+// deal, so a rep who could edit it could simply switch the restriction
+// off and reopen it anyway.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.PipelineStages;
@@ -31,17 +29,20 @@ namespace MerkaiTrial.WebApi.Controllers
     {
         private readonly GetPipelineRulesHandler _get;
         private readonly SavePipelineRulesHandler _save;
+        private readonly ApplySuggestedProcessHandler _suggest;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<PipelineRulesController> _logger;
 
         public PipelineRulesController(
             GetPipelineRulesHandler get,
             SavePipelineRulesHandler save,
+            ApplySuggestedProcessHandler suggest,
             ICurrentUserService currentUserService,
             ILogger<PipelineRulesController> logger)
         {
             _get = get;
             _save = save;
+            _suggest = suggest;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -49,10 +50,10 @@ namespace MerkaiTrial.WebApi.Controllers
         /// <summary>
         /// GET /api/pipeline-rules
         ///
-        /// Readable by anyone who can read deals, not just admins: the
-        /// pipeline board uses it to work out which drags are going to ask
-        /// for a reason, so it can put the box up before posting instead of
-        /// posting, failing and asking afterwards.
+        /// Readable by anyone who can read deals, not just admins: the deal
+        /// page and the kanban both use it to decide which moves to offer
+        /// and which will ask for a note, so they can put the box up before
+        /// posting rather than posting, failing and asking afterwards.
         /// </summary>
         [HttpGet]
         [Authorize(Policy = "Deals.Read")]
@@ -68,17 +69,16 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting pipeline rules for tenant {TenantId}", tenantId);
-                return StatusCode(500, new { error = "Failed to retrieve pipeline rules" });
+                return StatusCode(500, new { error = "Failed to retrieve the pipeline process" });
             }
         }
 
         /// <summary>
         /// PUT /api/pipeline-rules — the whole screen at once.
         ///
-        /// One call rather than one per switch. Half-saved rules are worse
-        /// than none: a tenant who turned the reopen restriction on and the
-        /// invoice block off would, on a partial failure, have no idea
-        /// which half took effect.
+        /// One call rather than one per cell. A half-saved process is worse
+        /// than none: a tenant who switched three moves off and one on
+        /// would, on a partial failure, have no idea which half took.
         /// </summary>
         [HttpPut]
         [Authorize(Policy = "Deals.Update")]
@@ -101,13 +101,13 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (!me.IsTenantAdmin)
                     return StatusCode(403, new
                     {
-                        error = "Only a workspace admin can change the pipeline rules."
+                        error = "Only a workspace admin can change the sales process."
                     });
 
                 await _save.Handle(tenantId, dto, me.FullName, ct);
 
                 _logger.LogInformation(
-                    "Pipeline rules updated for tenant {TenantId} by {User}", tenantId, me.FullName);
+                    "Pipeline process updated for tenant {TenantId} by {User}", tenantId, me.FullName);
 
                 return NoContent();
             }
@@ -117,8 +117,49 @@ namespace MerkaiTrial.WebApi.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error saving pipeline rules for tenant {TenantId}", tenantId);
-                return StatusCode(500, new { error = "Failed to save pipeline rules" });
+                _logger.LogError(ex, "Error saving pipeline process for tenant {TenantId}", tenantId);
+                return StatusCode(500, new { error = "Failed to save the pipeline process" });
+            }
+        }
+
+        /// <summary>
+        /// POST /api/pipeline-rules/suggest
+        ///
+        /// Switches on the moves a normal pipeline wants and switches the
+        /// rest off. Nothing is deleted, so a tenant who tries it and
+        /// changes their mind has lost only the toggles — their labels,
+        /// prompts and requirements are where they left them.
+        /// </summary>
+        [HttpPost("suggest")]
+        [Authorize(Policy = "Deals.Update")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> Suggest(CancellationToken ct = default)
+        {
+            var tenantId = _currentUserService.GetCurrentTenantId();
+            try
+            {
+                var me = await _currentUserService.GetCurrentUserAsync();
+
+                if (!me.IsTenantAdmin)
+                    return StatusCode(403, new
+                    {
+                        error = "Only a workspace admin can change the sales process."
+                    });
+
+                await _suggest.Handle(tenantId, me.FullName, ct);
+                return NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying the suggested process for tenant {TenantId}", tenantId);
+                return StatusCode(500, new { error = "Failed to apply the suggested process" });
             }
         }
     }

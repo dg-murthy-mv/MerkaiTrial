@@ -96,6 +96,7 @@ public class FlowDbContext : DbContext
     public DbSet<RoleRecordScope> RoleRecordScopes => Set<RoleRecordScope>();
     public DbSet<TeamManager> TeamManagers => Set<TeamManager>();
     public DbSet<PipelineRuleSettings> PipelineRuleSettings => Set<PipelineRuleSettings>();
+    public DbSet<ProcessTransition> ProcessTransitions => Set<ProcessTransition>();
 
 
     // Quote approvals (017)
@@ -167,6 +168,7 @@ public class FlowDbContext : DbContext
         // Quote approvals (017) — a tenant's rules and approval history.
         b.Entity<QuoteApprovalSettings>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<QuoteApprovalRequest>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<ProcessTransition>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,

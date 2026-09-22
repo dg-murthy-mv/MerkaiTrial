@@ -2,17 +2,16 @@
 // PipelineRuleService.cs
 // Location: MerkaiTrial.Admin.Web/Services/Pipeline/PipelineRuleService.cs
 //
-// NEW FILE (019). Same thin-wrapper pattern as PipelineStageService.
+// COMPLETE FILE — replaces the 019 version.
 //
-// REGISTER BY HAND in Startup/AdminWebServiceRegistration.cs — Admin.Web
-// services are not part of the Scrutor scan:
-//
+// Already registered in AdminWebServiceRegistration.AddAdminWebCoreServices:
 //     services.AddScoped<IPipelineRuleService, PipelineRuleService>();
 //
-// CACHING: same answer as PipelineStageService. These change perhaps
-// twice in a tenant's lifetime but are read on every pipeline board load.
-// A short cache would help; a longer one would mean an admin switches a
-// rule off and does not see it. Left uncached — measure first.
+// CACHING: same answer as PipelineStageService. The process changes
+// perhaps twice in a tenant's lifetime but is read on every pipeline
+// board and every deal page. A short cache would help; a longer one
+// would mean an admin switches a move off and still sees the button.
+// Left uncached — measure first.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -23,13 +22,19 @@ namespace MerkaiTrial.Admin.Web.Services.Pipeline;
 public interface IPipelineRuleService
 {
     /// <summary>
-    /// The tenant's transition rules, plus what each stage asks of a deal
-    /// before letting it in.
+    /// The tenant's sales process: stages, the from-to matrix, the invoice
+    /// rule, and any stage with no way out.
     /// </summary>
     Task<PipelineRulesDto> GetAsync(CancellationToken ct = default);
 
     /// <summary>The whole settings screen, saved in one call.</summary>
     Task SaveAsync(SaveAllPipelineRulesDto dto, CancellationToken ct = default);
+
+    /// <summary>Switch on the moves a normal pipeline wants, and the rest off.</summary>
+    Task ApplySuggestedAsync(CancellationToken ct = default);
+
+    /// <summary>What one deal can do right now, and why not for the rest.</summary>
+    Task<DealTransitionsDto> GetForDealAsync(Guid dealId, CancellationToken ct = default);
 }
 
 public class PipelineRuleService : IPipelineRuleService
@@ -43,4 +48,10 @@ public class PipelineRuleService : IPipelineRuleService
 
     public async Task SaveAsync(SaveAllPipelineRulesDto dto, CancellationToken ct = default)
         => await _api.PutVoidAsync("api/pipeline-rules", dto);
+
+    public async Task ApplySuggestedAsync(CancellationToken ct = default)
+        => await _api.PostVoidAsync("api/pipeline-rules/suggest", new { });
+
+    public async Task<DealTransitionsDto> GetForDealAsync(Guid dealId, CancellationToken ct = default)
+        => await _api.GetAsync<DealTransitionsDto>($"api/deals/{dealId}/transitions");
 }

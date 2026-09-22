@@ -4,16 +4,24 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES (019 — transition rules)
-//  13. UpdateDealStageRequest carries LostReason and ReopenReason. The
-//      kanban board collects them before it posts, so dragging a card
-//      onto Lost now records why, which it never did before. Both are
-//      optional, so an older client that posts only { stage } still
-//      binds — it just gets a clear 400 when the move needs a reason.
-//  14. UnauthorizedAccessException → 403 on the three write endpoints
-//      that can now raise it. Without this case, "you're not allowed to
-//      reopen a closed deal" reached the browser as a 500 with the text
-//      "Failed to update deal stage", and the rep had no idea why.
+// CHANGES (020 — Blueprint transitions)
+//  15. GET {id}/transitions — what this deal can do right now. The deal
+//      page draws its buttons from it, including the ones it must show
+//      DISABLED with the reason, which is what teaches the process
+//      instead of merely enforcing it.
+//  16. UpdateDealStageRequest carries one Note and an AdminOverride flag,
+//      replacing 019's two reason fields. A transition now carries its own
+//      prompt, so the caller does not need to know whether it is being
+//      asked about a loss or a reopen.
+//
+// CHANGES (019 — still true)
+//  13. Both reason fields are optional on the wire, so an older client
+//      posting only { stage } still binds — it just gets a clear 400 when
+//      the move it asked for needs a note.
+//  14. UnauthorizedAccessException → 403 on the write endpoints that can
+//      raise it. Without this case, "you're not allowed to reopen a
+//      closed deal" reached the browser as a 500 reading "Failed to
+//      update deal stage", and the rep had no idea why.
 //
 // CONSISTENCY FIXES vs LeadsController:
 //   1. Added ICurrentUserService injection (uploadedBy + future auth)
@@ -37,6 +45,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Deals;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
@@ -69,6 +78,7 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly DeleteDealAttachmentHandler _deleteAttachmentHandler;
         private readonly GetDealsByContactHandler _getDealsByContact;
         private readonly TransitionDealStageHandler _transitionDealStage;
+        private readonly GetAvailableTransitionsHandler _availableTransitions;   // 020
         private readonly DealAccessHandler _dealAccess;
         private readonly ICurrentUserService _currentUserService;   // ✅ ADDED
         private readonly ILogger<DealsController> _logger;
@@ -94,6 +104,7 @@ namespace MerkaiTrial.WebApi.Controllers
             DeleteDealAttachmentHandler deleteAttachmentHandler,
             GetDealsByContactHandler getDealsByContact,
             TransitionDealStageHandler transitionDealStage,
+            GetAvailableTransitionsHandler availableTransitions,             // 020
             DealAccessHandler dealAccess,
             ICurrentUserService currentUserService,           // ✅ ADDED
             ILogger<DealsController> logger)
@@ -118,6 +129,7 @@ namespace MerkaiTrial.WebApi.Controllers
             _deleteAttachmentHandler = deleteAttachmentHandler;
             _getDealsByContact = getDealsByContact;
             _transitionDealStage = transitionDealStage;
+            _availableTransitions = availableTransitions;
             _dealAccess = dealAccess;
             _currentUserService = currentUserService;             // ✅ ADDED
             _logger = logger;
@@ -335,10 +347,13 @@ namespace MerkaiTrial.WebApi.Controllers
         /// <summary>
         /// PUT /api/deals/{id}/stage - Move a deal to another stage.
         ///
-        /// 019: the body may carry a lost reason (moving into a stage that
-        /// requires one) or a reopen reason (moving OUT of a closed stage).
-        /// Both are optional here and enforced by the guard, so the error
-        /// message is written once and every caller gets the same one.
+        /// The one endpoint behind BOTH the kanban drag and the deal page's
+        /// transition buttons. The body carries the note the transition
+        /// asked for, if it asked for one, and adminOverride when a
+        /// workspace admin is deliberately stepping outside the process.
+        ///
+        /// Nothing is validated here: the guard owns every rule, so the
+        /// message a rep sees is written once and both callers get it.
         /// </summary>
         [HttpPut("{id:guid}/stage")]
         [Authorize(Policy = "Deals.Update")]
@@ -359,7 +374,7 @@ namespace MerkaiTrial.WebApi.Controllers
                     return BadRequest(new { error = "Stage is required" });
 
                 await _updateDealStageHandler.HandleAsync(
-                    tenantId, id, request.Stage, request.LostReason, request.ReopenReason);
+                    tenantId, id, request.Stage, request.EffectiveNote, request.AdminOverride);
 
                 _logger.LogInformation("Deal {DealId} stage updated to {Stage}", id, request.Stage);
 
@@ -442,6 +457,45 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 _logger.LogError(ex, "Error transitioning stage for deal {DealId}", dealId);
                 return StatusCode(500, new { error = "Failed to transition deal stage" });
+            }
+        }
+
+        /// <summary>
+        /// GET /api/deals/{id}/transitions - what this deal can do right now.
+        ///
+        /// Every move the tenant's process offers from this deal's stage,
+        /// each marked allowed or not — and when not, why. The deal page
+        /// renders the blocked ones DISABLED with the reason rather than
+        /// hiding them, because a greyed-out "Mark as Closed Won — this
+        /// deal has no quote yet" teaches the process, while a missing
+        /// button just looks broken.
+        ///
+        /// Guidance, not the gate: the guard checks all of it again on the
+        /// way in, so a stale page cannot talk its way past a rule.
+        /// </summary>
+        [HttpGet("{id:guid}/transitions")]
+        [Authorize(Policy = "Deals.Read")]
+        [ProducesResponseType(typeof(DealTransitionsDto), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> GetTransitions(
+            Guid id,
+            CancellationToken cancellationToken = default)
+        {
+            var tenantId = _currentUserService.GetCurrentTenantId();
+            try
+            {
+                var result = await _availableTransitions.HandleAsync(tenantId, id, cancellationToken);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { error = $"Deal {id} not found" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting transitions for deal {DealId}", id);
+                return StatusCode(500, new { error = "Failed to retrieve the available moves" });
             }
         }
 
@@ -902,12 +956,24 @@ namespace MerkaiTrial.WebApi.Controllers
 
     // ✅ Moved inside namespace (was incorrectly at file root)
     //
-    // 019: the two reasons a stage move can need. Both nullable and both
-    // defaulted, so `{ "stage": "Proposal" }` from an older caller still
-    // binds exactly as it did — it simply gets a readable 400 if the move
-    // it asked for turns out to need one.
+    // 020: one Note, whatever the transition asked for, plus the admin
+    // escape hatch. Everything after Stage is optional, so an older caller
+    // posting `{ "stage": "Proposal" }` still binds exactly as it did — it
+    // simply gets a readable 400 if the move needs a note.
+    //
+    // LostReason and ReopenReason are kept as aliases so the 019 shape
+    // still works off the wire; whichever arrives becomes the note.
     public record UpdateDealStageRequest(
         string Stage,
+        string? Note = null,
+        bool AdminOverride = false,
         string? LostReason = null,
-        string? ReopenReason = null);
+        string? ReopenReason = null)
+    {
+        /// <summary>The note, wherever the caller put it.</summary>
+        public string? EffectiveNote =>
+            !string.IsNullOrWhiteSpace(Note) ? Note
+            : !string.IsNullOrWhiteSpace(LostReason) ? LostReason
+            : ReopenReason;
+    }
 }

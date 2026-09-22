@@ -4,33 +4,33 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES (019 — transition rules)
-//   ✅ All three stage-change paths now go through StageTransitionGuard:
-//        UpdateDealHandler          (the Edit page)
-//        UpdateDealStageHandler     (kanban drag)
+// CHANGES (020 — Blueprint transitions)
+//   ✅ The guard now asks the TRANSITION, not the target stage. Nothing
+//      in this file changes shape for it — that is the point of having
+//      put all three paths through one guard in 019 — but the two reason
+//      parameters collapse into one Note, because a transition carries
+//      its own prompt rather than the guard hard-coding "lost" and
+//      "reopen".
+//   ✅ UpdateDealStageHandler takes an adminOverride flag. Removing the
+//      stage dropdown means a badly pruned process could otherwise strand
+//      a deal with no way out; an admin can step outside the process, and
+//      it is recorded on the history row as having happened.
+//   ✅ UpdateDealHandler keeps accepting LostReason / ReopenReason from
+//      the API so older callers still work — whichever is present becomes
+//      the note. The Edit page no longer sends either: it no longer
+//      changes stages at all.
+//
+// CHANGES (019 — still true)
+//   ✅ All three stage-change paths go through StageTransitionGuard:
+//        UpdateDealHandler          (API callers)
+//        UpdateDealStageHandler     (kanban drag, deal page buttons)
 //        TransitionDealStageHandler (quote accepted / invoice paid)
-//      They used to disagree about almost everything. The kanban could
-//      close a deal as Lost with no reason at all, and either of the
-//      first two could drag a closed, invoiced deal back into the
-//      pipeline.
-//
-//   ✅ UpdateDealStageHandler takes a lost reason and a reopen reason.
-//      Without them a card dragged to Lost recorded nothing about why.
-//
-//   ✅ REOPEN BUG FIXED. Every handler used `??=` on ActualCloseDateUtc
-//      and ActualValue, so reopening a deal left the old closing figures
-//      on it and closing it again kept the ORIGINAL date. A deal reopened
-//      in April and won again in June was reported as June revenue at an
-//      April date. The guard now clears them on the way out of a closed
-//      stage and sets them fresh on the way back in.
-//
-//   ✅ Removed `using DocumentFormat.OpenXml.Presentation;` — a stray
-//      import from an unrelated paste. It brought a type called `Deal`
-//      into scope in a file about deals, which is a compile error waiting
-//      for the first person to drop the namespace qualifier.
-//
-// MANUAL DTO EDIT REQUIRED — see SETUP.md:
-//      UpdateDealDto needs `public string? ReopenReason { get; set; }`
+//   ✅ The reopen bug stays fixed. Every handler used `??=` on
+//      ActualCloseDateUtc and ActualValue, so a deal reopened in April and
+//      won again in June was reported as June revenue at an April date.
+//      The guard clears them on the way out of a closed stage.
+//   ✅ `using DocumentFormat.OpenXml.Presentation;` removed — a stray
+//      import that brought a type called `Deal` into a file about deals.
 //
 // CHANGES (017 / 016 — unchanged, kept for context)
 //   ✅ GetDealDetailHandler — joins CompanyVerticals, populates VerticalId/VerticalName
@@ -704,8 +704,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                         deal.Id, deal.Stage, deal.ExpectedValue,
                         deal.ExpectedCloseDateUtc, deal.OwnerUserId),
                     ToStageKey: dto.Stage!,
-                    LostReason: dto.LostReason,
-                    ReopenReason: dto.ReopenReason));
+                    // One note now. A caller that still sends the 019
+                    // fields gets whichever it filled in; the transition's
+                    // own prompt decides what was being asked for.
+                    Note: dto.LostReason ?? dto.ReopenReason));
 
                 _db.DealStageHistory.Add(StageTransitionGuard.HistoryFor(
                     tenantGuid, dealId, decision, currentUser.FullName));
@@ -724,7 +726,9 @@ namespace MerkaiTrial.Application.Commands.Deals
                         from = stages.NameOf(previousStage),
                         to = decision.To.Name,
                         value = deal.ExpectedValue,
+                        via = decision.MoveName,
                         reopened = decision.IsReopen,
+                        adminOverride = decision.WasOverride,
                         note = decision.HistoryNote
                     });
             }
@@ -778,17 +782,17 @@ namespace MerkaiTrial.Application.Commands.Deals
         }
 
         /// <summary>
-        /// 019: takes the two reasons a move can need. Before this round a
-        /// card dragged onto the Lost column closed the deal with no
-        /// reason recorded anywhere, while the same move through the Edit
-        /// page at least saved one if the page happened to send it.
+        /// The path BOTH the kanban drag and the deal page's transition
+        /// buttons take. 020: one note, whatever the transition asked for,
+        /// and an admin override for the case where the configured process
+        /// has no way out of where the deal is sitting.
         /// </summary>
         public async Task HandleAsync(
             string tenantId,
             Guid dealId,
             string newStage,
-            string? lostReason = null,
-            string? reopenReason = null)
+            string? note = null,
+            bool adminOverride = false)
         {
             if (!Guid.TryParse(tenantId, out var tenantGuid))
                 throw new ArgumentException($"Invalid tenantId: {tenantId}");
@@ -822,8 +826,8 @@ namespace MerkaiTrial.Application.Commands.Deals
                     deal.Id, deal.Stage, deal.ExpectedValue,
                     deal.ExpectedCloseDateUtc, deal.OwnerUserId),
                 ToStageKey: newStage,
-                LostReason: lostReason,
-                ReopenReason: reopenReason));
+                Note: note,
+                AdminOverride: adminOverride));
 
             _db.DealStageHistory.Add(StageTransitionGuard.HistoryFor(
                 tenantGuid, dealId, decision, currentUser.FullName));
@@ -842,7 +846,9 @@ namespace MerkaiTrial.Application.Commands.Deals
                     from = stages.NameOf(previousStage),
                     to = decision.To.Name,
                     value = deal.ExpectedValue,
+                    via = decision.MoveName,
                     reopened = decision.IsReopen,
+                    adminOverride = decision.WasOverride,
                     note = decision.HistoryNote
                 });
         }
@@ -1119,8 +1125,12 @@ namespace MerkaiTrial.Application.Commands.Deals
             return await _db.DealStageHistory
                 .Where(h => h.TenantId.ToString() == request.TenantId && h.DealId == request.DealId)
                 .OrderByDescending(h => h.ChangedAtUtc)
+                // 020: Note included. It was being written on every move
+                // and read by nothing, so every lost reason and every
+                // reopen reason went into the database and stayed there.
                 .Select(h => new DealStageHistoryDto(
-                    h.Id, h.DealId, h.FromStage ?? null, h.ToStage, h.ChangedAtUtc, h.ChangedBy))
+                    h.Id, h.DealId, h.FromStage ?? null, h.ToStage,
+                    h.ChangedAtUtc, h.ChangedBy, h.Note))
                 .ToListAsync();
         }
     }

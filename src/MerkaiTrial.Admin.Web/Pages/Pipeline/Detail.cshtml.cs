@@ -4,7 +4,23 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// NEW IN THIS PASS (task follow-through — matching the Lead page)
+// NEW IN 020 (Blueprint transitions)
+//   • The transition bar. Instead of "go to the Edit page and pick a
+//     stage from a dropdown", the deal shows the moves its own process
+//     offers — "Send Quote", "Mark as Closed Won" — as buttons, with the
+//     blocked ones DISABLED and carrying the reason. A greyed-out button
+//     reading "this deal has no quote yet" teaches the process; a missing
+//     one just looks broken.
+//   • Admin override. Buttons-only navigation means a badly pruned
+//     process could strand a deal, so a workspace admin gets a "Change
+//     stage" escape hatch. It skips the PROCESS, never the money rule:
+//     an invoiced deal still cannot be reopened by anyone.
+//   • BUG: Stages loaded with activeOnly: true. A deal sitting in a
+//     RETIRED stage found no match, so CurrentStage was null, IsClosedDeal
+//     was false, and a closed deal rendered as open, editable and
+//     deletable. Now loads all stages.
+//
+// NEW IN THE PREVIOUS PASS (task follow-through — matching the Lead page)
 //   • Assign a task to a colleague.
 //   • Edit / reschedule a task; edit a logged activity. Inline, via
 //     ?editId=<guid>.
@@ -47,6 +63,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentTenantService _currentTenantService;
         private readonly ILogger<DetailModel> _logger;
         private readonly IPipelineStageService _stageService;
+        private readonly IPipelineRuleService _ruleService;          // 020
+        private readonly IDealStageService _dealStageService;        // 020
         protected override string ModuleName => Modules.Deals;
 
         public DetailModel(
@@ -56,7 +74,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
             IAuthorizationService authorizationService,
-            ILogger<DetailModel> logger, IPipelineStageService stageService)
+            ILogger<DetailModel> logger,
+            IPipelineStageService stageService,
+            IPipelineRuleService ruleService,                        // 020
+            IDealStageService dealStageService)                      // 020
             : base(authorizationService, currentUserService, logger)
         {
             _dealService          = dealService;
@@ -66,6 +87,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentTenantService = currentTenantService;
             _logger               = logger;
             _stageService         = stageService;
+            _ruleService          = ruleService;
+            _dealStageService     = dealStageService;
         }
 
         // ==================== PAGE PROPERTIES ====================
@@ -82,6 +105,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<ActivityDto> Tasks      => AllActivities.Where(a =>  a.IsTask).ToList();
 
         public List<PipelineStageDto> Stages { get; set; } = new();
+
+        /// <summary>
+        /// 020 — the moves this deal can make from where it is, each
+        /// already marked allowed or not. Null only when the call failed;
+        /// the page then falls back to showing no transition bar rather
+        /// than breaking.
+        /// </summary>
+        public DealTransitionsDto? Transitions { get; set; }
         public List<ActivityDto> OpenTasks =>
             Tasks.Where(t => !t.IsCompleted).OrderBy(t => t.DueDate).ToList();
 
@@ -140,6 +171,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         public bool IsClosedDeal => CurrentStage?.Category is StageCategory.Won or StageCategory.Lost;
 
+        /// <summary>
+        /// A stage's category by key. The header badge asks this instead of
+        /// matching the literal strings "ClosedWon" / "Won", which a tenant
+        /// who renamed their winning stage never matched.
+        /// </summary>
+        public StageCategory StageCategoryOf(string? key) =>
+            Stages.FirstOrDefault(s => s.Key == key)?.Category ?? StageCategory.Open;
+
         // Quote eligibility was "Proposal or Negotiation" by name. With
         // tenant stages that cannot hold, so: any open stage past the
         // first. A client quoting earlier or later than us is not wrong.
@@ -147,21 +186,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public bool IsEditableState => !IsClosedDeal;
         public bool IsDeletableState => !IsClosedDeal;
 
-        // "Create Quote" only when no quote exists and the deal is in a
-        // quote-eligible stage.
-        //public bool CanCreateQuote => !IsClosedDeal &&
-        //                               DealStages.IsQuoteEligible(Deal?.Stage) &&
-        //                               !HasExistingQuote;
         public bool HasExistingQuote { get; private set; }
-
-        /// <summary>
-        /// TEMPORARY single place for stage-name checks. Four spellings are
-        /// live across the codebase ("Won"/"ClosedWon"/"Lost"/"ClosedLost"),
-        /// so every check has to accept all of them. When the stage
-        /// vocabulary is normalised, this class is the only thing to change
-        /// on this page.
-        /// </summary>
-       
 
         // ==================== INPUT MODELS ====================
 
@@ -263,12 +288,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 var notesTask        = _dealService.GetNotesAsync(tenantId, id);
                 var stageHistoryTask = _dealService.GetStageHistoryAsync(tenantId, id);
-                var stagesTask       = _stageService.GetAsync(activeOnly: true);
+                // activeOnly: FALSE. A deal can sit in a stage the tenant
+                // has since retired; with only active stages loaded,
+                // CurrentStage came back null, IsClosedDeal read false, and
+                // a closed deal was rendered as open and deletable.
+                var stagesTask       = _stageService.GetAsync(activeOnly: false);
                 var attachmentsTask  = _dealService.GetAttachmentsAsync(tenantId, id);
                 var activitiesTask   = LoadActivitiesAsync(tenantId, id);
                 var assigneesTask    = LoadAssigneesAsync();
+                var transitionsTask  = LoadTransitionsAsync(id);
 
-                await Task.WhenAll(notesTask, stageHistoryTask, stagesTask, attachmentsTask, activitiesTask, assigneesTask);
+                await Task.WhenAll(notesTask, stageHistoryTask, stagesTask, attachmentsTask,
+                                   activitiesTask, assigneesTask, transitionsTask);
 
                 Notes        = await notesTask;
                 StageHistory = await stageHistoryTask;
@@ -300,6 +331,64 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 _logger.LogError(ex, "Failed to load deal detail {DealId}", id);
                 ErrorMessage = "Failed to load deal details. Please try again.";
                 return RedirectToPage("/Pipeline/Index");
+            }
+        }
+
+        // ==================== MOVE THE DEAL (020) ====================
+
+        /// <summary>
+        /// The transition buttons post here. One handler for every move,
+        /// because the rules live in the guard and the page should not
+        /// have opinions about which button means what.
+        ///
+        /// The note is whatever the transition asked for — a lost reason,
+        /// a reopen reason, "which site did you survey" — so this handler
+        /// never needs to know which.
+        /// </summary>
+        public async Task<IActionResult> OnPostMoveStageAsync(
+            Guid id, string stage, string? note, bool adminOverride = false)
+        {
+            var check = await ValidatePermissionAsync(Actions.Update);
+            if (check != null) return check;
+
+            if (string.IsNullOrWhiteSpace(stage))
+            {
+                ErrorMessage = "No stage was chosen.";
+                return RedirectToPage(new { id });
+            }
+
+            try
+            {
+                await _dealStageService.MoveAsync(id, stage, note, adminOverride);
+
+                SuccessMessage = adminOverride
+                    ? "Stage changed. This move was recorded as an admin override."
+                    : "Deal moved.";
+
+                return RedirectToPage(new { id });
+            }
+            // IApiService turns the API's 400/403 { "error": ... } into
+            // this, carrying the guard's own wording. That sentence names
+            // the missing piece — "it needs an accepted quote" — and is the
+            // whole point of the round, so it is shown as it stands.
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation(
+                    "Move refused for deal {DealId} -> {Stage}: {Message}", id, stage, ex.Message);
+
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id });
+            }
+            catch (KeyNotFoundException)
+            {
+                ErrorMessage = "That deal could not be found.";
+                return RedirectToPage("/Pipeline/Index");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to move deal {DealId} to {Stage}", id, stage);
+                ErrorMessage = Explain(ex, "Failed to move the deal.");
+                return RedirectToPage(new { id });
             }
         }
 
@@ -703,6 +792,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
+        /// <summary>
+        /// 020 — what this deal can do from where it is. A failure here
+        /// costs the transition bar, not the page: the deal is still
+        /// readable, and the kanban is still a way to move it.
+        /// </summary>
+        private async Task LoadTransitionsAsync(Guid dealId)
+        {
+            try
+            {
+                Transitions = await _ruleService.GetForDealAsync(dealId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load transitions for deal {DealId}", dealId);
+                Transitions = null;
+            }
+        }
+
         private async Task LoadAssigneesAsync()
         {
             try { Assignees = await _activityService.GetAssigneesAsync(); }
@@ -784,6 +891,46 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             if (IsTenantAdmin) return true;
             return string.Equals(a.CreatedBy, CurrentUserId.ToString(), StringComparison.OrdinalIgnoreCase);
         }
+
+        // ── 020: the transition bar ───────────────────────────────────
+
+        /// <summary>Moves the process offers from here, blocked ones included.</summary>
+        public List<AvailableTransitionDto> AvailableMoves =>
+            Transitions?.Transitions ?? new List<AvailableTransitionDto>();
+
+        /// <summary>The viewer may step outside the process.</summary>
+        public bool CanOverrideStage => Transitions?.CanOverride == true && CanUpdate;
+
+        /// <summary>
+        /// Every stage the override picker can offer — all of them except
+        /// the one the deal is already in, retired ones included, because
+        /// putting a deal back where it belongs is exactly what the escape
+        /// hatch is for.
+        /// </summary>
+        public List<StageLiteDto> OverrideTargets =>
+            (Transitions?.AllStages ?? new List<StageLiteDto>())
+                .Where(s => s.Key != Deal?.Stage)
+                .ToList();
+
+        /// <summary>
+        /// The process offers nothing this person can do. Worth saying out
+        /// loud rather than showing an empty strip.
+        /// </summary>
+        public bool IsStuck => AvailableMoves.Count == 0 || AvailableMoves.All(m => !m.IsAllowed);
+
+        public string MoveButtonClass(AvailableTransitionDto m) => m.ToCategory switch
+        {
+            StageCategory.Won  => "btn-success",
+            StageCategory.Lost => "btn-outline-danger",
+            _                  => "btn-outline-primary"
+        };
+
+        public string MoveButtonIcon(AvailableTransitionDto m) => m.ToCategory switch
+        {
+            StageCategory.Won  => "bi-trophy",
+            StageCategory.Lost => "bi-x-circle",
+            _                  => "bi-arrow-right-circle"
+        };
 
         public bool IsEditing(ActivityDto a) => EditId.HasValue && EditId.Value == a.Id;
         public bool IsAddingOutcome(ActivityDto a) => OutcomeId.HasValue && OutcomeId.Value == a.Id;

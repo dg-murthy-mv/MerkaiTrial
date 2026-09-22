@@ -1,0 +1,252 @@
+@* =====================================================================
+   TRANSITION BAR (020)
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_TransitionBar.cshtml
+
+   NEW FILE. The deal's process, as buttons.
+
+   WHY BUTTONS AND NOT A DROPDOWN
+     A dropdown says where the deal ends up. A button says what you are
+     doing — "Send Quote", "Mark as Lost" — which is the tenant's own
+     language for their own process, and the reason the Label lives on the
+     transition rather than being derived from the stage name.
+
+   WHY BLOCKED MOVES ARE SHOWN, DISABLED
+     Hiding them would be tidier and worse. A rep who cannot find "Mark as
+     Closed Won" assumes the app is broken; one who sees it greyed out
+     reading "this deal has no quote yet" has just been taught the
+     process. The reasons come from the server, which checks the same
+     rules again on the way in.
+   ===================================================================== *@
+
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+@using MerkaiTrial.Domain.Entities
+
+@if (Model.Transitions is null)
+{
+    @* The transitions call failed. Say so quietly — the deal is still
+       readable, and the pipeline board is still a way to move it. *@
+    <div class="alert alert-light border small text-muted mb-4">
+        <i class="bi bi-exclamation-circle me-1"></i>
+        The available moves couldn't be loaded. Refresh the page, or move this deal from the pipeline board.
+    </div>
+    return;
+}
+
+<div class="card shadow-sm mb-4 transition-bar">
+    <div class="card-body py-3">
+
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <div class="small text-muted">
+                <i class="bi bi-signpost-split me-1"></i>
+                In <strong>@Model.Transitions.CurrentStageName</strong> — what happens next?
+            </div>
+
+            @if (Model.CanOverrideStage)
+            {
+                <button type="button" class="btn btn-link btn-sm text-muted p-0"
+                        data-bs-toggle="modal" data-bs-target="#overrideStageModal">
+                    <i class="bi bi-shield-lock me-1"></i>Change stage (admin)
+                </button>
+            }
+        </div>
+
+        @if (!Model.CanUpdate)
+        {
+            <div class="text-muted small">
+                <i class="bi bi-eye me-1"></i>You have read-only access to deals.
+            </div>
+        }
+        else if (Model.AvailableMoves.Count == 0)
+        {
+            <div class="alert alert-warning mb-0 py-2 small">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                This workspace's sales process has no move out of <strong>@Model.Transitions.CurrentStageName</strong>.
+                @if (Model.CanOverrideStage)
+                {
+                    <text>Use <strong>Change stage (admin)</strong> above, then add the missing step under
+                    <a asp-page="/Settings/PipelineRules/Index">Settings → Pipeline Rules</a>.</text>
+                }
+                else
+                {
+                    <text>Ask a workspace admin to add one under Settings → Pipeline Rules.</text>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="d-flex gap-2 flex-wrap align-items-start">
+                @foreach (var move in Model.AvailableMoves)
+                {
+                    if (move.IsAllowed)
+                    {
+                        <button type="button"
+                                class="btn @Model.MoveButtonClass(move) move-btn"
+                                data-stage="@move.ToStageKey"
+                                data-label="@move.Label"
+                                data-needs-note="@move.RequiresNote.ToString().ToLowerInvariant()"
+                                data-prompt="@move.NotePrompt">
+                            <i class="bi @Model.MoveButtonIcon(move) me-2"></i>@move.Label
+                        </button>
+                    }
+                    else
+                    {
+                        @* Disabled buttons don't fire tooltips or clicks in
+                           any browser, so the reason is rendered as text
+                           beneath rather than hidden in a title attribute
+                           nobody can reach. *@
+                        <div class="blocked-move">
+                            <button type="button" class="btn @Model.MoveButtonClass(move)" disabled>
+                                <i class="bi bi-lock me-2"></i>@move.Label
+                            </button>
+                            <div class="blocked-why">@move.BlockedReason</div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@* ── the note dialog ───────────────────────────────────────────────────
+   One dialog for every move that asks for something. The prompt comes
+   from the transition, so a tenant asking "Which site did you survey?"
+   gets that question rather than a generic box. *@
+<div class="modal fade" id="moveNoteModal" tabindex="-1" data-bs-backdrop="static">
+    <form method="post" asp-page-handler="MoveStage" asp-route-id="@Model.Deal.Id">
+        <input type="hidden" name="stage" id="moveNoteStage" />
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="moveNoteTitle">Move this deal</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label" id="moveNotePrompt">Add a note for this change</label>
+                    <textarea name="note" id="moveNoteText" class="form-control" rows="3"
+                              maxlength="1000" required
+                              placeholder="A sentence is enough."></textarea>
+                    <div class="form-text">Kept on this deal's stage history.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i><span id="moveNoteConfirmLabel">Save &amp; move</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@* Moves that ask for nothing still post through a form, so the
+   antiforgery token comes along. *@
+<form method="post" asp-page-handler="MoveStage" asp-route-id="@Model.Deal.Id" id="directMoveForm" class="d-none">
+    <input type="hidden" name="stage" id="directMoveStage" />
+</form>
+
+@if (Model.CanOverrideStage)
+{
+    @* ── the admin escape hatch ────────────────────────────────────────
+       Buttons-only navigation means one badly pruned process could strand
+       a deal. This skips the PROCESS — never the money rule: an invoiced
+       deal still cannot be reopened, and the server refuses this route
+       just as firmly as the others. *@
+    <div class="modal fade" id="overrideStageModal" tabindex="-1">
+        <form method="post" asp-page-handler="MoveStage" asp-route-id="@Model.Deal.Id">
+            <input type="hidden" name="adminOverride" value="true" />
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-shield-lock me-2"></i>Change stage</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted small">
+                            This moves the deal outside the configured process. It is recorded on the
+                            deal's stage history as an admin override, with your name and your reason.
+                            Use it to unstick a deal, then fix the process under
+                            <a asp-page="/Settings/PipelineRules/Index">Settings → Pipeline Rules</a>.
+                        </p>
+
+                        <div class="alert alert-light border small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            An invoiced deal still cannot be reopened this way — void the invoice first.
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Move to</label>
+                            <select name="stage" class="form-select" required>
+                                <option value="">— Choose a stage —</option>
+                                @foreach (var s in Model.OverrideTargets)
+                                {
+                                    <option value="@s.Key">
+                                        @s.Name@(s.IsActive ? "" : " (retired)")
+                                    </option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label">Why? <span class="text-danger">*</span></label>
+                            <textarea name="note" class="form-control" rows="2" maxlength="1000" required
+                                      placeholder="Stage was pruned by mistake; putting this back where it belongs."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-shield-lock me-1"></i>Change stage
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+}
+
+<style>
+    .transition-bar .btn { font-weight: 500; }
+
+    .blocked-move { display: inline-flex; flex-direction: column; max-width: 260px; }
+    .blocked-move .btn { opacity: 0.55; }
+
+    .blocked-why {
+        font-size: 0.75rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+        line-height: 1.25;
+    }
+</style>
+
+<script>
+    (function () {
+        const noteModalEl = document.getElementById('moveNoteModal');
+        const directForm  = document.getElementById('directMoveForm');
+
+        document.querySelectorAll('.move-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const stage = this.dataset.stage;
+                const label = this.dataset.label;
+
+                if (this.dataset.needsNote === 'true') {
+                    document.getElementById('moveNoteStage').value = stage;
+                    document.getElementById('moveNoteTitle').textContent = label;
+                    document.getElementById('moveNotePrompt').textContent =
+                        this.dataset.prompt || 'Add a note for this change';
+                    document.getElementById('moveNoteConfirmLabel').textContent = label;
+                    document.getElementById('moveNoteText').value = '';
+
+                    bootstrap.Modal.getOrCreateInstance(noteModalEl).show();
+                    setTimeout(function () { document.getElementById('moveNoteText').focus(); }, 250);
+                    return;
+                }
+
+                // Nothing to ask for — post it. Disabled first so a double
+                // click cannot write two history rows for one move.
+                this.disabled = true;
+                document.getElementById('directMoveStage').value = stage;
+                directForm.submit();
+            });
+        });
+    })();
+</script>

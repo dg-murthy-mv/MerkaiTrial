@@ -9,10 +9,14 @@
 @* (017) Quota bar and New Deal limit use Model.DealQuotaUsed (whole
    workspace), not Model.TotalDeals (deals this user can see).
 
-   (019) Dropping a card onto a stage that wants a reason now opens a
-   small dialog BEFORE posting, and a refused move puts the card back
-   where it came from instead of reloading the whole board and leaving
-   the rep to work out what happened. *@
+   (019) A refused move puts the card back where it came from instead of
+   reloading the whole board and leaving the rep to work out what
+   happened.
+
+   (020) The board reads the tenant's MATRIX. A drag onto a column the
+   process has no step to is refused before it posts, in the same words
+   the server would have used, and a move that wants a note asks the
+   transition's OWN question rather than a generic one. *@
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
@@ -354,10 +358,11 @@
             </button>
         </div>
 
-        @if (Model.Rules is { ForwardOnly: true })
+        @if (Model.Rules is not null && Model.LiveMoves.Count > 0)
         {
             <small class="text-muted">
-                <i class="bi bi-arrow-right-circle me-1"></i>This workspace moves deals forward only
+                <i class="bi bi-diagram-3 me-1"></i>
+                @Model.LiveMoves.Count step@(Model.LiveMoves.Count == 1 ? "" : "s") in this workspace's sales process
             </small>
         }
     </div>
@@ -390,13 +395,12 @@
                 // 019 — what this stage asks of a deal, straight from the
                 // tenant's rules. The board uses it to decide whether to
                 // put the reason box up before posting.
-                var req = Model.Rules?.Stages.FirstOrDefault(s => s.Key == stage.Key);
+                var hints = Model.EntryHintsFor(stage.Key);
 
                 <div class="kanban-column @columnClass"
                      data-stage="@stage.Key"
                      data-stage-name="@stage.Name"
-                     data-category="@((int)stage.Category)"
-                     data-needs-lost-reason="@((req?.RequiresLostReason == true && isLost).ToString().ToLowerInvariant())">
+                     data-category="@((int)stage.Category)">
                     <div class="column-header">
                         <div>
                             <div class="column-title">
@@ -405,21 +409,11 @@
                             <div class="column-value">
                                 @Model.FormatCurrency(Model.GetStageValue(stage.Key), 0)
                             </div>
-                            @if (req is not null)
+                            @if (hints.Count > 0)
                             {
-                                var gates = new List<string>();
-                                if (req.RequiresAcceptedQuote) { gates.Add("accepted quote"); }
-                                else if (req.RequiresQuote) { gates.Add("a quote"); }
-                                if (req.RequiresValue) { gates.Add("a value"); }
-                                if (req.RequiresCloseDate) { gates.Add("a close date"); }
-                                if (req.RequiresLostReason && isLost) { gates.Add("a reason"); }
-
-                                if (gates.Count > 0)
-                                {
-                                    <div class="column-gate" title="A deal needs @string.Join(", ", gates) before it can enter this stage.">
-                                        <i class="bi bi-shield-check"></i>needs @string.Join(", ", gates)
-                                    </div>
-                                }
+                                <div class="column-gate" title="A deal needs @string.Join(", ", hints) before it can enter this stage.">
+                                    <i class="bi bi-shield-check"></i>needs @string.Join(", ", hints)
+                                </div>
                             }
                         </div>
                         <span class="column-count">@dealsHere.Count</span>
@@ -597,10 +591,11 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // Whether reopening a closed deal needs a written reason. Rendered from
-    // the tenant's saved rules. The SERVER is the authority — this only
-    // decides whether we ask before posting or let the server explain.
-    const REOPEN_NEEDS_REASON = @(Model.ReopenNeedsReason ? "true" : "false");
+    // The tenant's live process, keyed "fromStage|toStage". The SERVER is
+    // the authority and checks all of it again — this only decides whether
+    // the board asks for a note before posting, and whether it bothers
+    // posting a move the process plainly has no step for.
+    const MOVES = @Html.Raw(Model.ProcessJson);
 
     // View Switching
     function switchView(view) {
@@ -683,36 +678,37 @@
 
         hideMoveRefused();
 
-        // ── does this move need a reason? ─────────────────────────────
-        // Category: 0 Open, 1 Won, 2 Lost. Leaving a Won or Lost column is
-        // a reopen, whatever the stage is called.
-        const leavingClosed = fromColumn && fromColumn.dataset.category !== '0';
-        const needsLost     = targetColumn.dataset.needsLostReason === 'true';
+        // ── is this move part of the process at all? ──────────────────
+        const fromStage = fromColumn ? fromColumn.dataset.stage : null;
+        const move      = fromStage ? MOVES[fromStage + '|' + newStage] : null;
 
-        if (leavingClosed && REOPEN_NEEDS_REASON) {
+        if (fromStage && Object.keys(MOVES).length > 0 && !move) {
+            // The process has no step here. Refusing in the browser saves a
+            // round trip and says the same thing the server would have.
+            const options = Object.keys(MOVES)
+                .filter(k => k.startsWith(fromStage + '|'))
+                .map(k => MOVES[k].label);
+
+            revertCard(card, from);
+            showMoveRefused(
+                `Moving from ${fromColumn.dataset.stageName} to ${targetColumn.dataset.stageName} `
+                + `is not part of this workspace's sales process.`
+                + (options.length ? ` From here you can: ${options.join(', ')}.` : ''));
+            return;
+        }
+
+        // ── does it want a note? Ask the transition's OWN question. ───
+        if (move && move.needsNote) {
             askForReason({
-                title: 'Reopen this deal?',
-                help: `"${card.dataset.dealTitle}" is currently in ${fromColumn.dataset.stageName}. `
-                    + `Reopening it changes which period its value falls in, so the reason is kept on `
-                    + `the deal's stage history.`,
-                onConfirm: (reason) => submitMove(card, from, dealId, newStage, { reopenReason: reason }),
+                title: move.label,
+                help: move.prompt || 'Add a note for this change. It is kept on the deal\'s stage history.',
+                onConfirm: (reason) => submitMove(card, from, dealId, newStage, reason),
                 onCancel:  () => revertCard(card, from)
             });
             return;
         }
 
-        if (needsLost) {
-            askForReason({
-                title: `Mark as ${targetColumn.dataset.stageName}`,
-                help: `Why was "${card.dataset.dealTitle}" lost? This shows up in the pipeline report, `
-                    + `so a few honest words are worth more than "no reason given".`,
-                onConfirm: (reason) => submitMove(card, from, dealId, newStage, { lostReason: reason }),
-                onCancel:  () => revertCard(card, from)
-            });
-            return;
-        }
-
-        submitMove(card, from, dealId, newStage, {});
+        submitMove(card, from, dealId, newStage, null);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -797,7 +793,7 @@
         }
     }
 
-    async function submitMove(card, fromContainer, dealId, newStage, reasons) {
+    async function submitMove(card, fromContainer, dealId, newStage, note) {
         try {
             const token = document.querySelector('#stageUpdateForm input[name="__RequestVerificationToken"]')?.value;
             if (!token) { console.error('Antiforgery token not found'); location.reload(); return; }
@@ -805,8 +801,7 @@
             const formData = new FormData();
             formData.append('dealId', dealId);
             formData.append('stage', newStage);
-            if (reasons.lostReason)   formData.append('lostReason', reasons.lostReason);
-            if (reasons.reopenReason) formData.append('reopenReason', reasons.reopenReason);
+            if (note) formData.append('note', note);
 
             const response = await fetch('?handler=UpdateStage', {
                 method: 'POST',

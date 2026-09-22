@@ -1,6 +1,17 @@
 @* =====================================================================
    RIGHT SIDEBAR
    Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_RightSidebar.cshtml
+
+   (020)
+     • The Quick Info stage badge resolves the key to the tenant's own
+       name, as Stage History already did.
+     • Stage History shows the NOTE. Every lost reason and every reopen
+       reason was being written to DealStageHistory.Note and read by
+       nothing — the point of asking is that someone can read the answer
+       three months later.
+     • "Edit Deal" no longer implies moving the deal: the stage selector
+       has gone from the Edit page, and the transition bar at the top of
+       this page is where a deal moves.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
 
@@ -13,8 +24,10 @@
         <div class="mb-3">
             <label class="text-muted small">Stage</label>
             <p class="mb-0">
+                @* The tenant's own name for the stage — this printed the
+                   stored key, so "ClosedWon" rather than "Closed Won". *@
                 <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage) fs-6">
-                    @Model.Deal.Stage
+                    @Model.StageName(Model.Deal.Stage)
                 </span>
             </p>
         </div>
@@ -142,6 +155,16 @@
                                         <span class="ms-1">by @entry.ChangedBy</span>
                                     }
                                 </div>
+
+                                @* The reason, at last. A deal that was lost
+                                   for a reason nobody can read was lost for
+                                   no reason at all. *@
+                                @if (!string.IsNullOrWhiteSpace(entry.Note))
+                                {
+                                    <div class="stage-note">
+                                        <i class="bi bi-quote me-1"></i>@entry.Note
+                                    </div>
+                                }
                             </div>
                         </div>
                     </div>
@@ -166,7 +189,9 @@
     <div class="card-body">
         <div class="d-grid gap-2">
 
-            @* ✅ FIX 1: Edit Deal only shown when deal is not ClosedWon/ClosedLost AND role has update permission *@
+            @* Edit Deal — the deal's DETAILS. Since 020 it no longer carries a
+               stage selector; moving the deal is the transition bar's job, at
+               the top of this page. *@
             @if (Model.IsEditableState && Model.CanUpdate)
             {
                 <a asp-page="./Edit" asp-route-id="@Model.Deal.Id" class="btn btn-sm btn-outline-primary">
@@ -220,4 +245,15 @@
     }
     .stage-timeline-item:last-child { border-bottom: none !important; }
     .badge-sm { font-size: 0.7rem; padding: 0.2em 0.5em; }
+
+    .stage-note {
+        font-size: 0.75rem;
+        color: #495057;
+        background: #f8f9fa;
+        border-left: 2px solid #dee2e6;
+        padding: 0.35rem 0.5rem;
+        margin-top: 0.35rem;
+        border-radius: 0 4px 4px 0;
+        white-space: pre-wrap;
+    }
 </style>

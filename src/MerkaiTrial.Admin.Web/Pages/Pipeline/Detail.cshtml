@@ -1,8 +1,22 @@
-﻿@page "{id:guid}"
+@page "{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
+@using MerkaiTrial.Domain.Entities
 @{
     ViewData["Title"] = $"Deal — {Model.Deal.Title}";
 }
+@* (020) The transition bar sits directly under the header: the moves this
+   deal's own process offers, as buttons. The stage dropdown on the Edit
+   page is gone — a deal now moves by doing something named, not by
+   choosing a destination.
+
+   Three display bugs fixed here at the same time:
+     • the header printed Deal.Stage, which is the KEY. Sathorn saw
+       "ClosedWon" where their own pipeline says "Closed Won".
+     • the closed-deal lock badge matched the literal strings "ClosedWon"
+       and "Won", so a tenant's own "Contract Signed" never showed it.
+     • the Tasks tab button was not wrapped in <li class="nav-item">,
+       which put it outside the tab list in the markup.
+*@
 
 <div class="container-fluid py-4">
 
@@ -15,8 +29,9 @@
                 <div>
                     <h2 class="mb-2">@Model.Deal.Title</h2>
                     <div class="d-flex align-items-center gap-3 flex-wrap">
+                        @* The tenant's NAME for the stage, not the key we store. *@
                         <span class="badge @Model.GetStageBadgeClass(Model.Deal.Stage) fs-6">
-                            @Model.Deal.Stage
+                            @Model.StageName(Model.Deal.Stage)
                         </span>
                         <span class="text-muted">•</span>
                         <strong class="text-success">
@@ -38,23 +53,24 @@
 
                 <div class="d-flex gap-2 flex-wrap">
 
-                    @* ✅ Edit — requires deal not closed AND role has update permission *@
+                    @* ✅ Edit — the DETAILS of the deal. Since 020 it no longer
+                       carries a stage selector at all: moving a deal is the
+                       transition bar's job. Still hidden on a closed deal, as
+                       before. *@
                     @if (Model.IsEditableState && Model.CanUpdate)
                     {
                         <a asp-page="./Edit" asp-route-id="@Model.Deal.Id" class="btn btn-primary">
                             <i class="bi bi-pencil me-2"></i>Edit
                         </a>
                     }
-                    @* If IsEditableState=true but no update permission → button hidden silently (viewer/read-only role) *@
 
                     @* ✅ Delete — requires deal not closed AND role has delete permission *@
                     @if (Model.IsDeletableState && Model.CanDelete)
                     {
-                        
-                            var deleteWarning = Model.HasExistingQuote
-                                ? "This deal has an associated quote. Deleting it will orphan the quote. Are you sure?"
-                                : "Are you sure you want to delete this deal?";
-                        
+                        var deleteWarning = Model.HasExistingQuote
+                            ? "This deal has an associated quote. Deleting it will orphan the quote. Are you sure?"
+                            : "Are you sure you want to delete this deal?";
+
                         <form method="post"
                               asp-page-handler="Delete"
                               asp-route-id="@Model.Deal.Id"
@@ -66,15 +82,20 @@
                         </form>
                     }
 
-                    @* Closed deal lock badge — shown regardless of role *@
+                    @* Closed deal badge — by CATEGORY, so a tenant's own
+                       "Contract Signed" reads as won just like "ClosedWon" did.
+                       It no longer says "View Only": since 020 a closed deal can
+                       be reopened through the transition bar by whoever the
+                       process allows. *@
                     @if (Model.IsClosedDeal)
                     {
+                        var wonStage = Model.StageCategoryOf(Model.Deal.Stage) == StageCategory.Won;
                         <span class="badge align-self-center px-3 py-2"
-                              style="background:@(Model.Deal.Stage is "ClosedWon" or "Won" ? "#dcfce7" : "#fee2e2");
-                                     color:@(Model.Deal.Stage is "ClosedWon" or "Won" ? "#15803d" : "#b91c1c");
+                              style="background:@(wonStage ? "#dcfce7" : "#fee2e2");
+                                     color:@(wonStage ? "#15803d" : "#b91c1c");
                                      font-size:12px;">
                             <i class="bi bi-lock-fill me-1"></i>
-                            @(Model.Deal.Stage is "ClosedWon" or "Won" ? "Won — View Only" : "Lost — View Only")
+                            @(wonStage ? "Won" : "Lost") — closed
                         </span>
                     }
 
@@ -83,6 +104,13 @@
                     </a>
                 </div>
             </div>
+        </div>
+    </div>
+
+    @* ── 020: what happens next ──────────────────────────────────────── *@
+    <div class="row">
+        <div class="col-12">
+            <partial name="_TransitionBar" />
         </div>
     </div>
 
@@ -115,17 +143,22 @@
                         <span class="badge bg-secondary ms-1">@Model.Activities.Count</span>
                     </button>
                 </li>
-                <button class="nav-link" id="tasks-tab"
-                        data-bs-toggle="tab" data-bs-target="#tasks"
-                        type="button" role="tab">
-                    <i class="bi bi-list-check me-2"></i>Tasks
-                    @if (Model.OpenTasks.Any())
-                    {
-                        <span class="badge @(Model.OpenTasks.Any(t => Model.IsOverdue(t)) ? "bg-danger" : "bg-secondary") ms-1">
-                            @Model.OpenTasks.Count
-                        </span>
-                    }
-                </button>
+                @* ✅ Was a bare <button> outside any <li> — the only tab in the
+                   list not wrapped, which left it outside the list in the markup
+                   and at the mercy of the browser's error recovery. *@
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tasks-tab"
+                            data-bs-toggle="tab" data-bs-target="#tasks"
+                            type="button" role="tab">
+                        <i class="bi bi-list-check me-2"></i>Tasks
+                        @if (Model.OpenTasks.Any())
+                        {
+                            <span class="badge @(Model.OpenTasks.Any(t => Model.IsOverdue(t)) ? "bg-danger" : "bg-secondary") ms-1">
+                                @Model.OpenTasks.Count
+                            </span>
+                        }
+                    </button>
+                </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="attachments-tab"
                             data-bs-toggle="tab" data-bs-target="#attachments"

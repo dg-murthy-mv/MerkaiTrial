@@ -4,7 +4,17 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES (019 — transition rules):
+// CHANGES (020 — Blueprint transitions):
+//   ✅ The board reads the tenant's MATRIX, not a set of per-stage rules.
+//      A drag onto a column the process has no step to is refused before
+//      it posts, with the same wording the server would have used.
+//   ✅ One note replaces the two reason fields — the transition carries
+//      its own prompt, so the board asks the tenant's question rather than
+//      "why was this lost?" every time.
+//   ✅ Column headers show what a move INTO that stage needs, gathered
+//      across the moves that lead there.
+//
+// CHANGES (019 — still true):
 //   ✅ Loads the tenant's transition rules alongside the stages, so the
 //      board can ask for a lost reason or a reopen reason BEFORE it posts
 //      rather than posting, being refused, and asking afterwards.
@@ -105,11 +115,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<PipelineStageDto> Stages { get; private set; } = new();
 
         /// <summary>
-        /// The tenant's transition rules. Null only when the call failed —
-        /// the board still works, it just posts without pre-asking and
-        /// lets the server explain.
+        /// The tenant's sales process — stages and the from-to matrix. Null
+        /// only when the call failed; the board still works, it just posts
+        /// without pre-checking and lets the server explain.
         /// </summary>
         public PipelineRulesDto? Rules { get; private set; }
+
+        /// <summary>Live moves only, keyed "from|to" for the board's lookup.</summary>
+        public Dictionary<string, TransitionDto> LiveMoves { get; private set; } = new();
 
         // ── Stats ──────────────────────────────────────────────────────
         public int TotalDeals => Deals.Count;
@@ -186,6 +199,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 Stages = await stagesTask;
                 Rules = await rulesTask;
 
+                LiveMoves = (Rules?.Transitions ?? new List<TransitionDto>())
+                    .Where(t => t.IsActive)
+                    .GroupBy(t => $"{t.FromStageKey}|{t.ToStageKey}")
+                    .ToDictionary(g => g.Key, g => g.First());
+
                 await LoadQuoteStatusForDealsAsync(tenantId);
 
                 _logger.LogInformation("Loaded {Count} deals", Deals.Count);
@@ -206,20 +224,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         // ── POST: Update Stage (Kanban drag & drop) ────────────────────
 
         /// <summary>
-        /// 019: carries the reason the move needs. The board asks for it
-        /// first when its copy of the rules says one is wanted, but the
-        /// server is the authority — if the board's copy is stale, the
-        /// refusal below explains exactly what is missing.
+        /// 020: one note, whatever the transition asked for. The board asks
+        /// for it before posting when its copy of the process says one is
+        /// wanted, but the server is the authority — if the board's copy is
+        /// stale, the refusal below explains exactly what is missing.
         /// </summary>
         public async Task<IActionResult> OnPostUpdateStageAsync(
-            Guid dealId, string stage, string? lostReason, string? reopenReason)
+            Guid dealId, string stage, string? note)
         {
             if (!await CanUpdateAsync())
                 return new JsonResult(new { success = false, error = "You do not have permission to update deal stages." }) { StatusCode = 403 };
 
             try
             {
-                await _dealStageService.MoveAsync(dealId, stage, lostReason, reopenReason);
+                await _dealStageService.MoveAsync(dealId, stage, note);
                 return new JsonResult(new { success = true });
             }
             catch (KeyNotFoundException)
@@ -283,15 +301,64 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _ => "bg-secondary"
         };
 
-        /// <summary>
-        /// Does moving INTO this stage need a lost reason? Read from the
-        /// tenant's rules so the board asks before posting.
-        /// </summary>
-        public bool StageNeedsLostReason(string key) =>
-            Rules?.Stages.FirstOrDefault(s => s.Key == key) is { RequiresLostReason: true, Category: StageCategory.Lost };
+        // ── 020: the matrix, as the board needs it ────────────────────
 
-        /// <summary>Does moving OUT of a closed stage need a reason?</summary>
-        public bool ReopenNeedsReason => Rules?.ReopenRequiresReason ?? false;
+        /// <summary>The configured move, or null when the process has none.</summary>
+        public TransitionDto? MoveBetween(string? fromKey, string? toKey) =>
+            fromKey is null || toKey is null
+                ? null
+                : LiveMoves.GetValueOrDefault($"{fromKey}|{toKey}");
+
+        /// <summary>
+        /// What a deal needs before any of the moves INTO this stage will
+        /// take it. Gathered across every live move that leads here, so a
+        /// column header can say "needs an accepted quote" without the rep
+        /// having to open the settings page to find out.
+        ///
+        /// Union rather than intersection: if one route in wants an
+        /// accepted quote and another does not, the header mentions it —
+        /// over-warning is better than a rep discovering the rule only when
+        /// the card bounces back.
+        /// </summary>
+        /// <summary>
+        /// The live matrix as JSON for the board's drag handler, keyed
+        /// "from|to". Serialised here rather than built in Razor so the
+        /// labels and prompts — which are the tenant's own words and may
+        /// contain quotes, apostrophes or Thai — are escaped properly
+        /// rather than by hand in a string concatenation.
+        /// </summary>
+        public string ProcessJson =>
+            System.Text.Json.JsonSerializer.Serialize(
+                LiveMoves.ToDictionary(
+                    kv => kv.Key,
+                    kv => new
+                    {
+                        label = kv.Value.Label,
+                        needsNote = kv.Value.RequiresNote,
+                        prompt = kv.Value.NotePrompt
+                    }),
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    // The values land inside a <script> block, so anything
+                    // that could close it early is escaped.
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Default
+                });
+
+        public List<string> EntryHintsFor(string stageKey)
+        {
+            var into = LiveMoves.Values.Where(t => t.ToStageKey == stageKey).ToList();
+            if (into.Count == 0) return new List<string>();
+
+            var hints = new List<string>();
+            if (into.Any(t => t.RequiresAcceptedQuote)) hints.Add("accepted quote");
+            else if (into.Any(t => t.RequiresQuote))    hints.Add("a quote");
+            if (into.Any(t => t.RequiresValue))         hints.Add("a value");
+            if (into.Any(t => t.RequiresCloseDate))     hints.Add("a close date");
+            if (into.Any(t => t.RequiresAttachment))    hints.Add("an attachment");
+            if (into.Any(t => t.RequiresNote))          hints.Add("a note");
+
+            return hints;
+        }
 
         // ── Load Quote Status for Kanban Cards ─────────────────────────
         private async Task LoadQuoteStatusForDealsAsync(Guid tenantId)
