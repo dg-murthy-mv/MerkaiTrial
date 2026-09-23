@@ -51,10 +51,22 @@
 
     // ✅ Permission helper — reads claims set by DemoAuthenticationHandler
     // IsTenantAdmin bypasses all checks (full access)
+    //
+    // CASE MATTERS HERE. HasClaim compares ordinally, so "deals.read" does
+    // not match a claim of "Deals.read". PermissionHandler was made
+    // case-insensitive during the security audit; this was not, and it is
+    // the reason a nav section can silently disappear for every non-admin
+    // while looking perfect to you. Module keys are PascalCase, as seeded
+    // by RoleTemplate — "Leads", "Deals", "Users", "Roles", "Audit".
     bool CanNav(string module, string action = "read")
     {
         if (Context.User.HasClaim("IsTenantAdmin", "true")) return true;
-        return Context.User.HasClaim("permission", $"{module}.{action}");
+
+        // Ordinal by default; matched case-insensitively so a role seeded
+        // with different casing cannot make a whole menu vanish.
+        return Context.User.Claims.Any(c =>
+            string.Equals(c.Type, "permission", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(c.Value, $"{module}.{action}", StringComparison.OrdinalIgnoreCase));
     }
 
     // ✅ Feature helper — reads from TenantSettings.FeatureFlags via ICurrentTenantService
@@ -1013,12 +1025,19 @@
                         </div>
                     }
                 }
-                @if (CanNav("leads") || CanNav("deals") || CanNav("roles")
-                                || CanNav("users") || CanNav("audit"))
+                @* MODULE KEYS ARE PascalCase. CanNav goes straight to
+                   HasClaim, which compares ordinally — PermissionHandler's
+                   case-insensitive matching does not apply here. This block
+                   used "leads"/"deals"/"roles" while the rest of the file uses
+                   "Leads"/"Deals", so for every non-admin it evaluated false
+                   and the whole section vanished. A tenant admin never saw it,
+                   because CanNav short-circuits on IsTenantAdmin. *@
+                @if (CanNav("Leads") || CanNav("Deals") || CanNav("Roles")
+                                || CanNav("Users") || CanNav("Audit"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
 
-                    @if (CanNav("leads"))
+                    @if (CanNav("Leads"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/LeadStatuses") ? "active" : "")"
                            asp-page="/Settings/LeadStatuses/Index">
@@ -1026,7 +1045,7 @@
                         </a>
                     }
 
-                    @if (CanNav("deals"))
+                    @if (CanNav("Deals"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"
                            asp-page="/Settings/Pipeline/Index">
@@ -1038,7 +1057,7 @@
                         </a>
                     }
 
-                    @if (CanNav("users"))
+                    @if (CanNav("Users"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
                            asp-page="/Settings/Users/Index">
@@ -1046,7 +1065,7 @@
                         </a>
                     }
 
-                    @if (CanNav("roles"))
+                    @if (CanNav("Roles"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
                            asp-page="/Settings/Roles/Index">
@@ -1054,7 +1073,7 @@
                         </a>
                     }
 
-                    @if (CanNav("audit"))
+                    @if (CanNav("Audit"))
                     {
                         <a class="lf-nav-item @(IsActive("/Settings/AuditLogs") ? "active" : "")"
                            asp-page="/Settings/AuditLogs/Index">
@@ -1107,27 +1126,12 @@
                     <span class="lf-notif-dot"></span>
                 </button>
 
-                @* ✅ Settings gear — only for tenant admins *@
-                @if (CanNav("roles") || CanNav("users"))
-                {
-                    <div class="lf-nav-section">Workspace Settings</div>
-
-                    @if (CanNav("users"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
-                           asp-page="/Settings/Users/Index">
-                            <i class="bi bi-people"></i> Users
-                        </a>
-                    }
-
-                    @if (CanNav("roles"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
-                           asp-page="/Settings/Roles/Index">
-                            <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
-                        </a>
-                    }
-                }
+                @* The sidebar's Workspace Settings block used to be pasted here
+                   as well, which rendered a nav SECTION HEADING and sidebar-
+                   style links across the topbar — the "WORKSPACE SETTINGS /
+                   Users / Roles & Permissions" strip. Those classes are styled
+                   for a dark vertical sidebar and were never going to work
+                   here. Settings live in the sidebar; this is the topbar. *@
 
                 @* ✅ Exit View As — quick way back to the SuperAdmin console
                    directly from the topbar, right next to the role display,
@@ -1187,28 +1191,29 @@
                             </div>
                         </li>
 
-                        @* Roles reachable from here too — the sidebar section is
-                           easy to miss on a first visit. *@
-                        @if (CanNav("roles") || CanNav("users"))
+                        @* The same block was pasted here too, putting <div> and <a>
+                           straight inside a <ul> — invalid markup that browsers
+                           recover from by hoisting the elements out of the list,
+                           which is why the dropdown rendered oddly. If these
+                           shortcuts are wanted, they belong here as proper
+                           <li><a class="dropdown-item"> rows: *@
+                        @if (CanNav("Users"))
                         {
-                            <div class="lf-nav-section">Workspace Settings</div>
-
-                            @if (CanNav("users"))
-                            {
-                                <a class="lf-nav-item @(IsActive("/Settings/Users") ? "active" : "")"
-                                   asp-page="/Settings/Users/Index">
-                                    <i class="bi bi-people"></i> Users
+                            <li>
+                                <a class="dropdown-item" asp-page="/Settings/Users/Index">
+                                    <i class="bi bi-people me-2"></i>Users
                                 </a>
-                            }
-
-                            @if (CanNav("roles"))
-                            {
-                                <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
-                                   asp-page="/Settings/Roles/Index">
-                                    <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
-                                </a>
-                            }
+                            </li>
                         }
+                        @if (CanNav("Roles"))
+                        {
+                            <li>
+                                <a class="dropdown-item" asp-page="/Settings/Roles/Index">
+                                    <i class="bi bi-shield-lock me-2"></i>Roles &amp; Permissions
+                                </a>
+                            </li>
+                        }
+                        <li><hr class="dropdown-divider" /></li>
 
                         <li>
                             <a class="dropdown-item" asp-page="/Account/ChangePassword">

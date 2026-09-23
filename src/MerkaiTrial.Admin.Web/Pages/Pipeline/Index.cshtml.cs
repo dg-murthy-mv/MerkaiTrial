@@ -4,6 +4,10 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (022):
+//   ✅ A follow-up the step could not create survives the board's reload
+//      via TempData, instead of disappearing with the page.
+//
 // CHANGES (020 — Blueprint transitions):
 //   ✅ The board reads the tenant's MATRIX, not a set of per-stage rules.
 //      A drag onto a column the process has no step to is refused before
@@ -237,7 +241,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             try
             {
-                await _dealStageService.MoveAsync(dealId, stage, note);
+                var problems = await _dealStageService.MoveAsync(dealId, stage, note);
+
+                // 022: the board reloads on success, so a problem has to
+                // survive the round trip. TempData puts it in the global
+                // alert the layout already renders.
+                if (problems.Count > 0)
+                    ErrorMessage = string.Join(" ", problems);
+
                 return new JsonResult(new { success = true });
             }
             catch (KeyNotFoundException)

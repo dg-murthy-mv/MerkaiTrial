@@ -15,6 +15,9 @@
 //     process could strand a deal, so a workspace admin gets a "Change
 //     stage" escape hatch. It skips the PROCESS, never the money rule:
 //     an invoiced deal still cannot be reopened by anyone.
+//   • (022) A follow-up that could not be created is reported beside the
+//     success rather than swallowed. The move already happened; someone
+//     waiting for a task that never arrives is the failure worth naming.
 //   • BUG: Stages loaded with activeOnly: true. A deal sitting in a
 //     RETIRED stage found no match, so CurrentStage was null, IsClosedDeal
 //     was false, and a closed deal rendered as open, editable and
@@ -359,11 +362,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             try
             {
-                await _dealStageService.MoveAsync(id, stage, note, adminOverride);
+                var problems = await _dealStageService.MoveAsync(id, stage, note, adminOverride);
 
                 SuccessMessage = adminOverride
                     ? "Stage changed. This move was recorded as an admin override."
                     : "Deal moved.";
+
+                // 022: the move is already done. A follow-up that could not
+                // be created is worth saying out loud — someone is
+                // otherwise waiting for a task that is never coming — but
+                // it is reported BESIDE the success, never instead of it.
+                if (problems.Count > 0)
+                    ErrorMessage = string.Join(" ", problems);
 
                 return RedirectToPage(new { id });
             }

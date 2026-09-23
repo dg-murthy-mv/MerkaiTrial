@@ -4,6 +4,13 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (022 — actions on a transition)
+//  17. PUT {id}/stage returns 200 with the result of the step's actions
+//      instead of 204. The move itself is never in doubt by the time this
+//      responds — what the body carries is whether a follow-up could be
+//      created, which the page shows alongside the success message. A
+//      caller that ignores the body behaves exactly as it did.
+//
 // CHANGES (020 — Blueprint transitions)
 //  15. GET {id}/transitions — what this deal can do right now. The deal
 //      page draws its buttons from it, including the ones it must show
@@ -357,7 +364,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// </summary>
         [HttpPut("{id:guid}/stage")]
         [Authorize(Policy = "Deals.Update")]
-        [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(MoveDealStageResult), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
         [ProducesResponseType(404)]
@@ -373,12 +380,20 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (string.IsNullOrWhiteSpace(request.Stage))
                     return BadRequest(new { error = "Stage is required" });
 
-                await _updateDealStageHandler.HandleAsync(
+                var actions = await _updateDealStageHandler.HandleAsync(
                     tenantId, id, request.Stage, request.EffectiveNote, request.AdminOverride);
 
                 _logger.LogInformation("Deal {DealId} stage updated to {Stage}", id, request.Stage);
 
-                return NoContent();
+                // 200, not 204: the move succeeded either way, but the page
+                // needs to know whether the follow-ups did. Reporting "the
+                // deal moved, but a task couldn't be created" is the truth;
+                // silence would leave someone waiting for a task that is
+                // never coming.
+                return Ok(new MoveDealStageResult(
+                    Moved: true,
+                    ActionsCreated: actions.Created,
+                    Problems: actions.Problems));
             }
             catch (KeyNotFoundException)
             {
@@ -963,6 +978,16 @@ namespace MerkaiTrial.WebApi.Controllers
     //
     // LostReason and ReopenReason are kept as aliases so the 019 shape
     // still works off the wire; whichever arrives becomes the note.
+    /// <summary>
+    /// What came back from a move. Problems are never fatal — by the time
+    /// this exists the deal has already moved — so they are reported
+    /// beside the success, not instead of it.
+    /// </summary>
+    public record MoveDealStageResult(
+        bool Moved,
+        int ActionsCreated,
+        List<string> Problems);
+
     public record UpdateDealStageRequest(
         string Stage,
         string? Note = null,

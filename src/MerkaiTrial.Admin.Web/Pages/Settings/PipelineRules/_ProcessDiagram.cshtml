@@ -1,0 +1,143 @@
+@* =====================================================================
+   PROCESS DIAGRAM (021)
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/PipelineRules/_ProcessDiagram.cshtml
+
+   NEW FILE. The sales process as a picture.
+
+   READ-ONLY, DELIBERATELY
+     A drag-and-drop canvas is a week of JavaScript and a class of bugs of
+     its own — node collision, edge routing, undo, touch. A diagram you
+     can only look at answers the question people actually have ("is my
+     process right?") for a fraction of that, and the grid below it is
+     where the process gets changed. If a prospect asks for the canvas by
+     name, that is the moment to build it.
+
+   Open stages run left to right, Won above the end of the line and Lost
+   below it — how anyone draws a pipeline on a whiteboard.
+
+   The geometry is computed in the page model rather than here: where a
+   box sits is a question about the process, and Razor is a poor place to
+   do arithmetic.
+   ===================================================================== *@
+
+@model MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules.IndexModel
+@using MerkaiTrial.Domain.Entities
+
+@{
+    var d = Model.Diagram;
+}
+
+@if (d.Boxes.Count == 0)
+{
+    return;
+}
+
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0"><i class="bi bi-diagram-2 me-2"></i>How deals flow</h6>
+        <div class="diagram-legend">
+            <span><i class="legend-line forward"></i>forward</span>
+            <span><i class="legend-line back"></i>back</span>
+            <span><i class="legend-line won"></i>won</span>
+            <span><i class="legend-line lost"></i>lost</span>
+            <span><i class="legend-line reopen"></i>reopen</span>
+        </div>
+    </div>
+    <div class="card-body pt-2">
+        <div class="diagram-scroll">
+            <svg viewBox="0 0 @d.Width.ToString(System.Globalization.CultureInfo.InvariantCulture) @d.Height.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                 width="100%"
+                 style="min-width:@(d.Width)px; max-width:100%; height:auto;"
+                 role="img"
+                 aria-label="Diagram of the sales process">
+
+                <defs>
+                    @* One marker per line colour — SVG markers do not inherit
+                       stroke, so a single grey arrowhead on a green line looks
+                       like a mistake. *@
+                    <marker id="ah-forward" markerWidth="7" markerHeight="7" refX="6" refY="3"
+                            orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#475569" /></marker>
+                    <marker id="ah-back" markerWidth="7" markerHeight="7" refX="6" refY="3"
+                            orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#94a3b8" /></marker>
+                    <marker id="ah-won" markerWidth="7" markerHeight="7" refX="6" refY="3"
+                            orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#16a34a" /></marker>
+                    <marker id="ah-lost" markerWidth="7" markerHeight="7" refX="6" refY="3"
+                            orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#dc2626" /></marker>
+                    <marker id="ah-reopen" markerWidth="7" markerHeight="7" refX="6" refY="3"
+                            orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#d97706" /></marker>
+                </defs>
+
+                @* Arrows first so the boxes sit on top of them. *@
+                @foreach (var a in d.Arrows)
+                {
+                    <path d="@a.Path" class="flow-arrow flow-@a.Kind"
+                          marker-end="url(#ah-@a.Kind)" fill="none">
+                        <title>@a.Title</title>
+                    </path>
+                }
+
+                @foreach (var b in d.Boxes)
+                {
+                    var cls = b.Category switch
+                    {
+                        StageCategory.Won => "node-won",
+                        StageCategory.Lost => "node-lost",
+                        _ => "node-open"
+                    };
+
+                    <g class="flow-node @cls">
+                        <rect x="@b.X" y="@b.Y" width="@b.W" height="@b.H" rx="9" />
+                        <text x="@(b.X + b.W / 2)" y="@(b.Y + b.H / 2 + 4)"
+                              text-anchor="middle">@b.Name</text>
+                    </g>
+                }
+            </svg>
+        </div>
+
+        @if (d.Arrows.Count == 0)
+        {
+            <div class="text-muted small mt-2">
+                <i class="bi bi-info-circle me-1"></i>
+                No steps are switched on yet, so no deal can move. Pick a template above,
+                or switch steps on in the grid below.
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .diagram-scroll { overflow-x: auto; padding-bottom: 4px; }
+
+    .flow-node rect { stroke-width: 1.5; }
+    .flow-node text {
+        font-family: var(--font-body, system-ui, sans-serif);
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .node-open rect { fill: #f1f5f9; stroke: #cbd5e1; }
+    .node-open text { fill: #1e293b; }
+
+    .node-won  rect { fill: #dcfce7; stroke: #86efac; }
+    .node-won  text { fill: #15803d; }
+
+    .node-lost rect { fill: #fee2e2; stroke: #fca5a5; }
+    .node-lost text { fill: #b91c1c; }
+
+    .flow-arrow { stroke-width: 1.6; }
+    .flow-forward { stroke: #475569; }
+    .flow-back    { stroke: #94a3b8; stroke-dasharray: 4 3; }
+    .flow-won     { stroke: #16a34a; }
+    .flow-lost    { stroke: #dc2626; stroke-width: 1.2; opacity: .75; }
+    .flow-reopen  { stroke: #d97706; stroke-dasharray: 5 4; }
+
+    .diagram-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: #64748b; }
+    .diagram-legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+    .legend-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid currentColor; }
+    .legend-line.forward { color: #475569; }
+    .legend-line.back    { color: #94a3b8; border-top-style: dashed; }
+    .legend-line.won     { color: #16a34a; }
+    .legend-line.lost    { color: #dc2626; }
+    .legend-line.reopen  { color: #d97706; border-top-style: dashed; }
+</style>

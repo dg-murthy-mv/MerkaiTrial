@@ -97,6 +97,7 @@ public class FlowDbContext : DbContext
     public DbSet<TeamManager> TeamManagers => Set<TeamManager>();
     public DbSet<PipelineRuleSettings> PipelineRuleSettings => Set<PipelineRuleSettings>();
     public DbSet<ProcessTransition> ProcessTransitions => Set<ProcessTransition>();
+    public DbSet<TransitionAction> TransitionActions => Set<TransitionAction>();
 
 
     // Quote approvals (017)
@@ -143,6 +144,7 @@ public class FlowDbContext : DbContext
         b.Entity<DealActivity>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<DealReminder>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<DealStageHistory>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<TransitionAction>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
         b.Entity<Quote>()           .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<QuoteItem>()       .HasQueryFilter(e => e.TenantId == CurrentTenantId);

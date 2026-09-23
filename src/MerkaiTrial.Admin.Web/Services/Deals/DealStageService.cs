@@ -2,7 +2,13 @@
 // DealStageService.cs
 // Location: MerkaiTrial.Admin.Web/Services/Deals/DealStageService.cs
 //
-// COMPLETE FILE — replaces the 019 version.
+// COMPLETE FILE — replaces the 020 version.
+//
+// CHANGES (022)
+//   ✅ MoveAsync returns what the step's actions did. The move itself is
+//      never in doubt by the time this returns — an empty list means
+//      everything ran, and a non-empty one means the deal moved but a
+//      follow-up did not get created. Pages show both.
 //
 // Already registered in AdminWebServiceRegistration.AddAdminWebCoreServices:
 //     services.AddScoped<IDealStageService, DealStageService>();
@@ -26,6 +32,12 @@ using MerkaiTrial.Admin.Web.Services.Core;
 
 namespace MerkaiTrial.Admin.Web.Services.Deals;
 
+/// <summary>What comes back. Mirrors the API's MoveDealStageResult.</summary>
+public record MoveDealStageResult(
+    bool Moved,
+    int ActionsCreated,
+    List<string> Problems);
+
 /// <summary>What the browser sends up when it moves a deal.</summary>
 public record MoveDealStageRequest(
     string Stage,
@@ -45,7 +57,12 @@ public interface IDealStageService
     /// process. Refused for anyone else, and recorded on the deal's stage
     /// history either way.
     /// </param>
-    Task MoveAsync(
+    /// <returns>
+    /// Problems the step's actions ran into — empty when everything ran,
+    /// or when the step has no actions. NEVER a reason to think the move
+    /// failed: a move that failed throws.
+    /// </returns>
+    Task<IReadOnlyList<string>> MoveAsync(
         Guid dealId,
         string stage,
         string? note = null,
@@ -59,13 +76,17 @@ public class DealStageService : IDealStageService
 
     public DealStageService(IApiService api) => _api = api;
 
-    public async Task MoveAsync(
+    public async Task<IReadOnlyList<string>> MoveAsync(
         Guid dealId,
         string stage,
         string? note = null,
         bool adminOverride = false,
         CancellationToken ct = default)
-        => await _api.PutVoidAsync(
+    {
+        var result = await _api.PutAsync<MoveDealStageResult>(
             $"api/deals/{dealId}/stage",
             new MoveDealStageRequest(stage, note, adminOverride));
+
+        return result?.Problems ?? new List<string>();
+    }
 }

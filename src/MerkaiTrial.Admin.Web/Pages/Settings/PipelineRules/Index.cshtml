@@ -1,10 +1,25 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules.IndexModel
 @using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.Commands.PipelineStages
 @{
     ViewData["Title"] = "Sales Process";
 }
-@* Alerts are rendered once, globally, by _Layout.cshtml — nothing here. *@
+@* (021) The wall of thirty stacked rows is gone.
+
+   The process is now a from × to GRID — the whole thing on one screen, so
+   its shape is visible — with a side panel for editing one step. The
+   binding underneath is identical to 020: the grid and the panel both
+   read and write the same hidden inputs, so nothing on the server changed
+   to make this work.
+
+   Templates are applied in the BROWSER. Clicking one fills the form;
+   nothing is written until Save, and Cancel undoes it.
+
+   (022) The panel gained "Then what happens" — the follow-up task or
+   logged activity a step creates. Actions travel as JSON in one hidden
+   field per cell rather than as a nested binding; see the page model for
+   why. *@
 
 <style>
     .rules-header {
@@ -15,33 +30,112 @@
         border-radius: 0 0 1rem 1rem;
     }
 
-    .stage-section { margin-bottom: 1.25rem; }
-    .stage-section .card-header { background: #fff; }
-
-    .from-stage-name { font-weight: 600; font-size: 1.05rem; }
-
-    .move-row {
-        padding: 0.85rem 0;
-        border-bottom: 1px solid #f1f3f5;
+    /* ── templates ─────────────────────────────────────────────────── */
+    .tpl-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+        cursor: pointer;
+        transition: border-color .15s, box-shadow .15s, transform .15s;
+        height: 100%;
+        background: #fff;
     }
-    .move-row:last-child { border-bottom: none; }
-    .move-row.is-off { opacity: 0.5; }
+    .tpl-card:hover { border-color: #6366f1; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+    .tpl-name { font-weight: 600; font-size: 0.95rem; }
+    .tpl-tag  { font-size: 0.8rem; color: #475569; margin-top: .15rem; }
+    .tpl-who  { font-size: 0.75rem; color: #94a3b8; margin-top: .35rem; }
 
-    .move-label-input { max-width: 260px; }
-    .req-group { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
-    .req-group label { font-size: 0.78rem; color: #495057; white-space: nowrap; }
-    .note-prompt { max-width: 340px; }
+    /* ── the matrix ────────────────────────────────────────────────── */
+    .matrix-wrap { overflow-x: auto; }
 
-    .dead-end {
-        font-size: 0.8rem;
-        color: #b91c1c;
-        background: #fee2e2;
-        border-radius: 6px;
-        padding: 0.35rem 0.6rem;
-        display: inline-flex;
+    table.matrix { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+    table.matrix th, table.matrix td { padding: 0; }
+
+    .matrix .corner { min-width: 168px; }
+
+    .matrix thead th {
+        font-weight: 600;
+        color: #475569;
+        text-align: center;
+        padding: 0 .35rem .5rem;
+        vertical-align: bottom;
+        min-width: 104px;
+        font-size: 11.5px;
+        line-height: 1.2;
+        background: transparent;
+        border: none;
+        text-transform: none;
+        letter-spacing: 0;
+    }
+
+    .matrix tbody th {
+        font-weight: 600;
+        color: #1e293b;
+        text-align: left;
+        padding: .3rem .6rem .3rem 0;
+        white-space: nowrap;
+        font-size: 12.5px;
+    }
+
+    .cell-btn {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+        color: #cbd5e1;
+        display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 0.35rem;
+        justify-content: center;
+        gap: 1px;
+        cursor: pointer;
+        transition: all .12s;
+        padding: .2rem;
+        margin: 2px;
     }
+    .cell-btn:hover { border-color: #6366f1; background: #eef2ff; }
+
+    .cell-btn.on { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+    .cell-btn.on.to-won  { background: #dcfce7; border-color: #86efac; color: #15803d; }
+    .cell-btn.on.to-lost { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+
+    .cell-mark { font-size: 9px; font-weight: 700; letter-spacing: .04em; opacity: .85; }
+    .cell-actor { font-size: 9px; opacity: .7; }
+    .cell-actions { font-size: 9px; font-weight: 700; color: #b45309; }
+    .cell-actions i { font-size: 9px; }
+
+    .cell-self { text-align: center; color: #e2e8f0; }
+
+    .row-dead th { color: #b91c1c !important; }
+
+    /* ── side panel ────────────────────────────────────────────────── */
+    .req-help { font-size: .78rem; color: #64748b; margin-top: .1rem; }
+
+    .action-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: .7rem;
+        margin-bottom: .6rem;
+        background: #fafafa;
+    }
+    .action-card.off { opacity: .55; }
+    .action-card .form-label { font-size: .75rem; margin-bottom: .15rem; }
+    .action-card .form-control, .action-card .form-select { font-size: .82rem; }
+
+    /* The 020 save bar was position:sticky with no room beneath it, so it
+       covered the last row of the form. A plain footer with breathing room
+       is less clever and does not hide anything. */
+    .save-bar {
+        position: sticky;
+        bottom: 0;
+        background: #fff;
+        border-top: 1px solid #e2e8f0;
+        padding: .85rem 0;
+        margin-top: 1.5rem;
+        z-index: 5;
+    }
+    .form-tail { padding-bottom: 1rem; }
 </style>
 
 <div class="container-fluid">
@@ -94,61 +188,52 @@
     }
     else
     {
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <div class="text-muted small">
-                <i class="bi bi-signpost-split me-1"></i>
-                <strong>@Model.LiveCount</strong> step@(Model.LiveCount == 1 ? "" : "s") switched on
-                across @Model.Rules.Stages.Count(s => s.IsActive) stages.
-                @if (Model.Rules.UpdatedAtUtc.HasValue)
-                {
-                    <text>Last changed @Model.FormatDateTime(Model.Rules.UpdatedAtUtc.Value)</text>
-                    @if (!string.IsNullOrEmpty(Model.Rules.UpdatedBy))
-                    {
-                        <text> by @Model.Rules.UpdatedBy</text>
-                    }
-                    <text>.</text>
-                }
-            </div>
+        <partial name="_ProcessDiagram" />
 
-            @if (Model.CanEditRules)
-            {
-                <form method="post" asp-page-handler="Suggest" class="d-inline"
-                      onsubmit="return confirm('This switches on the steps a normal pipeline wants and switches the rest off. Nothing is deleted — your labels, prompts and requirements stay where they are. Continue?');">
-                    <button type="submit" class="btn btn-outline-primary btn-sm">
-                        <i class="bi bi-magic me-1"></i>Apply suggested process
-                    </button>
-                </form>
-            }
-        </div>
-
-        @if (Model.LiveCount > 0 && Model.Rules.Stages.Count(s => s.IsActive) > 0)
-        {
-            var stuck = Model.Rules.Stages
-                .Where(s => s.IsActive && Model.IsDeadEnd(s.Key))
-                .Select(s => s.Name)
-                .ToList();
-
-            if (stuck.Count > 0)
-            {
-                <div class="alert alert-danger d-flex gap-2" role="alert">
-                    <i class="bi bi-exclamation-octagon-fill mt-1"></i>
-                    <div>
-                        <strong>No way out of @string.Join(", ", stuck).</strong>
-                        A deal in @(stuck.Count == 1 ? "that stage" : "those stages") can only be
-                        moved by a workspace admin using the override on the deal page.
-                        Switch on at least one step out of @(stuck.Count == 1 ? "it" : "each") below.
-                    </div>
-                </div>
-            }
-        }
-
-        <form method="post">
+        <form method="post" id="processForm">
             <fieldset @(Model.CanEditRules ? "" : "disabled")>
 
-                <!-- ============ the one rule that is not a step ============ -->
+                @* ── templates ─────────────────────────────────────────
+                   Applied in the browser. Nothing is written until Save,
+                   so looking at one costs nothing. *@
+                @if (Model.CanEditRules)
+                {
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-white">
+                            <h6 class="mb-0"><i class="bi bi-magic me-2"></i>Start from a shape</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small">
+                                Each of these is built from <strong>your own stages</strong> — no stage is
+                                added, renamed or removed, and no deal moves. Picking one fills the grid
+                                below; nothing is saved until you press <strong>Save process</strong>.
+                            </p>
+                            <div class="row g-2">
+                                @foreach (var t in Model.Templates)
+                                {
+                                    <div class="col-md-4">
+                                        <div class="tpl-card" data-template="@t.Key" role="button" tabindex="0">
+                                            <div class="tpl-name">@t.Name</div>
+                                            <div class="tpl-tag">@t.Tagline</div>
+                                            <div class="tpl-who">@t.WhoItSuits</div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            <div class="alert alert-info py-2 mt-3 mb-0 d-none small" id="tplApplied">
+                                <i class="bi bi-info-circle me-1"></i>
+                                <span id="tplAppliedText"></span>
+                                Press <strong>Save process</strong> to keep it, or <strong>Cancel</strong> to discard.
+                                The diagram above updates once you save.
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @* ── the one rule that is not a step ───────────────────── *@
                 <div class="card shadow-sm mb-4">
                     <div class="card-header bg-white">
-                        <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoiced deals</h5>
+                        <h6 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoiced deals</h6>
                     </div>
                     <div class="card-body">
                         <div class="form-check form-switch">
@@ -164,159 +249,169 @@
                             is a tax document that has gone to the customer; reopening the deal behind it
                             would leave your books saying one thing and your pipeline another. Void the
                             invoice first: that has its own reason and its own audit trail.
-                            <strong>Turning this off is not recommended</strong> in India, Thailand,
-                            the Philippines or the UAE.
+                            <strong>Turning this off is not recommended</strong> — most tax authorities
+                            expect an issued invoice to be cancelled properly rather than left behind a
+                            reopened deal.
                         </div>
                     </div>
                 </div>
 
-                <!-- ============ the process ============ -->
-                @foreach (var section in Model.Sections)
-                {
-                    var fromStage = Model.StageByKey(section.Key);
-                    if (fromStage is null) { continue; }
+                @* ── the matrix ────────────────────────────────────────── *@
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h6 class="mb-0"><i class="bi bi-grid-3x3 me-2"></i>Steps</h6>
+                        <span class="text-muted small">
+                            <span id="liveCount">@Model.LiveCount</span> switched on ·
+                            click a square to set it up
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <div class="matrix-wrap">
+                            <table class="matrix">
+                                <thead>
+                                    <tr>
+                                        <th class="corner"></th>
+                                        @foreach (var col in Model.GridColumns)
+                                        {
+                                            <th>
+                                                <div>@col.Name</div>
+                                                <span class="badge @Model.CategoryBadge(col.Category)"
+                                                      style="font-size:.6rem;font-weight:600;">
+                                                    @Model.CategoryLabel(col.Category)
+                                                </span>
+                                            </th>
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in Model.GridRows)
+                                    {
+                                        <tr data-from="@row.Key">
+                                            <th>
+                                                <span class="from-label">@row.Name</span>
+                                                @if (!row.IsActive)
+                                                {
+                                                    <span class="badge bg-light text-muted border ms-1"
+                                                          style="font-size:.6rem;">retired</span>
+                                                }
+                                                <span class="dead-flag text-danger ms-1 d-none"
+                                                      title="No step out of this stage — deals here can only be moved by an admin override">
+                                                    <i class="bi bi-exclamation-octagon-fill"></i>
+                                                </span>
+                                            </th>
 
-                    var liveHere = section.Count(x => x.Cell.IsActive);
+                                            @foreach (var col in Model.GridColumns)
+                                            {
+                                                <td>
+                                                    @if (col.Key == row.Key)
+                                                    {
+                                                        <div class="cell-self">—</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        var idx = Model.IndexOf(row.Key, col.Key);
+                                                        if (idx is null)
+                                                        {
+                                                            <div class="cell-self">·</div>
+                                                        }
+                                                        else
+                                                        {
+                                                            var cell = Model.Cells[idx.Value];
+                                                            var toCls = col.Category == StageCategory.Won ? "to-won"
+                                                                      : col.Category == StageCategory.Lost ? "to-lost" : "";
 
-                    <div class="card shadow-sm stage-section">
-                        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <div>
-                                <span class="from-stage-name">From @fromStage.Name</span>
-                                <span class="badge @Model.CategoryBadge(fromStage.Category) ms-2">
-                                    @Model.CategoryLabel(fromStage.Category)
-                                </span>
-                                @if (!fromStage.IsActive)
-                                {
-                                    <span class="badge bg-light text-muted border ms-1">retired</span>
-                                }
-                            </div>
-                            <div>
-                                @if (liveHere == 0)
-                                {
-                                    <span class="dead-end">
-                                        <i class="bi bi-exclamation-octagon-fill"></i>no way out
-                                    </span>
-                                }
-                                else
-                                {
-                                    <span class="text-muted small">@liveHere step@(liveHere == 1 ? "" : "s")</span>
-                                }
-                            </div>
+                                                            <button type="button"
+                                                                    class="cell-btn @toCls @(cell.IsActive ? "on" : "")"
+                                                                    data-idx="@idx.Value"
+                                                                    data-from-name="@row.Name"
+                                                                    data-to-name="@col.Name"
+                                                                    title="@row.Name → @col.Name">
+                                                                <i class="bi @(cell.IsActive ? "bi-arrow-right-circle-fill" : "bi-dash")"></i>
+                                                                <span class="cell-mark">@Model.CellMarks(cell)</span>
+                                                                <span class="cell-actor"></span>
+                                                                @* 022 — a step that does something for you says so. *@
+                                                                <span class="cell-actions" title="follow-ups">
+                                                                    @if (Model.ActionCount(cell) > 0)
+                                                                    {
+                                                                        <i class="bi bi-lightning-charge-fill"></i>@Model.ActionCount(cell)
+                                                                    }
+                                                                </span>
+                                                            </button>
+                                                        }
+                                                    }
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
                         </div>
 
-                        <div class="card-body py-0">
-                            @foreach (var (cell, i) in section)
-                            {
-                                <div class="move-row @(cell.IsActive ? "" : "is-off")" data-row="@i">
+                        <div class="text-muted small mt-3">
+                            Rows are where a deal is now, columns are where it can go.
+                            <strong>AQ</strong> accepted quote · <strong>Q</strong> quote ·
+                            <strong>V</strong> value · <strong>D</strong> close date ·
+                            <strong>F</strong> file · <strong>N</strong> note ·
+                            <i class="bi bi-lightning-charge-fill" style="color:#b45309;"></i>
+                            follow-ups created automatically
+                        </div>
 
-                                    @* Identity. Without these the server cannot tell which
-                                       cell a row of checkboxes belongs to. *@
-                                    <input type="hidden" asp-for="Cells[i].FromStageKey" />
-                                    <input type="hidden" asp-for="Cells[i].ToStageKey" />
-                                    <input type="hidden" asp-for="Cells[i].FromStageName" />
-                                    <input type="hidden" asp-for="Cells[i].ToStageName" />
-                                    <input type="hidden" asp-for="Cells[i].ToCategory" />
-                                    <input type="hidden" asp-for="Cells[i].ToIsActive" />
-
-                                    <div class="row g-2 align-items-center">
-
-                                        <div class="col-md-3">
-                                            <div class="form-check form-switch">
-                                                <input class="form-check-input row-toggle" type="checkbox" role="switch"
-                                                       asp-for="Cells[i].IsActive" data-row="@i" />
-                                                <label class="form-check-label" asp-for="Cells[i].IsActive">
-                                                    → @cell.ToStageName
-                                                    <span class="badge @Model.CategoryBadge(cell.ToCategory) ms-1"
-                                                          style="font-size:.65rem;">
-                                                        @Model.CategoryLabel(cell.ToCategory)
-                                                    </span>
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <div class="col-md-3">
-                                            <input asp-for="Cells[i].Label" class="form-control form-control-sm move-label-input"
-                                                   maxlength="100" placeholder="Button text" />
-                                        </div>
-
-                                        <div class="col-md-2">
-                                            <select asp-for="Cells[i].Actor" class="form-select form-select-sm">
-                                                <option value="@((int)TransitionActor.Anyone)">Anyone</option>
-                                                <option value="@((int)TransitionActor.DealOwner)">Deal owner</option>
-                                                <option value="@((int)TransitionActor.TeamManagers)">Managers + admins</option>
-                                                <option value="@((int)TransitionActor.Admins)">Admins only</option>
-                                            </select>
-                                        </div>
-
-                                        <div class="col-md-4">
-                                            <div class="req-group">
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input req-quote" type="checkbox"
-                                                           asp-for="Cells[i].RequiresQuote" data-row="@i" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresQuote">quote</label>
-                                                </div>
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input req-accepted" type="checkbox"
-                                                           asp-for="Cells[i].RequiresAcceptedQuote" data-row="@i" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresAcceptedQuote">accepted</label>
-                                                </div>
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           asp-for="Cells[i].RequiresValue" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresValue">value</label>
-                                                </div>
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           asp-for="Cells[i].RequiresCloseDate" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresCloseDate">date</label>
-                                                </div>
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           asp-for="Cells[i].RequiresAttachment" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresAttachment">file</label>
-                                                </div>
-                                                <div class="form-check form-check-inline m-0">
-                                                    <input class="form-check-input req-note" type="checkbox"
-                                                           asp-for="Cells[i].RequiresNote" data-row="@i" />
-                                                    <label class="form-check-label" asp-for="Cells[i].RequiresNote">note</label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    @* The question this move asks. Shown only when a note is
-                                       wanted — an empty prompt box on every row would bury the
-                                       grid. *@
-                                    <div class="row g-2 mt-1 note-row @(cell.RequiresNote ? "" : "d-none")" data-note-row="@i">
-                                        <div class="col-md-3 offset-md-3">
-                                            <input asp-for="Cells[i].NotePrompt"
-                                                   class="form-control form-control-sm note-prompt"
-                                                   maxlength="200"
-                                                   placeholder="What to ask — e.g. Why was this deal lost?" />
-                                        </div>
-                                        <div class="col-md-6">
-                                            <small class="text-muted">
-                                                Shown above the box when someone takes this step, and kept
-                                                on the deal's stage history.
-                                            </small>
-                                        </div>
-                                    </div>
-                                </div>
-                            }
+                        <div class="alert alert-danger py-2 mt-3 mb-0 d-none small" id="deadEndWarn">
+                            <i class="bi bi-exclamation-octagon-fill me-1"></i>
+                            <span id="deadEndText"></span>
                         </div>
                     </div>
-                }
+                </div>
+
+                @* ── the bound fields ───────────────────────────────────
+                   Every cell, exactly as 020 posted them. Hidden, because
+                   the grid and the panel are the interface to them now —
+                   but still the only thing the server reads, so the model
+                   binding did not have to change to get a new UI. *@
+                <div class="d-none" id="cellFields">
+                    @for (var i = 0; i < Model.Cells.Count; i++)
+                    {
+                        <div data-cell="@i">
+                            <input type="hidden" asp-for="Cells[i].FromStageKey" />
+                            <input type="hidden" asp-for="Cells[i].ToStageKey" />
+                            <input type="hidden" asp-for="Cells[i].FromStageName" />
+                            <input type="hidden" asp-for="Cells[i].ToStageName" />
+                            <input type="hidden" asp-for="Cells[i].ToCategory" />
+                            <input type="hidden" asp-for="Cells[i].ToIsActive" />
+                            <input type="checkbox" asp-for="Cells[i].IsActive" />
+                            <input type="text" asp-for="Cells[i].Label" />
+                            <select asp-for="Cells[i].Actor">
+                                <option value="@((int)TransitionActor.Anyone)">Anyone</option>
+                                <option value="@((int)TransitionActor.DealOwner)">Deal owner</option>
+                                <option value="@((int)TransitionActor.TeamManagers)">Managers + admins</option>
+                                <option value="@((int)TransitionActor.Admins)">Admins only</option>
+                            </select>
+                            <input type="checkbox" asp-for="Cells[i].RequiresQuote" />
+                            <input type="checkbox" asp-for="Cells[i].RequiresAcceptedQuote" />
+                            <input type="checkbox" asp-for="Cells[i].RequiresValue" />
+                            <input type="checkbox" asp-for="Cells[i].RequiresCloseDate" />
+                            <input type="checkbox" asp-for="Cells[i].RequiresAttachment" />
+                            <input type="checkbox" asp-for="Cells[i].RequiresNote" />
+                            <input type="text" asp-for="Cells[i].NotePrompt" />
+                            @* 022 — this step's actions, written by the panel. *@
+                            <input type="hidden" asp-for="Cells[i].ActionsJson" />
+                        </div>
+                    }
+                </div>
 
                 @if (Model.CanEditRules)
                 {
-                    <div class="d-flex justify-content-end gap-2 mb-5 sticky-bottom bg-body py-3">
-                        <a asp-page="/Pipeline/Index" class="btn btn-secondary">
-                            <i class="bi bi-x-circle me-2"></i>Cancel
-                        </a>
-                        <button type="submit" class="btn btn-primary btn-lg">
-                            <i class="bi bi-save me-2"></i>Save process
-                        </button>
+                    <div class="save-bar">
+                        <div class="d-flex justify-content-end gap-2">
+                            <a asp-page="/Settings/PipelineRules/Index" class="btn btn-secondary">
+                                <i class="bi bi-x-circle me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-save me-2"></i>Save process
+                            </button>
+                        </div>
                     </div>
+                    <div class="form-tail"></div>
                 }
 
             </fieldset>
@@ -324,64 +419,535 @@
     }
 </div>
 
+@* ── the side panel ────────────────────────────────────────────────────
+   One step at a time, with the wording spelled out. The controls here are
+   proxies: opening copies from the bound fields, Apply copies back. That
+   keeps the form's shape identical to 020 and means a panel bug can never
+   corrupt what gets posted. *@
+<div class="offcanvas offcanvas-end" tabindex="-1" id="stepPanel" style="width:440px;">
+    <div class="offcanvas-header border-bottom">
+        <div>
+            <h5 class="offcanvas-title mb-0" id="panelTitle">Step</h5>
+            <small class="text-muted" id="panelRoute"></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+    </div>
+    <div class="offcanvas-body">
+
+        <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="pActive" />
+            <label class="form-check-label fw-semibold" for="pActive">
+                This step is part of the process
+            </label>
+            <div class="req-help">Switched off, the move is refused and no button appears on the deal.</div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="pLabel">Button text</label>
+            <input type="text" class="form-control" id="pLabel" maxlength="100" />
+            <div class="req-help">
+                What the person is doing, in your words — "Send Quote", "Mark as Lost".
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="pActor">Who may take this step</label>
+            <select class="form-select" id="pActor">
+                <option value="0">Anyone who can update deals</option>
+                <option value="1">The deal's owner (plus their manager and admins)</option>
+                <option value="2">Managers of the owner's team, and admins</option>
+                <option value="3">Workspace admins only</option>
+            </select>
+        </div>
+
+        <div class="mb-2 fw-semibold">What the deal needs first</div>
+
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="pAq" />
+            <label class="form-check-label" for="pAq">An accepted quote</label>
+            <div class="req-help">A quote on this deal has been accepted by the customer.</div>
+        </div>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="pQ" />
+            <label class="form-check-label" for="pQ">A quote exists</label>
+            <div class="req-help">Any quote, in any state. Included automatically by the option above.</div>
+        </div>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="pV" />
+            <label class="form-check-label" for="pV">A value above zero</label>
+        </div>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="pD" />
+            <label class="form-check-label" for="pD">An expected close date</label>
+        </div>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="pF" />
+            <label class="form-check-label" for="pF">At least one attachment</label>
+            <div class="req-help">For the signed order form, the site survey, the PO.</div>
+        </div>
+
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" id="pN" />
+            <label class="form-check-label" for="pN">A written note</label>
+            <div class="req-help">Kept on the deal's stage history, where anyone can read it later.</div>
+        </div>
+
+        <div class="mt-2 d-none" id="pPromptWrap">
+            <label class="form-label" for="pPrompt">What to ask</label>
+            <input type="text" class="form-control" id="pPrompt" maxlength="200"
+                   placeholder="Why was this deal lost?" />
+            <div class="req-help">A specific question gets a far better answer than a blank box.</div>
+        </div>
+
+        @* ── 022: then what happens ──────────────────────────────────── *@
+        <hr class="my-4" />
+
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-semibold">Then what happens</span>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="pAddAction">
+                <i class="bi bi-plus-lg me-1"></i>Add
+            </button>
+        </div>
+
+        <div class="req-help mb-2">
+            Runs after the deal has moved. If one fails, the move still stands —
+            the deal is never left half-way because a follow-up could not be created.
+        </div>
+
+        <div id="pActions"></div>
+
+        <div class="text-muted small d-none" id="pNoActions">
+            Nothing happens automatically on this step.
+        </div>
+    </div>
+
+    <div class="offcanvas-footer border-top p-3 d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="offcanvas">Close</button>
+        <button type="button" class="btn btn-primary" id="pApply">
+            <i class="bi bi-check-lg me-1"></i>Apply
+        </button>
+    </div>
+</div>
+
 @section Scripts {
-    <script>
+<script>
+    const TEMPLATES  = @Html.Raw(Model.TemplatesJson);
+    const ASSIGNEES  = @Html.Raw(Model.AssigneesJson);
+    const ACT_TYPES  = @Html.Raw(Model.ActivityTypesJson);
+
     document.addEventListener('DOMContentLoaded', function () {
 
-        // "accepted" already means "a quote exists", so ticking it ticks and
-        // disables the weaker one. Without this the two read as a
-        // contradiction the first time someone sets both.
-        function syncQuote(row) {
-            const accepted = document.querySelector(`.req-accepted[data-row="${row}"]`);
-            const quote    = document.querySelector(`.req-quote[data-row="${row}"]`);
-            if (!accepted || !quote) return;
+        const fields = document.getElementById('cellFields');
+        if (!fields) return;
 
-            if (accepted.checked) {
-                quote.checked = true;
-                quote.disabled = true;
-                quote.title = 'Included — an accepted quote is a quote.';
+        // ── reading and writing the bound inputs ──────────────────────
+        // Everything goes through these two. The grid, the panel and the
+        // templates are all just callers — which is why a bug in any of
+        // them cannot produce a form the server has not seen before.
+
+        function cb(i, prop) {
+            return fields.querySelector(`input[type="checkbox"][name="Cells[${i}].${prop}"]`);
+        }
+        function txt(i, prop) {
+            return fields.querySelector(`input[type="text"][name="Cells[${i}].${prop}"]`);
+        }
+
+        function readCell(i) {
+            return {
+                active: cb(i, 'IsActive').checked,
+                label:  txt(i, 'Label').value,
+                actor:  fields.querySelector(`select[name="Cells[${i}].Actor"]`).value,
+                q:      cb(i, 'RequiresQuote').checked,
+                aq:     cb(i, 'RequiresAcceptedQuote').checked,
+                v:      cb(i, 'RequiresValue').checked,
+                d:      cb(i, 'RequiresCloseDate').checked,
+                f:      cb(i, 'RequiresAttachment').checked,
+                n:      cb(i, 'RequiresNote').checked,
+                prompt: txt(i, 'NotePrompt').value,
+                actions: readActions(i)
+            };
+        }
+
+        // 022 — a cell's actions live in one hidden field as JSON. Bad
+        // JSON is treated as "none" rather than breaking the page; the
+        // only thing that writes it is the panel below.
+        function actionsField(i) {
+            return fields.querySelector(`input[type="hidden"][name="Cells[${i}].ActionsJson"]`);
+        }
+
+        function readActions(i) {
+            const el = actionsField(i);
+            if (!el || !el.value) return [];
+            try { return JSON.parse(el.value) || []; }
+            catch { return []; }
+        }
+
+        function writeActions(i, list) {
+            const el = actionsField(i);
+            if (el) el.value = JSON.stringify(list || []);
+        }
+
+        function writeCell(i, v) {
+            cb(i, 'IsActive').checked = !!v.active;
+            if (v.label !== undefined && v.label !== null && v.label !== '')
+                txt(i, 'Label').value = v.label;
+            if (v.actor !== undefined)
+                fields.querySelector(`select[name="Cells[${i}].Actor"]`).value = String(v.actor);
+
+            cb(i, 'RequiresQuote').checked         = !!v.q;
+            cb(i, 'RequiresAcceptedQuote').checked = !!v.aq;
+            cb(i, 'RequiresValue').checked         = !!v.v;
+            cb(i, 'RequiresCloseDate').checked     = !!v.d;
+            cb(i, 'RequiresAttachment').checked    = !!v.f;
+            cb(i, 'RequiresNote').checked          = !!v.n;
+
+            if (v.prompt !== undefined && v.prompt !== null)
+                txt(i, 'NotePrompt').value = v.prompt;
+
+            // Actions are only rewritten when the caller supplies them.
+            // A template says nothing about follow-ups, so trying a
+            // different shape must not silently delete the task somebody
+            // set up.
+            if (Array.isArray(v.actions)) writeActions(i, v.actions);
+        }
+
+        // ── the grid ──────────────────────────────────────────────────
+
+        const ACTOR_SHORT = { '0': '', '1': 'owner', '2': 'mgr', '3': 'admin' };
+
+        function marks(v) {
+            const m = [];
+            if (v.aq) m.push('AQ'); else if (v.q) m.push('Q');
+            if (v.v) m.push('V');
+            if (v.d) m.push('D');
+            if (v.f) m.push('F');
+            if (v.n) m.push('N');
+            return m.join(' ');
+        }
+
+        function refreshCell(i) {
+            const btn = document.querySelector(`.cell-btn[data-idx="${i}"]`);
+            if (!btn) return;
+
+            const v = readCell(i);
+            btn.classList.toggle('on', v.active);
+            btn.querySelector('i').className = 'bi ' + (v.active ? 'bi-arrow-right-circle-fill' : 'bi-dash');
+            btn.querySelector('.cell-mark').textContent  = v.active ? marks(v) : '';
+            btn.querySelector('.cell-actor').textContent = v.active ? (ACTOR_SHORT[v.actor] || '') : '';
+
+            const live = (v.actions || []).filter(a => a.IsActive !== false && (a.Subject || '').trim());
+            const badge = btn.querySelector('.cell-actions');
+            if (badge) badge.innerHTML = (v.active && live.length)
+                ? `<i class="bi bi-lightning-charge-fill"></i>${live.length}` : '';
+        }
+
+        function refreshAll() {
+            document.querySelectorAll('.cell-btn').forEach(b => refreshCell(b.dataset.idx));
+            refreshCounts();
+        }
+
+        // A stage nothing can leave traps every deal in it. Worth shouting
+        // about here rather than letting someone discover it on a deal.
+        function refreshCounts() {
+            let live = 0;
+            document.querySelectorAll('.cell-btn').forEach(b => {
+                if (readCell(b.dataset.idx).active) live++;
+            });
+            document.getElementById('liveCount').textContent = live;
+
+            const stuck = [];
+            document.querySelectorAll('tr[data-from]').forEach(tr => {
+                const cells = tr.querySelectorAll('.cell-btn');
+                if (cells.length === 0) return;
+                const any = Array.from(cells).some(b => readCell(b.dataset.idx).active);
+                tr.querySelector('.dead-flag').classList.toggle('d-none', any);
+                tr.classList.toggle('row-dead', !any);
+                if (!any) stuck.push(tr.querySelector('.from-label').textContent.trim());
+            });
+
+            const warn = document.getElementById('deadEndWarn');
+            if (stuck.length) {
+                document.getElementById('deadEndText').textContent =
+                    `No step out of ${stuck.join(', ')}. A deal there can only be moved by a workspace `
+                    + `admin using the override on the deal page.`;
+                warn.classList.remove('d-none');
             } else {
-                quote.disabled = false;
-                quote.title = '';
+                warn.classList.add('d-none');
             }
         }
 
-        // The prompt box appears only when a note is wanted.
-        function syncNote(row) {
-            const note = document.querySelector(`.req-note[data-row="${row}"]`);
-            const box  = document.querySelector(`.note-row[data-note-row="${row}"]`);
-            if (!note || !box) return;
-            box.classList.toggle('d-none', !note.checked);
+        // ── the side panel ────────────────────────────────────────────
+
+        const panelEl = document.getElementById('stepPanel');
+        const panel = panelEl ? new bootstrap.Offcanvas(panelEl) : null;
+        let editing = null;
+
+        function syncPromptVisibility() {
+            document.getElementById('pPromptWrap')
+                    .classList.toggle('d-none', !document.getElementById('pN').checked);
         }
 
-        // A switched-off step is dimmed, so a long grid reads at a glance.
-        function syncRow(row) {
-            const toggle = document.querySelector(`.row-toggle[data-row="${row}"]`);
-            const container = document.querySelector(`.move-row[data-row="${row}"]`);
-            if (!toggle || !container) return;
-            container.classList.toggle('is-off', !toggle.checked);
+        // An accepted quote IS a quote, so ticking the stronger one ticks
+        // and locks the weaker. Without this the two read as a
+        // contradiction the first time someone sets both.
+        function syncQuote() {
+            const aq = document.getElementById('pAq');
+            const q  = document.getElementById('pQ');
+            if (aq.checked) { q.checked = true; q.disabled = true; }
+            else { q.disabled = false; }
         }
 
-        document.querySelectorAll('.req-accepted').forEach(function (cb) {
-            syncQuote(cb.dataset.row);
-            cb.addEventListener('change', function () { syncQuote(this.dataset.row); });
+        // ── 022: the action editor ────────────────────────────────────
+        // Held in memory while the panel is open and written back on
+        // Apply, so closing without applying changes nothing — the same
+        // contract as every other field in here.
+        let draftActions = [];
+
+        function blankAction() {
+            return {
+                Kind: 0, IsActive: true, Subject: '', Description: null,
+                ActivityType: 'Task', AssignTo: 0, AssignToUserId: null, DueInDays: 1
+            };
+        }
+
+        function typeOptions(kind) {
+            const list = kind === 1 ? ACT_TYPES.log : ACT_TYPES.task;
+            return list.map(t => `<option value="${t}">${t}</option>`).join('');
+        }
+
+        function assigneeOptions() {
+            return ASSIGNEES.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+        }
+
+        function renderActions() {
+            const host = document.getElementById('pActions');
+            const none = document.getElementById('pNoActions');
+            host.innerHTML = '';
+            none.classList.toggle('d-none', draftActions.length > 0);
+
+            draftActions.forEach((a, n) => {
+                const isTask = Number(a.Kind) === 0;
+
+                const card = document.createElement('div');
+                card.className = 'action-card' + (a.IsActive ? '' : ' off');
+                card.innerHTML = `
+                  <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="form-check form-switch m-0">
+                      <input class="form-check-input" type="checkbox" data-f="IsActive" data-n="${n}" ${a.IsActive ? 'checked' : ''}>
+                      <label class="form-check-label small">on</label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-link text-danger p-0" data-remove="${n}">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label">Do what</label>
+                      <select class="form-select form-select-sm" data-f="Kind" data-n="${n}">
+                        <option value="0" ${isTask ? 'selected' : ''}>Create a task</option>
+                        <option value="1" ${!isTask ? 'selected' : ''}>Log an activity</option>
+                      </select>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Type</label>
+                      <select class="form-select form-select-sm" data-f="ActivityType" data-n="${n}">
+                        ${typeOptions(Number(a.Kind))}
+                      </select>
+                    </div>
+
+                    <div class="col-12">
+                      <label class="form-label">Title</label>
+                      <input type="text" class="form-control form-control-sm" maxlength="200"
+                             data-f="Subject" data-n="${n}" value="${(a.Subject || '').replace(/"/g, '&quot;')}"
+                             placeholder="Call {deal} to confirm the start date">
+                      <div class="req-help">
+                        {deal}, {stage} and {owner} are filled in when it runs.
+                      </div>
+                    </div>
+
+                    <div class="col-${isTask ? '6' : '12'}">
+                      <label class="form-label">Give it to</label>
+                      <select class="form-select form-select-sm" data-f="AssignTo" data-n="${n}">
+                        <option value="0" ${Number(a.AssignTo) === 0 ? 'selected' : ''}>The deal's owner</option>
+                        <option value="1" ${Number(a.AssignTo) === 1 ? 'selected' : ''}>Whoever moved it</option>
+                        <option value="2" ${Number(a.AssignTo) === 2 ? 'selected' : ''}>A specific person</option>
+                      </select>
+                    </div>
+
+                    ${isTask ? `
+                    <div class="col-6">
+                      <label class="form-label">Due in (days)</label>
+                      <input type="number" min="0" max="365" class="form-control form-control-sm"
+                             data-f="DueInDays" data-n="${n}" value="${a.DueInDays ?? 1}">
+                    </div>` : ''}
+
+                    <div class="col-12 ${Number(a.AssignTo) === 2 ? '' : 'd-none'}">
+                      <label class="form-label">Who</label>
+                      <select class="form-select form-select-sm" data-f="AssignToUserId" data-n="${n}">
+                        <option value="">— Choose —</option>
+                        ${assigneeOptions()}
+                      </select>
+                    </div>
+                  </div>`;
+
+                host.appendChild(card);
+
+                // Set the two selects whose value came from data rather
+                // than markup.
+                const typeSel = card.querySelector('[data-f="ActivityType"]');
+                if (typeSel) typeSel.value = a.ActivityType || (isTask ? 'Task' : 'Call');
+
+                const whoSel = card.querySelector('[data-f="AssignToUserId"]');
+                if (whoSel && a.AssignToUserId) whoSel.value = a.AssignToUserId;
+            });
+        }
+
+        document.getElementById('pActions')?.addEventListener('input', function (e) {
+            const el = e.target;
+            const n = el.dataset.n, f = el.dataset.f;
+            if (n === undefined || !f) return;
+
+            const a = draftActions[Number(n)];
+            if (!a) return;
+
+            if (el.type === 'checkbox')      a[f] = el.checked;
+            else if (f === 'DueInDays')      a[f] = parseInt(el.value || '0', 10);
+            else if (f === 'Kind' || f === 'AssignTo') a[f] = parseInt(el.value, 10);
+            else if (f === 'AssignToUserId') a[f] = el.value || null;
+            else                             a[f] = el.value;
+
+            // Changing the kind changes which types are legal, and
+            // choosing "a specific person" reveals the picker — both need
+            // the card redrawn.
+            if (f === 'Kind') {
+                a.ActivityType = Number(a.Kind) === 0 ? 'Task' : 'Call';
+                renderActions();
+            } else if (f === 'AssignTo' || el.type === 'checkbox') {
+                renderActions();
+            }
         });
 
-        document.querySelectorAll('.req-note').forEach(function (cb) {
-            syncNote(cb.dataset.row);
-            cb.addEventListener('change', function () { syncNote(this.dataset.row); });
+        document.getElementById('pActions')?.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-remove]');
+            if (!btn) return;
+            draftActions.splice(Number(btn.dataset.remove), 1);
+            renderActions();
         });
 
-        document.querySelectorAll('.row-toggle').forEach(function (cb) {
-            cb.addEventListener('change', function () { syncRow(this.dataset.row); });
+        document.getElementById('pAddAction')?.addEventListener('click', function () {
+            draftActions.push(blankAction());
+            renderActions();
+        });
+
+        document.querySelectorAll('.cell-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                editing = this.dataset.idx;
+                const v = readCell(editing);
+
+                document.getElementById('panelTitle').textContent = v.label || 'Step';
+                document.getElementById('panelRoute').textContent =
+                    `${this.dataset.fromName} → ${this.dataset.toName}`;
+
+                document.getElementById('pActive').checked = v.active;
+                document.getElementById('pLabel').value    = v.label;
+                document.getElementById('pActor').value    = v.actor;
+                document.getElementById('pQ').checked      = v.q;
+                document.getElementById('pAq').checked     = v.aq;
+                document.getElementById('pV').checked      = v.v;
+                document.getElementById('pD').checked      = v.d;
+                document.getElementById('pF').checked      = v.f;
+                document.getElementById('pN').checked      = v.n;
+                document.getElementById('pPrompt').value   = v.prompt || '';
+
+                draftActions = JSON.parse(JSON.stringify(v.actions || []));
+                renderActions();
+
+                syncQuote();
+                syncPromptVisibility();
+                panel.show();
+            });
+        });
+
+        document.getElementById('pN')?.addEventListener('change', syncPromptVisibility);
+        document.getElementById('pAq')?.addEventListener('change', syncQuote);
+
+        document.getElementById('pApply')?.addEventListener('click', function () {
+            if (editing === null) return;
+
+            writeCell(editing, {
+                active: document.getElementById('pActive').checked,
+                label:  document.getElementById('pLabel').value,
+                actor:  document.getElementById('pActor').value,
+                q:      document.getElementById('pQ').checked,
+                aq:     document.getElementById('pAq').checked,
+                v:      document.getElementById('pV').checked,
+                d:      document.getElementById('pD').checked,
+                f:      document.getElementById('pF').checked,
+                n:      document.getElementById('pN').checked,
+                prompt: document.getElementById('pPrompt').value,
+                actions: draftActions.filter(a => (a.Subject || '').trim())
+            });
+
+            refreshCell(editing);
+            refreshCounts();
+            panel.hide();
+        });
+
+        // ── templates ─────────────────────────────────────────────────
+
+        function applyTemplate(key, name) {
+            const tpl = TEMPLATES[key];
+            if (!tpl) return;
+
+            document.querySelectorAll('.cell-btn').forEach(btn => {
+                const i = btn.dataset.idx;
+                const from = fields.querySelector(`input[name="Cells[${i}].FromStageKey"]`).value;
+                const to   = fields.querySelector(`input[name="Cells[${i}].ToStageKey"]`).value;
+                const m = tpl[`${from}|${to}`];
+
+                if (!m) { cb(i, 'IsActive').checked = false; return; }
+
+                // The label is left alone on purpose. A tenant who renamed
+                // "Mark as Closed Won" to "Signed" should keep their word
+                // when they try a different shape.
+                writeCell(i, {
+                    active: m.active, actor: m.actor,
+                    q: m.q, aq: m.aq, v: m.v, d: m.d, f: false, n: m.n,
+                    prompt: m.prompt || readCell(i).prompt
+                });
+            });
+
+            refreshAll();
+
+            const box = document.getElementById('tplApplied');
+            document.getElementById('tplAppliedText').textContent = `"${name}" applied to the grid. `;
+            box.classList.remove('d-none');
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        document.querySelectorAll('.tpl-card').forEach(card => {
+            const go = () => applyTemplate(card.dataset.template,
+                                           card.querySelector('.tpl-name').textContent.trim());
+            card.addEventListener('click', go);
+            card.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+            });
         });
 
         // A disabled checkbox posts nothing, which would silently clear the
-        // flag. The server folds RequiresQuote into RequiresAcceptedQuote
-        // anyway, but re-enabling on submit keeps the posted form honest.
-        document.querySelector('form')?.addEventListener('submit', function () {
-            document.querySelectorAll('.req-quote[disabled]').forEach(function (cb) { cb.disabled = false; });
+        // flag. The panel's lock is cosmetic; the real inputs are never
+        // disabled, so this is belt and braces.
+        document.getElementById('processForm')?.addEventListener('submit', function () {
+            fields.querySelectorAll('input[disabled], select[disabled]')
+                  .forEach(el => { el.disabled = false; });
         });
+
+        refreshAll();
     });
-    </script>
+</script>
 }

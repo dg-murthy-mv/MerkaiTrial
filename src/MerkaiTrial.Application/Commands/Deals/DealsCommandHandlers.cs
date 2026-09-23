@@ -4,6 +4,16 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (022 — actions on a transition)
+//   ✅ UpdateDealStageHandler and TransitionDealStageHandler run the
+//      configured actions AFTER the move is committed. A follow-up task
+//      that cannot be created never undoes a deal that was legitimately
+//      closed — the runner returns its problems rather than throwing, and
+//      the caller surfaces them.
+//   ✅ UpdateDealStageHandler returns them, so the page can say "the deal
+//      moved, but a follow-up couldn't be created" instead of silently
+//      swallowing it or falsely reporting a failure.
+//
 // CHANGES (020 — Blueprint transitions)
 //   ✅ The guard now asks the TRANSITION, not the target stage. Nothing
 //      in this file changes shape for it — that is the point of having
@@ -145,6 +155,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly FlowDbContext _db;
         private readonly IStageResolver _stages;
         private readonly StageTransitionGuard _guard;
+        private readonly TransitionActionRunner _actions;      // 022
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
 
@@ -152,6 +163,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             FlowDbContext db,
             IStageResolver stages,
             StageTransitionGuard guard,
+            TransitionActionRunner actions,                     // 022
             IAuditService audit,
             IRecordScopeService scope)
         {
@@ -159,6 +171,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             _scope = scope;
             _stages = stages;
             _guard = guard;
+            _actions = actions;
             _audit = audit;
         }
 
@@ -215,6 +228,21 @@ namespace MerkaiTrial.Application.Commands.Deals
             await _audit.WriteAsync(
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
                 new { from = fromStage, to = toStage, automatic = true });
+
+            // ── 022 ───────────────────────────────────────────────────
+            // A quote being accepted or an invoice being paid should fire
+            // the step's follow-ups just as a person pressing the button
+            // would — that is exactly when a handover task is wanted.
+            //
+            // movedByUserId is null: nobody pressed anything, so "assign
+            // to whoever moved it" falls back to the deal's owner rather
+            // than landing on a stranger's list.
+            //
+            // A system move carries no Transition, so today the runner
+            // returns immediately. Wiring it here means the day a system
+            // move does resolve one, this path already behaves correctly
+            // rather than being the one that silently does not.
+            await _actions.RunAsync(tenantGuid, dealId, decision, movedByUserId: null);
         }
 
         private static DealStageSnapshot Snapshot(Deal d) => new(
@@ -762,6 +790,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly ICurrentUserService _currentUserService;
         private readonly IStageResolver _stages;
         private readonly StageTransitionGuard _guard;
+        private readonly TransitionActionRunner _actions;      // 022
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
 
@@ -770,6 +799,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             ICurrentUserService currentUserService,
             IStageResolver stages,
             StageTransitionGuard guard,
+            TransitionActionRunner actions,                     // 022
             IAuditService audit,
             IRecordScopeService scope)
         {
@@ -778,6 +808,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             _currentUserService = currentUserService;
             _stages = stages;
             _guard = guard;
+            _actions = actions;
             _audit = audit;
         }
 
@@ -787,7 +818,12 @@ namespace MerkaiTrial.Application.Commands.Deals
         /// and an admin override for the case where the configured process
         /// has no way out of where the deal is sitting.
         /// </summary>
-        public async Task HandleAsync(
+        /// <returns>
+        /// What the configured actions did. Never null; empty when the
+        /// step has none. A caller that does not care can ignore it — the
+        /// move has already happened either way.
+        /// </returns>
+        public async Task<ActionRunResult> HandleAsync(
             string tenantId,
             Guid dealId,
             string newStage,
@@ -815,7 +851,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
 
-            if (deal.Stage == newStage) return;
+            if (deal.Stage == newStage) return ActionRunResult.None;
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var previousStage = deal.Stage;
@@ -851,6 +887,16 @@ namespace MerkaiTrial.Application.Commands.Deals
                     adminOverride = decision.WasOverride,
                     note = decision.HistoryNote
                 });
+
+            // ── 022: whatever the step says should happen next ────────
+            // AFTER the save and after the audit, deliberately. By this
+            // point the move is a fact: the deal has moved, the history
+            // row is written, the audit entry exists. Nothing below can
+            // take that back, which is the whole design — a broken task
+            // template must never reverse a deal that was legitimately
+            // closed.
+            return await _actions.RunAsync(
+                tenantGuid, dealId, decision, currentUser.UserId.ToString());
         }
     }
 

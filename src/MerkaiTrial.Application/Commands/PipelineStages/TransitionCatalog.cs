@@ -2,7 +2,7 @@
 // TransitionCatalog.cs
 // Location: MerkaiTrial.Application/Commands/PipelineStages/TransitionCatalog.cs
 //
-// NEW FILE (020).
+// NEW FILE (020). Unchanged in 021 apart from the note at the end.
 //
 // WHAT IT IS
 //   A tenant's process, loaded once and asked many questions — the same
@@ -113,66 +113,7 @@ public class TransitionCatalog : ITransitionCatalog, ICommandHandler
     }
 }
 
-/// <summary>
-/// Builds the process most pipelines actually want, from the stages a
-/// tenant already has. Behind "Apply suggested process" on the settings
-/// page.
-///
-/// WHY THIS EXISTS
-///   The migration seeds every stage to every other stage, which is
-///   correct — it takes nothing away — but it means a deal page shows a
-///   button for every other stage, which is a dropdown with extra steps.
-///   Pruning 30 rows by hand before anyone has used the feature is a poor
-///   first experience. This gets a tenant to a sensible process in one
-///   click, which they then adjust.
-///
-/// THE SHAPE IT PROPOSES
-///   • each open stage → the next open stage (the normal path)
-///   • each open stage → the previous open stage (deals do go backwards)
-///   • each open stage → every Won and Lost stage (you can close from
-///     anywhere; a deal can die in Discovery)
-///   • each closed stage → the tenant's starting stage only, as a reopen
-///   • nothing else
-/// </summary>
-public static class SuggestedProcess
-{
-    /// <summary>
-    /// The from→to pairs the suggestion switches ON. Everything else the
-    /// tenant has is switched off rather than deleted, so a tenant who
-    /// clicks this and changes their mind has only lost the toggles.
-    /// </summary>
-    public static HashSet<(string From, string To)> Build(IReadOnlyList<PipelineStage> stages)
-    {
-        var live = stages.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToList();
-
-        var open = live.Where(s => s.Category == StageCategory.Open).ToList();
-        var closed = live.Where(s => s.IsTerminal).ToList();
-
-        var pairs = new HashSet<(string, string)>();
-
-        for (var i = 0; i < open.Count; i++)
-        {
-            // Forward one, back one.
-            if (i + 1 < open.Count) pairs.Add((open[i].Key, open[i + 1].Key));
-            if (i - 1 >= 0)         pairs.Add((open[i].Key, open[i - 1].Key));
-
-            // Closing is allowed from any open stage. A deal can be lost in
-            // Discovery, and a firm that only ever loses deals at the end
-            // is a firm that is not recording the truth.
-            foreach (var c in closed)
-                pairs.Add((open[i].Key, c.Key));
-        }
-
-        // Out of a closed stage: back to where deals start, and nowhere
-        // else. Reopening into the middle of the pipeline is a judgement
-        // call the tenant can add themselves; the safe default is one door.
-        var start = live.FirstOrDefault(s => s.IsDefault && s.Category == StageCategory.Open)
-                    ?? open.FirstOrDefault();
-
-        if (start is not null)
-            foreach (var c in closed)
-                pairs.Add((c.Key, start.Key));
-
-        return pairs;
-    }
-}
+/* SuggestedProcess moved to ProcessTemplates.cs in 021.
+   One "suggested" shape became three named ones — Flexible, Step by step
+   and Quote-driven — and they are applied in the browser as a preview
+   rather than saved on click, so looking at one costs nothing. */

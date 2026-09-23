@@ -1,4 +1,4 @@
-﻿// =====================================================================
+// =====================================================================
 // FILE: MerkaiTrial.Application/Commands/Tenants/TenantProvisioningService.cs
 //
 // WHAT THIS FIXES
@@ -25,6 +25,15 @@
 //
 //   5. No roles beyond the global tenant_admin, no invite link, no audit.
 //
+//   6. (021) No SALES PROCESS. SeedPipelineStages gives the tenant six
+//      stages and nothing that says which may follow which. Since the
+//      Blueprint round the deal page draws its buttons from
+//      ProcessTransitions, so a workspace provisioned through this
+//      service opened with a deal page saying "this workspace's sales
+//      process has no move out of Discovery" — no buttons at all, while
+//      the kanban still worked. The 020 migration seeded the four
+//      existing tenants; nothing seeded a new one.
+//
 // EVERYTHING RUNS IN ONE TRANSACTION. A half-provisioned tenant is worse
 // than a failed one — MadeeVision's missing TenantSettings row is exactly
 // that failure, already sitting in your database.
@@ -32,6 +41,7 @@
 
 using System.Text.Json;
 using MerkaiTrial.Application.Commands.Plans;
+using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -252,7 +262,7 @@ public class TenantProvisioningService : ITenantProvisioningService
 
             SeedTaxRates(tenant.Id, country, now, provisionedBy);
             SeedLeadSourcesAndChannels(tenant.Id, country?.Code, now, provisionedBy);
-            SeedPipelineStages(tenant.Id, now, provisionedBy);
+            SeedPipelineStagesAndProcess(tenant.Id, now, provisionedBy);
 
             // ── 5. ADMIN USER ────────────────────────────────────────
             // No password. They set one through the invite link, which
@@ -392,25 +402,55 @@ public class TenantProvisioningService : ITenantProvisioningService
         }
     }
 
-    private void SeedPipelineStages(Guid tenantId, DateTime now, string by)
+    /// <summary>
+    /// The stages a new workspace starts with, AND the process that says
+    /// how a deal moves between them.
+    ///
+    /// The second half is 021. Before it, this method seeded six stages
+    /// and no transitions — and since the Blueprint round the deal page
+    /// draws its buttons from ProcessTransitions, so a newly provisioned
+    /// workspace opened on a deal with no way to move it. The kanban still
+    /// worked, because an empty matrix is read as "not configured yet"
+    /// rather than "nothing is allowed", so the two disagreed.
+    ///
+    /// Flexible is the starting process on purpose: a client who has never
+    /// sold anything through the product should not meet a refusal in
+    /// their first hour. Tightening it is two minutes on the settings page.
+    /// </summary>
+    private void SeedPipelineStagesAndProcess(Guid tenantId, DateTime now, string by)
     {
-        foreach (var s in DefaultPipelineStages.All)
+        var stages = DefaultPipelineStages.All.Select(s => new PipelineStage
         {
-            _db.PipelineStages.Add(new PipelineStage
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                Key = s.Key,
-                Name = s.Name,
-                SortOrder = s.SortOrder,
-                Probability = s.Probability,
-                Category = s.Category,
-                IsActive = true,
-                IsDefault = s.IsDefault,
-                CreatedAtUtc = now,
-                CreatedBy = by
-            });
-        }
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Key = s.Key,
+            Name = s.Name,
+            SortOrder = s.SortOrder,
+            Probability = s.Probability,
+            Category = s.Category,
+            IsActive = true,
+            IsDefault = s.IsDefault,
+
+            // Carried from the seed so a workspace created today behaves
+            // like one the 019 migration touched. The transitions below
+            // carry the same rules, which is where they are now read from —
+            // these stay only so nothing regresses if a transition row is
+            // ever missing.
+            RequiresAcceptedQuote = s.RequiresAcceptedQuote,
+            RequiresLostReason = s.RequiresLostReason,
+
+            CreatedAtUtc = now,
+            CreatedBy = by
+        }).ToList();
+
+        _db.PipelineStages.AddRange(stages);
+
+        // Same transaction, same SaveChanges. A tenant with stages and no
+        // process is the failure this method exists to prevent, so the two
+        // are never written separately.
+        _db.ProcessTransitions.AddRange(
+            ProcessTemplates.BuildRows(
+                tenantId, stages, ProcessTemplates.ForNewTenants, now, by));
     }
 
     /// <summary>

@@ -2,12 +2,15 @@
 // PipelineRulesController.cs
 // Location: MerkaiTrial.WebApi/Controllers/PipelineRulesController.cs
 //
-// COMPLETE FILE — replaces the 019 version.
+// COMPLETE FILE — replaces the 020 version.
 //
 //   GET  api/pipeline-rules           the process: stages, the matrix,
 //                                     the invoice rule, and any dead ends
 //   PUT  api/pipeline-rules           save it all in one call
-//   POST api/pipeline-rules/suggest   switch on the sensible moves
+//
+// 021: the /suggest endpoint is gone. Process templates are computed over
+// the tenant's own stages and applied in the browser as a preview, so
+// there is nothing to POST until the person presses Save.
 //
 // Reading is open to anyone who can read deals — the pipeline board and
 // the deal page both need the matrix to know which moves to offer. Both
@@ -29,20 +32,17 @@ namespace MerkaiTrial.WebApi.Controllers
     {
         private readonly GetPipelineRulesHandler _get;
         private readonly SavePipelineRulesHandler _save;
-        private readonly ApplySuggestedProcessHandler _suggest;
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<PipelineRulesController> _logger;
 
         public PipelineRulesController(
             GetPipelineRulesHandler get,
             SavePipelineRulesHandler save,
-            ApplySuggestedProcessHandler suggest,
             ICurrentUserService currentUserService,
             ILogger<PipelineRulesController> logger)
         {
             _get = get;
             _save = save;
-            _suggest = suggest;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -122,45 +122,5 @@ namespace MerkaiTrial.WebApi.Controllers
             }
         }
 
-        /// <summary>
-        /// POST /api/pipeline-rules/suggest
-        ///
-        /// Switches on the moves a normal pipeline wants and switches the
-        /// rest off. Nothing is deleted, so a tenant who tries it and
-        /// changes their mind has lost only the toggles — their labels,
-        /// prompts and requirements are where they left them.
-        /// </summary>
-        [HttpPost("suggest")]
-        [Authorize(Policy = "Deals.Update")]
-        [ProducesResponseType(204)]
-        [ProducesResponseType(400)]
-        [ProducesResponseType(403)]
-        [ProducesResponseType(500)]
-        public async Task<IActionResult> Suggest(CancellationToken ct = default)
-        {
-            var tenantId = _currentUserService.GetCurrentTenantId();
-            try
-            {
-                var me = await _currentUserService.GetCurrentUserAsync();
-
-                if (!me.IsTenantAdmin)
-                    return StatusCode(403, new
-                    {
-                        error = "Only a workspace admin can change the sales process."
-                    });
-
-                await _suggest.Handle(tenantId, me.FullName, ct);
-                return NoContent();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error applying the suggested process for tenant {TenantId}", tenantId);
-                return StatusCode(500, new { error = "Failed to apply the suggested process" });
-            }
-        }
     }
 }

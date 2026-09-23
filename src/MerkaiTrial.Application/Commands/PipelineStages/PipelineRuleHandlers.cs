@@ -2,7 +2,14 @@
 // PipelineRuleHandlers.cs
 // Location: MerkaiTrial.Application/Commands/PipelineStages/PipelineRuleHandlers.cs
 //
-// COMPLETE FILE — replaces the 019 version.
+// COMPLETE FILE — replaces the 021 version.
+//
+// CHANGES (022)
+//   ✅ Transitions carry their ACTIONS — what happens after a deal takes
+//      that step. Read with the process, saved with it.
+//   ✅ Assignees travel with the process too, for the "a specific person"
+//      option. One call rather than two on a page that already makes
+//      several.
 //
 // WHAT CHANGED
 //   019 read and wrote five requirement flags per STAGE. Those are gone
@@ -24,6 +31,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Quotes;
+using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
@@ -46,6 +54,29 @@ public record StageLiteDto(
     bool IsActive,
     bool IsDefault);
 
+/// <summary>Something that happens after a step is taken.</summary>
+public record TransitionActionDto(
+    Guid Id,
+    TransitionActionKind Kind,
+    int SortOrder,
+    bool IsActive,
+    string Subject,
+    string? Description,
+    string ActivityType,
+    TransitionAssignee AssignTo,
+    Guid? AssignToUserId,
+    int DueInDays);
+
+public record SaveTransitionActionDto(
+    TransitionActionKind Kind,
+    bool IsActive,
+    string Subject,
+    string? Description,
+    string ActivityType,
+    TransitionAssignee AssignTo,
+    Guid? AssignToUserId,
+    int DueInDays);
+
 /// <summary>One cell of the matrix.</summary>
 public record TransitionDto(
     Guid Id,
@@ -61,7 +92,8 @@ public record TransitionDto(
     bool RequiresCloseDate,
     bool RequiresNote,
     string? NotePrompt,
-    bool RequiresAttachment);
+    bool RequiresAttachment,
+    List<TransitionActionDto> Actions);
 
 /// <summary>Everything the process settings screen shows.</summary>
 public record PipelineRulesDto(
@@ -77,7 +109,12 @@ public record PipelineRulesDto(
     /// admin overrides, so the page warns rather than letting it happen
     /// quietly.
     /// </summary>
-    List<string> DeadEndStageKeys);
+    List<string> DeadEndStageKeys,
+    /// <summary>
+    /// Who a task can be given to, for the "a specific person" option.
+    /// Carried here so the settings page makes one call, not two.
+    /// </summary>
+    List<AssigneeDto> Assignees);
 
 public record SaveTransitionDto(
     string FromStageKey,
@@ -91,7 +128,8 @@ public record SaveTransitionDto(
     bool RequiresCloseDate,
     bool RequiresNote,
     string? NotePrompt,
-    bool RequiresAttachment);
+    bool RequiresAttachment,
+    List<SaveTransitionActionDto> Actions);
 
 /// <summary>The whole screen, saved in one call.</summary>
 public record SaveAllPipelineRulesDto(
@@ -159,11 +197,41 @@ public class GetPipelineRulesHandler : ICommandHandler
 
         var catalog = await _transitions.GetAsync(tenantId, ct);
 
+        // One query for every action in the workspace, grouped in memory.
+        // A query per transition would be thirty round trips to draw one
+        // settings page.
+        var actionsByTransition = (await _db.TransitionActions.AsNoTracking()
+                .Where(a => a.TenantId == tenantId)
+                .OrderBy(a => a.SortOrder)
+                .ToListAsync(ct))
+            .GroupBy(a => a.TransitionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var transitions = catalog.All
             .Select(t => new TransitionDto(
                 t.Id, t.FromStageKey, t.ToStageKey, t.Label, t.SortOrder, t.IsActive, t.Actor,
                 t.RequiresQuote, t.RequiresAcceptedQuote, t.RequiresValue, t.RequiresCloseDate,
-                t.RequiresNote, t.NotePrompt, t.RequiresAttachment))
+                t.RequiresNote, t.NotePrompt, t.RequiresAttachment,
+                actionsByTransition.GetValueOrDefault(t.Id, new List<TransitionAction>())
+                    .Select(a => new TransitionActionDto(
+                        a.Id, a.Kind, a.SortOrder, a.IsActive, a.Subject, a.Description,
+                        a.ActivityType, a.AssignTo, a.AssignToUserId, a.DueInDays))
+                    .ToList()))
+            .ToList();
+
+        // Active users only: a task assigned to someone who cannot sign in
+        // is a task that is never done and never seen.
+        var assignees = (await _db.Users.AsNoTracking()
+                .Where(u => u.TenantId == tenantId && !u.IsDeleted && u.IsActive)
+                .Select(u => new { u.Id, u.FirstName, u.LastName, u.Email })
+                .ToListAsync(ct))
+            .Select(u => new AssigneeDto(
+                u.Id.ToString(),
+                string.IsNullOrWhiteSpace($"{u.FirstName}{u.LastName}")
+                    ? u.Email
+                    : $"{u.FirstName} {u.LastName}".Trim(),
+                u.Email))
+            .OrderBy(a => a.Name)
             .ToList();
 
         // Only ACTIVE stages can be dead ends worth warning about. A
@@ -180,7 +248,8 @@ public class GetPipelineRulesHandler : ICommandHandler
             isDefault ? null : settings.UpdatedBy,
             stages,
             transitions,
-            deadEnds);
+            deadEnds,
+            assignees);
     }
 }
 
@@ -315,7 +384,12 @@ public class SavePipelineRulesHandler : ICommandHandler
             }
         }
 
+        // Transitions first: an action needs a transition id to hang off,
+        // and a cell the tenant has just switched on may not have had a row
+        // until this moment.
         await _db.SaveChangesAsync(ct);
+
+        var actionsChanged = await SaveActionsAsync(tenantId, dto, updatedBy, ct);
 
         await _audit.WriteAsync(
             "PipelineProcessChanged", "PipelineRuleSettings", row.Id, tenantId,
@@ -323,13 +397,100 @@ public class SavePipelineRulesHandler : ICommandHandler
             {
                 dto.BlockReopenWithIssuedInvoice,
                 transitionsAdded = added,
-                transitionsChanged = changed
+                transitionsChanged = changed,
+                actionsConfigured = actionsChanged
             },
             ct);
 
         _logger.LogInformation(
             "Pipeline process saved for tenant {TenantId} by {User}: {Added} added, {Changed} changed",
             tenantId, updatedBy, added, changed);
+    }
+
+    /// <summary>
+    /// Replaces each transition's actions with what was posted.
+    ///
+    /// Delete-and-insert rather than a diff. Nothing references a
+    /// TransitionAction — not a deal, not an activity, not history — so
+    /// there is no identity worth preserving, and a diff would be more
+    /// code to get subtly wrong for no benefit anyone can observe.
+    ///
+    /// Only transitions the form actually mentioned are touched, so a
+    /// partial post can never silently clear a step it said nothing about.
+    /// </summary>
+    private async Task<int> SaveActionsAsync(
+        Guid tenantId, SaveAllPipelineRulesDto dto, string updatedBy, CancellationToken ct)
+    {
+        var byPair = await _db.ProcessTransitions.AsNoTracking()
+            .Where(t => t.TenantId == tenantId)
+            .Select(t => new { t.Id, t.FromStageKey, t.ToStageKey })
+            .ToDictionaryAsync(t => (t.FromStageKey, t.ToStageKey), t => t.Id, ct);
+
+        var touched = dto.Transitions
+            .Where(x => byPair.ContainsKey((x.FromStageKey, x.ToStageKey)))
+            .Select(x => byPair[(x.FromStageKey, x.ToStageKey)])
+            .ToHashSet();
+
+        if (touched.Count == 0) return 0;
+
+        var existing = await _db.TransitionActions
+            .Where(a => a.TenantId == tenantId && touched.Contains(a.TransitionId))
+            .ToListAsync(ct);
+
+        if (existing.Count > 0) _db.TransitionActions.RemoveRange(existing);
+
+        var written = 0;
+        var now = DateTime.UtcNow;
+
+        foreach (var t in dto.Transitions)
+        {
+            if (t.Actions is null || t.Actions.Count == 0) continue;
+            if (!byPair.TryGetValue((t.FromStageKey, t.ToStageKey), out var transitionId)) continue;
+
+            var order = 0;
+
+            foreach (var a in t.Actions)
+            {
+                var subject = Clip(a.Subject, 200);
+                if (string.IsNullOrWhiteSpace(subject)) continue;   // nothing to create
+
+                // "A specific person" with nobody chosen would make a task
+                // assigned to nothing, which lands on no one's list. Fall
+                // back to the deal's owner rather than storing a row the
+                // check constraint would reject anyway.
+                var assignTo = a.AssignTo;
+                var assignToUserId = a.AssignToUserId;
+
+                if (assignTo == TransitionAssignee.SpecificUser && assignToUserId is null)
+                    assignTo = TransitionAssignee.DealOwner;
+
+                if (assignTo != TransitionAssignee.SpecificUser)
+                    assignToUserId = null;
+
+                _db.TransitionActions.Add(new TransitionAction
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    TransitionId = transitionId,
+                    Kind = a.Kind,
+                    SortOrder = order++,
+                    IsActive = a.IsActive,
+                    Subject = subject!,
+                    Description = Clip(a.Description, 1000),
+                    ActivityType = string.IsNullOrWhiteSpace(a.ActivityType) ? "Task" : a.ActivityType.Trim(),
+                    AssignTo = assignTo,
+                    AssignToUserId = assignToUserId,
+                    DueInDays = Math.Clamp(a.DueInDays, 0, 365),
+                    CreatedAtUtc = now,
+                    CreatedBy = updatedBy
+                });
+
+                written++;
+            }
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return written;
     }
 
     private static object Snapshot(ProcessTransition t) => new
@@ -347,109 +508,13 @@ public class SavePipelineRulesHandler : ICommandHandler
     }
 }
 
-// ── "Apply suggested process" ─────────────────────────────────────────
+/* ApplySuggestedProcessHandler was removed in 021.
 
-public class ApplySuggestedProcessHandler : ICommandHandler
-{
-    private readonly FlowDbContext _db;
-    private readonly IAuditService _audit;
-    private readonly ILogger<ApplySuggestedProcessHandler> _logger;
-
-    public ApplySuggestedProcessHandler(
-        FlowDbContext db, IAuditService audit, ILogger<ApplySuggestedProcessHandler> logger)
-    {
-        _db = db;
-        _audit = audit;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Switches the sensible moves on and the rest off. Nothing is
-    /// DELETED: a tenant who tries this and changes their mind has lost
-    /// only the toggles, and their labels, prompts and requirements are
-    /// exactly where they left them.
-    /// </summary>
-    public async Task Handle(Guid tenantId, string updatedBy, CancellationToken ct = default)
-    {
-        var stages = await _db.PipelineStages.AsNoTracking()
-            .Where(s => s.TenantId == tenantId)
-            .OrderBy(s => s.SortOrder)
-            .ToListAsync(ct);
-
-        if (stages.Count == 0)
-            throw new InvalidOperationException(
-                "This workspace has no pipeline stages yet, so there is no process to suggest.");
-
-        var wanted = SuggestedProcess.Build(stages);
-
-        var existing = await _db.ProcessTransitions
-            .Where(t => t.TenantId == tenantId)
-            .ToListAsync(ct);
-
-        var byPair = existing.ToDictionary(t => (t.FromStageKey, t.ToStageKey));
-        var stageByKey = stages.ToDictionary(s => s.Key);
-
-        var on = 0;
-        var off = 0;
-
-        // Switch off everything not in the suggestion.
-        foreach (var t in existing)
-        {
-            var keep = wanted.Contains((t.FromStageKey, t.ToStageKey));
-            if (t.IsActive == keep) continue;
-
-            t.IsActive = keep;
-            t.UpdatedAtUtc = DateTime.UtcNow;
-            t.UpdatedBy = updatedBy;
-
-            if (keep) on++; else off++;
-        }
-
-        // Create anything the suggestion wants that does not exist yet —
-        // a tenant who ran 020 with ForwardOnly on has no backward rows.
-        foreach (var (from, to) in wanted)
-        {
-            if (byPair.ContainsKey((from, to))) continue;
-            if (!stageByKey.TryGetValue(from, out var f)) continue;
-            if (!stageByKey.TryGetValue(to, out var t2)) continue;
-
-            var isReopen = f.IsTerminal && t2.Category == StageCategory.Open;
-
-            _db.ProcessTransitions.Add(new ProcessTransition
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                FromStageKey = from,
-                ToStageKey = to,
-                Label = TransitionLabels.For(f.Category, t2.Category, t2.Name),
-                SortOrder = t2.SortOrder,
-                IsActive = true,
-
-                // A reopen keeps the shape 019 gave it: managers, with a
-                // reason. Anything else is open to whoever can update deals.
-                Actor = isReopen ? TransitionActor.TeamManagers : TransitionActor.Anyone,
-                RequiresNote = isReopen || t2.Category == StageCategory.Lost,
-                NotePrompt = isReopen
-                    ? TransitionLabels.ReopenPrompt
-                    : t2.Category == StageCategory.Lost ? TransitionLabels.LostPrompt : null,
-
-                CreatedAtUtc = DateTime.UtcNow,
-                CreatedBy = updatedBy
-            });
-            on++;
-        }
-
-        await _db.SaveChangesAsync(ct);
-
-        await _audit.WriteAsync(
-            "PipelineProcessSuggested", "PipelineRuleSettings", tenantId, tenantId,
-            new { switchedOn = on, switchedOff = off }, ct);
-
-        _logger.LogInformation(
-            "Suggested process applied for tenant {TenantId} by {User}: {On} on, {Off} off",
-            tenantId, updatedBy, on, off);
-    }
-}
+   It wrote to the database the moment someone clicked, which made "what
+   does this button do?" an expensive question to ask. The three named
+   templates that replaced it are computed over the tenant's own stages
+   and applied in the BROWSER: the click fills the form, and nothing is
+   written until Save. Cancel undoes it. See ProcessTemplates.cs. */
 
 // ── READ: the deal page's transition bar ──────────────────────────────
 
