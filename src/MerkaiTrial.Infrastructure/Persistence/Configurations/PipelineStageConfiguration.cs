@@ -4,10 +4,17 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES (019)
+// CHANGES (023)
+//   ✅ Color and Description mapped with the lengths 023 actually
+//      created. Without this EF sends them as nvarchar(4000) parameters
+//      against an nvarchar(7) column, which works right up until someone
+//      pastes something long into the colour field and gets a truncation
+//      error instead of a validation message.
+//
+// CHANGES (019 — unchanged, repeated so the file stands on its own)
 //   ✅ The five entry-requirement flags mapped with an explicit default
-//      of false, so EF's generated SQL matches what 019_PipelineTransition
-//      Rules.sql actually created.
+//      of false, so EF's generated SQL matches what
+//      019_PipelineTransitionRules.sql actually created.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -31,6 +38,15 @@ public class PipelineStageConfiguration : IEntityTypeConfiguration<PipelineStage
         // Stored as int. A string would be one more thing a migration
         // could get wrong, and the category is never shown raw.
         b.Property(s => s.Category).HasConversion<int>();
+
+        // ── Presentation (023) ────────────────────────────────────────
+        // Both nullable. NULL is a real state meaning "nobody chose one",
+        // resolved at display time by StageColors.Resolve — which is why
+        // there is no HasDefaultValue here. A database default would only
+        // reach rows inserted after the migration and would leave every
+        // other insertion route to reinvent the same rule.
+        b.Property(s => s.Color)      .HasMaxLength(7);
+        b.Property(s => s.Description).HasMaxLength(500);
 
         // ── Entry requirements (019) ──────────────────────────────────
         // Every one defaults to false in the database as well as in C#.
@@ -59,18 +75,16 @@ public class PipelineStageConfiguration : IEntityTypeConfiguration<PipelineStage
 }
 
 /* =====================================================================
-   ALSO REQUIRED — FlowDbContext.cs  (unchanged from the stage round,
-   repeated here so this file still stands on its own)
+   NO FlowDbContext CHANGE THIS ROUND.
 
-   1. DbSet, alongside the others:
+   PipelineStage already has its DbSet and its tenant query filter — 023
+   only adds two columns to an entity that is already registered. If the
+   app boots today it will boot after this round.
 
-          public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
+   (For reference, the two lines that were already there:
 
-   2. Global query filter, in ApplyTenantFilters with the strictly
-      tenant-owned group. WITHOUT THIS the startup assertion
-      (AssertEveryTenantEntityIsCovered) fails by name, which is the
-      guard working as designed:
+        public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
 
-          b.Entity<PipelineStage>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
-
+        b.Entity<PipelineStage>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+   )
    ===================================================================== */

@@ -4,22 +4,26 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// CHANGES (019 — transition rules)
-//   ✅ Five ENTRY REQUIREMENT flags. A stage now carries not only what
-//      it is called and what it means, but what a deal must already have
-//      before it is allowed in.
+// CHANGES (023 — pipeline stage care)
+//   ✅ Color        — what the stage looks like on the board.
+//   ✅ Description  — what has to be true for a deal to sit here.
+//   ✅ StageColors  — the fallback palette, so a NULL colour is never a
+//                     problem anywhere.
 //
-// WHY THEY LIVE ON THE STAGE AND NOT IN A RULES TABLE
-//   Every one of these is a question about ONE stage — "what does a deal
-//   need before it counts as Won here". A separate rules table would let
-//   a rule exist for a stage that has been deleted, and would need its
-//   own tenant filter, its own settings page and its own migration. Five
-//   BIT columns say the same thing and cannot get out of step with the
-//   stage they describe.
+//   Nothing was removed. The five entry-requirement flags from 019 are
+//   untouched: nothing has read them since 020 moved that logic onto
+//   ProcessTransitions, but DefaultPipelineStages.Seed still carries two
+//   of them and TenantProvisioningService builds from that record.
+//   Removing them belongs in its own round.
 //
-//   The rules that are about the pipeline AS A WHOLE — forward-only, who
-//   may reopen a closed deal — belong to no single stage, so those go in
-//   PipelineRuleSettings instead.
+// WHY COLOUR IS NULLABLE AND NOT SEEDED
+//   Because seeding it would mean editing TenantProvisioningService, and
+//   a new tenant getting the wrong colour is a worse failure than a new
+//   tenant getting no colour. StageColors.DefaultFor turns a NULL into
+//   a sensible value at the point of display, so a workspace created
+//   before the migration, after the migration, or by a support script
+//   all render identically. The migration backfills existing tenants so
+//   their colours become real, editable data rather than a code default.
 //
 // THE ORIGINAL DESIGN, UNCHANGED
 //
@@ -99,17 +103,31 @@ public class PipelineStage
     /// </summary>
     public bool IsDefault { get; set; }
 
+    // ── Presentation (023) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Hex colour including the leading hash, e.g. "#6366F1". NULL means
+    /// "nobody has chosen one" — read it through
+    /// StageColors.Resolve(Color, Category, ordinal) rather than directly,
+    /// so a stage created before this column existed still has a colour.
+    /// </summary>
+    public string? Color { get; set; }
+
+    /// <summary>
+    /// One or two lines saying what has to be true for a deal to sit
+    /// here — "quote sent and the client has seen it". Shown under the
+    /// stage name in settings and, more importantly, on the transition
+    /// button a rep presses, which is where the guidance is actually
+    /// needed.
+    /// </summary>
+    public string? Description { get; set; }
+
     // ── Entry requirements (019) ──────────────────────────────────────
-    // Checked by StageTransitionGuard before a deal is allowed in. All
-    // default to false: a tenant's pipeline must behave exactly as it did
-    // before this round until they choose otherwise. The migration turns
-    // on the two that protect money — an accepted quote before Won, a
-    // reason before Lost.
-    //
-    // These are never checked on a SYSTEM move (a quote being accepted,
-    // an invoice being paid). The event that triggers such a move is the
-    // very thing the requirement asks about, and a manual invoice has no
-    // quote to point at.
+    // SUPERSEDED BY 020. These are no longer read by StageTransitionGuard
+    // — requirements now live on ProcessTransitions, because "what does a
+    // deal need" is a question about a MOVE, not about a stage. They stay
+    // on the entity only because DefaultPipelineStages.Seed still carries
+    // two of them. A later round removes both together.
 
     /// <summary>A quote must exist for the deal, in any state.</summary>
     public bool RequiresQuote { get; set; }
@@ -148,14 +166,102 @@ public class PipelineStage
 }
 
 /// <summary>
+/// The colours a stage falls back to when nobody has chosen one.
+///
+/// WHY A FALLBACK RATHER THAN A NOT NULL COLUMN WITH A DEFAULT
+///   A database default only applies to rows inserted after the migration
+///   ran. Every other route into this table — the provisioning service, a
+///   support fix, a restored backup — would have to know the same rule
+///   and get it right. One function that turns NULL into a colour at the
+///   moment of display is a single place to be correct.
+/// </summary>
+public static class StageColors
+{
+    /// <summary>
+    /// Open stages, in pipeline order. Chosen to be distinguishable from
+    /// one another on a kanban board rather than to form a gradient — the
+    /// board's job is to let someone find a column, not to be pretty.
+    /// Eight is more than the stages any sane pipeline has; past that it
+    /// wraps.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Open = new[]
+    {
+        "#6366F1",  // indigo
+        "#0EA5E9",  // sky
+        "#14B8A6",  // teal
+        "#F59E0B",  // amber
+        "#8B5CF6",  // violet
+        "#EC4899",  // pink
+        "#10B981",  // emerald
+        "#F97316"   // orange
+    };
+
+    /// <summary>Green for Won and red for Lost are conventions, not taste.
+    /// A tenant can still change them; almost none will.</summary>
+    public const string Won  = "#16A34A";
+    public const string Lost = "#DC2626";
+
+    /// <summary>What a stage should be if nobody has picked anything.</summary>
+    /// <param name="ordinal">
+    /// Zero-based position among the tenant's OPEN stages. Ignored for
+    /// Won and Lost, which have one colour each.
+    /// </param>
+    public static string DefaultFor(StageCategory category, int ordinal) => category switch
+    {
+        StageCategory.Won  => Won,
+        StageCategory.Lost => Lost,
+        _ => Open[Math.Abs(ordinal) % Open.Count]
+    };
+
+    /// <summary>
+    /// The colour to actually paint. Use this everywhere rather than
+    /// reading PipelineStage.Color, so a NULL or a malformed value can
+    /// never reach a style attribute.
+    /// </summary>
+    public static string Resolve(string? stored, StageCategory category, int ordinal)
+        // Trimmed as well as upper-cased: IsValid trims before checking,
+        // so " #6366F1" passes — and this value goes straight into a
+        // style attribute. Anything written through the handlers is
+        // already clean; this defends the script-and-restore case the
+        // class exists for.
+        => IsValid(stored) ? stored!.Trim().ToUpperInvariant() : DefaultFor(category, ordinal);
+
+    /// <summary>
+    /// "#RRGGBB" only. Deliberately strict: this value goes straight into
+    /// a style attribute, so anything that is not exactly a hex colour is
+    /// treated as absent rather than escaped and hoped for.
+    /// </summary>
+    public static bool IsValid(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        var v = value.Trim();
+        if (v.Length != 7 || v[0] != '#') return false;
+
+        for (var i = 1; i < 7; i++)
+            if (!Uri.IsHexDigit(v[i])) return false;
+
+        return true;
+    }
+
+    /// <summary>Normalised for storage, or null if it is not a colour.</summary>
+    public static string? Clean(string? value)
+        => IsValid(value) ? value!.Trim().ToUpperInvariant() : null;
+}
+
+/// <summary>
 /// The stages a new tenant starts with. Deliberately generic — a client
 /// renames them to their own process on day one, which is the point.
 /// This replaces the old DealStages constants as the SEED, not as the
 /// runtime source of truth.
 ///
-/// 019: the seed now carries the same two requirements the migration
-/// switches on for existing tenants, so a workspace created tomorrow
-/// behaves like one created last month.
+/// 019: the seed carries the same two requirements the migration switches
+/// on for existing tenants, so a workspace created tomorrow behaves like
+/// one created last month.
+///
+/// 023: UNCHANGED ON PURPOSE. Adding Color here would mean editing
+/// TenantProvisioningService as well, and StageColors.Resolve already
+/// gives a seeded stage the right colour without either file moving.
 /// </summary>
 public static class DefaultPipelineStages
 {

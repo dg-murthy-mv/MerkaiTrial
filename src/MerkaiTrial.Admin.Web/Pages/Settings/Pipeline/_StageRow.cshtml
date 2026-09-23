@@ -1,0 +1,363 @@
+@* =====================================================================
+   STAGE ROW
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/Pipeline/_StageRow.cshtml
+
+   NEW FILE (023). One leading underscore.
+
+   One row of the stage list, plus its inline edit form. Used by all
+   three sections of the page, which is the reason it is a partial at all
+   — a working stage, a closing stage and a retired stage differ by a
+   drag handle and which menu items are live, not by eighty lines of
+   markup each.
+
+   EVERY ACTION IS A FORM POST. The JavaScript on the page makes it
+   nicer — dragging, opening the edit form without a page load — but
+   nothing here depends on it. Turn scripting off and the arrows appear,
+   the edit form opens through ?EditId= and every menu item still works.
+
+   THE MENU RATHER THAN A ROW OF ICONS
+     The old row showed a flag, a pencil and sometimes a bin, and the
+     "sometimes" was the problem: a button that quietly isn't there
+     teaches nobody the rule it is enforcing. A menu can hold a DISABLED
+     item with the reason printed underneath it, which is how someone
+     finds out that Negotiation can't be retired because three deals are
+     in it — and then finds the thing that fixes that, one item above.
+   ===================================================================== *@
+
+@using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Admin.Web.Pages.Settings.Pipeline
+@model MerkaiTrial.Admin.Web.Pages.Settings.Pipeline.StageRowVm
+
+@{
+    var s = Model.Stage;
+
+    // The starting stage needs no way in — every other active stage does,
+    // or nobody can ever put a deal there.
+    var noWayIn = s.IsActive && s.WaysIn == 0 && !s.IsDefault;
+    var noWayOut = s.IsActive && s.WaysOut == 0;
+}
+
+<div class="lf-stage @(s.IsActive ? "" : "lf-stage-retired")"
+     data-id="@s.Id"
+     data-name="@s.Name"
+     data-deals="@s.DealCount"
+     data-cat="@((int)s.Category)">
+
+    <div class="lf-stage-main">
+
+        @* ── reorder ─────────────────────────────────────────────── *@
+        <div class="lf-handle-col">
+            @if (Model.Draggable)
+            {
+                <button type="button" class="lf-drag"
+                        aria-label="Reorder @s.Name"
+                        title="Drag to reorder — or focus this and hold Alt with the arrow keys">
+                    <i class="bi bi-grip-vertical"></i>
+                </button>
+
+                <div class="lf-arrows">
+                    <form method="post" asp-page-handler="Move">
+                        <input type="hidden" name="stageId" value="@s.Id" />
+                        <input type="hidden" name="direction" value="up" />
+                        <button type="submit" class="btn btn-link btn-sm p-0 text-muted"
+                                disabled="@Model.IsFirst" title="Move up">
+                            <i class="bi bi-chevron-up"></i>
+                        </button>
+                    </form>
+                    <form method="post" asp-page-handler="Move">
+                        <input type="hidden" name="stageId" value="@s.Id" />
+                        <input type="hidden" name="direction" value="down" />
+                        <button type="submit" class="btn btn-link btn-sm p-0 text-muted"
+                                disabled="@Model.IsLast" title="Move down">
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                    </form>
+                </div>
+            }
+        </div>
+
+        @* ── colour ──────────────────────────────────────────────── *@
+        <span class="lf-dot" style="background:@s.Color"
+              title="@s.Name is @s.Color on the board"></span>
+
+        @* ── name, badges, description ───────────────────────────── *@
+        <div class="lf-stage-body">
+            <div class="lf-stage-name">
+                <span class="fw-semibold">@s.Name</span>
+
+                @if (s.IsDefault)
+                {
+                    <span class="badge bg-primary" title="New deals start here">
+                        <i class="bi bi-flag me-1"></i>Starts here
+                    </span>
+                }
+                @if (s.Category != StageCategory.Open)
+                {
+                    <span class="badge @(s.Category == StageCategory.Won ? "bg-success" : "bg-danger")">
+                        @(s.Category == StageCategory.Won ? "Won" : "Lost")
+                    </span>
+                }
+                @if (!s.IsActive)
+                {
+                    <span class="badge bg-light text-dark border">Retired</span>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(s.Description))
+            {
+                <div class="lf-stage-desc">@s.Description</div>
+            }
+        </div>
+
+        @* ── likelihood ──────────────────────────────────────────── *@
+        <div class="lf-prob" title="@s.Probability% likely to close — used for weighted forecasting">
+            <div class="lf-bar"><span style="width:@(s.Probability)%; background:@s.Color"></span></div>
+            <span class="lf-pct">@s.Probability%</span>
+        </div>
+
+        @* ── deals here ──────────────────────────────────────────── *@
+        <div class="lf-deals @(s.DealCount == 0 ? "text-muted" : "")">
+            @IndexModel.DealsPhrase(s.DealCount)
+        </div>
+
+        @* ── ways in and out ─────────────────────────────────────── *@
+        @if (s.IsActive)
+        {
+            @* Plain href, not asp-page: the sales process page declares its
+               own route with @@page "/Settings/PipelineRules", so the literal
+               path is the thing that is guaranteed not to drift. *@
+            <a class="lf-ways @(noWayIn || noWayOut ? "lf-ways-bad" : "")"
+               href="/Settings/PipelineRules"
+               title="@(noWayIn
+                          ? $"No step leads into {s.Name}, so nobody can put a deal here. Open the sales process to add one."
+                          : noWayOut
+                              ? $"No step leads out of {s.Name}, so a deal that lands here can never move on."
+                              : $"{s.WaysIn} step(s) lead into {s.Name} and {s.WaysOut} lead out. Opens the sales process.")">
+                @if (noWayIn || noWayOut)
+                {
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                }
+                @s.WaysIn in · @s.WaysOut out
+            </a>
+        }
+        else
+        {
+            <span class="lf-ways text-muted">—</span>
+        }
+
+        @* ── actions ─────────────────────────────────────────────── *@
+        @if (Model.CanUpdate)
+        {
+            <div class="dropdown lf-menu">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        data-bs-toggle="dropdown" data-bs-auto-close="true"
+                        aria-expanded="false" aria-label="Actions for @s.Name">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+
+                <ul class="dropdown-menu dropdown-menu-end lf-stage-menu">
+
+                    @* Edit — always available. Renaming is always safe. *@
+                    <li>
+                        <button type="button" class="dropdown-item lf-edit-toggle" data-for="@s.Id">
+                            <i class="bi bi-pencil me-2"></i>Edit name, colour and likelihood
+                        </button>
+                    </li>
+
+                    @* Starting stage *@
+                    @if (s.Category == StageCategory.Open && s.IsActive && !s.IsDefault)
+                    {
+                        <li>
+                            <form method="post" asp-page-handler="SetDefault">
+                                <input type="hidden" name="stageId" value="@s.Id" />
+                                <button type="submit" class="dropdown-item">
+                                    <i class="bi bi-flag me-2"></i>Make this where new deals start
+                                </button>
+                            </form>
+                        </li>
+                    }
+
+                    <li><hr class="dropdown-divider" /></li>
+
+                    @* ── MOVE DEALS OUT ──────────────────────────────
+                       The item that makes the two disabled ones below
+                       actionable instead of a dead end. Only offered when
+                       deals are the ONLY thing in the way — there is no
+                       point moving deals out of the stage new deals start
+                       in, because it still cannot be retired afterwards. *@
+                    @if (s.BlockedOnlyByDeals)
+                    {
+                        <li>
+                            <button type="button" class="dropdown-item lf-move-open"
+                                    data-id="@s.Id" data-name="@s.Name"
+                                    data-deals="@s.DealCount" data-cat="@((int)s.Category)">
+                                <i class="bi bi-box-arrow-right me-2"></i>
+                                Move @IndexModel.DealsPhrase(s.DealCount) somewhere else…
+                            </button>
+                        </li>
+                    }
+
+                    @* ── RETIRE / RESTORE ────────────────────────────
+                       Both go through the Update handler, because
+                       retiring IS setting IsActive to false — a separate
+                       endpoint would be a second place for the "you can't
+                       retire your only Won stage" rule to live. *@
+                    @if (!s.IsActive)
+                    {
+                        <li>
+                            <form method="post" asp-page-handler="Update">
+                                @* No Input.Color here, deliberately.
+                                   PipelineStageDto.Color is the RESOLVED
+                                   colour and is never null, so posting it
+                                   back would bake the palette fallback
+                                   into a stage whose Color column was
+                                   legitimately empty — turning "nobody
+                                   chose one" into real data as a side
+                                   effect of pressing Restore. Leaving the
+                                   field out makes the handler keep
+                                   whatever is stored. *@
+                                <input type="hidden" name="Input.StageId" value="@s.Id" />
+                                <input type="hidden" name="Input.Name" value="@s.Name" />
+                                <input type="hidden" name="Input.Probability" value="@s.Probability" />
+                                <input type="hidden" name="Input.Description" value="@s.Description" />
+                                <input type="hidden" name="Input.IsActive" value="true" />
+                                <button type="submit" class="dropdown-item text-success">
+                                    <i class="bi bi-arrow-counterclockwise me-2"></i>Bring this stage back
+                                </button>
+                            </form>
+                        </li>
+                    }
+                    else if (s.CanRetire)
+                    {
+                        <li>
+                            @* The message goes in data-confirm rather than
+                               inline in the onsubmit string: Razor encodes
+                               an attribute value, so a stage called
+                               "Client's Review" cannot break out of the
+                               JavaScript string literal and take the whole
+                               form's submit handler with it. *@
+                            <form method="post" asp-page-handler="Update"
+                                  data-confirm="Retire “@s.Name”? Deals already in it stay put and can still be moved on — it just stops being offered for new work."
+                                  onsubmit="return confirm(this.dataset.confirm);">
+                                @* Input.Color omitted — see the note on the
+                                   Restore form above. *@
+                                <input type="hidden" name="Input.StageId" value="@s.Id" />
+                                <input type="hidden" name="Input.Name" value="@s.Name" />
+                                <input type="hidden" name="Input.Probability" value="@s.Probability" />
+                                <input type="hidden" name="Input.Description" value="@s.Description" />
+                                <input type="hidden" name="Input.IsActive" value="false" />
+                                <button type="submit" class="dropdown-item">
+                                    <i class="bi bi-archive me-2"></i>Retire this stage
+                                </button>
+                            </form>
+                        </li>
+                    }
+                    else
+                    {
+                        <li>
+                            <span class="dropdown-item disabled lf-blocked">
+                                <span><i class="bi bi-archive me-2"></i>Retire this stage</span>
+                                <small>@s.RetireBlockedReason</small>
+                            </span>
+                        </li>
+                    }
+
+                    @* ── DELETE ──────────────────────────────────────
+                       Kept separate from Retire on purpose. Retiring is
+                       reversible and keeps the history readable; deleting
+                       is neither, which is why it is almost always
+                       blocked and why the block says so rather than
+                       hiding the item. *@
+                    @if (Model.CanDelete)
+                    {
+                        if (s.CanDelete)
+                        {
+                            <li>
+                                <form method="post" asp-page-handler="Delete"
+                                      data-confirm="Delete “@s.Name” for good? No deal has ever been in it, so nothing is lost — but this cannot be undone."
+                                      onsubmit="return confirm(this.dataset.confirm);">
+                                    <input type="hidden" name="stageId" value="@s.Id" />
+                                    <button type="submit" class="dropdown-item text-danger">
+                                        <i class="bi bi-trash me-2"></i>Delete this stage
+                                    </button>
+                                </form>
+                            </li>
+                        }
+                        else
+                        {
+                            <li>
+                                <span class="dropdown-item disabled lf-blocked">
+                                    <span><i class="bi bi-trash me-2"></i>Delete this stage</span>
+                                    <small>@s.DeleteBlockedReason</small>
+                                </span>
+                            </li>
+                        }
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+
+    @* ── inline edit ─────────────────────────────────────────────────
+       Rendered for every row and hidden, so the menu can open it without
+       a page load. Open server-side too, when ?EditId= names this stage
+       or a save bounced — which is the path that still works with
+       scripting switched off.
+
+       CATEGORY IS DELIBERATELY NOT EDITABLE. Flipping a stage from Won
+       to Open would silently change what every past report counted as
+       revenue — a deal closed last quarter would stop being closed. If a
+       client needs a different category they add a stage and move the
+       deals, which is now a single action.
+    ── *@
+    <div class="lf-stage-edit" id="lf-edit-@s.Id" style="@(Model.IsEditing ? "" : "display:none")">
+        <form method="post" asp-page-handler="Update" class="lf-edit-form">
+            <input type="hidden" name="Input.StageId" value="@s.Id" />
+            <input type="hidden" name="Input.IsActive" value="@(s.IsActive ? "true" : "false")" />
+
+            <div class="lf-edit-grid">
+                <div class="lf-edit-colour">
+                    <label class="form-label">Colour</label>
+                    <input type="color" name="Input.Color" value="@s.Color"
+                           class="form-control form-control-color" title="Shown on the pipeline board" />
+                </div>
+
+                <div class="lf-edit-name">
+                    <label class="form-label">Name</label>
+                    <input type="text" name="Input.Name" value="@s.Name"
+                           class="form-control" maxlength="100" required />
+                </div>
+
+                <div class="lf-edit-pct">
+                    <label class="form-label">Likelihood</label>
+                    <div class="input-group">
+                        <input type="number" name="Input.Probability" value="@s.Probability"
+                               class="form-control" min="0" max="100" required />
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-2">
+                <label class="form-label">
+                    What has to be true for a deal to be here
+                    <span class="text-muted fw-normal">— optional, shown to your team on the deal page</span>
+                </label>
+                <input type="text" name="Input.Description" value="@s.Description"
+                       class="form-control" maxlength="500"
+                       placeholder="e.g. Site visited and measurements taken" />
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <small class="text-muted">
+                    Renaming is safe — deals stay where they are and past history keeps reading correctly.
+                </small>
+                <div class="d-flex gap-2">
+                    <a class="btn btn-sm btn-outline-secondary lf-edit-cancel"
+                       data-for="@s.Id" asp-page="./Index">Cancel</a>
+                    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
