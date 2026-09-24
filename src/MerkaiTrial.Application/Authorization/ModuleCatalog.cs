@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -60,6 +60,26 @@ public static class ModuleCatalog
 
         // ── Workspace administration ─────────────────────────────────
         // Grantable by a tenant admin to their own people.
+
+        // 024. How the pipeline is SHAPED — the stages a deal moves
+        // through, the sales process that says which move is allowed and
+        // what it requires, and the lead statuses and their scoring.
+        //
+        // NOT the deals and leads that move through it. Those are "deals"
+        // and "leads", and every rep needs update on them. Until this
+        // entry existed the two were the same permission, so a Sales Rep
+        // with deals.update could retire Negotiation and one with
+        // leads.update could rewrite the lead scoring every rep's queue
+        // is ordered by.
+        //
+        // "Sales Configuration", not "Pipeline" — the deals module already
+        // displays as "Pipeline", and two entries with that name in the
+        // role editor would be worse than the bug this fixes.
+        //
+        // Sorted 39 so it heads the Workspace Settings group: it is the
+        // one a sales manager is most likely to be granted.
+        new("settings",  "Sales Configuration", "bi-sliders",  "Workspace Settings", 39, Crud),
+
         new("users",     "Users",     "bi-person-badge",       "Workspace Settings", 40, Crud),
         new("roles",     "Roles",     "bi-shield-lock",        "Workspace Settings", 41, Crud),
         new("audit",     "Activity Log", "bi-clock-history",     "Workspace Settings", 42, ReadOnly),

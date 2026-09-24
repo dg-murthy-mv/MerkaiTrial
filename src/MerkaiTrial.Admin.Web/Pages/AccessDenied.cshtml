@@ -1,65 +1,104 @@
 @page
 @model MerkaiTrial.Admin.Web.Pages.AccessDeniedModel
 @{
-    ViewData["Title"] = "Access Denied";
+    ViewData["Title"] = "No access";
 }
 
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card border-danger shadow-lg">
-                <div class="card-header bg-danger text-white">
-                    <h4 class="mb-0">
-                        <i class="bi bi-shield-exclamation me-2"></i>
-                        Access Denied
-                    </h4>
+@* =====================================================================
+   ACCESS DENIED
+   Location: MerkaiTrial.Admin.Web/Pages/AccessDenied.cshtml
+
+   COMPLETE FILE — replaces the existing one.
+
+   THE BUG THIS FIXES
+     <a asp-page="/Admin/Index">Go to Dashboard</a>
+
+     A button labelled "Go to Dashboard" pointing at the SuperAdmin area.
+     A tenant admin clicking it was challenged by
+     AuthorizeFolder("/Admin", "SuperAdmin") and bounced to
+     /Account/Denied?ReturnUrl=%2FAdmin — denied for asking to leave a
+     denial. It now points at /Dashboard/Index, which is what it says.
+
+   THIS IS NOW THE ONLY DENIED PAGE
+     There were two, with different designs and different wording:
+     this one, which AuthorizedPageModel redirects to, and
+     /Account/Denied, which the cookie middleware used as its
+     AccessDeniedPath. Two screens meaning the same thing is two screens
+     to keep right, and only one of them was. AuthenticationSetup now
+     points AccessDeniedPath here, and /Account/Denied redirects here so
+     an old link or bookmark still lands somewhere sensible.
+
+   IT KEEPS THE APP SHELL, ON PURPOSE
+     /Account/Denied used _AuthLayout — the marketing split-screen with
+     no sidebar. That is right for someone who is not signed in, and
+     wrong here: the cookie middleware only sends you to AccessDeniedPath
+     when you ARE signed in and lack a permission. Taking the navigation
+     away at that moment leaves a person stranded on the one page that
+     has nothing to offer them.
+
+   THE WORDING IS /Account/Denied's
+     "Ask your workspace administrator to update your role" tells someone
+     what to do. "Contact your system administrator" — the old text here —
+     names a person most tenants do not have.
+   ===================================================================== *@
+
+<div class="d-flex justify-content-center py-5">
+    <div style="max-width: 560px; width: 100%;">
+
+        <div class="text-center mb-4">
+            <div class="d-inline-flex align-items-center justify-content-center mb-3"
+                 style="width:64px;height:64px;border-radius:16px;background:#fef2f2;">
+                <i class="bi bi-lock-fill" style="font-size:28px;color:#dc2626;"></i>
+            </div>
+
+            <h1 class="lf-page-title mb-2">You don't have access to that</h1>
+
+            <p class="text-muted mb-0" style="font-size:14px;">
+                Your account doesn't have permission for this area. If you think it
+                should, ask your workspace administrator to update your role.
+            </p>
+
+            @* Only ever a local path — the page model drops anything else,
+               so nobody can get an off-site URL rendered here by putting it
+               in the query string. *@
+            @if (!string.IsNullOrWhiteSpace(Model.AttemptedPath))
+            {
+                <div class="small text-muted mt-3">
+                    You were trying to open <code>@Model.AttemptedPath</code>
                 </div>
-                <div class="card-body text-center py-5">
-                    <div class="mb-4">
-                        <i class="bi bi-lock-fill text-danger" style="font-size: 80px;"></i>
-                    </div>
-                    
-                    <h2 class="mb-3">You Don't Have Permission</h2>
-                    
-                    @if (TempData["ErrorMessage"] != null)
-                    {
-                        <div class="alert alert-warning mb-4">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            <strong>@TempData["ErrorMessage"]</strong>
-                        </div>
-                    }
-                    
-                    @if (TempData["RequiredPermission"] != null)
-                    {
-                        <div class="mb-4">
-                            <p class="text-muted mb-2">Required Permission:</p>
-                            <code class="fs-5">@TempData["RequiredPermission"]</code>
-                        </div>
-                    }
-                    
-                    <p class="text-muted mb-4">
-                        You don't have the necessary permissions to access this page or perform this action.
-                        <br />
-                        Please contact your system administrator if you believe this is an error.
-                    </p>
-                    
-                    <div class="d-flex gap-3 justify-content-center flex-wrap">
-                        <a href="javascript:history.back()" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left me-1"></i>Go Back
-                        </a>
-                        <a asp-page="/Admin/Index" class="btn btn-primary">
-                            <i class="bi bi-house me-1"></i>Go to Dashboard
-                        </a>
-                    </div>
-                    
-                    <div class="mt-4 pt-4 border-top">
-                        <small class="text-muted">
-                            <i class="bi bi-info-circle me-1"></i>
-                            To request access, contact your administrator with the permission code above.
-                        </small>
+            }
+        </div>
+
+        @* No TempData["ErrorMessage"] block here: _Layout already renders
+           that key as a global alert for every page, so reading it again
+           would print the same sentence twice on this one. *@
+
+        @if (TempData["RequiredPermission"] is string permission && !string.IsNullOrWhiteSpace(permission))
+        {
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <div class="small text-muted mb-1">Permission needed</div>
+                    <code style="font-size:13px;">@permission</code>
+                    <div class="small text-muted mt-2">
+                        Quote this to your workspace administrator — it is the exact
+                        box they need to tick under Roles &amp; Permissions.
                     </div>
                 </div>
             </div>
+        }
+
+        <div class="d-flex gap-2 justify-content-center">
+            @* history.back() rather than a page link: whatever you were
+               looking at before is a better destination than anything this
+               page could guess. *@
+            <a href="javascript:history.back()" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Go back
+            </a>
+
+            @* The fix. Was asp-page="/Admin/Index". *@
+            <a asp-page="/Dashboard/Index" class="btn btn-primary">
+                <i class="bi bi-house me-1"></i>Go to dashboard
+            </a>
         </div>
     </div>
 </div>

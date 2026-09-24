@@ -12,13 +12,29 @@
 // the tenant's own stages and applied in the browser as a preview, so
 // there is nothing to POST until the person presses Save.
 //
-// Reading is open to anyone who can read deals — the pipeline board and
-// the deal page both need the matrix to know which moves to offer. Both
-// writes are admin-only: the process decides who may reopen a closed
-// deal, so a rep who could edit it could simply switch the restriction
-// off and reopen it anyway.
+// PERMISSIONS (024)
+//
+//   READING stays deals.read. The pipeline board and the deal page both
+//   need the matrix to know which moves to offer and which will ask for
+//   a note, so they can put the box up before posting rather than
+//   posting, failing, and asking afterwards.
+//
+//   WRITING moves from deals.update to settings.update. The reasoning
+//   behind admin-only was right — the process decides who may reopen a
+//   closed deal, so a rep who could edit it could switch the restriction
+//   off and reopen the deal anyway — but it was ENFORCED by a hardcoded
+//   IsTenantAdmin check sitting inside the action, underneath a
+//   deals.update policy that every rep passes. That made the right
+//   outcome depend on a runtime if-statement instead of the authorization
+//   pipeline, and made delegation impossible: a tenant admin had no way
+//   to let their sales manager configure the process.
+//
+//   settings.update does both jobs. Tenant admins pass it through
+//   PermissionHandler's bypass, so nothing changes for them, and granting
+//   Sales Configuration to a manager now actually works.
 // =====================================================================
 
+using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -56,7 +72,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// posting rather than posting, failing and asking afterwards.
         /// </summary>
         [HttpGet]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(typeof(PipelineRulesDto), 200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> Get(CancellationToken ct = default)
@@ -81,7 +97,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// would, on a partial failure, have no idea which half took.
         /// </summary>
         [HttpPut]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.SettingsUpdate)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
@@ -96,13 +112,12 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (!ModelState.IsValid)
                     return BadRequest(ModelState);
 
+                // 024: the IsTenantAdmin check that used to sit here is
+                // gone. [Authorize(Policy = Policies.SettingsUpdate)] on
+                // this action does the same job through the authorization
+                // pipeline — admins still bypass it — and, unlike the
+                // hardcoded check, it can be granted to someone else.
                 var me = await _currentUserService.GetCurrentUserAsync();
-
-                if (!me.IsTenantAdmin)
-                    return StatusCode(403, new
-                    {
-                        error = "Only a workspace admin can change the sales process."
-                    });
 
                 await _save.Handle(tenantId, dto, me.FullName, ct);
 

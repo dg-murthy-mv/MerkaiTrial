@@ -1,19 +1,14 @@
-﻿@* =====================================================================
+@* =====================================================================
    FILE: MerkaiTrial.Admin.Web/Pages/Account/Denied.cshtml
+
+   COMPLETE FILE — replaces the existing one.
+
+   Nothing renders here any more. OnGet redirects to /AccessDenied, which
+   is now the single access-denied page. See Denied.cshtml.cs for why this
+   file still exists at all rather than being deleted.
+
+   No Layout is set on purpose: the redirect happens before any layout
+   would be chosen, so naming one would only be a line to keep correct.
    ===================================================================== *@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Account.DeniedModel
-@{
-    Layout = "_AuthLayout";
-    ViewData["Title"] = "No access";
-}
-
-<h1>You don't have access to that</h1>
-<p class="auth-sub">
-    Your account doesn't have permission for this area. If you think it should,
-    ask your workspace administrator to update your role.
-</p>
-
-<div class="auth-foot">
-    <a asp-page="/Dashboard">Back to dashboard</a>
-</div>

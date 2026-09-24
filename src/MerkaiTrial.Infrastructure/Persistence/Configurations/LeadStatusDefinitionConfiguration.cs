@@ -2,7 +2,14 @@
 // LeadStatusDefinitionConfiguration.cs
 // Location: MerkaiTrial.Infrastructure/Persistence/Configurations/
 //
-// NEW FILE.
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (025)
+//   ✅ Color and Description mapped with the lengths 025 actually
+//      created. Without this EF sends them as nvarchar(4000) parameters
+//      against an nvarchar(7) column, which works right up until someone
+//      pastes something long into the colour field and gets a truncation
+//      error instead of a validation message.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -25,6 +32,15 @@ public class LeadStatusDefinitionConfiguration : IEntityTypeConfiguration<LeadSt
 
         b.Property(s => s.Category).HasConversion<int>();
 
+        // ── Presentation (025) ────────────────────────────────────────
+        // Both nullable. NULL is a real state meaning "nobody chose one",
+        // resolved at display time by StatusColors.Resolve — which is why
+        // there is no HasDefaultValue here. A database default would only
+        // reach rows inserted after the migration and would leave every
+        // other insertion route to reinvent the same rule.
+        b.Property(s => s.Color)      .HasMaxLength(7);
+        b.Property(s => s.Description).HasMaxLength(500);
+
         // Lead.Status resolves against this, and the composite FK from
         // Leads depends on this index existing.
         b.HasIndex(s => new { s.TenantId, s.Key })
@@ -37,20 +53,9 @@ public class LeadStatusDefinitionConfiguration : IEntityTypeConfiguration<LeadSt
 }
 
 /* =====================================================================
-   ALSO REQUIRED — FlowDbContext.cs
+   NO FlowDbContext CHANGE THIS ROUND.
 
-   1. DbSet:
-
-          public DbSet<LeadStatusDefinition> LeadStatusDefinitions
-              => Set<LeadStatusDefinition>();
-
-   2. Global query filter, with the strictly tenant-owned group. WITHOUT
-      THIS the startup assertion fails by name — the guard working:
-
-          b.Entity<LeadStatusDefinition>()
-              .HasQueryFilter(e => e.TenantId == CurrentTenantId);
-
-   3. Lead.Status changes type from LeadStatus (enum) to string. If there
-      is an explicit configuration for it (HasConversion, HasColumnType),
-      remove that — it is a plain nvarchar(50) now.
+   LeadStatusDefinition already has its DbSet and its tenant query
+   filter — 025 only adds two columns to an entity that is already
+   registered. If the app boots today it will boot after this round.
    ===================================================================== */

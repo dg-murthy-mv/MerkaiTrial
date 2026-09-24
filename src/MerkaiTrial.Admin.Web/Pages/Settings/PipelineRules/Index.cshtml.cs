@@ -47,9 +47,17 @@
 //   all, and a grid with holes in it would be impossible to reason about.
 //   Saving creates whatever is missing.
 //
-// Admin-only to change; readable by anyone who can read deals, because a
-// manager who cannot work out why a deal will not move should be able to
-// look the rule up rather than ask.
+// CHANGES (024)
+//   ✅ Moved off Modules.Deals onto Modules.Settings. deals.read was
+//      letting any Sales Rep open this page and read the whole process.
+//   ✅ CanEditRules is now the settings.update permission rather than a
+//      hardcoded IsTenantAdmin, so a tenant admin can delegate Sales
+//      Configuration to a sales manager and have it actually work.
+//
+// Changing it needs settings.update; reading it needs settings.read.
+// Anyone who can get in can read the rules even if they cannot change
+// them, because a manager who cannot work out why a deal will not move
+// should be able to look the rule up rather than ask.
 // =====================================================================
 
 using System.Text.Json;
@@ -70,7 +78,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<IndexModel> _logger;
 
-        protected override string ModuleName => Modules.Deals;
+        // ── 024: settings, not deals ──────────────────────────────────
+        // On Modules.Deals, deals.read let any rep open this page and read
+        // the whole sales process. Saving was already blocked — both this
+        // page and the controller checked IsTenantAdmin by hand — so the
+        // exposure here was read-only, unlike Pipeline Stages and Lead
+        // Statuses. Still wrong: a rep has no business on the screen that
+        // decides who may reopen a closed deal.
+        protected override string ModuleName => Modules.Settings;
 
         public IndexModel(
             IPipelineRuleService ruleService,
@@ -97,9 +112,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
         public bool LoadFailed { get; private set; }
 
         /// <summary>
-        /// Admin-only to change, and the page says so rather than hiding
-        /// itself: a sales manager who wonders why a deal will not move
-        /// should be able to read the rule that stopped it.
+        /// Whether the person may CHANGE the process, as opposed to read
+        /// it. The page still renders either way: someone who wonders why
+        /// a deal will not move should be able to look the rule up rather
+        /// than ask.
+        ///
+        /// 024: this was `me.IsTenantAdmin`, hardcoded. That made the new
+        /// settings.update permission unusable — a tenant admin could
+        /// grant Sales Configuration to their sales manager and the manager
+        /// would still be refused here, with no way to find out why. It is
+        /// now the permission, which a tenant admin passes anyway through
+        /// PermissionHandler's bypass. Same behaviour for admins, and
+        /// delegation actually works.
         /// </summary>
         public bool CanEditRules { get; private set; }
 
@@ -173,8 +197,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
 
             await InitializePermissionsAsync();
 
-            var me = await _currentUserService.GetCurrentUserAsync();
-            CanEditRules = me.IsTenantAdmin;
+            // CanUpdate is settings.update, set by InitializePermissionsAsync
+            // from ModuleName. Tenant admins pass it through
+            // PermissionHandler's bypass.
+            CanEditRules = CanUpdate;
 
             try
             {
@@ -200,14 +226,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
 
             await InitializePermissionsAsync();
 
-            var me = await _currentUserService.GetCurrentUserAsync();
-            CanEditRules = me.IsTenantAdmin;
+            CanEditRules = CanUpdate;
 
             if (!CanEditRules)
             {
-                // The API refuses this too. Checked here as well so the
-                // message is the page's rather than a bare 403.
-                ErrorMessage = "Only a workspace admin can change the sales process.";
+                // ValidatePermissionAsync above has already redirected
+                // anyone without settings.update, so this is belt and
+                // braces — but the API refuses it too, and a message the
+                // page wrote reads better than a bare 403.
+                ErrorMessage = "You don't have permission to change the sales process. " +
+                               "A workspace admin can grant Sales Configuration under Roles & Permissions.";
                 await ReloadAsync();
                 return Page();
             }

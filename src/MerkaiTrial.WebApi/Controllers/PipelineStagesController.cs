@@ -14,17 +14,34 @@
 //      page has something true and useful to say afterwards — how many
 //      moved, and whether the retire went through.
 //
-// PERMISSIONS: reading is deals.read — every deal page needs the stage
-// list to render a picker. Changing them is deals.update, because the
-// pipeline shape is a sales-management decision, not a settings one.
+// PERMISSIONS (024 — this is the change)
 //
-// move-deals is deliberately deals.update and NOT deals.delete. It
-// deletes nothing; it rewrites the stage of every deal in one stage,
-// which is the largest thing deals.update can be asked to do — and
-// requiring deals.delete would mean a sales manager who may reshape the
-// pipeline could not empty a stage in order to do so.
+//   READING is deals.read. Unchanged, and it must stay that way: every
+//   deal page, kanban board and quote screen reads this endpoint to
+//   render a stage picker. A rep who could not read it could not see a
+//   deal.
+//
+//   WRITING is settings.*. It was deals.* — the same permission a rep
+//   needs to edit their own deal — so any Sales Rep could POST to this
+//   controller and rename, reorder, retire or recolour the tenant's
+//   stages, and from 023 move every deal out of one in a single call.
+//   That was my error: the header of this file used to argue that "the
+//   pipeline shape is a sales-management decision, not a settings one",
+//   which is true and is an argument for its OWN permission, not for
+//   borrowing the one every rep already holds.
+//
+//   The nav link was hidden from reps by a casing typo in _Layout, so
+//   this was never visible in the UI — but the endpoint was always open
+//   to anyone who could reach it with a token.
+//
+//   move-deals is settings.update and NOT settings.delete. It deletes
+//   nothing; it rewrites the stage of every deal in one stage, which is
+//   the largest thing settings.update can be asked to do — and requiring
+//   delete would mean a sales manager who may reshape the pipeline could
+//   not empty a stage in order to do so.
 // =====================================================================
 
+using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -83,7 +100,7 @@ public class PipelineStagesController : ControllerBase
         [FromQuery] bool activeOnly = false,
         [FromQuery] bool detail = false,
         CancellationToken ct = default)
-        => Run("Read", async () =>
+        => Run(Policies.DealsRead, async () =>
         {
             var tenantId = _currentUser.GetCurrentTenantId();
             return Ok(await _get.Handle(tenantId, activeOnly, detail, ct));
@@ -91,7 +108,7 @@ public class PipelineStagesController : ControllerBase
 
     [HttpPost]
     public Task<IActionResult> Create([FromBody] CreatePipelineStageDto dto, CancellationToken ct)
-        => Run("Update", async () =>
+        => Run(Policies.SettingsUpdate, async () =>
         {
             var (tenantId, userId) = Identity();
             return Ok(await _create.Handle(dto with { TenantId = tenantId, CreatedBy = userId }, ct));
@@ -99,7 +116,7 @@ public class PipelineStagesController : ControllerBase
 
     [HttpPut("{id:guid}")]
     public Task<IActionResult> Update(Guid id, [FromBody] UpdatePipelineStageDto dto, CancellationToken ct)
-        => Run("Update", async () =>
+        => Run(Policies.SettingsUpdate, async () =>
         {
             var (tenantId, userId) = Identity();
             await _update.Handle(dto with { TenantId = tenantId, StageId = id, UpdatedBy = userId }, ct);
@@ -108,7 +125,7 @@ public class PipelineStagesController : ControllerBase
 
     [HttpPost("reorder")]
     public Task<IActionResult> Reorder([FromBody] ReorderPipelineStagesDto dto, CancellationToken ct)
-        => Run("Update", async () =>
+        => Run(Policies.SettingsUpdate, async () =>
         {
             var (tenantId, userId) = Identity();
             await _reorder.Handle(dto with { TenantId = tenantId, UpdatedBy = userId }, ct);
@@ -117,7 +134,7 @@ public class PipelineStagesController : ControllerBase
 
     [HttpPost("{id:guid}/default")]
     public Task<IActionResult> SetDefault(Guid id, CancellationToken ct)
-        => Run("Update", async () =>
+        => Run(Policies.SettingsUpdate, async () =>
         {
             var (tenantId, userId) = Identity();
             await _setDefault.Handle(tenantId, id, userId, ct);
@@ -134,7 +151,7 @@ public class PipelineStagesController : ControllerBase
     /// </summary>
     [HttpPost("{id:guid}/move-deals")]
     public Task<IActionResult> MoveDeals(Guid id, [FromBody] MoveStageDealsDto dto, CancellationToken ct)
-        => Run("Update", async () =>
+        => Run(Policies.SettingsUpdate, async () =>
         {
             var (tenantId, userId) = Identity();
             var result = await _moveDeals.Handle(
@@ -144,7 +161,7 @@ public class PipelineStagesController : ControllerBase
 
     [HttpDelete("{id:guid}")]
     public Task<IActionResult> Delete(Guid id, CancellationToken ct)
-        => Run("Delete", async () =>
+        => Run(Policies.SettingsDelete, async () =>
         {
             var tenantId = _currentUser.GetCurrentTenantId();
             await _delete.Handle(tenantId, id, ct);
@@ -156,9 +173,16 @@ public class PipelineStagesController : ControllerBase
     private (Guid TenantId, string UserId) Identity()
         => (_currentUser.GetCurrentTenantId(), _currentUser.GetCurrentUserId().ToString());
 
-    private async Task<IActionResult> Run(string action, Func<Task<IActionResult>> body, string what)
+    /// <summary>
+    /// 024: takes the whole policy name rather than an action appended to
+    /// a hardcoded "Deals.". Reading and writing this controller are now
+    /// two different modules, so there is no single prefix to assume —
+    /// and a helper that builds the module name for you is how every
+    /// endpoint in a file silently inherits the wrong one.
+    /// </summary>
+    private async Task<IActionResult> Run(string policy, Func<Task<IActionResult>> body, string what)
     {
-        var allowed = await _auth.AuthorizeAsync(User, $"Deals.{action}");
+        var allowed = await _auth.AuthorizeAsync(User, policy);
         if (!allowed.Succeeded) return Forbid();
 
         try

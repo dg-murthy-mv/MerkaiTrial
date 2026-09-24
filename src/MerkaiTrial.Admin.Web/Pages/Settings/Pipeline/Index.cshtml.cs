@@ -55,7 +55,18 @@ public class IndexModel : AuthorizedPageModel
 {
     private readonly IPipelineStageService _stages;
 
-    protected override string ModuleName => Modules.Deals;
+    // ── 024: settings, not deals ──────────────────────────────────────
+    // This page shapes the pipeline; it does not work a deal. On
+    // Modules.Deals it asked for deals.read to enter and deals.update to
+    // change — the permissions every Sales Rep holds in order to do their
+    // job — so a rep could rename stages, reorder them, retire them, and
+    // from 023 bulk-move every deal in one.
+    //
+    // Nothing else in this file changes. ValidatePermissionAsync and
+    // InitializePermissionsAsync both build their policy names from
+    // ModuleName, so CanUpdate and CanDelete in the markup start meaning
+    // settings.update and settings.delete on their own.
+    protected override string ModuleName => Modules.Settings;
 
     public IndexModel(
         IPipelineStageService stages,

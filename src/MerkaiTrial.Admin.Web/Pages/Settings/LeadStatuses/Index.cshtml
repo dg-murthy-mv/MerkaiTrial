@@ -3,248 +3,620 @@
 @model MerkaiTrial.Admin.Web.Pages.Settings.LeadStatuses.IndexModel
 @{
     ViewData["Title"] = "Lead Statuses";
+
+    var working  = Model.WorkingStatuses;
+    var system   = Model.SystemStatuses;
+    var retired  = Model.RetiredStatuses;
+    var warnings = Model.ScoreWarnings();
 }
 
-<div class="d-flex justify-content-between align-items-start mb-4">
-    <div>
-        <h1 class="lf-page-title mb-1">Lead Statuses</h1>
-        <p class="text-muted mb-0" style="font-size:13.5px;">
-            The steps a lead moves through before it becomes a deal. Name them
-            the way your business actually works.
-        </p>
+@* =====================================================================
+   LEAD STATUSES
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/LeadStatuses/Index.cshtml
+
+   COMPLETE FILE — replaces the existing one.
+
+   _StatusEditForm.cshtml is no longer used. Leaving it in the project does
+   no harm (it still compiles), but you can delete it.
+
+   THE STYLES AND THE SCRIPT LIVE IN THIS FILE ON PURPOSE. Both are about
+   one page and nothing else, and a shared stylesheet that only one page
+   reads is a file someone eventually "cleans up". The script touches no
+   Bootstrap JavaScript API — the dropdowns and the modal are wired with
+   data-bs attributes, which Bootstrap picks up itself whenever it loads,
+   so nothing here depends on script order.
+   ===================================================================== *@
+
+<style>
+    .lf-status-wrap { max-width: 1080px; }
+
+    .lf-status { border-bottom: 1px solid var(--bs-border-color, #dee2e6); }
+    .lf-status:last-child { border-bottom: 0; }
+    .lf-status-retired .lf-status-main { opacity: .62; }
+
+    .lf-status-main {
+        display: grid;
+        grid-template-columns: 30px 14px minmax(0, 1fr) 130px 88px 40px;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+    }
+
+    .lf-status.lf-dragging { opacity: .4; }
+    .lf-status.lf-over     { border-top: 2px solid var(--bs-primary, #6366F1); }
+
+    /* Reorder: the handle is the JavaScript path, the arrows are the
+       fallback. Exactly one of the two is ever visible. */
+    .lf-handle-col { display: flex; align-items: center; justify-content: center; }
+    .lf-drag { display: none; background: none; border: 0; padding: 0; color: #9aa3b2; cursor: grab; line-height: 1; }
+    .lf-drag:focus-visible { outline: 2px solid var(--bs-primary, #6366F1); outline-offset: 2px; border-radius: 3px; }
+    .lf-drag:active { cursor: grabbing; }
+    .lf-arrows { display: flex; flex-direction: column; line-height: 1; }
+    .has-js .lf-drag   { display: block; }
+    .has-js .lf-arrows { display: none; }
+
+    .lf-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+    .lf-status-body { min-width: 0; }
+    .lf-status-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .lf-status-name .badge { font-weight: 500; }
+    .lf-status-desc { font-size: 12.5px; color: #6c757d; margin-top: 2px;
+                      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .lf-score { display: flex; align-items: center; gap: 8px; }
+    .lf-bar   { flex: 1; height: 6px; border-radius: 3px; background: #eceff3; overflow: hidden; }
+    .lf-bar span { display: block; height: 100%; border-radius: 3px; }
+    .lf-pts { font-size: 12px; color: #6c757d; width: 42px; text-align: right; }
+
+    .lf-leads { font-size: 12.5px; }
+
+    /* A blocked action stays in the menu and says why. A button that
+       quietly isn't there teaches nobody the rule it enforces. */
+    .lf-status-menu { min-width: 310px; }
+    .lf-status-menu form { margin: 0; }
+    .lf-status-menu .dropdown-item { white-space: normal; }
+    .lf-blocked { display: block; opacity: 1; color: #adb5bd; cursor: default; }
+    .lf-blocked > span  { display: block; }
+    .lf-blocked > small { display: block; color: #b42318; font-size: 11.5px; margin-top: 2px; }
+
+    .lf-status-edit { padding: 4px 16px 18px 72px; background: #f8f9fb; }
+    .lf-edit-grid   { display: grid; grid-template-columns: 76px minmax(0, 1fr) 150px; gap: 12px; }
+    .lf-edit-form .form-label { font-size: 12px; margin-bottom: 4px; color: #6c757d; }
+
+    .lf-add-row  { padding: 12px 16px; }
+    .lf-add-open { border: 1px dashed #c6ccd6; border-radius: 8px;
+                   width: 100%; background: #fff; padding: 10px; color: #6c757d; }
+    .lf-add-open:hover { border-color: var(--bs-primary, #6366F1); color: var(--bs-primary, #6366F1); }
+
+    @@media (max-width: 900px) {
+        .lf-status-main { grid-template-columns: 30px 14px minmax(0, 1fr) 40px; }
+        .lf-score, .lf-leads { display: none; }
+        .lf-status-edit { padding-left: 16px; }
+        .lf-edit-grid   { grid-template-columns: 76px minmax(0, 1fr); }
+
+        /* HTML5 drag-and-drop never fires from touch input, so on a small
+           screen the handle is a control that does nothing. Put the
+           arrows back — they are a form post and work everywhere. */
+        .has-js .lf-drag   { display: none; }
+        .has-js .lf-arrows { display: flex; }
+    }
+</style>
+
+<div class="lf-status-wrap">
+
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <h1 class="lf-page-title mb-1">Lead Statuses</h1>
+            <p class="text-muted mb-0" style="font-size:13.5px;">
+                The steps a lead moves through before it becomes a deal. Name them
+                the way your business actually works.
+            </p>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="/Settings/Pipeline">
+            <i class="bi bi-kanban me-1"></i>Pipeline stages
+        </a>
     </div>
-</div>
 
-<div class="row g-4">
-    <div class="col-lg-8">
-
-        <!-- Open / Qualified / Not-pursuing statuses -->
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-funnel me-2"></i>Your statuses</span>
-                <span class="badge bg-secondary">@Model.WorkingStatuses.Count</span>
-            </div>
-            <div class="list-group list-group-flush">
-                @foreach (var s in Model.WorkingStatuses)
-                {
-                    @if (Model.IsEditing(s))
+    @* A score ramp that runs backwards quietly misorders every rep's
+       queue, and nothing else on the page would mention it. *@
+    @if (warnings.Count > 0)
+    {
+        <div class="alert alert-warning d-flex gap-2 align-items-start">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                <strong>Your score ramp runs backwards.</strong>
+                <div class="small mt-1">
+                    @foreach (var w in warnings)
                     {
-                        <div class="list-group-item bg-light">
-                            <partial name="_StatusEditForm" model="Model" />
-                        </div>
+                        <div>@w</div>
                     }
-                    else
-                    {
-                        <div class="list-group-item @(s.IsActive ? "" : "opacity-50")">
-                            <div class="d-flex align-items-center gap-3">
-
-                                @if (Model.CanUpdate)
-                                {
-                                    <div class="btn-group-vertical btn-group-sm">
-                                        <form method="post" asp-page-handler="Move">
-                                            <input type="hidden" name="statusId" value="@s.Id" />
-                                            <input type="hidden" name="direction" value="up" />
-                                            <button class="btn btn-sm btn-link p-0 text-muted"
-                                                    disabled="@Model.IsFirst(s)" title="Move up">
-                                                <i class="bi bi-chevron-up"></i>
-                                            </button>
-                                        </form>
-                                        <form method="post" asp-page-handler="Move">
-                                            <input type="hidden" name="statusId" value="@s.Id" />
-                                            <input type="hidden" name="direction" value="down" />
-                                            <button class="btn btn-sm btn-link p-0 text-muted"
-                                                    disabled="@Model.IsLast(s)" title="Move down">
-                                                <i class="bi bi-chevron-down"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                }
-
-                                <span class="badge @Model.CategoryBadge(s.Category)">
-                                    @Model.CategoryLabel(s.Category)
-                                </span>
-
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">
-                                        @s.Name
-                                        @if (s.IsDefault)
-                                        {
-                                            <span class="badge bg-primary ms-2" title="New leads start here">
-                                                <i class="bi bi-flag me-1"></i>Starts here
-                                            </span>
-                                        }
-                                        @if (!s.IsActive)
-                                        {
-                                            <span class="badge bg-light text-dark border ms-2">Retired</span>
-                                        }
-                                    </div>
-                                    <div class="small text-muted">
-                                        Worth @s.Score point@(s.Score == 1 ? "" : "s") toward the lead score
-                                        @if (s.LeadCount > 0)
-                                        {
-                                            <span class="mx-2">·</span>
-                                            <span>@s.LeadCount lead@(s.LeadCount == 1 ? "" : "s") here now</span>
-                                        }
-                                    </div>
-                                </div>
-
-                                @if (Model.CanUpdate)
-                                {
-                                    <div class="btn-group btn-group-sm">
-                                        @if (!s.IsDefault && s.IsActive && s.Category == LeadStatusCategory.Open)
-                                        {
-                                            <form method="post" asp-page-handler="SetDefault">
-                                                <input type="hidden" name="statusId" value="@s.Id" />
-                                                <button class="btn btn-sm btn-outline-secondary"
-                                                        title="New leads should start here">
-                                                    <i class="bi bi-flag"></i>
-                                                </button>
-                                            </form>
-                                        }
-                                        <a class="btn btn-sm btn-outline-secondary"
-                                           asp-page="./Index" asp-route-EditId="@s.Id">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
-                                        @if (Model.CanDelete && s.LeadCount == 0 && !s.IsDefault)
-                                        {
-                                            <form method="post" asp-page-handler="Delete"
-                                                  onsubmit="return confirm('Remove this status?');">
-                                                <input type="hidden" name="statusId" value="@s.Id" />
-                                                <button class="btn btn-sm btn-outline-danger">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    }
-                }
+                    <div class="mt-1 text-muted">
+                        A lead's score decides where it sits in everyone's queue, so a
+                        lead moving forward and scoring less drops down the list for no
+                        reason.
+                    </div>
+                </div>
             </div>
         </div>
+    }
 
-        <!-- System status -->
-        @if (Model.SystemStatuses.Any())
+    @* ── YOUR STATUSES ──────────────────────────────────────────────── *@
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-funnel me-2"></i>Your statuses</span>
+            <span class="badge bg-secondary">@working.Count</span>
+        </div>
+
+        <div id="lf-working">
+            @foreach (var s in working)
+            {
+                <partial name="_StatusRow" model="Model.Row(s, draggable: true)" />
+            }
+        </div>
+
+        @if (working.Count == 0)
         {
-            <div class="card mb-4">
-                <div class="card-header">
-                    <i class="bi bi-gear me-2"></i>Set automatically
-                </div>
-                <div class="list-group list-group-flush">
-                    @foreach (var s in Model.SystemStatuses)
-                    {
-                        @if (Model.IsEditing(s))
-                        {
-                            <div class="list-group-item bg-light">
-                                <partial name="_StatusEditForm" model="Model" />
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="list-group-item">
-                                <div class="d-flex align-items-center gap-3">
-                                    <span class="badge @Model.CategoryBadge(s.Category)">
-                                        @Model.CategoryLabel(s.Category)
-                                    </span>
-
-                                    <div class="flex-grow-1">
-                                        <div class="fw-semibold">@s.Name</div>
-                                        <div class="small text-muted">
-                                            Applied when a lead becomes a deal
-                                            @if (s.LeadCount > 0)
-                                            {
-                                                <span class="mx-2">·</span>
-                                                <span>@s.LeadCount lead@(s.LeadCount == 1 ? "" : "s")</span>
-                                            }
-                                        </div>
-                                    </div>
-
-                                    @if (Model.CanUpdate)
-                                    {
-                                        <a class="btn btn-sm btn-outline-secondary"
-                                           asp-page="./Index" asp-route-EditId="@s.Id">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
-                                    }
-                                </div>
-                            </div>
-                        }
-                    }
-                </div>
-                <div class="card-footer small text-muted">
-                    Converting a lead sets this status. It can be renamed, but not
-                    removed or chosen by hand — otherwise a lead could read as
-                    converted with no deal behind it.
-                </div>
+            <div class="p-4 text-center text-muted">
+                No statuses yet. Add the first step of your lead process below.
             </div>
         }
-    </div>
 
-    <!-- Add -->
-    <div class="col-lg-4">
-        @if (Model.CanUpdate && !Model.EditId.HasValue)
+        @if (Model.CanUpdate)
         {
-            <div class="card">
-                <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Add a status</div>
-                <div class="card-body">
-                    <form method="post" asp-page-handler="Create">
-                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+            <div class="lf-add-row border-top">
+                <button type="button" class="lf-add-open" id="lf-add-open">
+                    <i class="bi bi-plus-lg me-1"></i>Add a status
+                </button>
 
-                        <div class="mb-3">
-                            <label asp-for="Input.Name" class="form-label">
-                                Name <span class="text-danger">*</span>
-                            </label>
-                            <input asp-for="Input.Name" class="form-control"
-                                   placeholder="e.g. Site Visit Booked" required />
-                            <span asp-validation-for="Input.Name" class="text-danger"></span>
+                <div id="lf-add-form" style="display:none">
+                    <form method="post" asp-page-handler="Create">
+                        <div class="lf-edit-grid">
+                            <div>
+                                <label class="form-label">Colour</label>
+                                <input type="color" name="Input.Color" value="#0EA5E9"
+                                       class="form-control form-control-color" />
+                            </div>
+                            <div>
+                                <label class="form-label">Name <span class="text-danger">*</span></label>
+                                <input type="text" name="Input.Name" class="form-control"
+                                       placeholder="e.g. Site Visit Booked" maxlength="100" required />
+                            </div>
+                            <div>
+                                <label class="form-label">Score points</label>
+                                <div class="input-group">
+                                    <input type="number" name="Input.Score" class="form-control"
+                                           min="0" max="15" value="@Model.SuggestedScore()" required />
+                                    <span class="input-group-text">/ 15</span>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label asp-for="Input.Category" class="form-label">Type</label>
-                            <select asp-for="Input.Category" class="form-select">
+                        <div class="mt-2">
+                            <label class="form-label">
+                                What has to be true for a lead to be here
+                                <span class="text-muted fw-normal">— optional</span>
+                            </label>
+                            <input type="text" name="Input.Description" class="form-control"
+                                   maxlength="500" placeholder="e.g. Spoken to, budget confirmed" />
+                        </div>
+
+                        <div class="mt-3">
+                            <label class="form-label">Type</label>
+                            <select name="Input.Category" class="form-select">
                                 <option value="@((int)LeadStatusCategory.Open)">Open — still being pursued</option>
                                 <option value="@((int)LeadStatusCategory.Qualified)">Qualified — ready to become a deal</option>
                                 <option value="@((int)LeadStatusCategory.Disqualified)">Not pursuing</option>
                             </select>
                             <div class="form-text">
-                                This decides what the CRM does with the lead, so it
-                                can't be changed later. There is no separate "New"
-                                type — add an Open status and click
-                                <i class="bi bi-flag"></i> on it to make new leads
-                                start there.
+                                This decides what the CRM does with the lead, so it can't be
+                                changed later. There is no separate "New" type — add an Open
+                                status and use <strong>Make this where new leads start</strong>
+                                on its menu.
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label asp-for="Input.Score" class="form-label">Lead score points</label>
-                            <input asp-for="Input.Score" type="number" class="form-control"
-                                   min="0" max="15" />
-                            <span asp-validation-for="Input.Score" class="text-danger"></span>
-                            <div class="form-text">
-                                How much reaching this status adds to a lead's score,
-                                out of 15.
-                            </div>
+                        <div class="d-flex justify-content-end gap-2 mt-3">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="lf-add-cancel">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-plus-lg me-1"></i>Add status
+                            </button>
                         </div>
-
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="bi bi-plus-lg me-1"></i>Add status
-                        </button>
                     </form>
                 </div>
             </div>
         }
+    </div>
 
-        <div class="card mt-3">
-            <div class="card-body small text-muted">
-                <p class="mb-2"><strong>Renaming is safe.</strong> Leads stay where
-                they are and past history keeps reading correctly.</p>
-                <p class="mb-2"><strong>You need at least one qualified status.</strong>
-                Without it, no lead could be converted to a deal.</p>
-                <p class="mb-0"><strong>Retiring keeps the record.</strong> A status
-                with leads in it can't be removed — move them first, or retire it so
-                it stops being offered for new work.</p>
+    @* ── SET AUTOMATICALLY ──────────────────────────────────────────── *@
+    @if (system.Count > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-gear me-2"></i>Set automatically
             </div>
+
+            <div>
+                @foreach (var s in system)
+                {
+                    <partial name="_StatusRow" model="Model.Row(s, draggable: false)" />
+                }
+            </div>
+
+            <div class="card-footer small text-muted">
+                Converting a lead sets this status. It can be renamed and recoloured,
+                but not removed, retired, or chosen by hand — otherwise a lead could
+                read as converted with no deal behind it.
+            </div>
+        </div>
+    }
+
+    @* ── RETIRED ────────────────────────────────────────────────────── *@
+    @if (retired.Count > 0)
+    {
+        <details class="card mb-4">
+            <summary class="card-header" style="cursor:pointer; list-style:revert;">
+                <i class="bi bi-archive me-2"></i>Retired statuses
+                <span class="badge bg-secondary ms-2">@retired.Count</span>
+            </summary>
+
+            <div>
+                @foreach (var s in retired)
+                {
+                    <partial name="_StatusRow" model="Model.Row(s, draggable: false)" />
+                }
+            </div>
+
+            <div class="card-footer small text-muted">
+                A retired status stops being offered for new work but keeps every lead
+                and every timeline entry that mentions it. Bring one back from its menu.
+            </div>
+        </details>
+    }
+
+    <div class="card">
+        <div class="card-body small text-muted">
+            <p class="mb-2">
+                <strong>Renaming is safe.</strong> Leads stay where they are and past
+                timelines keep reading correctly — a status's name and the identifier
+                your leads are stored against are two different things.
+            </p>
+            <p class="mb-2">
+                <strong>You need at least one qualified status.</strong> Without it, no
+                lead could be converted to a deal.
+            </p>
+            <p class="mb-0">
+                <strong>Deleting is allowed once a status is empty.</strong> Unlike a
+                pipeline stage, a lead status can go for good after its leads have
+                moved out — a lead's timeline records the status by name, so nothing
+                breaks when the status itself is gone.
+            </p>
         </div>
     </div>
 </div>
+
+@* ── MOVE LEADS ─────────────────────────────────────────────────────
+   The thing this page has been telling people to do without giving them
+   any way to do it. "Move them first" was advice with nothing behind it:
+   the only route was opening each lead and changing its status by hand.
+── *@
+@if (Model.CanUpdate && Model.AnyStatusBlockedByLeads)
+{
+    <div class="modal fade" id="lf-move-modal" tabindex="-1" aria-hidden="true"
+         aria-labelledby="lf-move-title">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" asp-page-handler="MoveLeads">
+                    <input type="hidden" name="fromStatusId" id="lf-move-from" />
+
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="lf-move-title">Move leads</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <p>
+                            <strong id="lf-move-count">0 leads</strong> are in
+                            <strong id="lf-move-name">this status</strong>. Where should they go?
+                        </p>
+
+                        <select name="toStatusId" id="lf-move-to" class="form-select" required>
+                            @foreach (var t in Model.MoveTargets)
+                            {
+                                <option value="@t.Id" data-cat="@((int)t.Category)">@t.Name</option>
+                            }
+                        </select>
+
+                        <div class="form-text mt-2">
+                            Only statuses of the same kind are offered. Qualifying or
+                            disqualifying a lead is a decision about that lead, so it has
+                            to happen on the lead itself.
+                        </div>
+
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" value="true"
+                                   name="thenRetire" id="lf-move-retire" checked />
+                            <label class="form-check-label" for="lf-move-retire">
+                                Retire <span id="lf-move-name2">this status</span> once it's empty
+                            </label>
+                        </div>
+
+                        <div class="alert alert-light border mt-3 mb-0 small text-muted">
+                            Every lead gets a line on its own timeline recording the change,
+                            exactly as if you had moved it by hand. Each lead's score is
+                            recalculated, because the status it lands on may be worth a
+                            different number of points.
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary">Move them</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
+@* Dragging posts here. One request on drop, instead of one page load per
+   position the way the arrows work. *@
+<form method="post" asp-page-handler="Reorder" id="lf-reorder-form" style="display:none">
+    <input type="hidden" name="order" id="lf-reorder-order" />
+</form>
+
+<script>
+(function () {
+    'use strict';
+
+    // Swaps the arrows for the drag handle. Done in script rather than
+    // with <noscript> so the fallback is what renders if this file ever
+    // throws before this line.
+    document.documentElement.classList.add('has-js');
+
+    document.addEventListener('DOMContentLoaded', function () {
+
+        // ── inline edit ───────────────────────────────────────────────
+        function closeAllEdits() {
+            document.querySelectorAll('.lf-status-edit').forEach(function (el) {
+                el.style.display = 'none';
+            });
+        }
+
+        document.querySelectorAll('.lf-edit-toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var panel = document.getElementById('lf-edit-' + btn.dataset.for);
+                if (!panel) return;
+
+                var open = panel.style.display !== 'none';
+                closeAllEdits();
+                if (open) return;
+
+                panel.style.display = '';
+                var name = panel.querySelector('input[name="Input.Name"]');
+                if (name) { name.focus(); name.select(); }
+            });
+        });
+
+        // Cancel is an <a> back to the page so it works without script;
+        // with script there is nothing to reload, so just close it.
+        document.querySelectorAll('.lf-edit-cancel').forEach(function (a) {
+            a.addEventListener('click', function (e) {
+                e.preventDefault();
+                closeAllEdits();
+            });
+        });
+
+        // ── add a status ──────────────────────────────────────────────
+        var addOpen = document.getElementById('lf-add-open');
+        var addForm = document.getElementById('lf-add-form');
+
+        if (addOpen && addForm) {
+            addOpen.addEventListener('click', function () {
+                addForm.style.display = '';
+                addOpen.style.display = 'none';
+                var name = addForm.querySelector('input[name="Input.Name"]');
+                if (name) name.focus();
+            });
+
+            var addCancel = document.getElementById('lf-add-cancel');
+            if (addCancel) {
+                addCancel.addEventListener('click', function () {
+                    addForm.style.display = 'none';
+                    addOpen.style.display = '';
+                });
+            }
+        }
+
+        // ── move leads ────────────────────────────────────────────────
+        var moveModal = document.getElementById('lf-move-modal');
+
+        document.querySelectorAll('.lf-move-open').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                if (!moveModal) return;
+
+                var id    = btn.dataset.id;
+                var name  = btn.dataset.name;
+                var leads = parseInt(btn.dataset.leads || '0', 10);
+                var cat   = btn.dataset.cat;
+
+                document.getElementById('lf-move-from').value = id;
+                document.getElementById('lf-move-name').textContent  = name;
+                document.getElementById('lf-move-name2').textContent = '"' + name + '"';
+                document.getElementById('lf-move-count').textContent =
+                    leads === 1 ? '1 lead' : leads + ' leads';
+
+                // Same category only, and never back into itself. Doing
+                // this here rather than rendering a select per status
+                // keeps one modal on the page instead of fifteen.
+                var select = document.getElementById('lf-move-to');
+                var usable = 0;
+
+                Array.prototype.forEach.call(select.options, function (opt) {
+                    var ok = opt.dataset.cat === cat && opt.value !== id;
+                    opt.hidden = !ok;
+                    opt.disabled = !ok;
+                    if (ok && usable === 0) { opt.selected = true; usable++; }
+                    else if (ok) { usable++; }
+                });
+
+                var submit = moveModal.querySelector('button[type="submit"]');
+                if (submit) submit.disabled = usable === 0;
+
+                // Back to the default every time the dialog opens. Without
+                // this, unticking it for one status and cancelling left it
+                // unticked for the next one — a dialog quietly remembering
+                // a choice you made about something else.
+                var retire = document.getElementById('lf-move-retire');
+                if (retire) retire.checked = true;
+
+                // Bootstrap is wired through data-bs attributes everywhere
+                // else on this page; here the button has to populate the
+                // modal first, so it opens it by hand — guarded, because
+                // this script does not depend on Bootstrap having loaded.
+                if (window.bootstrap && window.bootstrap.Modal) {
+                    window.bootstrap.Modal.getOrCreateInstance(moveModal).show();
+                }
+            });
+        });
+
+        // ── drag to reorder ───────────────────────────────────────────
+        var list = document.getElementById('lf-working');
+        if (!list) return;
+
+        var rows = Array.prototype.slice.call(list.querySelectorAll('.lf-status'));
+        if (rows.length < 2) return;
+
+        var dragging = null;
+        var dropped = false;
+        var orderBefore = [];
+
+        function currentOrder() {
+            return Array.prototype.map.call(
+                list.querySelectorAll('.lf-status'),
+                function (el) { return el.dataset.id; });
+        }
+
+        // The dragover handler moves rows in the live DOM so the gap
+        // follows the pointer. That means a cancelled drag — Escape, or
+        // releasing outside the list — leaves the list reordered with no
+        // browser-level undo. So remember where everything started and
+        // put it back unless a real drop happened.
+        function restoreOrder() {
+            orderBefore.forEach(function (id) {
+                var el = list.querySelector('.lf-status[data-id="' + id + '"]');
+                if (el) list.appendChild(el);
+            });
+        }
+
+        function saveOrder() {
+            document.getElementById('lf-reorder-order').value = currentOrder().join(',');
+            document.getElementById('lf-reorder-form').submit();
+        }
+
+        function rowBelow(y) {
+            var others = Array.prototype.slice.call(
+                list.querySelectorAll('.lf-status:not(.lf-dragging)'));
+
+            var closest = null;
+            var closestOffset = Number.NEGATIVE_INFINITY;
+
+            others.forEach(function (el) {
+                var box = el.getBoundingClientRect();
+                var offset = y - box.top - box.height / 2;
+                if (offset < 0 && offset > closestOffset) {
+                    closestOffset = offset;
+                    closest = el;
+                }
+            });
+
+            return closest;
+        }
+
+        // One document-level listener, not one per row. Registering it
+        // inside the loop put fifteen handlers on every mouseup anywhere
+        // on the page, all doing the same thing.
+        document.addEventListener('mouseup', function () {
+            rows.forEach(function (r) { r.draggable = false; });
+        });
+
+        rows.forEach(function (row) {
+            var handle = row.querySelector('.lf-drag');
+            if (!handle) return;
+
+            // draggable is switched on only while the pointer is on the
+            // handle. Marking the whole row draggable makes text inside
+            // it unselectable and starts a drag from the edit form's
+            // inputs.
+            handle.addEventListener('mousedown', function () { row.draggable = true; });
+            handle.addEventListener('touchstart', function () { row.draggable = true; }, { passive: true });
+
+            row.addEventListener('dragstart', function (e) {
+                dragging = row;
+                dropped = false;
+                orderBefore = currentOrder();
+                row.classList.add('lf-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                // Firefox refuses to start a drag without payload.
+                e.dataTransfer.setData('text/plain', row.dataset.id);
+            });
+
+            row.addEventListener('dragend', function () {
+                row.classList.remove('lf-dragging');
+                row.draggable = false;
+                list.querySelectorAll('.lf-over').forEach(function (el) {
+                    el.classList.remove('lf-over');
+                });
+
+                dragging = null;
+
+                if (dropped) saveOrder();
+                else restoreOrder();     // Escape, or released off the list
+            });
+
+            // Keyboard equivalent, because a drag handle nobody can reach
+            // with a keyboard is an accessibility regression dressed up
+            // as an improvement.
+            handle.addEventListener('keydown', function (e) {
+                if (!e.altKey) return;
+
+                if (e.key === 'ArrowUp' && row.previousElementSibling) {
+                    e.preventDefault();
+                    list.insertBefore(row, row.previousElementSibling);
+                    saveOrder();
+                } else if (e.key === 'ArrowDown' && row.nextElementSibling) {
+                    e.preventDefault();
+                    list.insertBefore(row.nextElementSibling, row);
+                    saveOrder();
+                }
+            });
+        });
+
+        list.addEventListener('dragover', function (e) {
+            if (!dragging) return;
+            e.preventDefault();
+
+            list.querySelectorAll('.lf-over').forEach(function (el) {
+                el.classList.remove('lf-over');
+            });
+
+            var after = rowBelow(e.clientY);
+            if (after) {
+                after.classList.add('lf-over');
+                list.insertBefore(dragging, after);
+            } else {
+                list.appendChild(dragging);
+            }
+        });
+
+        // Only a real drop inside the list counts as "keep this order".
+        list.addEventListener('drop', function (e) {
+            e.preventDefault();
+            dropped = true;
+        });
+    });
+})();
+</script>
