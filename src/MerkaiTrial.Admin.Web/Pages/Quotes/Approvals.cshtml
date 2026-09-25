@@ -1,0 +1,289 @@
+@page
+@using MerkaiTrial.Application.DTOs
+@model MerkaiTrial.Admin.Web.Pages.Quotes.ApprovalsModel
+@{
+    ViewData["Title"] = "Waiting for my approval";
+    var overrides = Model.Pending.Count(p => p.IsAdminOverride);
+}
+@* =====================================================================
+   WAITING FOR MY APPROVAL
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/Approvals.cshtml
+
+   COMPLETE FILE — replaces the 017 version.
+
+   Every approval STEP this person can decide. A card shows which step of
+   which chain it is, what that step is called, who it names, what the
+   earlier steps decided, and why the quote needed approval at all.
+
+   Approve works from the list. "Request changes" needs a comment, so it
+   opens the quote — the approver should look at the lines before sending
+   it back anyway.
+
+   TempData alerts are rendered once by _Layout; ErrorMessage /
+   SuccessMessage on the model are [TempData]-backed, so this page must
+   not render them again.
+   ===================================================================== *@
+
+<style>
+    .ap-wrap { max-width: 1060px; }
+
+    .ap-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgba(16,24,40,.06); margin-bottom: 1rem; }
+    .ap-head { padding: .9rem 1.15rem .6rem; display: flex; align-items: flex-start; gap: .9rem; flex-wrap: wrap; }
+    .ap-body { padding: 0 1.15rem 1rem; }
+    .ap-meta { font-size: .78rem; color: #8b949e; }
+
+    .ap-number { font-weight: 650; font-size: .98rem; }
+    .ap-total { font-weight: 650; font-size: 1.05rem; }
+
+    .ap-step { display: inline-flex; align-items: center; gap: .35rem; background: #eef2ff; color: #3b4fd4; border-radius: 20px; padding: .16rem .6rem; font-size: .74rem; font-weight: 700; }
+    .ap-chip { display: inline-block; font-size: .72rem; padding: .1rem .45rem; border-radius: 20px; background: #f1f3f5; color: #57606a; }
+    .ap-chip.warn { background: #fff4e5; color: #8a5300; }
+    .ap-chip.deep { background: #fdeaea; color: #922; }
+
+    .ap-reasons { margin: .5rem 0 0; padding-left: 1.1rem; font-size: .85rem; }
+    .ap-reasons li { margin-bottom: .1rem; }
+
+    .ap-quote { background: #f8f9fb; border-radius: 8px; padding: .5rem .75rem; margin-top: .5rem; font-size: .85rem; white-space: pre-line; }
+
+    .ap-sofar { border-left: 3px solid #e7f6ec; padding-left: .7rem; margin-top: .6rem; }
+    .ap-sofar .row2 { font-size: .8rem; margin-bottom: .2rem; }
+
+    .ap-empty { text-align: center; padding: 3rem 1rem; color: #8b949e; }
+    .ap-empty i { font-size: 2.4rem; color: #d0d7de; display: block; margin-bottom: .6rem; }
+
+    .ap-disc > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; font-weight: 600; color: #3b4fd4; }
+    .ap-disc > summary::-webkit-details-marker { display: none; }
+    .ap-disc > summary:hover { text-decoration: underline; }
+</style>
+
+<div class="ap-wrap">
+
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
+        <div>
+            <h1 class="lf-page-title mb-1">Waiting for my approval</h1>
+            <p class="text-muted mb-0" style="font-size:13.5px;">
+                Quotes that need your sign-off before the rep can send them.
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="/Quotes/Index" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>All quotes
+            </a>
+            @if (Model.UserCanRead("settings"))
+            {
+                <a asp-page="/Settings/QuoteApprovals/Index" class="btn btn-outline-secondary" title="Approval rules">
+                    <i class="bi bi-sliders"></i>
+                </a>
+            }
+        </div>
+    </div>
+
+    @if (Model.LoadFailed)
+    {
+        <div class="ap-card">
+            <div class="p-4">
+                <div class="alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    This list couldn't be loaded just now. Reload the page to try again.
+                </div>
+            </div>
+        </div>
+    }
+    else if (Model.Pending.Count == 0)
+    {
+        <div class="ap-card">
+            <div class="ap-empty">
+                <i class="bi bi-inbox"></i>
+                <div class="fw-semibold text-body mb-1">Nothing waiting for you</div>
+                <div class="small">
+                    When a quote trips an approval rule and you're the approver for its current step,
+                    it appears here.
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        @if (overrides > 0)
+        {
+            <div class="alert alert-warning py-2 small">
+                <i class="bi bi-shield-exclamation me-1"></i>
+                @if (overrides == Model.Pending.Count)
+                {
+                    <span>
+                        @(overrides == 1 ? "This one names" : "These all name") somebody else as the approver.
+                        You can sign @(overrides == 1 ? "it" : "them") because you're a workspace admin, and the
+                        history will record that you stood in.
+                    </span>
+                }
+                else
+                {
+                    <span>
+                        @overrides of these name somebody else as the approver. You can sign
+                        @(overrides == 1 ? "it" : "them") as a workspace admin, and the history will record that
+                        you stood in.
+                    </span>
+                }
+            </div>
+        }
+
+        @foreach (var p in Model.Pending)
+        {
+            var stepLabel = MerkaiTrial.Admin.Web.Pages.Quotes.ApprovalsModel.StepLabel(p);
+            var deep = p.MaxLineDiscountPercent >= 20m;
+
+            <div class="ap-card">
+                <div class="ap-head">
+                    <div class="flex-grow-1">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <a asp-page="/Quotes/Detail" asp-route-id="@p.QuoteId"
+                               class="ap-number text-decoration-none">@p.QuoteNumber</a>
+
+                            @if (stepLabel != null)
+                            {
+                                <span class="ap-step">
+                                    <i class="bi bi-diagram-2"></i>@stepLabel
+                                </span>
+                            }
+
+                            @if (p.IsAdminOverride)
+                            {
+                                <span class="ap-chip warn" title="This step names somebody else">
+                                    <i class="bi bi-shield-exclamation me-1"></i>standing in as admin
+                                </span>
+                            }
+                        </div>
+
+                        <div class="ap-meta mt-1">
+                            @p.DealTitle
+                            @if (!string.IsNullOrWhiteSpace(p.ContactName))
+                            {
+                                <span> · @p.ContactName</span>
+                            }
+                        </div>
+
+                        <div class="small mt-2">
+                            <strong>@p.StepName</strong> — @p.ApproverSummary
+                            @if (!string.IsNullOrWhiteSpace(p.RuleName))
+                            {
+                                <span class="ap-meta"> · rule: @p.RuleName</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="text-end">
+                        <div class="ap-total">@Model.FormatCurrency(p.QuoteTotal)</div>
+                        <div class="mt-1">
+                            <span class="ap-chip @(deep ? "deep" : "")">
+                                @p.MaxLineDiscountPercent.ToString("0.##")% off list
+                            </span>
+                        </div>
+                        <div class="ap-meta mt-1">
+                            from @p.RequestedByName
+                            · @MerkaiTrial.Admin.Web.Pages.Quotes.ApprovalsModel.Ago(p.RequestedAtUtc)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ap-body">
+                    @if (p.Reasons.Count > 0)
+                    {
+                        <ul class="ap-reasons">
+                            @foreach (var reason in p.Reasons)
+                            {
+                                <li>@reason</li>
+                            }
+                        </ul>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(p.RequestComment))
+                    {
+                        <div class="ap-quote">
+                            <i class="bi bi-chat-left-text me-1"></i>@p.RequestComment
+                        </div>
+                    }
+
+                    @if (p.SoFar.Count > 0)
+                    {
+                        <div class="ap-sofar">
+                            <div class="ap-meta mb-1">Already signed:</div>
+                            @foreach (var d in p.SoFar)
+                            {
+                                <div class="row2">
+                                    <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">
+                                        Step @d.StepOrder
+                                    </span>
+                                    @(string.IsNullOrWhiteSpace(d.StepName) ? "" : d.StepName + " — ")
+                                    <strong>@d.DecidedByName</strong>
+                                    @if (d.WasAdminOverride)
+                                    {
+                                        <span class="ap-chip warn ms-1">stood in as admin</span>
+                                    }
+                                    <span class="ap-meta"> · @Model.FormatDateTime(d.DecidedAtUtc)</span>
+                                    @if (!string.IsNullOrWhiteSpace(d.Comment))
+                                    {
+                                        <div class="ap-quote">@d.Comment</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <div class="d-flex align-items-center gap-2 flex-wrap mt-3">
+                        <form method="post" asp-page-handler="Approve">
+                            <input type="hidden" name="quoteId" value="@p.QuoteId" />
+                            <input type="hidden" name="number" value="@p.QuoteNumber" />
+                            <button type="submit" class="btn btn-sm btn-success">
+                                <i class="bi bi-check2-circle me-1"></i>
+                                @(p.TotalSteps > 1 && p.CurrentStepOrder < p.TotalSteps
+                                    ? $"Approve step {p.CurrentStepOrder}"
+                                    : "Approve")
+                            </button>
+                        </form>
+
+                        <a asp-page="/Quotes/Detail" asp-route-id="@p.QuoteId" class="btn btn-sm btn-outline-danger">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Request changes…
+                        </a>
+
+                        <a asp-page="/Quotes/Detail" asp-route-id="@p.QuoteId" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Open the quote
+                        </a>
+
+                        @if (p.TotalSteps > 1 && p.CurrentStepOrder < p.TotalSteps)
+                        {
+                            <span class="ap-meta">
+                                Approving sends it on to step @(p.CurrentStepOrder + 1) — it won't be sendable yet.
+                            </span>
+                        }
+                    </div>
+
+                    <div class="mt-2">
+                        <details class="ap-disc">
+                            <summary><i class="bi bi-question-circle"></i>Why am I being asked?</summary>
+                            <div class="ap-meta mt-1" style="max-width:640px;">
+                                @if (p.IsAdminOverride)
+                                {
+                                    <span>
+                                        This step names <strong>@p.ApproverSummary</strong>. You're seeing it because a
+                                        workspace admin can sign any step — the escape hatch for an approver who has
+                                        left or is away. If you do, the history will say you stood in rather than that
+                                        they signed it.
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>
+                                        The rule <strong>@(p.RuleName ?? "that caught this quote")</strong> asks
+                                        <strong>@p.ApproverSummary</strong> to sign
+                                        @(stepLabel == null ? "it" : stepLabel.ToLowerInvariant()), and that's you.
+                                    </span>
+                                }
+                                Approval rules live under Workspace Settings → Quote approval rules.
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>

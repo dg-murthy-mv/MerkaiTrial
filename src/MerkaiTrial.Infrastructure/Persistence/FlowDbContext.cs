@@ -29,6 +29,7 @@
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Tenancy;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection.Emit;
 
 namespace MerkaiTrial.Infrastructure.Persistence;
 
@@ -98,6 +99,9 @@ public class FlowDbContext : DbContext
     public DbSet<PipelineRuleSettings> PipelineRuleSettings => Set<PipelineRuleSettings>();
     public DbSet<ProcessTransition> ProcessTransitions => Set<ProcessTransition>();
     public DbSet<TransitionAction> TransitionActions => Set<TransitionAction>();
+    public DbSet<ApprovalRule> ApprovalRules { get; set; } = null!;
+    public DbSet<ApprovalStep> ApprovalSteps { get; set; } = null!;
+    public DbSet<QuoteApprovalDecision> QuoteApprovalDecisions { get; set; } = null!;
 
 
     // Quote approvals (017)
@@ -171,6 +175,9 @@ public class FlowDbContext : DbContext
         b.Entity<QuoteApprovalSettings>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<QuoteApprovalRequest>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<ProcessTransition>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<ApprovalRule>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<ApprovalStep>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<QuoteApprovalDecision>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,

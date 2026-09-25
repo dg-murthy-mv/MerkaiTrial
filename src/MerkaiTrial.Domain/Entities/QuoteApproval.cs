@@ -2,23 +2,30 @@
 // QuoteApproval.cs
 // Location: MerkaiTrial.Domain/Entities/QuoteApproval.cs
 //
-// NEW FILE (017). Two tables:
+// COMPLETE FILE — replaces the 017 version.
 //
-//   QuoteApprovalSettings — one row per tenant: WHEN a quote needs
-//     approval. No row = the defaults below (on, discount over 10%).
+//   QuoteApprovalSettings — one row per tenant. After 027 this is just
+//     the master on/off switch plus the ORIGINAL limits, kept so the
+//     migration has something to read and so an existing workspace can
+//     see where its first rule came from. WHEN a quote needs approval is
+//     now decided by ApprovalRules (see ApprovalRule.cs); nothing in the
+//     engine reads MaxDiscountPercent or MaxQuoteTotal any more.
 //
 //   QuoteApprovalRequests — one row per "please approve" and its outcome.
-//     This is the approval history: who asked, why it was needed, who
-//     decided, what they said. Rows are never deleted or edited after the
-//     decision.
+//     After 027 a request walks a CHAIN: it records which rule it
+//     matched, how many steps that rule has, and which step it is
+//     waiting on. Each decision along the way gets its own
+//     QuoteApprovalDecision row.
 //
 // WHO APPROVES (worked out when needed, not stored)
-//   • Managers of the deal owner's team (Settings → Record visibility →
-//     "Manages"). If the deal has no owner, the requester's team.
-//   • Workspace admins — always, and the fallback when a team has no
-//     manager.
-//   • Never the person who asked.
-//   Admins are exempt from the rules: an admin can send any quote.
+//   The rule's step at CurrentStepOrder says who. Four kinds:
+//     • the deal owner's team managers  (what 017 always did)
+//     • everyone holding a named role   (the Senior Manager case)
+//     • one named person
+//     • any workspace admin
+//   A workspace admin can always decide, whatever the step says — that
+//   is the escape hatch that stops a quote getting stuck behind somebody
+//   on leave. When they do, the decision is marked as an override.
 // =====================================================================
 
 namespace MerkaiTrial.Domain.Entities;
@@ -28,17 +35,21 @@ public class QuoteApprovalSettings
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
 
-    /// <summary>Master switch. Off = no quote ever needs approval.</summary>
+    /// <summary>
+    /// Master switch. Off = no quote ever needs approval, whatever the
+    /// rules say. This is the one field on here the engine still reads.
+    /// </summary>
     public bool IsEnabled { get; set; } = true;
 
     /// <summary>
-    /// A quote needs approval when ANY line is priced more than this many
-    /// percent below its list price (catalog items) or has a line discount
-    /// above this percentage (custom items). Null = no discount rule.
+    /// LEGACY (017). Superseded by ApprovalRule.DiscountOverPercent. Kept
+    /// so 027's migration can carry a workspace's old limit into its first
+    /// rule, and so the settings page can show where that rule came from.
+    /// Nothing in the engine reads it.
     /// </summary>
     public decimal? MaxDiscountPercent { get; set; } = QuoteApprovalDefaults.MaxDiscountPercent;
 
-    /// <summary>A quote whose grand total is above this needs approval. Null = no limit.</summary>
+    /// <summary>LEGACY (017). Superseded by ApprovalRule.TotalOverAmount.</summary>
     public decimal? MaxQuoteTotal { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -73,22 +84,60 @@ public class QuoteApprovalRequest
     public decimal MaxLineDiscountPercent { get; set; }
     public string Currency { get; set; } = string.Empty;
 
+    // ── 027: the chain ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The rule this request is walking. Null for requests created before
+    /// 027, and for a rule deleted since — which is why the name is
+    /// snapshotted separately.
+    /// </summary>
+    public Guid? ApprovalRuleId { get; set; }
+
+    /// <summary>
+    /// The rule's name at the moment of submission. A snapshot on purpose:
+    /// renaming or deleting a rule must not rewrite history.
+    /// </summary>
+    public string? RuleName { get; set; }
+
+    /// <summary>Which step is waiting for a decision. 1-based.</summary>
+    public int CurrentStepOrder { get; set; } = 1;
+
+    /// <summary>
+    /// How many steps this chain had when it started. Snapshotted, so
+    /// adding a step to the rule tomorrow can't move the goalposts for a
+    /// request already in flight.
+    /// </summary>
+    public int TotalSteps { get; set; } = 1;
+
+    // ── the final decision (the last step's) ──────────────────────────
+
     public Guid? DecidedByUserId { get; set; }
     public string? DecidedByName { get; set; }
     public DateTime? DecidedAtUtc { get; set; }
     public string? DecisionComment { get; set; }
 
     public Quote? Quote { get; set; }
+
+    /// <summary>Every decision made along the chain, oldest first.</summary>
+    public ICollection<QuoteApprovalDecision> Decisions { get; set; } = new List<QuoteApprovalDecision>();
+
+    /// <summary>"Step 2 of 3" — or just "1 step" for a single-step chain.</summary>
+    public string StepLabel =>
+        TotalSteps <= 1 ? "1 step" : $"Step {CurrentStepOrder} of {TotalSteps}";
+
+    /// <summary>True when approving the current step finishes the chain.</summary>
+    public bool IsFinalStep => CurrentStepOrder >= TotalSteps;
 }
 
 public static class QuoteApprovalRequestStatus
 {
-    /// <summary>Waiting for a decision. At most one per quote (filtered unique index).</summary>
+    /// <summary>Waiting for a decision on CurrentStepOrder. At most one per quote (filtered unique index).</summary>
     public const string Pending = "Pending";
 
+    /// <summary>Every step approved.</summary>
     public const string Approved = "Approved";
 
-    /// <summary>Approver sent it back to Draft with a comment.</summary>
+    /// <summary>An approver at ANY step sent it back to Draft with a comment.</summary>
     public const string ChangesRequested = "ChangesRequested";
 
     /// <summary>The requester (or an admin) withdrew it before a decision.</summary>

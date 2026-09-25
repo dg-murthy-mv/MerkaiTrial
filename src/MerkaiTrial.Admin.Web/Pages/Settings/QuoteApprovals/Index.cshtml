@@ -1,170 +1,695 @@
 @page
+@using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.DTOs
+@using MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals
 @model MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel
-@* =====================================================================
-   QUOTE APPROVAL RULES (017)
-   Location: MerkaiTrial.Admin.Web/Pages/Settings/QuoteApprovals/Index.cshtml
-   ===================================================================== *@
 @{
     ViewData["Title"] = "Quote approval rules";
-    var s = Model.Settings;
-    var disabled = Model.CanEdit ? null : "disabled";
-}
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    var s = Model.Screen;
+    var editable = Model.CanUpdate;
+    var kinds = MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel.AllKinds;
+    var maxSteps = MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel.MaxSteps;
+    var sym = Model.CurrencySymbol;
+}
+@* =====================================================================
+   QUOTE APPROVAL RULES (027)
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/QuoteApprovals/Index.cshtml
+
+   COMPLETE FILE — replaces the 017 version, which was two hard-coded
+   checkboxes over a single settings row. There was no Add button because
+   there was nothing to add to.
+
+   Now: named rules you can add, order and switch off; each one with an
+   ordered chain of steps; each step naming who signs it — the deal
+   owner's team managers, everyone with a ROLE (the "Senior Manager
+   approves it" case), one named person, or any workspace admin.
+
+   FIRST MATCH WINS, top to bottom. The list IS the explanation, which is
+   why order is editable with buttons rather than hidden in a number
+   field, and why the "try it" box at the top exists: type a discount and
+   a total and the rule that would catch it lights up.
+
+   Every expander is a native <details> — no Bootstrap JavaScript needed,
+   and every form submits with scripting off. The script only adds/removes
+   step rows, shows or hides the role and person pickers, and runs the
+   "try it" box.
+
+   TempData alerts are rendered once by _Layout — this page must not add
+   its own global alert block.
+   ===================================================================== *@
 
 <style>
-    .qa-settings { max-width: 980px; }
-    .qa-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 1.5rem; margin-bottom: 1.25rem; }
-    .qa-rule { border: 1px solid #e9ecef; border-radius: 10px; padding: 1rem 1.25rem; margin-top: 1rem; }
-    .qa-rule.is-off { opacity: .55; }
-    .qa-help { color: #6c757d; font-size: .875rem; }
-    .qa-flow { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .875rem; }
-    .qa-flow .step { background: #f1f3f5; border-radius: 20px; padding: .25rem .75rem; font-weight: 600; }
-    .qa-flow .step.warn { background: #fff3cd; color: #664d03; }
-    .qa-flow .step.ok { background: #d1e7dd; color: #0f5132; }
-    .qa-flow i { color: #adb5bd; }
-    .qa-example { background: #f8f9fa; border-radius: 8px; padding: .75rem 1rem; font-size: .875rem; }
+    .qa-wrap { max-width: 1120px; }
+
+    .qa-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgba(16,24,40,.06); margin-bottom: 1.25rem; }
+    .qa-card > .qa-head { padding: .9rem 1.15rem; border-bottom: 1px solid #f1f3f5; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .qa-card > .qa-head h2 { font-size: 1rem; font-weight: 650; margin: 0; }
+    .qa-body { padding: 1.15rem; }
+    .qa-body-tight { padding: .6rem 1.15rem 1.15rem; }
+    .qa-meta { font-size: .78rem; color: #8b949e; }
+
+    /* ── a rule ─────────────────────────────────────────────────── */
+    .qa-rule { border: 1px solid #e9ecef; border-radius: 10px; margin: 0 1.15rem 1rem; background: #fff; }
+    .qa-rule.is-off { background: #fbfcfd; }
+    .qa-rule.is-off .qa-rulename { color: #8b949e; }
+    .qa-rule.is-hit { border-color: #b7c0ff; box-shadow: 0 0 0 3px rgba(59,79,212,.12); }
+    .qa-rulehead { padding: .85rem 1rem; display: flex; align-items: flex-start; gap: .85rem; flex-wrap: wrap; }
+    .qa-rulename { font-weight: 650; font-size: .96rem; }
+    .qa-order { width: 30px; height: 30px; border-radius: 8px; background: #eef2ff; color: #3b4fd4; font-size: .74rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .qa-rule.is-off .qa-order { background: #f1f3f5; color: #adb5bd; }
+    .qa-cond { font-size: .84rem; color: #495057; }
+    .qa-hitflag { display: none; font-size: .72rem; font-weight: 650; color: #3b4fd4; }
+    .qa-rule.is-hit .qa-hitflag { display: inline; }
+
+    /* ── the chain ──────────────────────────────────────────────── */
+    .qa-chain { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .6rem; }
+    .qa-link { display: inline-flex; align-items: center; gap: .35rem; background: #f1f3f5; border-radius: 20px; padding: .22rem .7rem; font-size: .78rem; font-weight: 600; color: #37414d; }
+    .qa-link.start { background: #fff4e5; color: #8a5300; }
+    .qa-link.done { background: #e7f6ec; color: #17603a; }
+    .qa-link.bad { background: #fdeaea; color: #922; }
+    .qa-chain .sep { color: #ced4da; font-size: .8rem; }
+    .qa-stepno { width: 17px; height: 17px; border-radius: 50%; background: #fff; color: #6c757d; font-size: .62rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+    /* ── the editor ─────────────────────────────────────────────── */
+    .qa-editor { border-top: 1px solid #f1f3f5; padding: 1rem; background: #fbfcfd; border-radius: 0 0 10px 10px; }
+    .qa-steprow { border: 1px solid #e9ecef; border-radius: 8px; padding: .6rem .7rem; margin-bottom: .5rem; background: #fff; }
+    .qa-steprow.is-blank { border-style: dashed; background: #fcfdfe; }
+    .qa-stephandle { font-size: .72rem; font-weight: 700; color: #adb5bd; letter-spacing: .04em; text-transform: uppercase; }
+
+    .qa-disc > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 600; color: #3b4fd4; }
+    .qa-disc > summary::-webkit-details-marker { display: none; }
+    .qa-disc > summary:hover { text-decoration: underline; }
+
+    .qa-try { background: #f8f9fb; border: 1px solid #eceff2; border-radius: 10px; padding: .75rem 1rem; }
+
+    .qa-hidden { display: none !important; }
+
+    @@media (max-width: 767.98px) {
+        .qa-rule { margin-left: .6rem; margin-right: .6rem; }
+    }
 </style>
 
-<div class="container-fluid py-4 qa-settings">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+<div class="qa-wrap">
+
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
         <div>
-            <h2 class="mb-1"><i class="bi bi-patch-check me-2"></i>Quote approval rules</h2>
-            <p class="text-muted mb-0">When does a quote need a manager's sign-off before it goes to the customer?</p>
+            <h1 class="lf-page-title mb-1">Quote approval rules</h1>
+            <p class="text-muted mb-0" style="font-size:13.5px;">
+                When does a quote need sign-off before it goes to the customer — and who signs it,
+                in what order?
+            </p>
         </div>
         <a asp-page="/Quotes/Approvals" class="btn btn-outline-primary">
-            <i class="bi bi-inbox me-1"></i>Waiting for my approval
+            <i class="bi bi-inbox me-1"></i>Waiting for me
         </a>
     </div>
 
-    @if (!Model.CanEdit)
+    @if (!editable)
     {
-        <div class="alert alert-info">
-            <i class="bi bi-lock me-1"></i>Only a workspace admin can change these rules. You can see them so you know the limits.
+        <div class="alert alert-info py-2">
+            <i class="bi bi-lock me-1"></i>
+            You can see these rules but not change them — useful for knowing the limits you're working to.
+            A workspace admin, or anyone with <strong>Sales Configuration</strong> permission, can edit them.
         </div>
     }
 
-    @if (s == null)
+    @if (Model.LoadError != null)
     {
-        <div class="alert alert-danger">The approval rules couldn't be loaded. Please refresh the page.</div>
+        <div class="qa-card">
+            <div class="qa-body">
+                <div class="alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>@Model.LoadError
+                </div>
+            </div>
+        </div>
     }
-    else
+    else if (s != null)
     {
-        <form method="post">
-            <div class="qa-card">
-                <div class="form-check form-switch fs-5">
-                    <input class="form-check-input" type="checkbox" role="switch" id="IsEnabled"
-                           asp-for="IsEnabled" disabled="@disabled" onchange="qaToggle()" />
-                    <label class="form-check-label fw-semibold" for="IsEnabled">Require approval for quotes over the limits</label>
-                </div>
-                <div class="qa-help mt-1">
-                    Off = every quote can be sent straight away.
-                    @if (s.IsDefault)
+        @* ============================================================
+           MASTER SWITCH
+           ============================================================ *@
+        <div class="qa-card">
+            <div class="qa-head">
+                <i class="bi bi-toggle2-on"></i>
+                <h2>Approvals are @(s.IsEnabled ? "on" : "off")</h2>
+                @if (s.UpdatedAtUtc.HasValue)
+                {
+                    <span class="qa-meta ms-auto">
+                        Last changed by @s.UpdatedBy on @Model.FormatDateTime(s.UpdatedAtUtc.Value)
+                    </span>
+                }
+            </div>
+            <div class="qa-body d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                <div class="small text-muted mb-0" style="max-width:640px;">
+                    @if (s.IsEnabled)
                     {
-                        <span class="badge bg-light text-dark border ms-1">Using the defaults — not saved yet</span>
+                        <span>
+                            A quote is checked against the rules below, top to bottom. The
+                            <strong>first</strong> rule it matches decides who signs it. A quote that
+                            matches nothing can be sent straight away.
+                        </span>
                     }
-                    else if (s.UpdatedAtUtc.HasValue)
+                    else
                     {
-                        <span class="ms-1">Last changed by @s.UpdatedBy on @Model.FormatDateTime(s.UpdatedAtUtc.Value).</span>
+                        <span>
+                            Every quote can be sent straight away. The rules below are kept but ignored —
+                            switch this back on and they apply again immediately.
+                        </span>
                     }
                 </div>
+                @if (editable)
+                {
+                    <form method="post" asp-page-handler="ToggleEnabled">
+                        <input type="hidden" name="enabled" value="@(s.IsEnabled ? "false" : "true")" />
+                        <button class="btn btn-sm @(s.IsEnabled ? "btn-outline-secondary" : "btn-primary")">
+                            @(s.IsEnabled ? "Switch approvals off" : "Switch approvals on")
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
 
-                <div id="qaRules">
-                    @* Discount rule *@
-                    <div class="qa-rule" id="ruleDiscount">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="UseDiscountRule"
-                                   asp-for="UseDiscountRule" disabled="@disabled" onchange="qaToggle()" />
-                            <label class="form-check-label fw-semibold" for="UseDiscountRule">Discount limit</label>
-                        </div>
-                        <div class="row g-2 align-items-center mt-1">
-                            <div class="col-auto">A quote needs approval when any line is more than</div>
-                            <div class="col-auto" style="width:120px">
-                                <div class="input-group">
-                                    <input type="number" class="form-control" asp-for="MaxDiscountPercent"
-                                           min="0" max="100" step="0.5" disabled="@disabled" />
+        @* ============================================================
+           RULES
+           ============================================================ *@
+        <div class="qa-card" id="rules" data-approvals-on="@(s.IsEnabled ? "1" : "0")">
+            <div class="qa-head">
+                <i class="bi bi-diagram-3"></i>
+                <h2>Rules</h2>
+                <span class="badge bg-light text-dark border">@s.Rules.Count</span>
+                @if (s.Rules.Count > 1)
+                {
+                    <span class="qa-meta">tried top to bottom — first match wins</span>
+                }
+            </div>
+
+            @if (s.HasNoRules)
+            {
+                <div class="qa-body">
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>No rules yet, so every quote can be sent without approval.</strong>
+                        Add one below — a discount limit is the usual place to start.
+                    </div>
+                </div>
+            }
+            else
+            {
+                @* ── try it ── *@
+                <div class="qa-body-tight pt-3">
+                    <div class="qa-try">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-auto">
+                                <label class="form-label small mb-1 fw-semibold" for="qaTryDisc">Try it — deepest line discount</label>
+                                <div class="input-group input-group-sm" style="width:130px;">
+                                    <input type="number" class="form-control" id="qaTryDisc" min="0" max="100" step="0.5" placeholder="15" />
                                     <span class="input-group-text">%</span>
                                 </div>
                             </div>
-                            <div class="col-auto">below its list price.</div>
-                        </div>
-                        <div class="qa-help mt-2">
-                            Catalog items are measured against the product's list price — lowering the unit price counts
-                            the same as a discount. Custom items use their line discount.
-                        </div>
-                    </div>
-
-                    @* Total rule *@
-                    <div class="qa-rule" id="ruleTotal">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="UseTotalRule"
-                                   asp-for="UseTotalRule" disabled="@disabled" onchange="qaToggle()" />
-                            <label class="form-check-label fw-semibold" for="UseTotalRule">Large quote limit</label>
-                        </div>
-                        <div class="row g-2 align-items-center mt-1">
-                            <div class="col-auto">A quote needs approval when its total (incl. tax) is above</div>
-                            <div class="col-auto" style="width:220px">
-                                <div class="input-group">
-                                    <span class="input-group-text">@Model.TenantCurrencySymbol</span>
-                                    <input type="number" class="form-control" asp-for="MaxQuoteTotal"
-                                           min="1" step="1" disabled="@disabled" placeholder="e.g. 500000" />
+                            <div class="col-auto">
+                                <label class="form-label small mb-1 fw-semibold" for="qaTryTotal">and quote total</label>
+                                <div class="input-group input-group-sm" style="width:190px;">
+                                    <span class="input-group-text">@sym</span>
+                                    <input type="number" class="form-control" id="qaTryTotal" min="0" step="1000" placeholder="800000" />
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="small" id="qaTryResult">
+                                    <span class="text-muted">Type a discount or a total to see which rule would catch it.</span>
                                 </div>
                             </div>
                         </div>
-                        <div class="qa-help mt-2">Leave unticked for no limit on size.</div>
                     </div>
                 </div>
+            }
 
-                @if (Model.CanEdit)
-                {
-                    <div class="d-flex justify-content-end mt-4">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save me-1"></i>Save rules
-                        </button>
+            @* ── add a rule ── *@
+            @if (editable && s.Rules.Count < MerkaiTrial.Application.Commands.Quotes.GetApprovalRulesHandler.MaxRules)
+            {
+                <div class="qa-body-tight pt-3">
+                    <details class="qa-disc" id="addRule" open="@(Model.AddNew || s.HasNoRules)">
+                        <summary><i class="bi bi-plus-circle"></i>Add a rule</summary>
+                        <div class="mt-2">
+                            @await Html.PartialAsync("_RuleEditor", new RuleEditorVm(null, s, sym, kinds, maxSteps))
+                        </div>
+                    </details>
+                </div>
+            }
+
+            @* ── the rules ── *@
+            @{ var idx = 0; }
+            @foreach (var r in s.Rules)
+            {
+                var position = idx++;
+                var isFirst = position == 0;
+                var isLast = position == s.Rules.Count - 1;
+
+                <div class="qa-rule @(r.IsActive ? "" : "is-off")"
+                     data-rule="@r.Id"
+                     data-active="@(r.IsActive ? "1" : "0")"
+                     data-discount="@(r.DiscountOverPercent?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                     data-total="@(r.TotalOverAmount?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                     data-mode="@((int)r.ConditionMode)"
+                     data-name="@r.Name">
+
+                    <div class="qa-rulehead">
+                        <span class="qa-order" title="Tried @MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel.Ordinal(position)">
+                            @(position + 1)
+                        </span>
+
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="qa-rulename">@r.Name</span>
+                                @if (!r.IsActive)
+                                {
+                                    <span class="badge bg-light text-dark border">Switched off</span>
+                                }
+                                @if (isFirst && r.IsActive)
+                                {
+                                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">Tried first</span>
+                                }
+                                <span class="qa-hitflag"><i class="bi bi-arrow-left-circle-fill me-1"></i>this one would catch it</span>
+                            </div>
+
+                            <div class="qa-cond mt-1">
+                                Applies when <strong>@r.ConditionSummary</strong>.
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(r.Description))
+                            {
+                                <div class="qa-meta mt-1">@r.Description</div>
+                            }
+
+                            @* ── the chain, drawn ── *@
+                            <div class="qa-chain">
+                                <span class="qa-link start"><i class="bi bi-shield-exclamation"></i>Needs approval</span>
+                                @if (r.Steps.Count == 0)
+                                {
+                                    <span class="sep">→</span>
+                                    <span class="qa-link bad"><i class="bi bi-exclamation-triangle"></i>no steps</span>
+                                }
+                                else
+                                {
+                                    @foreach (var st in r.Steps)
+                                    {
+                                        <span class="sep">→</span>
+                                        <span class="qa-link @(st.ApproverCount == 0 ? "bad" : "")"
+                                              title="@(st.Problem ?? st.ApproverSummary)">
+                                            <span class="qa-stepno">@st.StepOrder</span>
+                                            <i class="bi @MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel.KindIcon(st.ApproverKind)"></i>
+                                            @st.ApproverSummary
+                                            @if (st.AllowSelfApproval)
+                                            {
+                                                <i class="bi bi-arrow-repeat" title="Self-approval allowed on this step"></i>
+                                            }
+                                        </span>
+                                    }
+                                    <span class="sep">→</span>
+                                    <span class="qa-link done"><i class="bi bi-patch-check"></i>Ready to send</span>
+                                }
+                            </div>
+
+                            @if (r.Warning != null)
+                            {
+                                <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>@r.Warning
+                                </div>
+                            }
+                        </div>
+
+                        @if (editable)
+                        {
+                            <div class="d-flex flex-column align-items-end gap-2">
+                                @if (s.Rules.Count > 1)
+                                {
+                                    <div class="btn-group btn-group-sm" role="group" aria-label="Order">
+                                        <form method="post" asp-page-handler="Move">
+                                            <input type="hidden" name="ruleId" value="@r.Id" />
+                                            <input type="hidden" name="direction" value="up" />
+                                            <button class="btn btn-outline-secondary" title="Try this rule earlier"
+                                                    disabled="@isFirst">
+                                                <i class="bi bi-arrow-up"></i>
+                                            </button>
+                                        </form>
+                                        <form method="post" asp-page-handler="Move">
+                                            <input type="hidden" name="ruleId" value="@r.Id" />
+                                            <input type="hidden" name="direction" value="down" />
+                                            <button class="btn btn-outline-secondary" title="Try this rule later"
+                                                    disabled="@isLast">
+                                                <i class="bi bi-arrow-down"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                }
+
+                                <div class="d-flex gap-3">
+                                    <details class="qa-disc">
+                                        <summary class="text-danger"><i class="bi bi-trash"></i>Remove</summary>
+                                        <div class="mt-2 p-2 border rounded bg-white" style="min-width:300px;">
+                                            <div class="small mb-2">
+                                                Remove <strong>@r.Name</strong>? New quotes will be measured against
+                                                the rules that are left.
+                                                @if (r.InFlightCount > 0)
+                                                {
+                                                    <strong class="d-block mt-1 text-danger">
+                                                        @r.InFlightCount quote@(r.InFlightCount == 1 ? " is" : "s are")
+                                                        part-way through this chain right now.
+                                                    </strong>
+                                                    <span>
+                                                        @(r.InFlightCount == 1 ? "It keeps" : "They keep") the same number of
+                                                        steps, but the steps still to come fall back to
+                                                        <em>the deal owner's team managers</em> instead of whoever this rule
+                                                        named. Nothing gets stuck — but the sign-off is weaker than the rep
+                                                        was told. Let @(r.InFlightCount == 1 ? "it" : "them") finish first if
+                                                        that matters.
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span>No quote is part-way through this chain, so nothing in flight is affected.</span>
+                                                }
+                                            </div>
+                                            <form method="post" asp-page-handler="DeleteRule">
+                                                <input type="hidden" name="ruleId" value="@r.Id" />
+                                                <button class="btn btn-sm btn-danger">
+                                                    <i class="bi bi-trash me-1"></i>Yes, remove it
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+                        }
                     </div>
-                }
-            </div>
-        </form>
 
-        <div class="qa-card">
-            <h5 class="mb-3">How it works</h5>
-            <div class="qa-flow mb-3">
-                <span class="step">Draft</span><i class="bi bi-arrow-right"></i>
-                <span class="step warn">Pending approval</span><i class="bi bi-arrow-right"></i>
-                <span class="step ok">Approved</span><i class="bi bi-arrow-right"></i>
-                <span class="step">Sent</span><i class="bi bi-arrow-right"></i>
-                <span class="step">Accepted / Rejected</span>
-            </div>
-            <ul class="mb-3">
-                <li>A quote <strong>within</strong> the limits skips approval and can be sent straight away.</li>
-                <li><strong>Who approves:</strong> the managers of the deal owner's team (set under
-                    <a asp-page="/Settings/Visibility/Index">Record visibility → Manages</a>), and any workspace admin.
-                    Nobody approves their own quote.</li>
-                <li>The approver can <strong>approve</strong> or <strong>request changes</strong> (with a comment). Changes send it back to draft.</li>
-                <li><strong>Editing an approved quote</strong> sends it back to draft — what was approved is no longer what would be sent.</li>
-                <li><strong>Workspace admins</strong> aren't held by these limits.</li>
-            </ul>
-            <div class="qa-example">
-                <strong>Example (limit 10%):</strong> list price @Model.TenantCurrencySymbol 50,000, quoted at
-                @Model.TenantCurrencySymbol 44,000 → 12% below list → needs approval.
-                Quoted at @Model.TenantCurrencySymbol 46,000 with a @Model.TenantCurrencySymbol 1,000 line discount → 10% → fine.
-            </div>
+                    @if (editable)
+                    {
+                        @* Full width, below the summary, so the editor has room.
+                           Opened by clicking it — or automatically after a
+                           refused save, so nothing typed is lost. *@
+                        <details class="qa-disc px-3 pb-3" open="@Model.IsEditing(r.Id)">
+                            <summary><i class="bi bi-pencil"></i>Edit this rule</summary>
+                            @if (r.InFlightCount > 0)
+                            {
+                                <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                                    <i class="bi bi-exclamation-triangle me-1"></i>
+                                    <strong>@r.InFlightCount quote@(r.InFlightCount == 1 ? " is" : "s are") part-way
+                                    through this chain.</strong>
+                                    Changing the steps changes who @(r.InFlightCount == 1 ? "it goes" : "they go") to
+                                    from @(r.InFlightCount == 1 ? "its" : "their") next step onward. The number of
+                                    steps @(r.InFlightCount == 1 ? "it has" : "they have") to pass was fixed when the
+                                    rep submitted and does not change.
+                                </div>
+                            }
+                            <div class="qa-editor mt-2">
+                                @await Html.PartialAsync("_RuleEditor", new RuleEditorVm(r, s, sym, kinds, maxSteps))
+                            </div>
+                        </details>
+                    }
+                </div>
+            }
         </div>
+
+        @* ============================================================
+           HOW IT WORKS
+           ============================================================ *@
+        <details class="qa-card qa-disc">
+            <summary class="qa-head">
+                <i class="bi bi-question-circle"></i>
+                <h2>How approval works</h2>
+            </summary>
+            <div class="qa-body pt-0">
+                <div class="qa-chain mb-3">
+                    <span class="qa-link">Draft</span><span class="sep">→</span>
+                    <span class="qa-link start">Pending approval</span><span class="sep">→</span>
+                    <span class="qa-link done">Approved</span><span class="sep">→</span>
+                    <span class="qa-link">Sent</span><span class="sep">→</span>
+                    <span class="qa-link">Accepted / Rejected</span>
+                </div>
+                <ul class="small text-muted mb-0 ps-3">
+                    <li>A quote is checked against the rules <strong>top to bottom</strong>. The first one it matches
+                        is the one that applies — a quote is never governed by two rules at once.</li>
+                    <li>A quote that matches nothing skips approval and can be sent straight away.</li>
+                    <li><strong>Steps run in order.</strong> Step 2 is only asked once step 1 approves. Any step can
+                        send the quote back to the rep with a comment, which returns it to draft.</li>
+                    <li><strong>A workspace admin can sign any step</strong>, whoever it names. That is the escape
+                        hatch for an approver who has left or is on leave, and the history records it as signed by
+                        the admin rather than by the person named.</li>
+                    <li>Nobody signs their own request unless that step allows it — which a one-person workspace
+                        needs, or its quotes could never be sent.</li>
+                    <li><strong>Editing an approved quote</strong> sends it back to draft: what was approved is no
+                        longer what would be sent.</li>
+                    <li>Workspace admins aren't held by the rules at all — they can send any quote.</li>
+                    <li>Catalog lines are measured against the product's <strong>list price</strong>, so typing a
+                        lower unit price counts the same as a discount. Custom lines use their line discount.</li>
+                </ul>
+                <div class="qa-try mt-3 small">
+                    <strong>Worked example.</strong> Two rules: <em>Discount over 10%</em> (step 1: team managers)
+                    then <em>Deals over @sym 500,000</em> (step 1: team managers, step 2: Senior Manager).
+                    A @sym 800,000 quote discounted 12% matches the FIRST rule and needs one signature.
+                    Put the large-quote rule first and the same quote needs two. Order is the whole difference —
+                    which is why it's editable here.
+                </div>
+            </div>
+        </details>
     }
 </div>
 
 <script>
-    function qaToggle() {
-        var on = document.getElementById('IsEnabled');
-        var rules = document.getElementById('qaRules');
-        if (!on || !rules) return;
-        rules.style.opacity = on.checked ? '1' : '.45';
+    (function () {
+        'use strict';
 
-        [['UseDiscountRule', 'ruleDiscount'], ['UseTotalRule', 'ruleTotal']].forEach(function (pair) {
-            var box = document.getElementById(pair[0]);
-            var card = document.getElementById(pair[1]);
-            if (box && card) card.classList.toggle('is-off', !box.checked);
+        // ── 1. the step editor: show the picker the chosen kind needs ──
+        function syncRow(row) {
+            var kind = row.querySelector('.qa-kind');
+            if (!kind) return;
+
+            var v = kind.value;
+            var rolePick = row.querySelector('.qa-pick-role');
+            var userPick = row.querySelector('.qa-pick-user');
+
+            if (rolePick) rolePick.classList.toggle('qa-hidden', v !== 'Role');
+            if (userPick) userPick.classList.toggle('qa-hidden', v !== 'User');
+
+            row.classList.toggle('is-blank', v === '');
+
+            var extras = row.querySelector('.qa-stepextras');
+            if (extras) extras.classList.toggle('qa-hidden', v === '');
+        }
+
+        function syncAll(scope) {
+            var rows = (scope || document).querySelectorAll('.qa-steprow');
+            for (var i = 0; i < rows.length; i++) syncRow(rows[i]);
+        }
+
+        document.addEventListener('change', function (e) {
+            if (e.target && e.target.classList && e.target.classList.contains('qa-kind')) {
+                var row = e.target.closest('.qa-steprow');
+                if (row) syncRow(row);
+            }
         });
-    }
-    document.addEventListener('DOMContentLoaded', qaToggle);
+
+        syncAll(document);
+
+        // ── 2. "try it" — which rule would catch this quote ────────────
+        var disc = document.getElementById('qaTryDisc');
+        var total = document.getElementById('qaTryTotal');
+        var out = document.getElementById('qaTryResult');
+
+        function tryIt() {
+            if (!out) return;
+
+            var rules = document.querySelectorAll('.qa-rule');
+            for (var i = 0; i < rules.length; i++) rules[i].classList.remove('is-hit');
+
+            var d = disc && disc.value !== '' ? parseFloat(disc.value) : null;
+            var t = total && total.value !== '' ? parseFloat(total.value) : null;
+
+            if ((d === null || isNaN(d)) && (t === null || isNaN(t))) {
+                out.innerHTML = '<span class="text-muted">Type a discount or a total to see which rule would catch it.</span>';
+                return;
+            }
+
+            // The master switch wins over every rule, exactly as it does on
+            // the server — naming a rule here while the server would say
+            // "no approval needed" is worse than saying nothing.
+            var card = document.getElementById('rules');
+            if (card && card.getAttribute('data-approvals-on') === '0') {
+                out.innerHTML = '<span class="text-muted">Approvals are switched off, so nothing needs sign-off — whatever the rules say.</span>';
+                return;
+            }
+
+            var dv = (d === null || isNaN(d)) ? 0 : d;
+            var tv = (t === null || isNaN(t)) ? 0 : t;
+
+            // Same order, same first-match-wins rule as the server.
+            for (var j = 0; j < rules.length; j++) {
+                var r = rules[j];
+                if (r.getAttribute('data-active') !== '1') continue;
+
+                var rd = r.getAttribute('data-discount');
+                var rt = r.getAttribute('data-total');
+                var hasD = rd !== '' && rd !== null;
+                var hasT = rt !== '' && rt !== null;
+                var all = r.getAttribute('data-mode') === '1';
+
+                var hit;
+                if (!hasD && !hasT) {
+                    hit = true;                                  // catch-all
+                } else {
+                    var dHit = hasD && dv > parseFloat(rd);
+                    var tHit = hasT && tv > parseFloat(rt);
+                    hit = all
+                        ? (!hasD || dHit) && (!hasT || tHit)
+                        : dHit || tHit;
+                }
+
+                if (hit) {
+                    r.classList.add('is-hit');
+                    var name = r.getAttribute('data-name') || 'a rule';
+                    var links = r.querySelectorAll('.qa-chain .qa-link');
+                    var chain = [];
+                    for (var k = 0; k < links.length; k++) {
+                        if (links[k].classList.contains('start') || links[k].classList.contains('done')) continue;
+                        chain.push(links[k].textContent.replace(/\s+/g, ' ').trim());
+                    }
+                    out.innerHTML = '<strong>' + escapeHtml(name) + '</strong> would catch it'
+                        + (chain.length ? ' — ' + escapeHtml(chain.join(' then ')) : '')
+                        + '.';
+                    return;
+                }
+            }
+
+            out.innerHTML = '<span class="text-success">No rule catches that — it could be sent straight away.</span>';
+        }
+
+        function escapeHtml(x) {
+            return String(x).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        if (disc) disc.addEventListener('input', tryIt);
+        if (total) total.addEventListener('input', tryIt);
+
+        // ── 3. add / remove a step row, renumbering as we go ───────────
+        function renumber(form) {
+            var rows = form.querySelectorAll('.qa-steprow');
+            var shown = 0;
+
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                if (row.classList.contains('qa-removed')) continue;
+
+                var n = shown++;
+                row.querySelector('.qa-stephandle').textContent = 'Step ' + (n + 1);
+
+                var fields = row.querySelectorAll('[data-field]');
+                for (var j = 0; j < fields.length; j++) {
+                    var f = fields[j];
+                    f.name = 'Steps[' + n + '].' + f.getAttribute('data-field');
+
+                    // A clone keeps the original's id, and a <label for> then
+                    // points at the wrong row's checkbox. Renumber both.
+                    if (f.id) {
+                        var fresh = f.id.replace(/-\d+$/, '-' + n);
+                        if (fresh !== f.id) {
+                            var label = row.querySelector('label[for="' + f.id + '"]');
+                            f.id = fresh;
+                            if (label) label.setAttribute('for', fresh);
+                        }
+                    }
+                }
+            }
+        }
+
+        document.addEventListener('click', function (e) {
+            var t = e.target;
+            if (!t || !t.closest) return;
+
+            var add = t.closest('.qa-addstep');
+            var del = t.closest('.qa-delstep');
+            if (!add && !del) return;
+
+            e.preventDefault();
+
+            var form = t.closest('form');
+            if (!form) return;
+
+            if (del) {
+                var row = t.closest('.qa-steprow');
+                if (!row) return;
+
+                var live = form.querySelectorAll('.qa-steprow:not(.qa-removed)');
+                if (live.length <= 1) {
+                    // Never leave a rule with no step: the server would
+                    // refuse the save, and an empty chain is a quote that
+                    // can never be approved.
+                    var kind = row.querySelector('.qa-kind');
+                    if (kind) { kind.value = ''; syncRow(row); }
+                    return;
+                }
+
+                row.classList.add('qa-removed', 'qa-hidden');
+                // Its inputs must stop posting, or they'd leave a gap in the
+                // index sequence.
+                var inputs = row.querySelectorAll('[data-field]');
+                for (var i = 0; i < inputs.length; i++) inputs[i].disabled = true;
+
+                renumber(form);
+                return;
+            }
+
+            // Add: reuse the first blank row if there is one, else clone.
+            var blanks = form.querySelectorAll('.qa-steprow:not(.qa-removed) .qa-kind');
+            for (var b = 0; b < blanks.length; b++) {
+                if (blanks[b].value === '') {
+                    blanks[b].value = 'TeamManagers';
+                    syncRow(blanks[b].closest('.qa-steprow'));
+                    blanks[b].focus();
+                    return;
+                }
+            }
+
+            var rows = form.querySelectorAll('.qa-steprow:not(.qa-removed)');
+            var max = parseInt(form.getAttribute('data-max-steps'), 10) || 10;
+            if (rows.length >= max) return;
+
+            var clone = rows[rows.length - 1].cloneNode(true);
+            var cf = clone.querySelectorAll('[data-field]');
+            for (var c = 0; c < cf.length; c++) {
+                cf[c].disabled = false;
+                if (cf[c].type === 'checkbox') cf[c].checked = false;
+                else if (cf[c].tagName === 'SELECT') cf[c].selectedIndex = 0;
+                else cf[c].value = '';
+            }
+            clone.classList.remove('qa-removed', 'qa-hidden');
+
+            rows[rows.length - 1].parentNode.appendChild(clone);
+            renumber(form);
+            syncRow(clone);
+
+            var k = clone.querySelector('.qa-kind');
+            if (k) { k.value = 'TeamManagers'; syncRow(clone); k.focus(); }
+        });
+
+        // ── 4. an in-page link to a collapsed panel should open it ─────
+        document.addEventListener('click', function (e) {
+            var link = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+            if (!link) return;
+
+            var id = link.getAttribute('href').slice(1);
+            if (!id) return;
+
+            var target = document.getElementById(id);
+            if (!target) return;
+
+            var node = target;
+            while (node) {
+                if (node.tagName === 'DETAILS') node.open = true;
+                node = node.parentElement;
+            }
+        });
+    })();
 </script>

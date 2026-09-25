@@ -1,0 +1,856 @@
+2026-09-25 12:18:46.055 +05:30 [WRN] The entity type 'Journey' was first mapped explicitly and then ignored. Consider not mapping the entity type in the first place.
+2026-09-25 12:18:46.554 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'ChannelMessage'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-25 12:18:46.558 +05:30 [WRN] Entity 'Contact' has a global query filter defined and is the required end of a relationship with the entity 'Consent'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-25 12:18:46.561 +05:30 [WRN] Entity 'Role' has a global query filter defined and is the required end of a relationship with the entity 'UserRole'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+2026-09-25 12:18:46.819 +05:30 [WRN] No store type was specified for the decimal property 'DefaultTaxRate' on entity type 'Country'. This will cause values to be silently truncated if they do not fit in the default precision and scale. Explicitly specify the SQL server column type that can accommodate all the values in 'OnModelCreating' using 'HasColumnType', specify precision and scale using 'HasPrecision', or configure a value converter using 'HasConversion'.
+2026-09-25 12:18:48.670 +05:30 [INF] Executed DbCommand (49ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT 1
+2026-09-25 12:18:48.882 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:18:49.096 +05:30 [INF] Executed DbCommand (110ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id]
+FROM [dbo].[Tenants] AS [t]
+2026-09-25 12:18:49.129 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:18:49.150 +05:30 [INF] Executed DbCommand (14ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[Id]
+FROM [Users] AS [u]
+2026-09-25 12:18:49.152 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:18:49.164 +05:30 [INF] Executed DbCommand (7ms) [Parameters=[], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [u].[UserId]
+FROM [UserRoles] AS [u]
+2026-09-25 12:18:49.361 +05:30 [INF] Executed DbCommand (136ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [r].[Id]
+FROM [Roles] AS [r]
+WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+2026-09-25 12:18:49.373 +05:30 [INF] DatabaseWarmup [WebApi]: EF model built and connection pool primed in 5087ms. First user request will not pay this cost.
+2026-09-25 12:18:50.130 +05:30 [INF] MerkaiTrial.WebApi started
+2026-09-25 12:18:50.174 +05:30 [INF] User profile is available. Using 'C:\Users\dgmur\AppData\Local\ASP.NET\DataProtection-Keys' as key repository and Windows DPAPI to encrypt keys at rest.
+2026-09-25 12:18:50.694 +05:30 [INF] Now listening on: https://localhost:61091
+2026-09-25 12:18:50.694 +05:30 [INF] Now listening on: http://localhost:61090
+2026-09-25 12:18:50.928 +05:30 [INF] Application started. Press Ctrl+C to shut down.
+2026-09-25 12:18:50.928 +05:30 [INF] Hosting environment: Development
+2026-09-25 12:18:50.928 +05:30 [INF] Content root path: C:\Users\dgmur\source\repos\MerkaiTrial\src\MerkaiTrial.WebApi
+2026-09-25 12:18:54.189 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61091/swagger/index.html - null null
+2026-09-25 12:18:55.000 +05:30 [INF] HTTP GET /swagger/index.html responded 200 in 161.2403 ms
+2026-09-25 12:18:55.011 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61091/swagger/index.html - 200 null text/html;charset=utf-8 880.6532ms
+2026-09-25 12:18:55.077 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61091/_vs/browserLink - null null
+2026-09-25 12:18:55.077 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61091/_framework/aspnetcore-browser-refresh.js - null null
+2026-09-25 12:18:55.099 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61091/_framework/aspnetcore-browser-refresh.js - 200 16521 application/javascript; charset=utf-8 26.2893ms
+2026-09-25 12:18:55.228 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61091/_vs/browserLink - 200 null text/javascript; charset=UTF-8 151.7946ms
+2026-09-25 12:18:55.296 +05:30 [INF] Request starting HTTP/2 GET https://localhost:61091/swagger/v1/swagger.json - null null
+2026-09-25 12:18:55.957 +05:30 [INF] HTTP GET /swagger/v1/swagger.json responded 200 in 658.7064 ms
+2026-09-25 12:18:55.957 +05:30 [INF] Request finished HTTP/2 GET https://localhost:61091/swagger/v1/swagger.json - 200 null application/json;charset=utf-8 661.7168ms
+2026-09-25 12:19:45.376 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:19:45.376 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/leads/stats - null null
+2026-09-25 12:19:45.387 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=500 - null null
+2026-09-25 12:19:45.376 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:19:45.432 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:19:45.906 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.LeadsController.GetStats (MerkaiTrial.WebApi)'
+2026-09-25 12:19:45.906 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:19:45.906 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:19:45.906 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:19:45.906 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:19:45.950 +05:30 [INF] Route matched with {action = "GetStatistics", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[MerkaiTrial.Application.DTOs.QuoteStatisticsDto]] GetStatistics() on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:19:45.950 +05:30 [INF] Route matched with {action = "GetStatistics", controller = "Invoices"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetStatistics(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.InvoicesController (MerkaiTrial.WebApi).
+2026-09-25 12:19:45.950 +05:30 [INF] Route matched with {action = "GetStats", controller = "Leads"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetStats(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.LeadsController (MerkaiTrial.WebApi).
+2026-09-25 12:19:45.950 +05:30 [INF] Route matched with {action = "GetAll", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[System.Collections.Generic.List`1[MerkaiTrial.Application.DTOs.QuoteListItem]]] GetAll(System.Nullable`1[System.Guid], System.String, System.Nullable`1[System.DateTime], System.Nullable`1[System.DateTime]) on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:19:45.950 +05:30 [INF] Route matched with {action = "GetAll", controller = "Deals"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetAll(System.String, System.String, System.String, Int32, Int32, System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.DealsController (MerkaiTrial.WebApi).
+2026-09-25 12:19:46.284 +05:30 [INF] Executed DbCommand (22ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[ConvertedToPlan], [t].[CountryId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[DefaultCurrency], [t].[Domain], [t].[FromEmail], [t].[IsActive], [t].[IsDeleted], [t].[IsSuspended], [t].[Name], [t].[PaymentConfigJson], [t].[PaymentProvider], [t].[Phone], [t].[Plan], [t].[PreferredLanguage], [t].[PublicLinkSecret], [t].[ReplyToEmail], [t].[TenantKey], [t].[Timezone], [t].[TrialActivatedBy], [t].[TrialExpiresAt], [t].[TrialStartedAt], [t].[TrialStatus], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [dbo].[Tenants] AS [t]
+WHERE [t].[Id] = @__tenantId_0 AND [t].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:19:46.327 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@___tenant_CountryId_Value_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [c].[Id], [c].[Code], [c].[CreatedAtUtc], [c].[CurrencyCode], [c].[CurrencyDecimals], [c].[CurrencySymbol], [c].[DateFormat], [c].[DefaultTaxRate], [c].[DialCode], [c].[DisplayOrder], [c].[IsActive], [c].[IsDeleted], [c].[Name], [c].[NumberFormat], [c].[TaxLabel], [c].[TimeFormat], [c].[Timezone], [c].[UpdatedAtUtc]
+FROM [Countries] AS [c]
+WHERE [c].[Id] = @___tenant_CountryId_Value_0 AND [c].[IsActive] = CAST(1 AS bit)
+2026-09-25 12:19:46.407 +05:30 [INF] Executed DbCommand (34ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:19:46.409 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:19:46.409 +05:30 [INF] Executed DbCommand (35ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:19:46.414 +05:30 [INF] Executed DbCommand (4ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:19:46.505 +05:30 [INF] Executed DbCommand (16ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [t].[Id], [t].[FeatureFlags], [t].[MaxDeals], [t].[MaxLeads], [t].[MaxUsers], [t].[StorageLimit], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TenantSettings] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+2026-09-25 12:19:46.541 +05:30 [INF] Executed DbCommand (16ms) [Parameters=[@___tenant_Plan_0='?' (Size = 50)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[AnnualPrice], [p].[BadgeText], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[DisplayName], [p].[Features], [p].[IsActive], [p].[IsHighlighted], [p].[IsPublic], [p].[IsTrial], [p].[MaxCompanies], [p].[MaxContacts], [p].[MaxDeals], [p].[MaxLeads], [p].[MaxUsers], [p].[MonthlyPrice], [p].[Name], [p].[SortOrder], [p].[StorageLimitBytes], [p].[TrialDurationDays], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [Plans] AS [p]
+WHERE [p].[Name] = @___tenant_Plan_0 AND [p].[IsActive] = CAST(1 AS bit)
+2026-09-25 12:19:46.610 +05:30 [INF] Executed DbCommand (34ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [l].[Id], [l].[Category], [l].[Color], [l].[CreatedAtUtc], [l].[CreatedBy], [l].[Description], [l].[IsActive], [l].[IsDefault], [l].[IsSystem], [l].[Key], [l].[Name], [l].[Score], [l].[SortOrder], [l].[TenantId], [l].[UpdatedAtUtc], [l].[UpdatedBy]
+FROM [LeadStatusDefinitions] AS [l]
+WHERE [l].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [l].[TenantId] = @__tenantId_0
+ORDER BY [l].[SortOrder]
+2026-09-25 12:19:46.520 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:19:46.626 +05:30 [INF] Executed DbCommand (147ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Deals] AS [d]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:19:46.532 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:19:46.669 +05:30 [INF] Executed DbCommand (46ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:19:46.781 +05:30 [INF] Executed DbCommand (83ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__8__locals1_query_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Leads] AS [l]
+WHERE [l].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [l].[TenantId] = @__8__locals1_query_TenantId_0 AND [l].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:19:46.816 +05:30 [INF] Executed DbCommand (169ms) [Parameters=[@__draft_1='?' (DbType = Int32), @__pendingApproval_2='?' (DbType = Int32), @__approved_3='?' (DbType = Int32), @__sent_4='?' (DbType = Int32), @__viewed_5='?' (DbType = Int32), @__accepted_6='?' (DbType = Int32), @__rejected_7='?' (DbType = Int32), @__expired_8='?' (DbType = Int32), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(*) AS [TotalQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__draft_1 OR [t].[Status] = @__pendingApproval_2 OR [t].[Status] = @__approved_3 THEN 1
+END) AS [DraftQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN 1
+END) AS [SentQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN 1
+END) AS [AcceptedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__rejected_7 THEN 1
+END) AS [RejectedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__expired_8 THEN 1
+END) AS [ExpiredQuotes], COALESCE(SUM([t].[GrandTotal]), 0.0) AS [TotalValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN [t].[GrandTotal]
+END), 0.0) AS [AcceptedValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN [t].[GrandTotal]
+END), 0.0) AS [PendingValue]
+FROM (
+    SELECT [q].[GrandTotal], [q].[Status], 1 AS [Key]
+    FROM [Quotes] AS [q]
+    WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:19:46.852 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.QuoteStatisticsDto'.
+2026-09-25 12:19:46.939 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi) in 970.6293ms
+2026-09-25 12:19:46.939 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:19:46.943 +05:30 [INF] HTTP GET /api/quotes/statistics responded 200 in 1535.6170 ms
+2026-09-25 12:19:46.953 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 1578.468ms
+2026-09-25 12:19:46.997 +05:30 [INF] Executed DbCommand (322ms) [Parameters=[@__draft_1='?' (DbType = Int32), @__cancelled_2='?' (DbType = Int32), @__sent_3='?' (DbType = Int32), @__viewed_4='?' (DbType = Int32), @__paid_5='?' (DbType = Int32), @__now_6='?' (DbType = DateTime2), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__request_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(CASE
+    WHEN [t].[Status] <> @__draft_1 AND [t].[Status] <> @__cancelled_2 THEN 1
+END) AS [TotalInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__draft_1 THEN 1
+END) AS [DraftInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__sent_3 OR [t].[Status] = @__viewed_4 THEN 1
+END) AS [SentInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__paid_5 THEN 1
+END) AS [PaidInvoices], COUNT(CASE
+    WHEN [t].[DueDateUtc] IS NOT NULL AND [t].[DueDateUtc] < @__now_6 AND [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN 1
+END) AS [OverdueInvoices], COALESCE(SUM(CASE
+    WHEN [t].[Status] <> @__draft_1 AND [t].[Status] <> @__cancelled_2 THEN ([t].[Subtotal] + [t].[TaxTotal]) - [t].[DiscountTotal]
+END), 0.0) AS [TotalAmount], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__paid_5 THEN ([t].[Subtotal] + [t].[TaxTotal]) - [t].[DiscountTotal]
+END), 0.0) AS [PaidAmount], COALESCE(SUM(CASE
+    WHEN [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN [t].[Balance]
+END), 0.0) AS [UnpaidAmount], COALESCE(SUM(CASE
+    WHEN [t].[DueDateUtc] IS NOT NULL AND [t].[DueDateUtc] < @__now_6 AND [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN [t].[Balance]
+END), 0.0) AS [OverdueAmount], N'' AS [Currency]
+FROM (
+    SELECT [i].[Balance], [i].[DiscountTotal], [i].[DueDateUtc], [i].[Status], [i].[Subtotal], [i].[TaxTotal], 1 AS [Key]
+    FROM [Invoices] AS [i]
+    WHERE [i].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [i].[TenantId] = @__request_TenantId_0 AND [i].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:19:47.001 +05:30 [INF] Executed DbCommand (274ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Deals] AS [d]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [d].[ContactId] = [t].[Id]
+LEFT JOIN (
+    SELECT [c0].[Id], [c0].[Country], [c0].[CreatedAtUtc], [c0].[CreatedBy], [c0].[IsDeleted], [c0].[Name], [c0].[TaxId], [c0].[TenantId], [c0].[UpdatedAtUtc], [c0].[UpdatedBy], [c0].[Vertical]
+    FROM [Companies] AS [c0]
+    WHERE [c0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [d].[CompanyId] = [t0].[Id]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:19:47.008 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.InvoiceStatisticsDto'.
+2026-09-25 12:19:47.016 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi) in 1064.5162ms
+2026-09-25 12:19:47.016 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:19:47.016 +05:30 [INF] HTTP GET /api/invoices/statistics responded 200 in 1609.1241 ms
+2026-09-25 12:19:47.019 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 1643.1288ms
+2026-09-25 12:19:46.830 +05:30 [WRN] The query uses the 'First'/'FirstOrDefault' operator without 'OrderBy' and filter operators. This may lead to unpredictable results.
+2026-09-25 12:19:47.068 +05:30 [INF] Executed DbCommand (17ms) [Parameters=[@__defaultKey_1='?' (Size = 4000), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__8__locals1_query_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(*) AS [TotalLeads], COUNT(CASE
+    WHEN [t].[Status] = @__defaultKey_1 THEN 1
+END) AS [NewLeads], COUNT(CASE
+    WHEN [t].[Status] IN (N'New', N'Working') AND [t].[Status] <> @__defaultKey_1 THEN 1
+END) AS [WorkingLeads], COUNT(CASE
+    WHEN [t].[Status] = N'Qualified' THEN 1
+END) AS [QualifiedLeads], COUNT(CASE
+    WHEN [t].[Status] = N'Unqualified' THEN 1
+END) AS [UnqualifiedLeads], COUNT(CASE
+    WHEN [t].[IsConverted] = CAST(1 AS bit) THEN 1
+END) AS [ConvertedLeads]
+FROM (
+    SELECT [l].[IsConverted], [l].[Status], 1 AS [Key]
+    FROM [Leads] AS [l]
+    WHERE [l].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [l].[TenantId] = @__8__locals1_query_TenantId_0 AND [l].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:19:47.106 +05:30 [INF] Executed DbCommand (64ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid), @__p_1='?' (DbType = Int32), @__p_2='?' (DbType = Int32)], CommandType='"Text"', CommandTimeout='30']
+SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId], [t].[Id], [t].[Address], [t].[City], [t].[CompanyId], [t].[Country], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Email], [t].[FirstName], [t].[IsDeleted], [t].[IsPrimary], [t].[JobTitle], [t].[LastName], [t].[LineUserId], [t].[Mobile], [t].[Notes], [t].[Phone], [t].[PostalCode], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[IsDeleted], [t0].[Name], [t0].[TaxId], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t0].[Vertical]
+FROM [Deals] AS [d]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [d].[ContactId] = [t].[Id]
+LEFT JOIN (
+    SELECT [c0].[Id], [c0].[Country], [c0].[CreatedAtUtc], [c0].[CreatedBy], [c0].[IsDeleted], [c0].[Name], [c0].[TaxId], [c0].[TenantId], [c0].[UpdatedAtUtc], [c0].[UpdatedBy], [c0].[Vertical]
+    FROM [Companies] AS [c0]
+    WHERE [c0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [d].[CompanyId] = [t0].[Id]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [d].[CreatedAtUtc] DESC
+OFFSET @__p_1 ROWS FETCH NEXT @__p_2 ROWS ONLY
+2026-09-25 12:19:47.109 +05:30 [INF] Executed DbCommand (493ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[CreatedAtUtc], [q].[CreatedBy], [q].[Currency], [q].[DealId], [q].[DiscountTotal], [q].[ExpiresAtUtc], [q].[GrandTotal], [q].[IsDeleted], [q].[IssueDateUtc], [q].[Number], [q].[PaymentLinkUrl], [q].[PdfUrl], [q].[PublicLinkToken], [q].[Status], [q].[Subtotal], [q].[TaxTotal], [q].[TenantId], [q].[UpdatedAtUtc], [q].[UpdatedBy], [t].[Id], [t].[ActualCloseDateUtc], [t].[ActualValue], [t].[CompanyId], [t].[ContactId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Currency], [t].[CustomFields], [t].[DeletedAtUtc], [t].[DeletedBy], [t].[Description], [t].[ExpectedCloseDateUtc], [t].[ExpectedValue], [t].[IsDeleted], [t].[LeadId], [t].[LostReason], [t].[OwnerUserId], [t].[Probability], [t].[Source], [t].[SourceId], [t].[Stage], [t].[Tags], [t].[TenantId], [t].[Title], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t].[VerticalId], [t0].[Id], [t0].[Address], [t0].[City], [t0].[CompanyId], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Email], [t0].[FirstName], [t0].[IsDeleted], [t0].[IsPrimary], [t0].[JobTitle], [t0].[LastName], [t0].[LineUserId], [t0].[Mobile], [t0].[Notes], [t0].[Phone], [t0].[PostalCode], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t1].[Id], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[IsDeleted], [t1].[LineDiscount], [t1].[Name], [t1].[ProductId], [t1].[Quantity], [t1].[QuoteId], [t1].[TaxRate], [t1].[TenantId], [t1].[UnitPrice], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+FROM [Quotes] AS [q]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[DealId] = [t].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[ContactId] = [t0].[Id]
+LEFT JOIN (
+    SELECT [q0].[Id], [q0].[CreatedAtUtc], [q0].[CreatedBy], [q0].[Description], [q0].[IsDeleted], [q0].[LineDiscount], [q0].[Name], [q0].[ProductId], [q0].[Quantity], [q0].[QuoteId], [q0].[TaxRate], [q0].[TenantId], [q0].[UnitPrice], [q0].[UpdatedAtUtc], [q0].[UpdatedBy]
+    FROM [QuoteItems] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q0].[IsDeleted] = CAST(0 AS bit)
+) AS [t1] ON [q].[Id] = [t1].[QuoteId]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [q].[CreatedAtUtc] DESC, [q].[Id], [t].[Id], [t0].[Id]
+2026-09-25 12:19:47.126 +05:30 [INF] Executed DbCommand (49ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__8__locals1_query_TenantId_0='?' (DbType = Guid), @__nowUtc_1='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Activities] AS [a]
+WHERE [a].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [a].[TenantId] = @__8__locals1_query_TenantId_0 AND [a].[EntityType] = N'Lead' AND [a].[EntityId] IN (
+    SELECT [l].[Id]
+    FROM [Leads] AS [l]
+    WHERE [l].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [l].[TenantId] = @__8__locals1_query_TenantId_0 AND [l].[IsDeleted] = CAST(0 AS bit)
+) AND [a].[IsTask] = CAST(1 AS bit) AND [a].[IsCompleted] = CAST(0 AS bit) AND [a].[IsDeleted] = CAST(0 AS bit) AND [a].[DueDate] < @__nowUtc_1
+2026-09-25 12:19:47.163 +05:30 [INF] Executed DbCommand (30ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__8__locals1_query_TenantId_0='?' (DbType = Guid), @__todayStartUtc_1='?' (DbType = DateTime2), @__todayEndUtc_2='?' (DbType = DateTime2)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Activities] AS [a]
+WHERE [a].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [a].[TenantId] = @__8__locals1_query_TenantId_0 AND [a].[EntityType] = N'Lead' AND [a].[EntityId] IN (
+    SELECT [l].[Id]
+    FROM [Leads] AS [l]
+    WHERE [l].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [l].[TenantId] = @__8__locals1_query_TenantId_0 AND [l].[IsDeleted] = CAST(0 AS bit)
+) AND [a].[IsDeleted] = CAST(0 AS bit) AND ([a].[IsTask] = CAST(0 AS bit) OR [a].[IsCompleted] = CAST(1 AS bit)) AND [a].[ActivityDate] >= @__todayStartUtc_1 AND [a].[ActivityDate] < @__todayEndUtc_2
+2026-09-25 12:19:47.167 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.LeadStatsDto'.
+2026-09-25 12:19:47.171 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.LeadsController.GetStats (MerkaiTrial.WebApi) in 1219.8371ms
+2026-09-25 12:19:47.171 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.LeadsController.GetStats (MerkaiTrial.WebApi)'
+2026-09-25 12:19:47.171 +05:30 [INF] HTTP GET /api/leads/stats responded 200 in 1764.3898 ms
+2026-09-25 12:19:47.172 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/leads/stats - 200 null application/json; charset=utf-8 1797.1912ms
+2026-09-25 12:19:47.383 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.QuoteListItem, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:19:47.431 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi) in 1479.5022ms
+2026-09-25 12:19:47.431 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:19:47.432 +05:30 [INF] HTTP GET /api/quotes responded 200 in 1995.3692 ms
+2026-09-25 12:19:47.432 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 2006.2041ms
+2026-09-25 12:19:47.459 +05:30 [INF] Executed DbCommand (54ms) [Parameters=[@__ownerIdsLower_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT LOWER(CONVERT(varchar(36), [u].[Id])) AS [Id], [u].[FirstName], [u].[LastName]
+FROM [Users] AS [u]
+WHERE LOWER(CONVERT(varchar(36), [u].[Id])) IN (
+    SELECT [o].[value]
+    FROM OPENJSON(@__ownerIdsLower_0) WITH ([value] nvarchar(max) '$') AS [o]
+)
+2026-09-25 12:19:47.466 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.GetDealsResponse'.
+2026-09-25 12:19:47.487 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi) in 1535.6717ms
+2026-09-25 12:19:47.487 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:19:47.487 +05:30 [INF] HTTP GET /api/deals responded 200 in 2080.3820 ms
+2026-09-25 12:19:47.488 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=500 - 200 null application/json; charset=utf-8 2113.1905ms
+2026-09-25 12:19:59.277 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quote-approvals/rules?currency=%E0%B8%BF - null null
+2026-09-25 12:19:59.286 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetRules (MerkaiTrial.WebApi)'
+2026-09-25 12:19:59.299 +05:30 [INF] Route matched with {action = "GetRules", controller = "QuoteApprovals"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetRules(System.String, System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.QuoteApprovalsController (MerkaiTrial.WebApi).
+2026-09-25 12:19:59.555 +05:30 [INF] Executed DbCommand (112ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [q].[Id], [q].[IsEnabled], [q].[MaxDiscountPercent], [q].[MaxQuoteTotal], [q].[TenantId], [q].[UpdatedAtUtc], [q].[UpdatedBy]
+FROM [QuoteApprovalSettings] AS [q]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0
+2026-09-25 12:19:59.658 +05:30 [INF] Executed DbCommand (36ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [a].[Id], [a].[ConditionMode], [a].[CreatedAtUtc], [a].[CreatedBy], [a].[Description], [a].[DiscountOverPercent], [a].[IsActive], [a].[Name], [a].[SortOrder], [a].[TenantId], [a].[TotalOverAmount], [a].[UpdatedAtUtc], [a].[UpdatedBy], [t].[Id], [t].[AllowSelfApproval], [t].[ApprovalRuleId], [t].[ApproverKind], [t].[ApproverRoleId], [t].[ApproverUserId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Name], [t].[StepOrder], [t].[TenantId]
+FROM [ApprovalRules] AS [a]
+LEFT JOIN (
+    SELECT [a0].[Id], [a0].[AllowSelfApproval], [a0].[ApprovalRuleId], [a0].[ApproverKind], [a0].[ApproverRoleId], [a0].[ApproverUserId], [a0].[CreatedAtUtc], [a0].[CreatedBy], [a0].[Name], [a0].[StepOrder], [a0].[TenantId]
+    FROM [ApprovalSteps] AS [a0]
+    WHERE [a0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [a].[Id] = [t].[ApprovalRuleId]
+WHERE [a].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [a].[TenantId] = @__tenantId_0
+ORDER BY [a].[SortOrder], [a].[Name], [a].[Id]
+2026-09-25 12:19:59.683 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [r].[Id], COALESCE([r].[DisplayName], N'') AS [DisplayName], [r].[IsSystemRole]
+FROM [Roles] AS [r]
+WHERE ([r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0) AND [r].[IsDeleted] = CAST(0 AS bit)
+ORDER BY CASE
+    WHEN [r].[IsSystemRole] = CAST(1 AS bit) THEN 0
+    ELSE 1
+END, [r].[DisplayName]
+2026-09-25 12:19:59.711 +05:30 [INF] Executed DbCommand (13ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[Id], COALESCE([u].[FirstName], N''), COALESCE([u].[LastName], N''), COALESCE([u].[Email], N''), [u].[IsTenantAdmin], [u0].[RoleId], [u0].[Id]
+FROM [Users] AS [u]
+LEFT JOIN [UserRoles] AS [u0] ON [u].[Id] = [u0].[UserId]
+WHERE [u].[TenantId] = @__tenantId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+ORDER BY [u].[FirstName], [u].[LastName], [u].[Id]
+2026-09-25 12:19:59.773 +05:30 [INF] Executed DbCommand (27ms) [Parameters=[@__tenantId_0='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM (
+    SELECT DISTINCT [t].[TeamId]
+    FROM [TeamManagers] AS [t]
+    INNER JOIN (
+        SELECT [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TeamId], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+        FROM [Users] AS [u]
+        WHERE [u].[TenantId] = @__tenantId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+    ) AS [t0] ON [t].[UserId] = [t0].[Id]
+    WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+) AS [t1]
+2026-09-25 12:19:59.836 +05:30 [INF] Executed DbCommand (31ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[ApprovalRuleId] AS [RuleId], COUNT(*) AS [N]
+FROM [QuoteApprovalRequests] AS [q]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[Status] = N'Pending' AND [q].[ApprovalRuleId] IS NOT NULL
+GROUP BY [q].[ApprovalRuleId]
+2026-09-25 12:19:59.856 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.ApprovalRulesPageDto'.
+2026-09-25 12:19:59.943 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetRules (MerkaiTrial.WebApi) in 643.6274ms
+2026-09-25 12:19:59.943 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetRules (MerkaiTrial.WebApi)'
+2026-09-25 12:19:59.943 +05:30 [INF] HTTP GET /api/quote-approvals/rules responded 200 in 665.1077 ms
+2026-09-25 12:19:59.944 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quote-approvals/rules?currency=%E0%B8%BF - 200 null application/json; charset=utf-8 667.3254ms
+2026-09-25 12:21:37.252 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:21:37.260 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.261 +05:30 [INF] Route matched with {action = "GetStatistics", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[MerkaiTrial.Application.DTOs.QuoteStatisticsDto]] GetStatistics() on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:21:37.285 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:21:37.308 +05:30 [INF] Executed DbCommand (19ms) [Parameters=[@__draft_1='?' (DbType = Int32), @__pendingApproval_2='?' (DbType = Int32), @__approved_3='?' (DbType = Int32), @__sent_4='?' (DbType = Int32), @__viewed_5='?' (DbType = Int32), @__accepted_6='?' (DbType = Int32), @__rejected_7='?' (DbType = Int32), @__expired_8='?' (DbType = Int32), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(*) AS [TotalQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__draft_1 OR [t].[Status] = @__pendingApproval_2 OR [t].[Status] = @__approved_3 THEN 1
+END) AS [DraftQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN 1
+END) AS [SentQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN 1
+END) AS [AcceptedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__rejected_7 THEN 1
+END) AS [RejectedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__expired_8 THEN 1
+END) AS [ExpiredQuotes], COALESCE(SUM([t].[GrandTotal]), 0.0) AS [TotalValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN [t].[GrandTotal]
+END), 0.0) AS [AcceptedValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN [t].[GrandTotal]
+END), 0.0) AS [PendingValue]
+FROM (
+    SELECT [q].[GrandTotal], [q].[Status], 1 AS [Key]
+    FROM [Quotes] AS [q]
+    WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:21:37.308 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.QuoteStatisticsDto'.
+2026-09-25 12:21:37.309 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi) in 47.8492ms
+2026-09-25 12:21:37.309 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.309 +05:30 [INF] HTTP GET /api/quotes/statistics responded 200 in 49.3465 ms
+2026-09-25 12:21:37.309 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 62.7645ms
+2026-09-25 12:21:37.320 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:21:37.321 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.322 +05:30 [INF] Route matched with {action = "GetAll", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[System.Collections.Generic.List`1[MerkaiTrial.Application.DTOs.QuoteListItem]]] GetAll(System.Nullable`1[System.Guid], System.String, System.Nullable`1[System.DateTime], System.Nullable`1[System.DateTime]) on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:21:37.338 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:21:37.408 +05:30 [INF] Executed DbCommand (66ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[CreatedAtUtc], [q].[CreatedBy], [q].[Currency], [q].[DealId], [q].[DiscountTotal], [q].[ExpiresAtUtc], [q].[GrandTotal], [q].[IsDeleted], [q].[IssueDateUtc], [q].[Number], [q].[PaymentLinkUrl], [q].[PdfUrl], [q].[PublicLinkToken], [q].[Status], [q].[Subtotal], [q].[TaxTotal], [q].[TenantId], [q].[UpdatedAtUtc], [q].[UpdatedBy], [t].[Id], [t].[ActualCloseDateUtc], [t].[ActualValue], [t].[CompanyId], [t].[ContactId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Currency], [t].[CustomFields], [t].[DeletedAtUtc], [t].[DeletedBy], [t].[Description], [t].[ExpectedCloseDateUtc], [t].[ExpectedValue], [t].[IsDeleted], [t].[LeadId], [t].[LostReason], [t].[OwnerUserId], [t].[Probability], [t].[Source], [t].[SourceId], [t].[Stage], [t].[Tags], [t].[TenantId], [t].[Title], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t].[VerticalId], [t0].[Id], [t0].[Address], [t0].[City], [t0].[CompanyId], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Email], [t0].[FirstName], [t0].[IsDeleted], [t0].[IsPrimary], [t0].[JobTitle], [t0].[LastName], [t0].[LineUserId], [t0].[Mobile], [t0].[Notes], [t0].[Phone], [t0].[PostalCode], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t1].[Id], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[IsDeleted], [t1].[LineDiscount], [t1].[Name], [t1].[ProductId], [t1].[Quantity], [t1].[QuoteId], [t1].[TaxRate], [t1].[TenantId], [t1].[UnitPrice], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+FROM [Quotes] AS [q]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[DealId] = [t].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[ContactId] = [t0].[Id]
+LEFT JOIN (
+    SELECT [q0].[Id], [q0].[CreatedAtUtc], [q0].[CreatedBy], [q0].[Description], [q0].[IsDeleted], [q0].[LineDiscount], [q0].[Name], [q0].[ProductId], [q0].[Quantity], [q0].[QuoteId], [q0].[TaxRate], [q0].[TenantId], [q0].[UnitPrice], [q0].[UpdatedAtUtc], [q0].[UpdatedBy]
+    FROM [QuoteItems] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q0].[IsDeleted] = CAST(0 AS bit)
+) AS [t1] ON [q].[Id] = [t1].[QuoteId]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [q].[CreatedAtUtc] DESC, [q].[Id], [t].[Id], [t0].[Id]
+2026-09-25 12:21:37.412 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.QuoteListItem, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:21:37.412 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi) in 90.5681ms
+2026-09-25 12:21:37.412 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.413 +05:30 [INF] HTTP GET /api/quotes responded 200 in 92.3875 ms
+2026-09-25 12:21:37.413 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 92.9092ms
+2026-09-25 12:21:37.418 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quote-approvals/pending - null null
+2026-09-25 12:21:37.420 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.428 +05:30 [INF] Route matched with {action = "GetPending", controller = "QuoteApprovals"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetPending(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.QuoteApprovalsController (MerkaiTrial.WebApi).
+2026-09-25 12:21:37.523 +05:30 [INF] Executed DbCommand (44ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TeamId], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TeamId], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-25 12:21:37.692 +05:30 [INF] Executed DbCommand (36ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[ApprovalRuleId], [q].[Currency], [q].[CurrentStepOrder], [q].[DecidedAtUtc], [q].[DecidedByName], [q].[DecidedByUserId], [q].[DecisionComment], [q].[MaxLineDiscountPercent], [q].[QuoteId], [q].[QuoteTotal], [q].[Reasons], [q].[RequestComment], [q].[RequestedAtUtc], [q].[RequestedByName], [q].[RequestedByUserId], [q].[RuleName], [q].[Status], [q].[TenantId], [q].[TotalSteps], [t].[Number] AS [QuoteNumber], [t0].[Title] AS [DealTitle], [t0].[OwnerUserId] AS [Owner], [t1].[FirstName] AS [ContactFirst], [t1].[LastName] AS [ContactLast]
+FROM [QuoteApprovalRequests] AS [q]
+INNER JOIN (
+    SELECT [q0].[Id], [q0].[DealId], [q0].[Number]
+    FROM [Quotes] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[QuoteId] = [t].[Id]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ContactId], [d].[OwnerUserId], [d].[Title]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[DealId] = [t0].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[FirstName], [c].[LastName]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t1] ON [t0].[ContactId] = [t1].[Id]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[Status] = N'Pending'
+ORDER BY [q].[RequestedAtUtc]
+2026-09-25 12:21:37.693 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.PendingQuoteApprovalDto, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:21:37.696 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi) in 268.7222ms
+2026-09-25 12:21:37.697 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi)'
+2026-09-25 12:21:37.697 +05:30 [INF] HTTP GET /api/quote-approvals/pending responded 200 in 277.5783 ms
+2026-09-25 12:21:37.697 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quote-approvals/pending - 200 null application/json; charset=utf-8 279.1721ms
+2026-09-25 12:22:25.459 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:22:25.471 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:22:25.471 +05:30 [INF] Route matched with {action = "GetStatistics", controller = "Invoices"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetStatistics(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.InvoicesController (MerkaiTrial.WebApi).
+2026-09-25 12:22:25.484 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:22:25.528 +05:30 [INF] Executed DbCommand (33ms) [Parameters=[@__draft_1='?' (DbType = Int32), @__cancelled_2='?' (DbType = Int32), @__sent_3='?' (DbType = Int32), @__viewed_4='?' (DbType = Int32), @__paid_5='?' (DbType = Int32), @__now_6='?' (DbType = DateTime2), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__request_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(CASE
+    WHEN [t].[Status] <> @__draft_1 AND [t].[Status] <> @__cancelled_2 THEN 1
+END) AS [TotalInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__draft_1 THEN 1
+END) AS [DraftInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__sent_3 OR [t].[Status] = @__viewed_4 THEN 1
+END) AS [SentInvoices], COUNT(CASE
+    WHEN [t].[Status] = @__paid_5 THEN 1
+END) AS [PaidInvoices], COUNT(CASE
+    WHEN [t].[DueDateUtc] IS NOT NULL AND [t].[DueDateUtc] < @__now_6 AND [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN 1
+END) AS [OverdueInvoices], COALESCE(SUM(CASE
+    WHEN [t].[Status] <> @__draft_1 AND [t].[Status] <> @__cancelled_2 THEN ([t].[Subtotal] + [t].[TaxTotal]) - [t].[DiscountTotal]
+END), 0.0) AS [TotalAmount], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__paid_5 THEN ([t].[Subtotal] + [t].[TaxTotal]) - [t].[DiscountTotal]
+END), 0.0) AS [PaidAmount], COALESCE(SUM(CASE
+    WHEN [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN [t].[Balance]
+END), 0.0) AS [UnpaidAmount], COALESCE(SUM(CASE
+    WHEN [t].[DueDateUtc] IS NOT NULL AND [t].[DueDateUtc] < @__now_6 AND [t].[Balance] > 0.0 AND [t].[Status] <> @__cancelled_2 AND [t].[Status] <> @__draft_1 THEN [t].[Balance]
+END), 0.0) AS [OverdueAmount], N'' AS [Currency]
+FROM (
+    SELECT [i].[Balance], [i].[DiscountTotal], [i].[DueDateUtc], [i].[Status], [i].[Subtotal], [i].[TaxTotal], 1 AS [Key]
+    FROM [Invoices] AS [i]
+    WHERE [i].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [i].[TenantId] = @__request_TenantId_0 AND [i].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:22:25.529 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.InvoiceStatisticsDto'.
+2026-09-25 12:22:25.530 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi) in 59.2436ms
+2026-09-25 12:22:25.530 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:22:25.531 +05:30 [INF] HTTP GET /api/invoices/statistics responded 200 in 65.6696 ms
+2026-09-25 12:22:25.533 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/invoices/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 73.3433ms
+2026-09-25 12:22:25.572 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/invoices?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:22:25.574 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:25.581 +05:30 [INF] Route matched with {action = "GetAll", controller = "Invoices"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetAll(System.Nullable`1[System.Guid], System.Nullable`1[System.Guid], System.String, System.Nullable`1[System.DateTime], System.Nullable`1[System.DateTime], System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.InvoicesController (MerkaiTrial.WebApi).
+2026-09-25 12:22:25.619 +05:30 [INF] Getting invoices for tenant "bb100002-aaaa-0000-0000-000000000002"
+2026-09-25 12:22:25.640 +05:30 [INF] Executed DbCommand (20ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:22:25.809 +05:30 [INF] Executed DbCommand (129ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__request_TenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [i].[Id], [i].[Number], [i].[IssueDateUtc], [i].[DueDateUtc], [i].[Currency], [i].[Status], ([i].[Subtotal] + [i].[TaxTotal]) - [i].[DiscountTotal], [i].[Balance], CASE
+    WHEN [t].[Id] IS NOT NULL THEN [t0].[FirstName]
+    WHEN [t1].[Id] IS NOT NULL AND [t2].[Id] IS NOT NULL THEN [t3].[FirstName]
+    ELSE N''
+END, CASE
+    WHEN [t].[Id] IS NOT NULL THEN [t].[Title]
+    WHEN [t1].[Id] IS NOT NULL AND [t2].[Id] IS NOT NULL THEN [t2].[Title]
+    ELSE NULL
+END, [t1].[Number], (
+    SELECT COUNT(*)
+    FROM [InvoiceLines] AS [i0]
+    WHERE [i0].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [i].[Id] = [i0].[InvoiceId] AND [i0].[IsDeleted] = CAST(0 AS bit)), CASE
+    WHEN [i].[DueDateUtc] IS NOT NULL AND [i].[DueDateUtc] < GETUTCDATE() AND [i].[Balance] > 0.0 AND [i].[Status] <> 6 AND [i].[Status] <> 0 THEN CAST(1 AS bit)
+    ELSE CAST(0 AS bit)
+END, [i].[CreatedAtUtc]
+FROM [Invoices] AS [i]
+LEFT JOIN (
+    SELECT [d].[Id], [d].[ContactId], [d].[Title]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [i].[DealId] = [t].[Id]
+LEFT JOIN (
+    SELECT [c].[Id], [c].[FirstName]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[ContactId] = [t0].[Id]
+LEFT JOIN (
+    SELECT [q].[Id], [q].[DealId], [q].[Number]
+    FROM [Quotes] AS [q]
+    WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t1] ON [i].[QuoteId] = [t1].[Id]
+LEFT JOIN (
+    SELECT [d0].[Id], [d0].[ContactId], [d0].[Title]
+    FROM [Deals] AS [d0]
+    WHERE [d0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t2] ON [t1].[DealId] = [t2].[Id]
+LEFT JOIN (
+    SELECT [c0].[Id], [c0].[FirstName]
+    FROM [Contacts] AS [c0]
+    WHERE [c0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t3] ON [t2].[ContactId] = [t3].[Id]
+WHERE [i].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [i].[TenantId] = @__request_TenantId_0 AND [i].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [i].[CreatedAtUtc] DESC
+2026-09-25 12:22:25.811 +05:30 [INF] Found 4 invoices
+2026-09-25 12:22:25.811 +05:30 [INF] Retrieved 4 invoices
+2026-09-25 12:22:25.812 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.InvoiceListItem, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:22:25.818 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.InvoicesController.GetAll (MerkaiTrial.WebApi) in 237.6781ms
+2026-09-25 12:22:25.818 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.InvoicesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:25.819 +05:30 [INF] HTTP GET /api/invoices responded 200 in 245.8979 ms
+2026-09-25 12:22:25.819 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/invoices?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 246.4878ms
+2026-09-25 12:22:50.060 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=500 - null null
+2026-09-25 12:22:50.073 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.077 +05:30 [INF] Route matched with {action = "GetAll", controller = "Deals"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetAll(System.String, System.String, System.String, Int32, Int32, System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.DealsController (MerkaiTrial.WebApi).
+2026-09-25 12:22:50.158 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/users/sales-team?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:22:50.201 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.UsersController.GetSalesTeam (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.201 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/pipeline-stages?activeOnly=True&detail=False - null null
+2026-09-25 12:22:50.203 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.PipelineStagesController.Get (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.204 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/pipeline-rules - null null
+2026-09-25 12:22:50.207 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.PipelineRulesController.Get (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.223 +05:30 [INF] Executed DbCommand (14ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:22:50.226 +05:30 [INF] Route matched with {action = "GetSalesTeam", controller = "Users"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[System.Collections.Generic.List`1[MerkaiTrial.Application.DTOs.SalesTeamMemberDto]]] GetSalesTeam(System.Guid) on controller MerkaiTrial.WebApi.Controllers.UsersController (MerkaiTrial.WebApi).
+2026-09-25 12:22:50.226 +05:30 [INF] Route matched with {action = "Get", controller = "PipelineStages"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] Get(Boolean, Boolean, System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.PipelineStagesController (MerkaiTrial.WebApi).
+2026-09-25 12:22:50.231 +05:30 [INF] Route matched with {action = "Get", controller = "PipelineRules"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] Get(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.PipelineRulesController (MerkaiTrial.WebApi).
+2026-09-25 12:22:50.234 +05:30 [INF] Executed DbCommand (9ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Deals] AS [d]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:22:50.264 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[Id], [u].[FirstName], [u].[LastName], [u].[Email], [u].[JobTitle]
+FROM [Users] AS [u]
+WHERE [u].[TenantId] = @__tenantId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit) AND [u].[Department] = N'Sales'
+ORDER BY [u].[FirstName], [u].[LastName]
+2026-09-25 12:22:50.264 +05:30 [INF] Executed DbCommand (28ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT COUNT(*)
+FROM [Deals] AS [d]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [d].[ContactId] = [t].[Id]
+LEFT JOIN (
+    SELECT [c0].[Id], [c0].[Country], [c0].[CreatedAtUtc], [c0].[CreatedBy], [c0].[IsDeleted], [c0].[Name], [c0].[TaxId], [c0].[TenantId], [c0].[UpdatedAtUtc], [c0].[UpdatedBy], [c0].[Vertical]
+    FROM [Companies] AS [c0]
+    WHERE [c0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [d].[CompanyId] = [t0].[Id]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+2026-09-25 12:22:50.268 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.SalesTeamMemberDto, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:22:50.286 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid), @__p_1='?' (DbType = Int32), @__p_2='?' (DbType = Int32)], CommandType='"Text"', CommandTimeout='30']
+SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId], [t].[Id], [t].[Address], [t].[City], [t].[CompanyId], [t].[Country], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Email], [t].[FirstName], [t].[IsDeleted], [t].[IsPrimary], [t].[JobTitle], [t].[LastName], [t].[LineUserId], [t].[Mobile], [t].[Notes], [t].[Phone], [t].[PostalCode], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[IsDeleted], [t0].[Name], [t0].[TaxId], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t0].[Vertical]
+FROM [Deals] AS [d]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [d].[ContactId] = [t].[Id]
+LEFT JOIN (
+    SELECT [c0].[Id], [c0].[Country], [c0].[CreatedAtUtc], [c0].[CreatedBy], [c0].[IsDeleted], [c0].[Name], [c0].[TaxId], [c0].[TenantId], [c0].[UpdatedAtUtc], [c0].[UpdatedBy], [c0].[Vertical]
+    FROM [Companies] AS [c0]
+    WHERE [c0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [d].[CompanyId] = [t0].[Id]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [d].[CreatedAtUtc] DESC
+OFFSET @__p_1 ROWS FETCH NEXT @__p_2 ROWS ONLY
+2026-09-25 12:22:50.286 +05:30 [INF] Executed DbCommand (15ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [p].[Id], [p].[Category], [p].[Color], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[Description], [p].[IsActive], [p].[IsDefault], [p].[Key], [p].[Name], [p].[Probability], [p].[RequiresAcceptedQuote], [p].[RequiresCloseDate], [p].[RequiresLostReason], [p].[RequiresQuote], [p].[RequiresValue], [p].[SortOrder], [p].[TenantId], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [PipelineStages] AS [p]
+WHERE [p].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [p].[TenantId] = @__tenantId_0 AND [p].[IsActive] = CAST(1 AS bit)
+ORDER BY [p].[SortOrder]
+2026-09-25 12:22:50.290 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.UsersController.GetSalesTeam (MerkaiTrial.WebApi) in 64.2372ms
+2026-09-25 12:22:50.301 +05:30 [INF] Executed DbCommand (12ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) [p].[Id], [p].[BlockReopenWithIssuedInvoice], [p].[ForwardOnly], [p].[ReopenRequiresReason], [p].[ReopenRestrictedToManagers], [p].[TenantId], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [PipelineRuleSettings] AS [p]
+WHERE [p].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [p].[TenantId] = @__tenantId_0
+2026-09-25 12:22:50.301 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.UsersController.GetSalesTeam (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.301 +05:30 [INF] HTTP GET /api/users/sales-team responded 200 in 101.9834 ms
+2026-09-25 12:22:50.302 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/users/sales-team?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 143.4236ms
+2026-09-25 12:22:50.320 +05:30 [INF] Executed DbCommand (8ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [d].[Stage], COUNT(*) AS [N]
+FROM [Deals] AS [d]
+WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [d].[TenantId] = @__tenantId_0 AND [d].[IsDeleted] = CAST(0 AS bit)
+GROUP BY [d].[Stage]
+2026-09-25 12:22:50.324 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [p].[Id], [p].[Key], [p].[Name], [p].[SortOrder], [p].[Category], [p].[IsActive], [p].[IsDefault]
+FROM [PipelineStages] AS [p]
+WHERE [p].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [p].[TenantId] = @__tenantId_0
+ORDER BY [p].[SortOrder]
+2026-09-25 12:22:50.333 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.Commands.PipelineStages.PipelineStageDto, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:22:50.343 +05:30 [INF] Executed DbCommand (36ms) [Parameters=[@__ownerIdsLower_0='?' (Size = 4000)], CommandType='"Text"', CommandTimeout='30']
+SELECT LOWER(CONVERT(varchar(36), [u].[Id])) AS [Id], [u].[FirstName], [u].[LastName]
+FROM [Users] AS [u]
+WHERE LOWER(CONVERT(varchar(36), [u].[Id])) IN (
+    SELECT [o].[value]
+    FROM OPENJSON(@__ownerIdsLower_0) WITH ([value] nvarchar(max) '$') AS [o]
+)
+2026-09-25 12:22:50.345 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.GetDealsResponse'.
+2026-09-25 12:22:50.346 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi) in 267.6781ms
+2026-09-25 12:22:50.346 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.DealsController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.346 +05:30 [INF] HTTP GET /api/deals responded 200 in 281.9969 ms
+2026-09-25 12:22:50.346 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/deals?tenantId=bb100002-aaaa-0000-0000-000000000002&page=1&pageSize=500 - 200 null application/json; charset=utf-8 286.4921ms
+2026-09-25 12:22:50.348 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.PipelineStagesController.Get (MerkaiTrial.WebApi) in 122.144ms
+2026-09-25 12:22:50.348 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.PipelineStagesController.Get (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.348 +05:30 [INF] HTTP GET /api/pipeline-stages responded 200 in 146.7063 ms
+2026-09-25 12:22:50.349 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/pipeline-stages?activeOnly=True&detail=False - 200 null application/json; charset=utf-8 147.1024ms
+2026-09-25 12:22:50.355 +05:30 [INF] Executed DbCommand (20ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [p].[Id], [p].[Actor], [p].[CreatedAtUtc], [p].[CreatedBy], [p].[FromStageKey], [p].[IsActive], [p].[Label], [p].[NotePrompt], [p].[RequiresAcceptedQuote], [p].[RequiresAttachment], [p].[RequiresCloseDate], [p].[RequiresNote], [p].[RequiresQuote], [p].[RequiresValue], [p].[SortOrder], [p].[TenantId], [p].[ToStageKey], [p].[UpdatedAtUtc], [p].[UpdatedBy]
+FROM [ProcessTransitions] AS [p]
+WHERE [p].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [p].[TenantId] = @__tenantId_0
+ORDER BY [p].[SortOrder]
+2026-09-25 12:22:50.373 +05:30 [INF] Executed DbCommand (10ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[ActivityType], [t].[AssignTo], [t].[AssignToUserId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Description], [t].[DueInDays], [t].[IsActive], [t].[Kind], [t].[SortOrder], [t].[Subject], [t].[TenantId], [t].[TransitionId], [t].[UpdatedAtUtc], [t].[UpdatedBy]
+FROM [TransitionActions] AS [t]
+WHERE [t].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [t].[TenantId] = @__tenantId_0
+ORDER BY [t].[SortOrder]
+2026-09-25 12:22:50.413 +05:30 [INF] Executed DbCommand (21ms) [Parameters=[@__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [u].[Id], [u].[FirstName], [u].[LastName], [u].[Email]
+FROM [Users] AS [u]
+WHERE [u].[TenantId] = @__tenantId_0 AND [u].[IsDeleted] = CAST(0 AS bit) AND [u].[IsActive] = CAST(1 AS bit)
+2026-09-25 12:22:50.424 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.Commands.PipelineStages.PipelineRulesDto'.
+2026-09-25 12:22:50.455 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.PipelineRulesController.Get (MerkaiTrial.WebApi) in 223.1292ms
+2026-09-25 12:22:50.455 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.PipelineRulesController.Get (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.455 +05:30 [INF] HTTP GET /api/pipeline-rules responded 200 in 251.1366 ms
+2026-09-25 12:22:50.455 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/pipeline-rules - 200 null application/json; charset=utf-8 251.6696ms
+2026-09-25 12:22:50.519 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:22:50.520 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.521 +05:30 [INF] Route matched with {action = "GetAll", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[System.Collections.Generic.List`1[MerkaiTrial.Application.DTOs.QuoteListItem]]] GetAll(System.Nullable`1[System.Guid], System.String, System.Nullable`1[System.DateTime], System.Nullable`1[System.DateTime]) on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:22:50.536 +05:30 [INF] Executed DbCommand (14ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:22:50.779 +05:30 [INF] Executed DbCommand (242ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[CreatedAtUtc], [q].[CreatedBy], [q].[Currency], [q].[DealId], [q].[DiscountTotal], [q].[ExpiresAtUtc], [q].[GrandTotal], [q].[IsDeleted], [q].[IssueDateUtc], [q].[Number], [q].[PaymentLinkUrl], [q].[PdfUrl], [q].[PublicLinkToken], [q].[Status], [q].[Subtotal], [q].[TaxTotal], [q].[TenantId], [q].[UpdatedAtUtc], [q].[UpdatedBy], [t].[Id], [t].[ActualCloseDateUtc], [t].[ActualValue], [t].[CompanyId], [t].[ContactId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Currency], [t].[CustomFields], [t].[DeletedAtUtc], [t].[DeletedBy], [t].[Description], [t].[ExpectedCloseDateUtc], [t].[ExpectedValue], [t].[IsDeleted], [t].[LeadId], [t].[LostReason], [t].[OwnerUserId], [t].[Probability], [t].[Source], [t].[SourceId], [t].[Stage], [t].[Tags], [t].[TenantId], [t].[Title], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t].[VerticalId], [t0].[Id], [t0].[Address], [t0].[City], [t0].[CompanyId], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Email], [t0].[FirstName], [t0].[IsDeleted], [t0].[IsPrimary], [t0].[JobTitle], [t0].[LastName], [t0].[LineUserId], [t0].[Mobile], [t0].[Notes], [t0].[Phone], [t0].[PostalCode], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t1].[Id], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[IsDeleted], [t1].[LineDiscount], [t1].[Name], [t1].[ProductId], [t1].[Quantity], [t1].[QuoteId], [t1].[TaxRate], [t1].[TenantId], [t1].[UnitPrice], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+FROM [Quotes] AS [q]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[DealId] = [t].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[ContactId] = [t0].[Id]
+LEFT JOIN (
+    SELECT [q0].[Id], [q0].[CreatedAtUtc], [q0].[CreatedBy], [q0].[Description], [q0].[IsDeleted], [q0].[LineDiscount], [q0].[Name], [q0].[ProductId], [q0].[Quantity], [q0].[QuoteId], [q0].[TaxRate], [q0].[TenantId], [q0].[UnitPrice], [q0].[UpdatedAtUtc], [q0].[UpdatedBy]
+    FROM [QuoteItems] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q0].[IsDeleted] = CAST(0 AS bit)
+) AS [t1] ON [q].[Id] = [t1].[QuoteId]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [q].[CreatedAtUtc] DESC, [q].[Id], [t].[Id], [t0].[Id]
+2026-09-25 12:22:50.784 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.QuoteListItem, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:22:50.785 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi) in 264.0804ms
+2026-09-25 12:22:50.785 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:22:50.785 +05:30 [INF] HTTP GET /api/quotes responded 200 in 265.3502 ms
+2026-09-25 12:22:50.785 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 265.708ms
+2026-09-25 12:25:36.008 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:25:36.009 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.009 +05:30 [INF] Route matched with {action = "GetStatistics", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[MerkaiTrial.Application.DTOs.QuoteStatisticsDto]] GetStatistics() on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:25:36.023 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:25:36.038 +05:30 [INF] Executed DbCommand (11ms) [Parameters=[@__draft_1='?' (DbType = Int32), @__pendingApproval_2='?' (DbType = Int32), @__approved_3='?' (DbType = Int32), @__sent_4='?' (DbType = Int32), @__viewed_5='?' (DbType = Int32), @__accepted_6='?' (DbType = Int32), @__rejected_7='?' (DbType = Int32), @__expired_8='?' (DbType = Int32), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT TOP(1) COUNT(*) AS [TotalQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__draft_1 OR [t].[Status] = @__pendingApproval_2 OR [t].[Status] = @__approved_3 THEN 1
+END) AS [DraftQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN 1
+END) AS [SentQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN 1
+END) AS [AcceptedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__rejected_7 THEN 1
+END) AS [RejectedQuotes], COUNT(CASE
+    WHEN [t].[Status] = @__expired_8 THEN 1
+END) AS [ExpiredQuotes], COALESCE(SUM([t].[GrandTotal]), 0.0) AS [TotalValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__accepted_6 THEN [t].[GrandTotal]
+END), 0.0) AS [AcceptedValue], COALESCE(SUM(CASE
+    WHEN [t].[Status] = @__sent_4 OR [t].[Status] = @__viewed_5 THEN [t].[GrandTotal]
+END), 0.0) AS [PendingValue]
+FROM (
+    SELECT [q].[GrandTotal], [q].[Status], 1 AS [Key]
+    FROM [Quotes] AS [q]
+    WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+GROUP BY [t].[Key]
+2026-09-25 12:25:36.039 +05:30 [INF] Executing OkObjectResult, writing value of type 'MerkaiTrial.Application.DTOs.QuoteStatisticsDto'.
+2026-09-25 12:25:36.039 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi) in 30.1164ms
+2026-09-25 12:25:36.039 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetStatistics (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.039 +05:30 [INF] HTTP GET /api/quotes/statistics responded 200 in 31.4674 ms
+2026-09-25 12:25:36.039 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes/statistics?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 32.4429ms
+2026-09-25 12:25:36.045 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - null null
+2026-09-25 12:25:36.045 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.045 +05:30 [INF] Route matched with {action = "GetAll", controller = "Quotes"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.ActionResult`1[System.Collections.Generic.List`1[MerkaiTrial.Application.DTOs.QuoteListItem]]] GetAll(System.Nullable`1[System.Guid], System.String, System.Nullable`1[System.DateTime], System.Nullable`1[System.DateTime]) on controller MerkaiTrial.WebApi.Controllers.QuotesController (MerkaiTrial.WebApi).
+2026-09-25 12:25:36.048 +05:30 [INF] Executed DbCommand (1ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[IsTenantAdmin], [t].[TeamId], [t].[Id], [u0].[RoleId], [u0].[Id]
+FROM (
+    SELECT TOP(1) [u].[IsTenantAdmin], [u].[TeamId], [u].[Id]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN [UserRoles] AS [u0] ON [t].[Id] = [u0].[UserId]
+ORDER BY [t].[Id]
+2026-09-25 12:25:36.213 +05:30 [INF] Executed DbCommand (163ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[CreatedAtUtc], [q].[CreatedBy], [q].[Currency], [q].[DealId], [q].[DiscountTotal], [q].[ExpiresAtUtc], [q].[GrandTotal], [q].[IsDeleted], [q].[IssueDateUtc], [q].[Number], [q].[PaymentLinkUrl], [q].[PdfUrl], [q].[PublicLinkToken], [q].[Status], [q].[Subtotal], [q].[TaxTotal], [q].[TenantId], [q].[UpdatedAtUtc], [q].[UpdatedBy], [t].[Id], [t].[ActualCloseDateUtc], [t].[ActualValue], [t].[CompanyId], [t].[ContactId], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Currency], [t].[CustomFields], [t].[DeletedAtUtc], [t].[DeletedBy], [t].[Description], [t].[ExpectedCloseDateUtc], [t].[ExpectedValue], [t].[IsDeleted], [t].[LeadId], [t].[LostReason], [t].[OwnerUserId], [t].[Probability], [t].[Source], [t].[SourceId], [t].[Stage], [t].[Tags], [t].[TenantId], [t].[Title], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t].[VerticalId], [t0].[Id], [t0].[Address], [t0].[City], [t0].[CompanyId], [t0].[Country], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Email], [t0].[FirstName], [t0].[IsDeleted], [t0].[IsPrimary], [t0].[JobTitle], [t0].[LastName], [t0].[LineUserId], [t0].[Mobile], [t0].[Notes], [t0].[Phone], [t0].[PostalCode], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy], [t1].[Id], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[IsDeleted], [t1].[LineDiscount], [t1].[Name], [t1].[ProductId], [t1].[Quantity], [t1].[QuoteId], [t1].[TaxRate], [t1].[TenantId], [t1].[UnitPrice], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+FROM [Quotes] AS [q]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ActualCloseDateUtc], [d].[ActualValue], [d].[CompanyId], [d].[ContactId], [d].[CreatedAtUtc], [d].[CreatedBy], [d].[Currency], [d].[CustomFields], [d].[DeletedAtUtc], [d].[DeletedBy], [d].[Description], [d].[ExpectedCloseDateUtc], [d].[ExpectedValue], [d].[IsDeleted], [d].[LeadId], [d].[LostReason], [d].[OwnerUserId], [d].[Probability], [d].[Source], [d].[SourceId], [d].[Stage], [d].[Tags], [d].[TenantId], [d].[Title], [d].[UpdatedAtUtc], [d].[UpdatedBy], [d].[VerticalId]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[DealId] = [t].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[Address], [c].[City], [c].[CompanyId], [c].[Country], [c].[CreatedAtUtc], [c].[CreatedBy], [c].[Email], [c].[FirstName], [c].[IsDeleted], [c].[IsPrimary], [c].[JobTitle], [c].[LastName], [c].[LineUserId], [c].[Mobile], [c].[Notes], [c].[Phone], [c].[PostalCode], [c].[TenantId], [c].[UpdatedAtUtc], [c].[UpdatedBy]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[ContactId] = [t0].[Id]
+LEFT JOIN (
+    SELECT [q0].[Id], [q0].[CreatedAtUtc], [q0].[CreatedBy], [q0].[Description], [q0].[IsDeleted], [q0].[LineDiscount], [q0].[Name], [q0].[ProductId], [q0].[Quantity], [q0].[QuoteId], [q0].[TaxRate], [q0].[TenantId], [q0].[UnitPrice], [q0].[UpdatedAtUtc], [q0].[UpdatedBy]
+    FROM [QuoteItems] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q0].[IsDeleted] = CAST(0 AS bit)
+) AS [t1] ON [q].[Id] = [t1].[QuoteId]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[IsDeleted] = CAST(0 AS bit)
+ORDER BY [q].[CreatedAtUtc] DESC, [q].[Id], [t].[Id], [t0].[Id]
+2026-09-25 12:25:36.220 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.QuoteListItem, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:25:36.222 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi) in 176.6472ms
+2026-09-25 12:25:36.222 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuotesController.GetAll (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.223 +05:30 [INF] HTTP GET /api/quotes responded 200 in 177.7015 ms
+2026-09-25 12:25:36.223 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quotes?tenantId=bb100002-aaaa-0000-0000-000000000002 - 200 null application/json; charset=utf-8 178.2225ms
+2026-09-25 12:25:36.233 +05:30 [INF] Request starting HTTP/1.1 GET https://localhost:61091/api/quote-approvals/pending - null null
+2026-09-25 12:25:36.234 +05:30 [INF] Executing endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.234 +05:30 [INF] Route matched with {action = "GetPending", controller = "QuoteApprovals"}. Executing controller action with signature System.Threading.Tasks.Task`1[Microsoft.AspNetCore.Mvc.IActionResult] GetPending(System.Threading.CancellationToken) on controller MerkaiTrial.WebApi.Controllers.QuoteApprovalsController (MerkaiTrial.WebApi).
+2026-09-25 12:25:36.313 +05:30 [INF] Executed DbCommand (51ms) [Parameters=[@__userId_0='?' (DbType = Guid), @__tenantId_1='?' (DbType = Guid), @__ef_filter__CurrentTenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [t].[Id], [t].[CreatedAtUtc], [t].[CreatedBy], [t].[Department], [t].[Email], [t].[EmailConfirmedAtUtc], [t].[FailedLoginCount], [t].[FirstName], [t].[IsActive], [t].[IsDeleted], [t].[IsSuperAdmin], [t].[IsTenantAdmin], [t].[JobTitle], [t].[LastLoginUtc], [t].[LastName], [t].[LastPasswordChangeUtc], [t].[LockoutEndUtc], [t].[MustChangePassword], [t].[PasswordHash], [t].[Phone], [t].[SecurityStamp], [t].[TeamId], [t].[TenantId], [t].[UpdatedAtUtc], [t].[UpdatedBy], [t0].[Id], [t0].[AssignedAtUtc], [t0].[AssignedBy], [t0].[RoleId], [t0].[UserId], [t0].[Id0], [t0].[CreatedAtUtc], [t0].[CreatedBy], [t0].[Description], [t0].[DisplayName], [t0].[IsDeleted], [t0].[IsSystemRole], [t0].[Name], [t0].[Permissions], [t0].[TenantId], [t0].[UpdatedAtUtc], [t0].[UpdatedBy]
+FROM (
+    SELECT TOP(1) [u].[Id], [u].[CreatedAtUtc], [u].[CreatedBy], [u].[Department], [u].[Email], [u].[EmailConfirmedAtUtc], [u].[FailedLoginCount], [u].[FirstName], [u].[IsActive], [u].[IsDeleted], [u].[IsSuperAdmin], [u].[IsTenantAdmin], [u].[JobTitle], [u].[LastLoginUtc], [u].[LastName], [u].[LastPasswordChangeUtc], [u].[LockoutEndUtc], [u].[MustChangePassword], [u].[PasswordHash], [u].[Phone], [u].[SecurityStamp], [u].[TeamId], [u].[TenantId], [u].[UpdatedAtUtc], [u].[UpdatedBy]
+    FROM [Users] AS [u]
+    WHERE [u].[Id] = @__userId_0 AND [u].[TenantId] = @__tenantId_1 AND [u].[IsDeleted] = CAST(0 AS bit)
+) AS [t]
+LEFT JOIN (
+    SELECT [u0].[Id], [u0].[AssignedAtUtc], [u0].[AssignedBy], [u0].[RoleId], [u0].[UserId], [t1].[Id] AS [Id0], [t1].[CreatedAtUtc], [t1].[CreatedBy], [t1].[Description], [t1].[DisplayName], [t1].[IsDeleted], [t1].[IsSystemRole], [t1].[Name], [t1].[Permissions], [t1].[TenantId], [t1].[UpdatedAtUtc], [t1].[UpdatedBy]
+    FROM [UserRoles] AS [u0]
+    INNER JOIN (
+        SELECT [r].[Id], [r].[CreatedAtUtc], [r].[CreatedBy], [r].[Description], [r].[DisplayName], [r].[IsDeleted], [r].[IsSystemRole], [r].[Name], [r].[Permissions], [r].[TenantId], [r].[UpdatedAtUtc], [r].[UpdatedBy]
+        FROM [Roles] AS [r]
+        WHERE [r].[TenantId] IS NULL OR [r].[TenantId] = @__ef_filter__CurrentTenantId_0
+    ) AS [t1] ON [u0].[RoleId] = [t1].[Id]
+) AS [t0] ON [t].[Id] = [t0].[UserId]
+ORDER BY [t].[Id], [t0].[Id]
+2026-09-25 12:25:36.382 +05:30 [INF] Executed DbCommand (65ms) [Parameters=[@__ef_filter__CurrentTenantId_0='?' (DbType = Guid), @__tenantId_0='?' (DbType = Guid)], CommandType='"Text"', CommandTimeout='30']
+SELECT [q].[Id], [q].[ApprovalRuleId], [q].[Currency], [q].[CurrentStepOrder], [q].[DecidedAtUtc], [q].[DecidedByName], [q].[DecidedByUserId], [q].[DecisionComment], [q].[MaxLineDiscountPercent], [q].[QuoteId], [q].[QuoteTotal], [q].[Reasons], [q].[RequestComment], [q].[RequestedAtUtc], [q].[RequestedByName], [q].[RequestedByUserId], [q].[RuleName], [q].[Status], [q].[TenantId], [q].[TotalSteps], [t].[Number] AS [QuoteNumber], [t0].[Title] AS [DealTitle], [t0].[OwnerUserId] AS [Owner], [t1].[FirstName] AS [ContactFirst], [t1].[LastName] AS [ContactLast]
+FROM [QuoteApprovalRequests] AS [q]
+INNER JOIN (
+    SELECT [q0].[Id], [q0].[DealId], [q0].[Number]
+    FROM [Quotes] AS [q0]
+    WHERE [q0].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t] ON [q].[QuoteId] = [t].[Id]
+INNER JOIN (
+    SELECT [d].[Id], [d].[ContactId], [d].[OwnerUserId], [d].[Title]
+    FROM [Deals] AS [d]
+    WHERE [d].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t0] ON [t].[DealId] = [t0].[Id]
+INNER JOIN (
+    SELECT [c].[Id], [c].[FirstName], [c].[LastName]
+    FROM [Contacts] AS [c]
+    WHERE [c].[TenantId] = @__ef_filter__CurrentTenantId_0
+) AS [t1] ON [t0].[ContactId] = [t1].[Id]
+WHERE [q].[TenantId] = @__ef_filter__CurrentTenantId_0 AND [q].[TenantId] = @__tenantId_0 AND [q].[Status] = N'Pending'
+ORDER BY [q].[RequestedAtUtc]
+2026-09-25 12:25:36.382 +05:30 [INF] Executing OkObjectResult, writing value of type 'System.Collections.Generic.List`1[[MerkaiTrial.Application.DTOs.PendingQuoteApprovalDto, MerkaiTrial.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]'.
+2026-09-25 12:25:36.382 +05:30 [INF] Executed action MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi) in 148.3011ms
+2026-09-25 12:25:36.383 +05:30 [INF] Executed endpoint 'MerkaiTrial.WebApi.Controllers.QuoteApprovalsController.GetPending (MerkaiTrial.WebApi)'
+2026-09-25 12:25:36.383 +05:30 [INF] HTTP GET /api/quote-approvals/pending responded 200 in 149.6041 ms
+2026-09-25 12:25:36.383 +05:30 [INF] Request finished HTTP/1.1 GET https://localhost:61091/api/quote-approvals/pending - 200 null application/json; charset=utf-8 150.119ms

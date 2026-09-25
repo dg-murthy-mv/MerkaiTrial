@@ -1,0 +1,237 @@
+@using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.DTOs
+@model MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.RuleEditorVm
+@{
+    var r = Model.Rule;
+    var key = Model.Key;
+    var steps = Model.Steps;
+    var rows = Model.RowCount;
+}
+@* =====================================================================
+   _RuleEditor.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Settings/QuoteApprovals/_RuleEditor.cshtml
+
+   NEW FILE (027). One rule's form — conditions on the left, the chain of
+   steps on the right. Used twice on the page: once blank for "Add a
+   rule", once per existing rule.
+
+   STEPS BIND BY INDEX (Steps[0].Kind, Steps[0].RoleId, …). That is
+   deliberate: with parallel arrays an unticked checkbox posts nothing and
+   every row below it shifts up by one, silently attaching the wrong
+   approver to the wrong step. Indexed names make a missing checkbox mean
+   "false for that row" and nothing else.
+
+   A row whose Kind is blank is an unused spare and the server skips it.
+   Three spares are always rendered, so the chain can be extended with
+   JavaScript switched off.
+   ===================================================================== *@
+
+<form method="post" asp-page-handler="SaveRule" data-max-steps="@Model.MaxSteps">
+    @if (r != null)
+    {
+        <input type="hidden" name="RuleId" value="@r.Id" />
+    }
+
+    <div class="row g-3">
+
+        @* ── left: what it is, and when it applies ──────────────── *@
+        <div class="col-lg-5">
+            <div class="mb-3">
+                <label class="form-label small mb-1 fw-semibold" for="@($"n-{key}")">
+                    Name <span class="text-danger">*</span>
+                </label>
+                <input class="form-control form-control-sm" id="@($"n-{key}")"
+                       name="RuleName" value="@r?.Name" required maxlength="150"
+                       placeholder="e.g. Deals over 5 lakh" />
+                <div class="qa-meta mt-1">What you'll call it in this list and in the approval history.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small mb-1 fw-semibold" for="@($"d-{key}")">
+                    Note <span class="text-muted">(optional)</span>
+                </label>
+                <input class="form-control form-control-sm" id="@($"d-{key}")"
+                       name="RuleDescription" value="@r?.Description" maxlength="500"
+                       placeholder="Why this rule exists" />
+            </div>
+
+            <div class="mb-3">
+                <div class="form-check form-switch">
+                    @* Hidden "false" first: an unticked checkbox posts nothing at
+                       all, so without this a property defaulting to TRUE could
+                       never be switched off. Checked posts "false,true" and the
+                       bool binder takes the true — the same pair asp-for emits. *@
+                    <input type="hidden" name="RuleActive" value="false" />
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="@($"a-{key}")" name="RuleActive" value="true"
+                           checked="@(r?.IsActive ?? true)" />
+                    <label class="form-check-label small" for="@($"a-{key}")">
+                        Rule is on
+                    </label>
+                </div>
+                <div class="qa-meta mt-1">Switch it off to stop it applying without losing how it was set up.</div>
+            </div>
+
+            <div class="border-top pt-3">
+                <div class="small fw-semibold mb-2">Applies when…</div>
+
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="@($"ud-{key}")"
+                           name="UseDiscount" value="true" checked="@(r?.DiscountOverPercent != null)" />
+                    <label class="form-check-label small" for="@($"ud-{key}")">a line is discounted more than</label>
+                </div>
+                <div class="input-group input-group-sm mb-3" style="width:130px;">
+                    <input type="number" class="form-control" name="DiscountOverPercent"
+                           value="@r?.DiscountOverPercent" min="0" max="100" step="0.5" placeholder="10" />
+                    <span class="input-group-text">%</span>
+                </div>
+
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="@($"ut-{key}")"
+                           name="UseTotal" value="true" checked="@(r?.TotalOverAmount != null)" />
+                    <label class="form-check-label small" for="@($"ut-{key}")">the quote total is above</label>
+                </div>
+                <div class="input-group input-group-sm mb-3" style="width:200px;">
+                    <span class="input-group-text">@Model.CurrencySymbol</span>
+                    <input type="number" class="form-control" name="TotalOverAmount"
+                           value="@r?.TotalOverAmount" min="1" step="1000" placeholder="500000" />
+                </div>
+
+                <div class="small fw-semibold mb-1">When both are ticked…</div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" id="@($"ca-{key}")"
+                           name="ConditionMode" value="@ApprovalConditionMode.Any"
+                           checked="@((r?.ConditionMode ?? ApprovalConditionMode.Any) == ApprovalConditionMode.Any)" />
+                    <label class="form-check-label small" for="@($"ca-{key}")">
+                        <strong>Either</strong> one is enough
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" id="@($"cl-{key}")"
+                           name="ConditionMode" value="@ApprovalConditionMode.All"
+                           checked="@((r?.ConditionMode ?? ApprovalConditionMode.Any) == ApprovalConditionMode.All)" />
+                    <label class="form-check-label small" for="@($"cl-{key}")">
+                        <strong>Both</strong> must be true
+                    </label>
+                </div>
+
+                <div class="alert alert-warning py-1 px-2 mt-3 mb-0 small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Tick neither and this rule matches <strong>every</strong> quote.
+                </div>
+            </div>
+        </div>
+
+        @* ── right: who signs it, in order ──────────────────────── *@
+        <div class="col-lg-7">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small fw-semibold">Who signs it, in order</span>
+                <span class="qa-meta">step 2 is only asked after step 1 approves</span>
+            </div>
+
+            @for (var i = 0; i < rows; i++)
+            {
+                var st = i < steps.Count ? steps[i] : null;
+
+                // A brand-new rule opens with step 1 already set to the
+                // sensible default, so "Add this rule" works without the
+                // server having to refuse an empty chain first.
+                var preset = st == null && Model.IsNew && i == 0;
+                var kindValue = st?.ApproverKind ?? (preset ? ApproverKind.TeamManagers : (ApproverKind?)null);
+                var blank = kindValue == null;
+
+                <div class="qa-steprow @(blank ? "is-blank" : "")">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="qa-stephandle">Step @(i + 1)</span>
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-danger qa-delstep"
+                                title="Remove this step">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+
+                    <select class="form-select form-select-sm qa-kind mb-2"
+                            data-field="Kind" name="@($"Steps[{i}].Kind")"
+                            aria-label="Who approves step @(i + 1)">
+                        <option value="" selected="@blank">— not used —</option>
+                        @foreach (var k in Model.Kinds)
+                        {
+                            <option value="@k" selected="@(kindValue == k)">
+                                @MerkaiTrial.Admin.Web.Pages.Settings.QuoteApprovals.IndexModel.KindLabel(k)
+                            </option>
+                        }
+                    </select>
+
+                    @* Hidden only when the chosen kind clearly doesn't need it.
+                       A row with NO kind chosen yet shows both, so with scripting
+                       off you can pick "a role approves it" and fill the picker in
+                       the same pass. The script hides the irrelevant one the moment
+                       a kind is chosen. *@
+                    <div class="qa-pick-role mb-2 @(kindValue != null && kindValue != ApproverKind.Role ? "qa-hidden" : "")">
+                        <select class="form-select form-select-sm" data-field="RoleId"
+                                name="@($"Steps[{i}].RoleId")" aria-label="Which role">
+                            <option value="">— pick a role —</option>
+                            @foreach (var role in Model.Screen.Roles)
+                            {
+                                <option value="@role.Id" selected="@(st?.ApproverRoleId == role.Id)">
+                                    @role.DisplayName
+                                    @(role.UserCount == 0 ? " (nobody holds it yet)" : $" ({role.UserCount})")
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="qa-pick-user mb-2 @(kindValue != null && kindValue != ApproverKind.User ? "qa-hidden" : "")">
+                        <select class="form-select form-select-sm" data-field="UserId"
+                                name="@($"Steps[{i}].UserId")" aria-label="Which person">
+                            <option value="">— pick a person —</option>
+                            @foreach (var u in Model.Screen.Users)
+                            {
+                                <option value="@u.Id" selected="@(st?.ApproverUserId == u.Id)">
+                                    @u.FullName@(u.IsTenantAdmin ? " (admin)" : "")
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="qa-stepextras @(blank ? "qa-hidden" : "")">
+                        <input class="form-control form-control-sm mb-2" data-field="Name"
+                               name="@($"Steps[{i}].Name")" value="@st?.Name" maxlength="150"
+                               placeholder="Label for this step, e.g. Senior manager sign-off (optional)" />
+
+                        <div class="form-check">
+                            <input type="hidden" data-field="Self" name="@($"Steps[{i}].Self")" value="false" />
+                            <input class="form-check-input" type="checkbox" data-field="Self"
+                                   id="@($"self-{key}-{i}")" name="@($"Steps[{i}].Self")" value="true"
+                                   checked="@(st?.AllowSelfApproval ?? false)" />
+                            <label class="form-check-label small" for="@($"self-{key}-{i}")">
+                                Let the person who asked sign this step
+                            </label>
+                        </div>
+                        <div class="qa-meta">
+                            Off is right almost always. Tick it only for a one-person workspace, where
+                            otherwise the quote could never be sent.
+                        </div>
+                    </div>
+
+                    @if (st?.Problem != null)
+                    {
+                        <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                            <i class="bi bi-exclamation-triangle me-1"></i>@st.Problem
+                        </div>
+                    }
+                </div>
+            }
+
+            <button type="button" class="btn btn-sm btn-outline-secondary qa-addstep">
+                <i class="bi bi-plus-lg me-1"></i>Add a step
+            </button>
+            <div class="qa-meta mt-1">Up to @Model.MaxSteps steps. A workspace admin can sign any of them.</div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
+        <button type="submit" class="btn btn-sm btn-primary">
+            <i class="bi bi-save me-1"></i>@(Model.IsNew ? "Add this rule" : "Save this rule")
+        </button>
+    </div>
+</form>

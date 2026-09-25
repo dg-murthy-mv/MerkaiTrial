@@ -4,9 +4,10 @@
 @inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService Ui
 
 @{
-    var routeVals = ViewContext.RouteData.Values;
-    var currentPage = (string)(routeVals.ContainsKey("page") ? routeVals["page"] : "/Index") ?? "/Index";
-
+    @* routeVals / currentPage used to live here. Both were dead: every
+       active-state check goes through the CurrentPage() helper in the
+       @functions block below. Removed so there is one source of truth for
+       "which page am I on". *@
     var tenantName = Ui.GetTenantName();
     var userEmail = Ui.GetUserEmail();
 
@@ -932,28 +933,44 @@
 
                 }
 
-                <!-- Sales Pipeline -->
-                @if (CanNav("deals"))
+                @* ── Sales Pipeline ───────────────────────────────────
+                   027a: all three links used to gate on "deals". Their
+                   pages don't — Quotes/Index validates quotes.read and
+                   Invoices/Index validates invoices.read. So a role with
+                   quotes.read but not deals.read saw no Quotes link and
+                   had to know the URL, while a role with deals.read but
+                   not quotes.read saw a link that denied it on click.
+                   That is the same sidebar-disagrees-with-the-page bug
+                   round 024 fixed for the settings pages. Each link now
+                   gates on its own module, and the section shows if any
+                   of the three does. *@
+                @if (CanNav("deals") || CanNav("quotes") || CanNav("invoices"))
                 {
                     <div class="lf-nav-section">Sales Pipeline</div>
 
-                    @* ✅ Pipeline — gated by Deals read *@
-                    <a class="lf-nav-item @(IsActive("/Pipeline") ? "active" : "")"
-                       asp-page="/Pipeline/Index">
-                        <i class="bi bi-kanban"></i> Pipeline
-                    </a>
+                    @if (CanNav("deals"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Pipeline") ? "active" : "")"
+                           asp-page="/Pipeline/Index">
+                            <i class="bi bi-kanban"></i> Pipeline
+                        </a>
+                    }
 
-                    @* ✅ Quotes — gated by Deals read *@
-                    <a class="lf-nav-item @(IsActive("/Quotes") ? "active" : "")"
-                       asp-page="/Quotes/Index">
-                        <i class="bi bi-file-earmark-text"></i> Quotes
-                    </a>
+                    @if (CanNav("quotes"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Quotes") ? "active" : "")"
+                           asp-page="/Quotes/Index">
+                            <i class="bi bi-file-earmark-text"></i> Quotes
+                        </a>
+                    }
 
-                    @* ✅ Invoices — gated by Deals read *@
-                    <a class="lf-nav-item @(IsActive("/Invoices") ? "active" : "")"
-                       asp-page="/Invoices/Index">
-                        <i class="bi bi-receipt"></i> Invoices
-                    </a>
+                    @if (CanNav("invoices"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Invoices") ? "active" : "")"
+                           asp-page="/Invoices/Index">
+                            <i class="bi bi-receipt"></i> Invoices
+                        </a>
+                    }
                 }
 
                 <!-- ✅ Reports — gated by plan feature AND Reports read permission -->
@@ -1061,13 +1078,26 @@
                            asp-page="/Settings/LeadStatuses/Index">
                             <i class="bi bi-funnel"></i> Lead Statuses
                         </a>
-                        <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"
+                        @* Trailing slash matters. IsActive is a StartsWith, so
+                           "/Settings/Pipeline" also matched "/Settings/PipelineRules"
+                           and both this and Sales Process highlighted together. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/Pipeline/") ? "active" : "")"
                            asp-page="/Settings/Pipeline/Index">
                             <i class="bi bi-kanban"></i> Pipeline Stages
                         </a>
                         <a class="lf-nav-item @(IsActive("/Settings/PipelineRules") ? "active" : "")"
                            asp-page="/Settings/PipelineRules/Index">
                             <i class="bi bi-diagram-3"></i> Sales Process
+                        </a>
+
+                        @* 027a: the rules page shipped in round 027 with no way
+                           to reach it but the sliders icon on the Quotes page.
+                           Gated on "settings" because that is what
+                           Pages/Settings/QuoteApprovals/Index.cshtml.cs declares
+                           as its ModuleName — nav and page agree. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/QuoteApprovals") ? "active" : "")"
+                           asp-page="/Settings/QuoteApprovals/Index">
+                            <i class="bi bi-patch-check"></i> Quote Approvals
                         </a>
                     }
 
@@ -1084,6 +1114,18 @@
                         <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
                            asp-page="/Settings/Roles/Index">
                             <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
+                        </a>
+
+                        @* 027a: Record Visibility shipped in round 026 and was
+                           never added here either — it was reachable only by
+                           typing /Settings/Visibility. It sits next to Roles &
+                           Permissions on purpose: permissions decide what people
+                           can DO, this decides WHICH records they do it to, and
+                           the two pages link to each other. Gated on "roles"
+                           because that is the ModuleName the page declares. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/Visibility") ? "active" : "")"
+                           asp-page="/Settings/Visibility/Index">
+                            <i class="bi bi-eye"></i> Record Visibility
                         </a>
                     }
 
@@ -1234,6 +1276,11 @@
                                 <li>
                                     <a class="dropdown-item" asp-page="/Settings/Roles/Index">
                                         <i class="bi bi-shield-lock me-2"></i>Roles &amp; Permissions
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" asp-page="/Settings/Visibility/Index">
+                                        <i class="bi bi-eye me-2"></i>Record Visibility
                                     </a>
                                 </li>
                             }

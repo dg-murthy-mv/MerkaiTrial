@@ -1,350 +1,964 @@
 @page "/Settings/Visibility"
 @using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.Commands.RecordVisibility
 @model MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel
 @{
     ViewData["Title"] = "Record Visibility";
+
+    var vm = MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.AllScopes;
+    var editable = Model.CanUpdate;
+    var teams = Model.TeamsOverview.Teams;
+    var people = Model.TeamsOverview.Users;
+    var modules = Model.Matrix.Modules;
+    var unmanaged = Model.TeamsWithoutActiveManager;
+    var inactiveCount = people.Count(p => !p.IsActive);
+    var rolesInUse = Model.Matrix.Roles.Count(r => r.UserCount > 0);
+
+    // Breadth is colour-coded as well as named: tight, middle, wide.
+    // The words are always there too, so colour never carries it alone.
+    Func<RecordScope, string> segClass = s => s switch
+    {
+        RecordScope.Own => "btn-outline-success",
+        RecordScope.Team => "btn-outline-primary",
+        _ => "btn-outline-warning"
+    };
+
+    Func<TeamDto, string> managerLabel = t =>
+    {
+        var active = MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ActiveManagers(t);
+        if (t.ManagerCount == 0) return "no manager";
+        if (active == 0) return "no manager who can sign in";
+        return t.ManagerNames != null && t.ManagerNames.Count > 0
+            ? string.Join(", ", t.ManagerNames)
+            : t.ManagerCount + (t.ManagerCount == 1 ? " manager" : " managers");
+    };
+
+    var cellIndex = 0;
 }
 @* =====================================================================
    RECORD VISIBILITY
    Location: MerkaiTrial.Admin.Web/Pages/Settings/Visibility/Index.cshtml
-   NEW FILE (rename to Index.cshtml).
 
-   Top:    which leads each role can see — Own / Team / All.
-           Tenant Administrator is locked to All.
-   Bottom: teams; who BELONGS to which (one each) and who MANAGES which
-           (any number).
+   COMPLETE FILE — replaces the previous version.
+
+   1. Who sees whose records — one segmented control per role per module,
+      one Save for the whole grid, and a line under any cell you change
+      saying who gains or loses sight of what.
+   2. Teams — add, rename and remove inline, with any team that has no
+      manager who can sign in called out (its quote approvals all fall to
+      workspace admins).
+   3. People — searchable; one expandable panel per person holding both
+      their team and the teams they manage, saved together.
+
+   EVERY FORM POSTS THE VALUE IT WAS RENDERED WITH (the "rendered rank" in
+   each cell's Ref, and originalTeamId / originalTeamIds on a person). The
+   server needs that to tell "the user changed this" apart from "this page
+   is just old", and so never reverts another admin's change. Do not
+   remove those hidden fields.
+
+   No Bootstrap JavaScript is required: every expander is a native
+   <details>, so the page works with scripting switched off. The script at
+   the bottom only adds the change counter, the consequence lines and the
+   search box — and it hides nothing that scripting-off would show.
+
+   TempData alerts are rendered once by _Layout — this page must not add
+   its own global alert block.
    ===================================================================== *@
 
-<div class="d-flex justify-content-between align-items-start mb-4">
-    <div>
-        <h1 class="lf-page-title mb-1">Record Visibility</h1>
-        <p class="text-muted mb-0" style="font-size:13.5px;">
-            Decide whose records each role can see. Permissions decide what
-            people can <em>do</em>; this decides <em>which</em> records they do it to.
-        </p>
+<style>
+    .rv-wrap { max-width: 1180px; }
+
+    .rv-lede { font-size: 13.5px; }
+
+    .rv-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; box-shadow: 0 1px 3px rgba(16,24,40,.06); margin-bottom: 1.25rem; }
+    .rv-card > .rv-head { padding: .9rem 1.15rem; border-bottom: 1px solid #f1f3f5; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .rv-card > .rv-head h2 { font-size: 1rem; font-weight: 650; margin: 0; }
+    .rv-card > .rv-head .rv-step { width: 22px; height: 22px; border-radius: 50%; background: #eef2ff; color: #3b4fd4; font-size: .72rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .rv-body { padding: 1.15rem; }
+    .rv-body-tight { padding: .5rem 1.15rem 1.15rem; }
+
+    /* ── scope grid ─────────────────────────────────────────────── */
+    .rv-grid { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .rv-grid th { font-size: .74rem; letter-spacing: .04em; text-transform: uppercase; color: #6c757d; font-weight: 650; padding: .55rem .85rem; background: #fbfcfd; border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .rv-grid td { padding: .7rem .85rem; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+    .rv-grid tr:last-child td { border-bottom: 0; }
+    .rv-grid tbody tr:hover { background: #fcfdfe; }
+    .rv-rolename { font-weight: 600; font-size: .92rem; }
+    .rv-rolemeta { font-size: .76rem; color: #8b949e; }
+
+    .rv-seg { display: inline-flex; }
+    .rv-seg .btn { --bs-btn-padding-y: .16rem; --bs-btn-padding-x: .55rem; font-size: .78rem; font-weight: 600; }
+    .rv-cellnote { font-size: .74rem; color: #8b949e; margin-top: .3rem; line-height: 1.35; }
+    .rv-flag { font-size: .74rem; margin-top: .3rem; line-height: 1.35; border-radius: 6px; padding: .3rem .45rem; display: none; }
+    .rv-cell.is-changed .rv-flag { display: block; }
+    .rv-cell.is-changed .rv-seg { box-shadow: 0 0 0 3px rgba(59,79,212,.14); border-radius: 7px; }
+    .rv-flag.narrower { background: #fff4e5; color: #8a5300; }
+    .rv-flag.wider { background: #fdeaea; color: #922; }
+    .rv-tag { display: inline-block; font-size: .68rem; font-weight: 650; letter-spacing: .02em; padding: .08rem .38rem; border-radius: 5px; background: #f1f3f5; color: #6c757d; }
+
+    .rv-lockrow { display: flex; align-items: center; gap: .55rem; font-size: .85rem; color: #495057; background: #f8f9fb; border-radius: 8px; padding: .55rem .8rem; }
+
+    .rv-savebar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .75rem 1.15rem; border-top: 1px solid #eceff2; background: #fff; border-radius: 0 0 12px 12px; }
+    .rv-savebar.is-dirty { background: #f5f7ff; border-top-color: #d8ddff; }
+    .rv-savecount { font-size: .82rem; color: #6c757d; }
+    .rv-savebar.is-dirty .rv-savecount { color: #3b4fd4; font-weight: 600; }
+
+    /* ── teams ──────────────────────────────────────────────────── */
+    .rv-team { padding: .85rem 1.15rem; border-bottom: 1px solid #f4f6f8; }
+    .rv-team:last-of-type { border-bottom: 0; }
+    .rv-teamname { font-weight: 600; }
+    .rv-chip { display: inline-block; font-size: .72rem; padding: .1rem .45rem; border-radius: 20px; background: #f1f3f5; color: #57606a; margin-right: .25rem; }
+    .rv-chip.warn { background: #fff4e5; color: #8a5300; }
+    .rv-chip.ok { background: #e7f6ec; color: #17603a; }
+
+    /* ── people ─────────────────────────────────────────────────── */
+    .rv-person { border-bottom: 1px solid #f4f6f8; }
+    .rv-person:last-of-type { border-bottom: 0; }
+    .rv-person > summary { padding: .7rem 1.15rem; cursor: pointer; list-style: none; display: flex; align-items: center; gap: .85rem; flex-wrap: wrap; }
+    .rv-person > summary::-webkit-details-marker { display: none; }
+    .rv-person > summary:hover { background: #fbfcfd; }
+    .rv-person[open] > summary { background: #f8f9fb; }
+    .rv-person .rv-pname { font-weight: 600; font-size: .92rem; }
+    .rv-person .rv-pmeta { font-size: .76rem; color: #8b949e; }
+    .rv-person .rv-pcols { margin-left: auto; display: flex; gap: 1.4rem; flex-wrap: wrap; font-size: .78rem; }
+    .rv-person .rv-pcols .lbl { color: #adb5bd; display: block; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; }
+    .rv-person.rv-inactive > summary .rv-pname,
+    .rv-person.rv-inactive > summary .rv-pmeta { opacity: .65; }
+    .rv-panel { padding: .3rem 1.15rem 1.15rem; background: #f8f9fb; }
+    .rv-mbox { max-height: 190px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; padding: .55rem .7rem; background: #fff; }
+
+    /* A plain <details> used as a disclosure button. */
+    .rv-disc > summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 600; color: #3b4fd4; }
+    .rv-disc > summary::-webkit-details-marker { display: none; }
+    .rv-disc > summary:hover { text-decoration: underline; }
+
+    .rv-hidden { display: none !important; }
+
+    @@media (max-width: 767.98px) {
+        .rv-person .rv-pcols { margin-left: 0; width: 100%; gap: 1rem; }
+        .rv-grid th, .rv-grid td { padding: .5rem .6rem; }
+    }
+</style>
+
+<div class="rv-wrap">
+
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3 flex-wrap">
+        <div>
+            <h1 class="lf-page-title mb-1">Record Visibility</h1>
+            <p class="text-muted mb-0 rv-lede">
+                Permissions decide what people can <em>do</em>. This decides <em>which</em>
+                records they do it to.
+            </p>
+        </div>
+        <a asp-page="/Settings/Roles/Index" class="btn btn-outline-secondary">
+            <i class="bi bi-shield me-1"></i>Roles &amp; Permissions
+        </a>
     </div>
-    <a asp-page="/Settings/Roles/Index" class="btn btn-outline-secondary">
-        <i class="bi bi-shield me-1"></i>Roles &amp; Permissions
-    </a>
-</div>
 
-<div class="row g-4">
-    <div class="col-lg-8">
+    @if (!editable)
+    {
+        <div class="alert alert-info py-2">
+            <i class="bi bi-lock me-1"></i>
+            You can see these settings but not change them. Ask a workspace admin if something here looks wrong.
+        </div>
+    }
 
-        <!-- ── Scope matrix ─────────────────────────────────────────── -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-eye me-2"></i>What each role can see
+    <details class="rv-card rv-disc">
+        <summary class="rv-head">
+            <i class="bi bi-question-circle"></i>
+            <h2>What Own, Team and All mean</h2>
+        </summary>
+        <div class="rv-body pt-0">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="fw-semibold mb-1"><span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Own</span></div>
+                    <div class="small text-muted">Only records assigned to them. A record they create without choosing an owner is assigned to them.</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="fw-semibold mb-1"><span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">Team</span></div>
+                    <div class="small text-muted">Records belonging to anyone in their team or a team they manage, plus unassigned records so new enquiries can be picked up.</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="fw-semibold mb-1"><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">All</span></div>
+                    <div class="small text-muted">Every record in the workspace.</div>
+                </div>
+            </div>
+            <hr class="my-3" />
+            <ul class="small text-muted mb-0 ps-3">
+                <li>A record somebody can't see behaves as if it doesn't exist — not in the list, not in tab counts or stats, and its link says "not found".</li>
+                <li>Workspace admins always see everything. That can't be narrowed: somebody has to be able to fix any record.</li>
+                <li>Somebody holding more than one role gets the <strong>widest</strong> of them.</li>
+                <li>Changes apply on that person's next click. Nobody is signed out.</li>
+                <li><strong>Managing</strong> a team does two jobs: with Team visibility the manager sees that team's records, and they are the people asked to approve that team's quotes. Only managers who can sign in are asked.</li>
+            </ul>
+        </div>
+    </details>
+
+    @* ================================================================
+       1. WHO SEES WHOSE RECORDS
+       ================================================================ *@
+    <form method="post" asp-page-handler="Scopes" id="rvScopeForm"
+          data-scope-words="@Model.ScopeWordsAttribute">
+        <div class="rv-card" id="visibility">
+            <div class="rv-head">
+                <span class="rv-step">1</span>
+                <h2>Who sees whose records</h2>
+                @if (Model.MatrixError == null && modules.Count > 0)
+                {
+                    <span class="ms-auto d-flex gap-3 flex-wrap">
+                        @foreach (var m in modules)
+                        {
+                            <span class="rv-rolemeta"><strong class="text-body">@m</strong> — @Model.ScopeSummary(m)</span>
+                        }
+                    </span>
+                }
             </div>
 
-            @if (!Model.Matrix.Roles.Any())
+            @if (Model.MatrixError != null)
             {
-                <div class="card-body text-muted">No roles found.</div>
+                <div class="rv-body">
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>@Model.MatrixError
+                    </div>
+                </div>
+            }
+            else if (modules.Count == 0)
+            {
+                <div class="rv-body text-muted small">
+                    No module enforces record visibility yet, so there is nothing to set here.
+                </div>
+            }
+            else if (Model.Matrix.Roles.Count == 0)
+            {
+                <div class="rv-body text-muted small">
+                    No roles found. Add a role under Roles &amp; Permissions first.
+                </div>
             }
             else
             {
+                @if (Model.Matrix.Roles.Count > rolesInUse && rolesInUse > 0)
+                {
+                    <div class="rv-body-tight pt-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="rvOnlyUsed" />
+                            <label class="form-check-label small text-muted" for="rvOnlyUsed">
+                                Show only the @rolesInUse role@(rolesInUse == 1 ? "" : "s") somebody actually holds
+                                (@(Model.Matrix.Roles.Count - rolesInUse) unused)
+                            </label>
+                        </div>
+                    </div>
+                }
+
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0">
-                        <thead class="table-light">
+                    <table class="rv-grid">
+                        <thead>
                             <tr>
-                                <th>Role</th>
-                                <th class="text-center">People</th>
-                                @foreach (var module in Model.Matrix.Modules)
+                                <th style="min-width:210px;">Role</th>
+                                @foreach (var module in modules)
                                 {
-                                    <th style="min-width:180px;">@module</th>
+                                    <th style="min-width:230px;">@module</th>
                                 }
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var role in Model.Matrix.Roles)
                             {
-                                <tr>
+                                <tr class="rv-rolerow @(role.UserCount == 0 ? "rv-unused" : "")">
                                     <td>
-                                        <div class="fw-semibold">@role.DisplayName</div>
-                                        <small class="text-muted">
+                                        <div class="rv-rolename">@role.DisplayName</div>
+                                        <div class="rv-rolemeta">
                                             @(role.IsSystemRole ? "Built-in" : "Custom")
-                                        </small>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-light text-dark border">@role.UserCount</span>
-                                    </td>
-
-                                    @foreach (var module in Model.Matrix.Modules)
-                                    {
-                                        var current = role.Scopes.TryGetValue(module, out var c) ? c : RecordScope.All;
-                                        var isDefault = role.Defaults.TryGetValue(module, out var d) && d == current;
-
-                                        <td>
-                                            @if (role.IsLocked)
+                                            ·
+                                            @if (role.UserCount == 0)
                                             {
-                                                <span class="badge bg-dark">
-                                                    <i class="bi bi-lock-fill me-1"></i>All (always)
-                                                </span>
-                                            }
-                                            else if (Model.CanUpdate)
-                                            {
-                                                <form method="post" asp-page-handler="Scope" class="d-flex align-items-center gap-2">
-                                                    <input type="hidden" name="roleId" value="@role.RoleId" />
-                                                    <input type="hidden" name="module" value="@module" />
-                                                    <select name="scope" class="form-select form-select-sm"
-                                                            onchange="this.form.submit()"
-                                                            title="@MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ScopeHint(current)">
-                                                        @foreach (var s in MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.AllScopes)
-                                                        {
-                                                            <option value="@s" selected="@(s == current)">
-                                                                @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Describe(s)
-                                                            </option>
-                                                        }
-                                                    </select>
-                                                    <noscript><button class="btn btn-sm btn-primary">Save</button></noscript>
-                                                </form>
+                                                <span>nobody holds this yet</span>
                                             }
                                             else
                                             {
-                                                <span class="badge bg-secondary">
-                                                    @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Describe(current)
-                                                </span>
+                                                <span>@role.UserCount @(role.UserCount == 1 ? "person" : "people")</span>
                                             }
-                                            <div class="small text-muted mt-1">
-                                                @MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ScopeHint(current)
-                                                @if (role.IsLocked)
-                                                {
-                                                    <span class="ms-1 badge bg-light text-muted border">can't be changed</span>
-                                                }
-                                                else if (isDefault)
-                                                {
-                                                    <span class="ms-1 badge bg-light text-muted border">default</span>
-                                                }
+                                        </div>
+                                        @if (role.Holders != null && role.Holders.Count > 0)
+                                        {
+                                            <details class="rv-disc mt-1">
+                                                <summary class="rv-rolemeta" style="color:#8b949e;font-weight:600;">Who</summary>
+                                                <div class="rv-rolemeta mt-1">@string.Join(", ", role.Holders)</div>
+                                            </details>
+                                        }
+                                    </td>
+
+                                    @if (role.IsLocked)
+                                    {
+                                        <td colspan="@modules.Count">
+                                            <div class="rv-lockrow">
+                                                <i class="bi bi-lock-fill"></i>
+                                                <span>
+                                                    Always sees every record, in every module — and that can't be changed.
+                                                    Somebody has to be able to fix anything.
+                                                </span>
                                             </div>
                                         </td>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var module in modules)
+                                        {
+                                            var current = role.Scopes.TryGetValue(module, out var c) ? c : RecordScope.All;
+                                            var def = role.Defaults.TryGetValue(module, out var d) ? d : current;
+                                            var i = cellIndex++;
+
+                                            <td class="rv-cell"
+                                                data-saved="@MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Rank(current)"
+                                                data-people="@role.UserCount">
+                                                @if (editable)
+                                                {
+                                                    @* roleId | module | the value this page was RENDERED with.
+                                                       The server compares posted vs rendered to know whether
+                                                       the user touched this cell at all. *@
+                                                    <input type="hidden" name="@($"Cells[{i}].Ref")"
+                                                           value="@MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.CellRef(role.RoleId, module, current)" />
+                                                }
+
+                                                <div class="btn-group btn-group-sm rv-seg" role="group"
+                                                     aria-label="@role.DisplayName — @module">
+                                                    @foreach (var s in vm)
+                                                    {
+                                                        var inputId = $"sc-{i}-{MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Rank(s)}";
+                                                        <input type="radio" class="btn-check"
+                                                               name="@($"Cells[{i}].Scope")"
+                                                               id="@inputId"
+                                                               value="@s"
+                                                               autocomplete="off"
+                                                               data-rank="@MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.Rank(s)"
+                                                               checked="@(s == current)"
+                                                               disabled="@(!editable)" />
+                                                        <label class="btn @segClass(s)" for="@inputId" title="@Model.ScopeTip(s)">
+                                                            @Model.ScopeName(s)
+                                                        </label>
+                                                    }
+                                                </div>
+
+                                                <div aria-live="polite">
+                                                    <div class="rv-cellnote">
+                                                        @Model.ScopeTip(current)
+                                                        @if (current == def)
+                                                        {
+                                                            <span class="rv-tag ms-1">default</span>
+                                                        }
+                                                    </div>
+
+                                                    @* Filled in by the script when this cell is changed. *@
+                                                    <div class="rv-flag"></div>
+                                                </div>
+                                            </td>
+                                        }
                                     }
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
-            }
 
-            <div class="card-footer small text-muted">
-                <i class="bi bi-info-circle me-1"></i>
-                Workspace admins always see everything. New roles start at
-                <strong>Own</strong> — widen them here. Someone with more than one
-                role gets the widest of them. Changes apply on their next click —
-                nobody is signed out.
-            </div>
+                @* No editable cell means no Save: every role here is locked,
+                   which is the normal state of a brand-new workspace. *@
+                @if (editable && cellIndex > 0)
+                {
+                    <div class="rv-savebar" id="rvSaveBar">
+                        <span class="rv-savecount" id="rvSaveCount">Nothing changed yet</span>
+                        <div class="ms-auto d-flex gap-2">
+                            <button type="reset" class="btn btn-sm btn-outline-secondary" id="rvReset">Discard changes</button>
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="bi bi-save me-1"></i>Save visibility
+                            </button>
+                        </div>
+                    </div>
+                }
+                else if (editable)
+                {
+                    <div class="rv-body-tight pt-3">
+                        <div class="small text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Every role in this workspace is a workspace-admin role, so there is nothing to narrow yet.
+                            Add a role under Roles &amp; Permissions and it will appear here.
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </form>
+
+    @* ================================================================
+       2. TEAMS
+       ================================================================ *@
+    <div class="rv-card" id="teams">
+        <div class="rv-head">
+            <span class="rv-step">2</span>
+            <h2>Teams</h2>
+            @if (Model.TeamsError == null)
+            {
+                <span class="rv-chip">@teams.Count @(teams.Count == 1 ? "team" : "teams")</span>
+                @if (unmanaged.Count > 0)
+                {
+                    <span class="rv-chip warn">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>@unmanaged.Count with no manager
+                    </span>
+                }
+            }
         </div>
 
-        <!-- ── Teams ─────────────────────────────────────────────────── -->
-        <div class="card mb-4" id="teams">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-people me-2"></i>Teams</span>
-                <span class="badge bg-secondary">@Model.TeamsOverview.Teams.Count</span>
+        @if (Model.TeamsError != null)
+        {
+            <div class="rv-body">
+                <div class="alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>@Model.TeamsError
+                </div>
             </div>
-
-            @if (!Model.TeamsOverview.Teams.Any())
+        }
+        else
+        {
+            @if (unmanaged.Count > 0)
             {
-                <div class="card-body text-muted small">
-                    No teams yet. Until someone is in a team, <strong>Team</strong>
-                    visibility shows them their own records plus unassigned ones.
+                <div class="rv-body-tight pt-3">
+                    <div class="alert alert-warning py-2 mb-0 small">
+                        <strong>@string.Join(", ", unmanaged.Select(t => t.Name))</strong>
+                        @(unmanaged.Count == 1 ? "has" : "have") nobody managing @(unmanaged.Count == 1 ? "it" : "them")
+                        who can sign in. Two things follow: with <em>Team</em> visibility nobody outside the team sees
+                        its records, and every quote from those deals goes to a workspace admin for approval.
+                        Give each one a manager under <a href="#people">who manages what</a>.
+                    </div>
+                </div>
+            }
+
+            @if (editable)
+            {
+                <div class="rv-body-tight pt-3">
+                    <details class="rv-disc" id="rvAddTeam" open="@(teams.Count == 0)">
+                        <summary><i class="bi bi-plus-circle"></i>Add a team</summary>
+                        <form method="post" asp-page-handler="CreateTeam" class="row g-2 align-items-end mt-2">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1">Name <span class="text-danger">*</span></label>
+                                <input name="name" class="form-control form-control-sm" required maxlength="100"
+                                       placeholder="e.g. Bangkok Sales" />
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small mb-1">What it covers <span class="text-muted">(optional)</span></label>
+                                <input name="description" class="form-control form-control-sm" maxlength="500"
+                                       placeholder="e.g. Thailand — Eastern Seaboard" />
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-sm btn-primary w-100">
+                                    <i class="bi bi-plus-lg me-1"></i>Add team
+                                </button>
+                            </div>
+                        </form>
+                    </details>
+                </div>
+            }
+
+            @if (teams.Count == 0)
+            {
+                <div class="rv-body text-muted small">
+                    No teams yet. Until somebody is in a team, <strong>Team</strong> visibility
+                    shows them their own records plus unassigned ones — the same as
+                    <strong>Own</strong>, with new enquiries added.
                 </div>
             }
             else
             {
-                <div class="list-group list-group-flush">
-                    @foreach (var team in Model.TeamsOverview.Teams)
-                    {
-                        <div class="list-group-item">
-                            @if (Model.IsRenaming(team))
-                            {
-                                <form method="post" asp-page-handler="RenameTeam" class="row g-2 align-items-end">
-                                    <input type="hidden" name="teamId" value="@team.Id" />
-                                    <div class="col-md-5">
-                                        <label class="form-label small mb-1">Name</label>
-                                        <input name="name" value="@team.Name" class="form-control form-control-sm" required maxlength="100" />
-                                    </div>
-                                    <div class="col-md-5">
-                                        <label class="form-label small mb-1">Description</label>
-                                        <input name="description" value="@team.Description" class="form-control form-control-sm" maxlength="500" />
-                                    </div>
-                                    <div class="col-md-2 d-flex gap-1">
-                                        <button class="btn btn-sm btn-primary flex-fill">Save</button>
-                                        <a asp-page="./Index" asp-fragment="teams" class="btn btn-sm btn-outline-secondary">✕</a>
-                                    </div>
-                                </form>
-                            }
-                            else
-                            {
-                                <div class="d-flex align-items-center gap-3">
-                                    <div class="flex-grow-1">
-                                        <div class="fw-semibold">@team.Name</div>
-                                        <div class="small text-muted">
-                                            @(team.MemberCount + " member" + (team.MemberCount == 1 ? "" : "s"))
+                @foreach (var team in teams)
+                {
+                    var activeMgrs = MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ActiveManagers(team);
 
-                                            @if (team.ManagerCount > 0)
-                                            {
-                                                <span class="mx-1">·</span>
-                                                @(team.ManagerCount + " manager" + (team.ManagerCount == 1 ? "" : "s"))
-                                            }
-
-                                            @if (!string.IsNullOrEmpty(team.Description))
-                                            {
-                                                <span class="mx-1">·</span>
-                                                @team.Description
-                                            }
-                                        </div>
-                                    </div>
-                                    @if (Model.CanUpdate)
+                    <div class="rv-team">
+                        <div class="d-flex align-items-start gap-3 flex-wrap">
+                            <div class="flex-grow-1">
+                                <div class="rv-teamname">@team.Name</div>
+                                <div class="mt-1">
+                                    <span class="rv-chip">@team.MemberCount @(team.MemberCount == 1 ? "member" : "members")</span>
+                                    @if (activeMgrs == 0)
                                     {
-                                        <div class="btn-group btn-group-sm">
-                                            <a class="btn btn-outline-secondary" title="Rename"
-                                               asp-page="./Index" asp-route-RenameId="@team.Id" asp-fragment="teams">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            <form method="post" asp-page-handler="DeleteTeam"
-                                                  onsubmit="return confirm('Remove the @team.Name team? Its members stay, but will be in no team.');">
+                                        <span class="rv-chip warn">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>@managerLabel(team)
+                                        </span>
+                                        @if (team.ManagerCount > 0 && team.ManagerNames != null && team.ManagerNames.Count > 0)
+                                        {
+                                            <span class="rv-chip">@string.Join(", ", team.ManagerNames)</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="rv-chip ok">
+                                            <i class="bi bi-person-check me-1"></i>@managerLabel(team)
+                                        </span>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(team.Description))
+                                {
+                                    <div class="rv-rolemeta mt-1">@team.Description</div>
+                                }
+                            </div>
+
+                            @if (editable)
+                            {
+                                <div class="d-flex gap-3 flex-wrap">
+                                    <details class="rv-disc" open="@Model.IsRenaming(team)">
+                                        <summary><i class="bi bi-pencil"></i>Edit</summary>
+                                        <form method="post" asp-page-handler="RenameTeam" class="row g-2 align-items-end mt-2" style="min-width:320px;">
+                                            <input type="hidden" name="teamId" value="@team.Id" />
+                                            <div class="col-12">
+                                                <label class="form-label small mb-1">Name</label>
+                                                <input name="name" value="@team.Name" class="form-control form-control-sm" required maxlength="100" />
+                                            </div>
+                                            <div class="col-12">
+                                                <label class="form-label small mb-1">What it covers</label>
+                                                <input name="description" value="@team.Description" class="form-control form-control-sm" maxlength="500" />
+                                            </div>
+                                            <div class="col-12">
+                                                <button class="btn btn-sm btn-primary">Save team</button>
+                                            </div>
+                                        </form>
+                                    </details>
+
+                                    <details class="rv-disc">
+                                        <summary class="text-danger"><i class="bi bi-trash"></i>Remove</summary>
+                                        <div class="mt-2 p-2 border rounded bg-white" style="min-width:300px;">
+                                            <div class="small mb-2">
+                                                Remove <strong>@team.Name</strong>?
+                                                @if (team.MemberCount > 0)
+                                                {
+                                                    <span>
+                                                        Its @team.MemberCount @(team.MemberCount == 1 ? "member" : "members")
+                                                        will be in no team — with <em>Team</em> visibility they then see only
+                                                        their own records plus unassigned ones.
+                                                    </span>
+                                                }
+                                                @if (team.ManagerCount > 0)
+                                                {
+                                                    <span>
+                                                        @team.ManagerCount @(team.ManagerCount == 1 ? "person stops" : "people stop")
+                                                        managing it, so they stop approving its quotes.
+                                                    </span>
+                                                }
+                                                Nobody is deleted, and you can add the team again afterwards.
+                                            </div>
+                                            <form method="post" asp-page-handler="DeleteTeam">
                                                 <input type="hidden" name="teamId" value="@team.Id" />
-                                                <button class="btn btn-sm btn-outline-danger" title="Remove">
-                                                    <i class="bi bi-trash"></i>
+                                                <button class="btn btn-sm btn-danger">
+                                                    <i class="bi bi-trash me-1"></i>Yes, remove it
                                                 </button>
                                             </form>
                                         </div>
-                                    }
+                                    </details>
                                 </div>
                             }
                         </div>
-                    }
-                </div>
+                    </div>
+                }
+            }
+        }
+    </div>
+
+    @* ================================================================
+       3. PEOPLE
+       ================================================================ *@
+    <div class="rv-card" id="people">
+        <div class="rv-head">
+            <span class="rv-step">3</span>
+            <h2>Who is in which team, and who manages what</h2>
+            @if (Model.TeamsError == null)
+            {
+                <span class="rv-chip">@people.Count @(people.Count == 1 ? "person" : "people")</span>
             }
         </div>
 
-        <!-- ── People → team ─────────────────────────────────────────── -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <i class="bi bi-person-lines-fill me-2"></i>Who is in which team
-            </div>
-            <div class="px-3 pt-2 small text-muted">
-                <strong>Belongs to</strong> — one team per person.
-                <strong>Manages</strong> — any number; with <em>Team</em> visibility
-                they see the records of everyone in the teams they manage.
-            </div>
-            <div class="table-responsive">
-                <table class="table align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Person</th>
-                            <th style="min-width:180px;">Belongs to</th>
-                            <th style="min-width:220px;">Manages</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var u in Model.TeamsOverview.Users)
-                        {
-                            <tr class="@(u.IsActive ? "" : "opacity-50")">
-                                <td>
-                                    <div class="fw-semibold">
-                                        @u.FullName
-                                        @if (u.IsTenantAdmin)
-                                        {
-                                            <span class="badge bg-warning text-dark ms-1">Admin</span>
-                                        }
-                                        @if (!u.IsActive)
-                                        {
-                                            <span class="badge bg-light text-dark border ms-1">Inactive</span>
-                                        }
-                                    </div>
-                                    <small class="text-muted">@u.Email</small>
-                                </td>
-                                <td>
-                                    @if (Model.CanUpdate && Model.TeamsOverview.Teams.Any())
-                                    {
-                                        <form method="post" asp-page-handler="UserTeam">
-                                            <input type="hidden" name="userId" value="@u.Id" />
-                                            <select name="teamId" class="form-select form-select-sm" onchange="this.form.submit()">
-                                                <option value="" selected="@(!u.TeamId.HasValue)">No team</option>
-                                                @foreach (var t in Model.TeamsOverview.Teams)
-                                                {
-                                                    <option value="@t.Id" selected="@(u.TeamId == t.Id)">@t.Name</option>
-                                                }
-                                            </select>
-                                            <noscript><button class="btn btn-sm btn-primary mt-1">Save</button></noscript>
-                                        </form>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted">@Model.TeamName(u.TeamId)</span>
-                                    }
-                                </td>
-                                <td>
-                                    @if (u.IsTenantAdmin)
-                                    {
-                                        <span class="text-muted small">Sees everything</span>
-                                    }
-                                    else if (Model.CanUpdate && Model.TeamsOverview.Teams.Any())
-                                    {
-                                        <form method="post" asp-page-handler="ManagedTeams" class="d-flex flex-wrap align-items-center gap-2">
-                                            <input type="hidden" name="userId" value="@u.Id" />
-                                            @foreach (var t in Model.TeamsOverview.Teams)
-                                            {
-                                                var boxId = $"m-{u.Id:N}-{t.Id:N}";
-                                                <div class="form-check form-check-inline mb-0 me-1">
-                                                    <input class="form-check-input" type="checkbox" id="@boxId"
-                                                           name="teamIds" value="@t.Id"
-                                                           checked="@(u.ManagedTeamIds.Contains(t.Id))" />
-                                                    <label class="form-check-label small" for="@boxId">@t.Name</label>
-                                                </div>
-                                            }
-                                            <button class="btn btn-sm btn-outline-primary py-0">Save</button>
-                                        </form>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted small">@Model.ManagedTeamNames(u)</span>
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Side panel ───────────────────────────────────────────────── -->
-    <div class="col-lg-4">
-        @if (Model.CanUpdate)
+        @if (Model.TeamsError != null)
         {
-            <div class="card mb-3">
-                <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Add a team</div>
-                <div class="card-body">
-                    <form method="post" asp-page-handler="CreateTeam">
-                        <div class="mb-3">
-                            <label class="form-label">Name <span class="text-danger">*</span></label>
-                            <input name="name" class="form-control" placeholder="e.g. Bangkok Sales" required maxlength="100" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Description</label>
-                            <input name="description" class="form-control" placeholder="Optional" maxlength="500" />
-                        </div>
-                        <button class="btn btn-primary w-100">
-                            <i class="bi bi-plus-lg me-1"></i>Add team
-                        </button>
-                    </form>
+            <div class="rv-body">
+                <div class="alert alert-warning py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle me-1"></i>@Model.TeamsError
                 </div>
             </div>
         }
-
-        <div class="card">
-            <div class="card-body small text-muted">
-                <p class="mb-2"><strong>Own</strong> — only leads assigned to them.
-                A lead they create without choosing an owner is assigned to them.</p>
-                <p class="mb-2"><strong>Team</strong> — leads assigned to anyone in
-                their team or a team they manage, plus unassigned leads, so new
-                enquiries can be picked up.</p>
-                <p class="mb-2"><strong>All</strong> — every lead in the workspace.</p>
-                <p class="mb-0">A record someone can't see behaves as if it doesn't
-                exist — it isn't in the lead list, tab counts or stats, and opening its
-                link says "not found".</p>
+        else if (people.Count == 0)
+        {
+            <div class="rv-body text-muted small">Nobody in this workspace yet.</div>
+        }
+        else
+        {
+            <div class="rv-body-tight pt-3">
+                <div class="row g-2 align-items-center">
+                    <div class="col-md-5">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="search" class="form-control" id="rvPeopleSearch"
+                                   placeholder="Find a person by name, email, team or role" autocomplete="off" />
+                        </div>
+                    </div>
+                    @if (inactiveCount > 0)
+                    {
+                        <div class="col-md-4">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="rvHideInactive" />
+                                <label class="form-check-label small text-muted" for="rvHideInactive">
+                                    Hide the @inactiveCount who can't sign in
+                                </label>
+                            </div>
+                        </div>
+                    }
+                    <div class="col-md text-md-end">
+                        <span class="rv-rolemeta" id="rvPeopleCount"></span>
+                    </div>
+                </div>
+                <div class="rv-rolemeta mt-2">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Open a person to change their team and the teams they manage. Both are saved together.
+                </div>
             </div>
-        </div>
+
+            @foreach (var u in people)
+            {
+                var managed = Model.ManagedTeamNameList(u);
+                var sees = Model.SeesSummary(u);
+                // The checkbox list is rendered for everybody who can be edited,
+                // including workspace admins: an admin promoted from manager keeps
+                // their TeamManagers rows, and hiding the list left no way to
+                // clear them.
+                var managesRendered = editable && teams.Count > 0;
+                var find = $"{u.FullName} {u.Email} {Model.TeamName(u.TeamId)} {string.Join(" ", managed)} {string.Join(" ", u.RoleNames ?? new List<string>())}".ToLowerInvariant();
+
+                <details class="rv-person @(u.IsActive ? "" : "rv-inactive")" data-find="@find" data-active="@(u.IsActive ? "1" : "0")">
+                    <summary>
+                        <span>
+                            <span class="rv-pname">
+                                @u.FullName
+                                @if (u.IsTenantAdmin)
+                                {
+                                    <span class="badge bg-warning text-dark ms-1">Admin</span>
+                                }
+                                @if (!u.IsActive)
+                                {
+                                    <span class="badge bg-light text-dark border ms-1">Can't sign in</span>
+                                }
+                            </span>
+                            <span class="rv-pmeta d-block">@u.Email</span>
+                        </span>
+
+                        <span class="rv-pcols">
+                            <span>
+                                <span class="lbl">Belongs to</span>
+                                @Model.TeamName(u.TeamId)
+                            </span>
+                            <span>
+                                <span class="lbl">Manages</span>
+                                @if (managed.Count == 0)
+                                {
+                                    <span class="text-muted">—</span>
+                                }
+                                else
+                                {
+                                    @string.Join(", ", managed)
+                                }
+                            </span>
+                            @if (sees != null)
+                            {
+                                <span>
+                                    <span class="lbl">Sees</span>
+                                    @sees
+                                </span>
+                            }
+                        </span>
+                        <i class="bi bi-chevron-down text-muted ms-2"></i>
+                    </summary>
+
+                    <div class="rv-panel">
+                        @if (!editable)
+                        {
+                            <div class="small text-muted">
+                                Roles: @(u.RoleNames != null && u.RoleNames.Count > 0 ? string.Join(", ", u.RoleNames) : "none")
+                            </div>
+                        }
+                        else if (teams.Count == 0)
+                        {
+                            <div class="small text-muted">
+                                There are no teams yet, so there is nothing to set for @u.FullName.
+                                <a href="#rvAddTeam">Add a team above</a> first.
+                            </div>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="Person" class="row g-3">
+                                <input type="hidden" name="userId" value="@u.Id" />
+
+                                @* What this panel was RENDERED with. The server needs both
+                                   to tell a real edit from a stale page, and to leave the
+                                   half you didn't touch alone — SetManagedTeams replaces
+                                   the WHOLE set, so a blind write would wipe managerships
+                                   added since this page loaded. *@
+                                <input type="hidden" name="originalTeamId" value="@(u.TeamId?.ToString() ?? "")" />
+                                @foreach (var id in u.ManagedTeamIds)
+                                {
+                                    <input type="hidden" name="originalTeamIds" value="@id" />
+                                }
+                                <input type="hidden" name="managesRendered" value="@(managesRendered ? "true" : "false")" />
+
+                                <div class="col-lg-4">
+                                    <label class="form-label small mb-1 fw-semibold" for="@($"team-{u.Id:N}")">Belongs to</label>
+                                    <select name="teamId" id="@($"team-{u.Id:N}")" class="form-select form-select-sm">
+                                        <option value="" selected="@(!u.TeamId.HasValue)">No team</option>
+                                        @foreach (var t in teams)
+                                        {
+                                            <option value="@t.Id" selected="@(u.TeamId == t.Id)">@t.Name</option>
+                                        }
+                                    </select>
+                                    <div class="rv-rolemeta mt-1">
+                                        One team each. This is whose records they share under <em>Team</em> visibility.
+                                    </div>
+                                </div>
+
+                                <div class="col-lg-5">
+                                    <label class="form-label small mb-1 fw-semibold">Manages</label>
+                                    <div class="rv-mbox">
+                                        @foreach (var t in teams)
+                                        {
+                                            var boxId = $"m-{u.Id:N}-{t.Id:N}";
+                                            <div class="form-check">
+                                                <input class="form-check-input rv-mbox-item" type="checkbox" id="@boxId"
+                                                       name="teamIds" value="@t.Id"
+                                                       checked="@(u.ManagedTeamIds.Contains(t.Id))" />
+                                                <label class="form-check-label small" for="@boxId">
+                                                    @t.Name
+                                                    @if (MerkaiTrial.Admin.Web.Pages.Settings.Visibility.IndexModel.ActiveManagers(t) == 0)
+                                                    {
+                                                        <span class="rv-chip warn ms-1">needs a manager</span>
+                                                    }
+                                                </label>
+                                            </div>
+                                        }
+                                    </div>
+                                    @if (teams.Count > 3)
+                                    {
+                                        <div class="mt-1 d-flex gap-2">
+                                            <button type="button" class="btn btn-link btn-sm p-0 rv-mall">Select all</button>
+                                            <span class="text-muted small">·</span>
+                                            <button type="button" class="btn btn-link btn-sm p-0 rv-mnone">Clear</button>
+                                        </div>
+                                    }
+                                    <div class="rv-rolemeta mt-1">
+                                        @if (u.IsTenantAdmin)
+                                        {
+                                            <span>
+                                                They're a workspace admin, so this changes nothing for them —
+                                                they already see every record and can approve any quote. It is here
+                                                so you can clear it, or keep it ready for if they stop being an admin.
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span>
+                                                Any number. A manager sees these teams' records under <em>Team</em>
+                                                visibility, and is asked to approve their quotes.
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="col-lg-3 d-flex flex-column">
+                                    <label class="form-label small mb-1 fw-semibold">Roles</label>
+                                    <div class="rv-rolemeta mb-2">
+                                        @(u.RoleNames != null && u.RoleNames.Count > 0 ? string.Join(", ", u.RoleNames) : "none")
+                                        @if (sees != null && !u.IsTenantAdmin)
+                                        {
+                                            <span class="d-block mt-1">Sees @sees.ToLowerInvariant() — set by role in step 1.</span>
+                                        }
+                                    </div>
+                                    <button class="btn btn-sm btn-primary mt-auto">
+                                        <i class="bi bi-save me-1"></i>Save this person
+                                    </button>
+                                </div>
+                            </form>
+                        }
+                    </div>
+                </details>
+            }
+        }
     </div>
+
 </div>
+
+<script>
+    (function () {
+        'use strict';
+
+        // ── 1. scope grid: change counter and consequence lines ──────
+        var form = document.getElementById('rvScopeForm');
+        var bar = document.getElementById('rvSaveBar');
+        var count = document.getElementById('rvSaveCount');
+
+        // The scope names come from the server, in rank order, so this
+        // script never has to know that 0 means "Own".
+        var words = [];
+        if (form) {
+            var raw = form.getAttribute('data-scope-words') || '';
+            if (raw) words = raw.split(',');
+        }
+
+        function scopeWord(rank) {
+            return (rank >= 0 && rank < words.length) ? words[rank] : ('level ' + rank);
+        }
+
+        function refreshCell(cell) {
+            var picked = cell.querySelector('input.btn-check:checked');
+            var flag = cell.querySelector('.rv-flag');
+            if (!picked || !flag) return false;
+
+            var saved = parseInt(cell.getAttribute('data-saved'), 10);
+            var now = parseInt(picked.getAttribute('data-rank'), 10);
+            var people = parseInt(cell.getAttribute('data-people'), 10) || 0;
+
+            if (isNaN(saved) || isNaN(now) || saved === now) {
+                cell.classList.remove('is-changed');
+                flag.textContent = '';
+                flag.classList.remove('narrower', 'wider');
+                return false;
+            }
+
+            cell.classList.add('is-changed');
+            flag.classList.remove('narrower', 'wider');
+
+            var who = people === 0
+                ? 'Nobody holds this role yet, so nothing changes today.'
+                : (people === 1 ? '1 person is affected.' : people + ' people are affected.');
+
+            if (now < saved) {
+                flag.classList.add('narrower');
+                flag.textContent = 'Narrower than now (' + scopeWord(saved) + ' to ' + scopeWord(now)
+                    + '). Records they can open today will disappear from their lists. ' + who;
+            } else {
+                flag.classList.add('wider');
+                flag.textContent = 'Wider than now (' + scopeWord(saved) + ' to ' + scopeWord(now)
+                    + '). They will start seeing records that are hidden from them today. ' + who;
+            }
+            return true;
+        }
+
+        function changedCells() {
+            if (!form) return [];
+            var cells = form.querySelectorAll('.rv-cell');
+            var out = [];
+            for (var i = 0; i < cells.length; i++) {
+                if (refreshCell(cells[i])) out.push(cells[i]);
+            }
+            return out;
+        }
+
+        function recount() {
+            var changed = changedCells();
+            applyRoleFilter();
+            if (!count || !bar) return;
+            if (changed.length === 0) {
+                count.textContent = 'Nothing changed yet';
+                bar.classList.remove('is-dirty');
+            } else {
+                count.textContent = changed.length === 1
+                    ? '1 change ready to save'
+                    : changed.length + ' changes ready to save';
+                bar.classList.add('is-dirty');
+            }
+        }
+
+        // ── 2. hide roles nobody holds ───────────────────────────────
+        var onlyUsed = document.getElementById('rvOnlyUsed');
+
+        function applyRoleFilter() {
+            if (!onlyUsed) return;
+            var rows = document.querySelectorAll('tr.rv-rolerow.rv-unused');
+            for (var i = 0; i < rows.length; i++) {
+                // Never hide a row holding a change the user hasn't saved —
+                // they would be told they saved something they can't see.
+                // (Hidden rows keep their inputs in the form, which is safe:
+                // the server only writes cells the user actually changed.)
+                var pending = rows[i].querySelector('.rv-cell.is-changed');
+                rows[i].classList.toggle('rv-hidden', onlyUsed.checked && !pending);
+            }
+        }
+
+        if (form) {
+            form.addEventListener('change', function (e) {
+                if (e.target && e.target.classList && e.target.classList.contains('btn-check')) recount();
+            });
+            // A reset restores the rendered values; the DOM updates after
+            // the event, so recount on the next tick.
+            form.addEventListener('reset', function () { setTimeout(recount, 0); });
+        }
+        if (onlyUsed) onlyUsed.addEventListener('change', applyRoleFilter);
+        recount();
+
+        // ── 3. people: search and the inactive switch ────────────────
+        var search = document.getElementById('rvPeopleSearch');
+        var hideInactive = document.getElementById('rvHideInactive');
+        var peopleCount = document.getElementById('rvPeopleCount');
+        var rows = document.querySelectorAll('.rv-person');
+
+        function filterPeople() {
+            var q = search ? search.value.trim().toLowerCase() : '';
+            var drop = hideInactive ? hideInactive.checked : false;
+            var shown = 0;
+
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                var hay = row.getAttribute('data-find') || '';
+                var active = row.getAttribute('data-active') === '1';
+
+                // Never hide a panel somebody has open and may be editing.
+                var busy = row.hasAttribute('open');
+
+                var ok = busy || ((q === '' || hay.indexOf(q) !== -1) && (active || !drop));
+                row.classList.toggle('rv-hidden', !ok);
+                if (ok) shown++;
+            }
+
+            if (peopleCount) {
+                peopleCount.textContent = shown === rows.length
+                    ? ''
+                    : 'showing ' + shown + ' of ' + rows.length;
+            }
+        }
+
+        if (search) search.addEventListener('input', filterPeople);
+        if (hideInactive) hideInactive.addEventListener('change', filterPeople);
+
+        // ── 4. select all / clear inside one person's Manages list ───
+        document.addEventListener('click', function (e) {
+            var t = e.target;
+            if (!t || !t.classList) return;
+            var all = t.classList.contains('rv-mall');
+            var none = t.classList.contains('rv-mnone');
+            if (!all && !none) return;
+
+            var panel = t.closest('form');
+            if (!panel) return;
+            var boxes = panel.querySelectorAll('.rv-mbox-item');
+            for (var i = 0; i < boxes.length; i++) boxes[i].checked = all;
+        });
+
+        // ── 5. an in-page link to a collapsed panel should open it ───
+        document.addEventListener('click', function (e) {
+            var link = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+            if (!link) return;
+
+            var id = link.getAttribute('href').slice(1);
+            if (!id) return;
+
+            var target = document.getElementById(id);
+            if (!target) return;
+
+            // Open the panel itself, and any panel it is nested inside, so
+            // the thing we scrolled to is actually on screen.
+            var node = target;
+            while (node) {
+                if (node.tagName === 'DETAILS') node.open = true;
+                node = node.parentElement;
+            }
+        });
+    })();
+</script>
