@@ -1,687 +1,755 @@
 @page
+@using MerkaiTrial.Admin.Web.Pages.Quotes
 @model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
-@* =====================================================================
-   Quotes/Detail.cshtml
-   (017) Approval panel (_QuoteApprovalPanel), status text for Pending
-         approval / Approved / Revised, Send only when the quote may go
-         out (Model.CanChangeStatus), Edit only for Draft/Revised/Approved.
-   (018) Invoice box: a DRAFT invoice says "draft — issue it"; a void
-         invoice no longer blocks creating a new one.
-   ===================================================================== *@
 @{
-    ViewData["Title"] = $"Quote {Model.Quote?.Number}";
-}
+    ViewData["Title"] = Model.Quote == null ? "Quote" : $"Quote {Model.Quote.Number}";
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    var q = Model.Quote;
+    var hasExpiry = q != null && DetailModel.HasExpiry(q.ExpiresAtUtc);
+    var outWithCustomer = q != null && (q.Status == "Sent" || q.Status == "Viewed");
+    var expiryDays = hasExpiry ? Model.DaysUntilExpiry(q!.ExpiresAtUtc) : 0;
+    var expiryUrgent = outWithCustomer && hasExpiry && expiryDays <= 3;
+    var canInvoice = Model.CanUpdate && Model.UserCanCreate("invoices");
+    var moves = Model.StatusActions;
+    // q != null first: with no quote loaded IsLocked is false, so without it
+    // showDelete could be true and the delete modal would render @q.Number
+    // against a null Quote — an NRE on the "quote not found" page.
+    var showDelete = q != null && !Model.IsLocked && Model.CanDelete;
+}
+@* =====================================================================
+   Quotes/Detail.cshtml   (029 — rebuild)
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/Detail.cshtml
+
+   COMPLETE FILE — replaces the 018 version.
+
+   WHAT WAS WRONG WITH THE OLD PAGE
+
+   1. IT LOADED BOOTSTRAP AND BOOTSTRAP ICONS AGAIN, from a CDN, inside
+      <body>:
+          <link href="…/bootstrap@5.3.3/…" rel="stylesheet" />
+          <link href="…/bootstrap-icons@1.11.3/…" rel="stylesheet" />
+      _Layout.cshtml has already loaded both in <head>. That is two extra
+      downloads on every quote, a <link> in an invalid place, and — worse —
+      a silent version fork: the day the layout moves to another Bootstrap
+      version, this page keeps overriding it with 5.3.3 and nobody knows
+      why the buttons look wrong on one page.
+
+   2. ABOUT 340px OF THE SCREEN SAID NOTHING. A 190px purple gradient
+      banner reading "Quote Details" (you know — you clicked the quote),
+      then up to three stacked alert boxes, then the approval panel, then
+      the customer-link box, and only then the quote. On a 768px-tall
+      laptop you could not see a single line item without scrolling.
+      The banner is gone; the header is one line with the quote number,
+      the status and the actions. The three alert boxes are one state
+      strip, because only one of them was ever the point.
+
+   3. MONEY WAS SHOWN IN THE WRONG CURRENCY. Every figure went through
+      FormatCurrency, which uses the WORKSPACE symbol. A quote raised in
+      USD on an Indian workspace printed "₹1,200.00" against dollar
+      amounts. Every amount now goes through Model.Money, which uses the
+      quote's own currency and prints the ISO code beside the total when
+      it is not the workspace currency.
+
+   4. A QUOTE WITH NO EXPIRY DATE PRINTED "01-01-0001". ExpiresAtUtc is a
+      non-nullable DateTime; a quote saved without one carries
+      default(DateTime) and the page formatted it straight out.
+
+   5. THE PER-LINE DISCOUNT WAS INVISIBLE. The totals showed a Discount
+      line, but the item table had no discount column — so a quote with
+      ₹40,000 off showed the money vanishing with no explanation of where.
+
+   6. TAX RATES WERE ROUNDED TO WHOLE NUMBERS. (item.TaxRate * 100)
+      .ToString("N0") turns a 7.5% rate into "8%".
+
+   7. DELETE ATTACHMENT WAS GATED ON THE WRONG PERMISSION. The button
+      checked CanDelete; the handler requires Quotes.Update. So a user
+      with Update but not Delete never saw a button the server would have
+      accepted, and a user with Delete but not Update saw one that always
+      bounced to Access Denied.
+
+   8. "COPY LINK" DID NOTHING ON PLAIN HTTP. navigator.clipboard does not
+      exist outside a secure context, so on http:// the handler threw a
+      TypeError, the button never changed, and nothing was copied — with
+      no error either. There is a fallback now, and the code says when it
+      failed.
+
+   9. THE CUSTOMER SAYING NO COULD NOT BE RECORDED. The flow allows
+      Sent/Viewed → Rejected and → Expired, but the only button was "Mark
+      as Accepted". The status buttons now come from Model.StatusActions,
+      which is built from CanChangeStatus, so the page and the flow cannot
+      drift apart.
+
+  10. IT WAS UNPRINTABLE. A quote is a document people print or save as
+      PDF from the browser. There is a @@media print block now: the nav,
+      the buttons and the upload box drop out, and the table prints on
+      white.
+
+   TempData alerts are rendered once, globally, by _Layout.cshtml — not
+   repeated here. Bootstrap's JS is loaded once by _Layout too.
+   ===================================================================== *@
 
 <style>
-    .page-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1.5rem 0;
-        margin: -1rem -1rem 1.5rem -1rem;
-        border-radius: 0 0 1rem 1rem;
+    .qd { max-width: 1180px; margin: 0 auto; }
+
+    /* ── header ─────────────────────────────────────────────────── */
+    .qd-back { font-size: .82rem; color: #64748b; text-decoration: none; }
+    .qd-back:hover { color: #334155; }
+    .qd-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin: .35rem 0 1rem; }
+    .qd-num { font-size: 1.5rem; font-weight: 700; color: #0f172a; line-height: 1.2; margin: 0; }
+    .qd-sub { font-size: .84rem; color: #64748b; margin: .2rem 0 0; }
+    .qd-acts { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+    .qd-acts form { margin: 0; }
+
+    /* ── state strip ────────────────────────────────────────────── */
+    .qd-state { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+                border: 1px solid #e9ecef; border-left: 5px solid var(--tone, #94a3b8);
+                border-radius: 10px; background: #fff; padding: .7rem 1rem; margin-bottom: 1rem; }
+    .qd-state .txt { font-size: .88rem; color: #334155; }
+    .qd-state .txt strong { color: #0f172a; }
+    .qd-state .sp { margin-left: auto; }
+
+    /* ── panels ─────────────────────────────────────────────────── */
+    .qd-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .qd-card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                    font-weight: 650; margin: 0; padding: .7rem 1rem; border-bottom: 1px solid #f1f3f5;
+                    display: flex; align-items: center; gap: .4rem; }
+    .qd-card > h2 .badge { font-weight: 650; }
+    .qd-card .bd { padding: .9rem 1rem; }
+    .qd-card .bd.flush { padding: 0; }
+
+    /* ── facts ──────────────────────────────────────────────────── */
+    .qd-facts { display: grid; grid-template-columns: auto 1fr; gap: .4rem .9rem; font-size: .86rem; }
+    .qd-facts dt { color: #94a3b8; font-weight: 500; }
+    .qd-facts dd { margin: 0; color: #0f172a; min-width: 0; overflow-wrap: anywhere; }
+
+    /* ── line items ─────────────────────────────────────────────── */
+    .qd-items { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .86rem; }
+    .qd-items th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                   font-weight: 650; padding: .55rem .75rem; background: #fbfcfd;
+                   border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .qd-items td { padding: .6rem .75rem; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+    .qd-items tbody tr:last-child td { border-bottom: 0; }
+    .qd-items .n { text-align: right; white-space: nowrap; }
+    .qd-items .c { text-align: center; white-space: nowrap; }
+    .qd-items .nm { font-weight: 600; color: #0f172a; }
+    .qd-items .ds { color: #64748b; font-size: .8rem; margin-top: .15rem; }
+    .qd-items .muted { color: #94a3b8; }
+
+    /* ── totals ─────────────────────────────────────────────────── */
+    .qd-tot { display: grid; grid-template-columns: 1fr auto; gap: .35rem .9rem; font-size: .88rem; }
+    .qd-tot .lbl { color: #64748b; }
+    .qd-tot .amt { text-align: right; font-weight: 600; white-space: nowrap; }
+    .qd-tot .rule { grid-column: 1 / -1; border-top: 1px solid #e5e8ec; margin: .35rem 0 .1rem; }
+    .qd-tot .big { font-size: 1.2rem; font-weight: 700; color: #0f172a; }
+    .qd-fx { font-size: .74rem; color: #94a3b8; margin-top: .5rem; }
+
+    /* ── customer link ──────────────────────────────────────────── */
+    .qd-link code { display: block; background: #f1f5f9; color: #1e40af; border-radius: 6px;
+                    padding: .45rem .6rem; font-size: .78rem; word-break: break-all; margin: .4rem 0 .5rem; }
+
+    /* ── attachments ────────────────────────────────────────────── */
+    .qd-att { display: flex; align-items: center; gap: .6rem; padding: .6rem 1rem;
+              border-bottom: 1px solid #f4f6f8; }
+    .qd-att:last-child { border-bottom: 0; }
+    .qd-att .ico { font-size: 1.3rem; color: #94a3b8; flex: 0 0 auto; }
+    .qd-att .nm { font-weight: 600; font-size: .84rem; color: #0f172a; }
+    .qd-att .mt { font-size: .74rem; color: #94a3b8; }
+    .qd-att .btns { margin-left: auto; display: flex; gap: .25rem; flex: 0 0 auto; }
+    .qd-att .btns .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .45rem; }
+
+    .qd-empty { padding: 1.4rem 1rem; text-align: center; color: #94a3b8; font-size: .84rem; }
+
+    @@media (max-width: 767.98px) {
+        .qd-num { font-size: 1.25rem; }
+        .qd-acts { width: 100%; }
+        .qd-acts > *, .qd-acts form { flex: 1 1 calc(50% - .25rem); }
+        .qd-acts .btn { width: 100%; }
+        .qd-facts { grid-template-columns: 1fr; gap: 0 0; }
+        .qd-facts dt { margin-top: .5rem; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }
     }
 
-    .content-container {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        padding: 1.75rem;
-        max-width: 1100px;
-        margin: 0 auto;
-    }
-
-    .quote-header {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-left: 4px solid #667eea;
-        padding: 1.25rem 1.5rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1.5rem;
-    }
-
-    .quote-number {
-        font-size: 1.6rem;
-        font-weight: 700;
-        color: #667eea;
-    }
-
-    .totals-section {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 1.25rem 1.5rem;
-        margin-top: 1.5rem;
-    }
-
-    .total-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.4rem 0;
-    }
-
-        .total-row.grand-total {
-            border-top: 2px solid #dee2e6;
-            margin-top: 0.5rem;
-            padding-top: 0.9rem;
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #667eea;
-        }
-
-    .customer-link-box {
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        border-radius: 10px;
-        padding: 1rem 1.25rem;
-        margin-bottom: 1.5rem;
-    }
-
-        .customer-link-box code {
-            background: #dbeafe;
-            color: #1e40af;
-            padding: 0.4rem 0.75rem;
-            border-radius: 6px;
-            font-size: 0.82rem;
-            word-break: break-all;
-            display: block;
-            margin-top: 0.5rem;
-        }
-
-    .action-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.6rem;
-        justify-content: flex-end;
-        margin-top: 1.5rem;
-        padding-top: 1.25rem;
-        border-top: 1px solid #e9ecef;
-    }
-
-    @@media (max-width: 575.98px) {
-        .content-container {
-            padding: 1rem;
-        }
-
-        .quote-header {
-            padding: 1rem;
-        }
-
-        .quote-number {
-            font-size: 1.2rem;
-        }
-
-        .total-row.grand-total {
-            font-size: 1.15rem;
-        }
-
-        .table {
-            font-size: 0.82rem;
-        }
-
-        .action-bar {
-            justify-content: stretch;
-        }
-
-            .action-bar > *, .action-bar form {
-                width: 100%;
-            }
-
-                .action-bar .btn, .action-bar form .btn {
-                    width: 100%;
-                }
-
-        .customer-link-box .d-flex {
-            flex-direction: column;
-        }
-    }
-
-    @@media (min-width: 576px) and (max-width: 767.98px) {
-        .content-container {
-            padding: 1.25rem;
-        }
-
-        .quote-number {
-            font-size: 1.35rem;
-        }
-
-        .total-row.grand-total {
-            font-size: 1.25rem;
-        }
-
-        .action-bar {
-            justify-content: stretch;
-        }
-
-            .action-bar > *, .action-bar form {
-                flex: 1 1 calc(50% - 0.3rem);
-            }
-
-                .action-bar .btn, .action-bar form .btn {
-                    width: 100%;
-                }
+    /* ── print ──────────────────────────────────────────────────── */
+    /* A quote gets printed and saved as PDF from the browser. Strip the
+       chrome and anything you cannot act on from paper. */
+    @@media print {
+        .qd { max-width: none; }
+        .qd-back, .qd-acts, .qd-noprint, .qap, nav, header, footer,
+        aside, .navbar, .sidebar { display: none !important; }
+        .qd-card { border: 1px solid #ccc; break-inside: avoid; margin-bottom: .6rem; }
+        .qd-state { border: 1px solid #ccc; }
+        a[href]:after { content: ""; }
+        body { background: #fff !important; }
     }
 </style>
 
-<div class="container-fluid px-2 px-md-3">
-
-    <!-- Page Header -->
-    <div class="page-header">
-        <div class="container-fluid px-3">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <h1 class="h4 mb-1">
-                        <i class="bi bi-file-earmark-text me-2"></i>Quote Details
-                    </h1>
-                    <p class="mb-0 opacity-75 small">@Model.Quote?.Number</p>
-                </div>
-                <a href="/Quotes/Index" class="btn btn-outline-light btn-sm">
-                    <i class="bi bi-arrow-left me-1"></i>Back
-                </a>
+@* Two sibling blocks rather than an early `return;` inside the body: a
+   bare return in a Razor page compiles, but it is the kind of thing that
+   breaks on a Razor version bump, and a build break here costs a lot more
+   than one extra @@if. *@
+@if (q == null)
+{
+    <div class="qd">
+        <div class="qd-card">
+            <div class="qd-empty">
+                <i class="bi bi-file-earmark-x d-block mb-2" style="font-size:2.2rem;color:#d7dde3;"></i>
+                <div class="fw-semibold text-body mb-1">Quote not found</div>
+                <div>It may have been deleted. <a asp-page="/Quotes/Index">Back to quotes</a>.</div>
             </div>
         </div>
     </div>
+}
+else
+{
+<div class="qd">
 
-    <div class="content-container">
+    <a asp-page="/Quotes/Index" class="qd-back">
+        <i class="bi bi-arrow-left me-1"></i>All quotes
+    </a>
 
-        @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
-
-        @if (Model.Quote != null)
-        {
-            @* Quote Accepted — Create Invoice *@
-            @if (Model.Quote.Status == "Accepted" && Model.Invoice == null)
-            {
-                <div class="alert alert-success mb-3">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h6 class="mb-1">
-                                <i class="bi bi-check-circle-fill me-2"></i>Quote Accepted!
-                            </h6>
-                            <p class="mb-0 small text-muted">
-                                @* ✅ Was unconditionally "You can now create an invoice." — but the
-                                   Create Invoice button beside it is gated on invoices.create, so
-                                   sales_rep (Invoices read-only) read a promise it could not act on.
-                                   Text now matches the same gate as the button. *@
-                                @if (Model.CanUpdate && Model.UserCanCreate("invoices"))
-                                {
-                                    <text>Customer accepted. You can now create an invoice.</text>
-                                    @if (Model.VoidInvoiceCount > 0)
-                                    {
-                                        <text> (The previous invoice was voided.)</text>
-                                    }
-                                }
-                                else
-                                {
-                                    <text>Customer accepted this quote.</text>
-                                }
-                            </p>
-                        </div>
-                        @* ✅ Create Invoice — cross-module: needs Quotes.update AND Invoices.create *@
-                        @if (Model.CanUpdate && Model.UserCanCreate("invoices"))
-                        {
-                            <form method="post" asp-page-handler="CreateInvoice"
-                                  asp-route-id="@Model.Id" class="mb-0 flex-shrink-0">
-                                <button type="submit" class="btn btn-success btn-sm">
-                                    <i class="bi bi-receipt-cutoff me-1"></i>Create Invoice
-                                </button>
-                            </form>
-                        }
-                    </div>
-                </div>
-            }
-
-            @* Invoice exists *@
-            @if (Model.Invoice != null)
-            {
-                <div class="alert alert-info mb-3">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h6 class="mb-1">
-                                <i class="bi bi-receipt me-2"></i>@(Model.InvoiceIsDraft ? "Draft Invoice" : "Invoice Issued")
-                            </h6>
-                            <p class="mb-0 small">
-                                @if (Model.InvoiceIsDraft)
-                                {
-                                    <text>A draft invoice exists for this quote. Open it to check the dates and issue it.</text>
-                                }
-                                else
-                                {
-                                    <text>Invoice <strong>@Model.Invoice.Number</strong> has been issued.</text>
-                                }
-                            </p>
-                        </div>
-                        <a href="/Invoices/Detail?id=@Model.Invoice.Id"
-                           class="btn btn-primary btn-sm flex-shrink-0">
-                            <i class="bi bi-arrow-right-circle me-1"></i>@(Model.InvoiceIsDraft ? "Open Draft" : "View Invoice")
-                        </a>
-                    </div>
-                </div>
-            }
-
-            @* Status info — not accepted/invoiced *@
-            @if (Model.Quote.Status != "Accepted" && Model.Invoice == null)
-            {
-                <div class="alert alert-secondary mb-3 py-2">
-                    <span class="small">
-                        <i class="bi bi-info-circle me-1"></i>
-                        <strong>@MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel.StatusLabel(Model.Quote.Status)</strong> —
-                        @if (Model.Quote.Status == "Draft")
-                        {
-                            @if (Model.Approval?.RequiresApproval == true && Model.Approval?.IsExempt != true)
-                            {
-                                <text>This quote needs approval before it can be sent — see below.</text>
-                            }
-                            else
-                            {
-                                <text>Send this quote to the customer to get started.</text>
-                            }
-                        }
-                        else if (Model.Quote.Status == "PendingApproval")
-                        {
-                            <text>Waiting for a manager to approve it before it can be sent.</text>
-                        }
-                        else if (Model.Quote.Status == "Approved")
-                        {
-                            <text>Approved — send it to the customer.</text>
-                        }
-                        else if (Model.Quote.Status == "Revised")
-                        {
-                            <text>Being revised. Edit it, then send it again.</text>
-                        }
-                        else if (Model.Quote.Status == "Sent")
-                        {
-                            <text>Waiting for customer response.</text>
-                        }
-                        else if (Model.Quote.Status == "Viewed")
-                        {
-                            <text>Customer has viewed the quote. Waiting for acceptance.</text>
-                        }
-                        else if (Model.Quote.Status == "Rejected")
-                        {
-                            <text>This quote was declined by the customer.</text>
-                        }
-                        else if (Model.Quote.Status == "Expired")
-                        {
-                            <text>This quote has expired.</text>
-                        }
-                    </span>
-                </div>
-            }
-
-            @* (017) Approval panel — draws nothing when there's nothing to say *@
-            <partial name="_QuoteApprovalPanel" model="Model" />
-
-            @* Customer link — visible when Sent or Viewed *@
-            @if ((Model.Quote.Status == "Sent" || Model.Quote.Status == "Viewed")
-                    && !string.IsNullOrEmpty(Model.Quote.PaymentLinkUrl))
-            {
-                <div class="customer-link-box mb-3">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold small" style="color:#1d4ed8;">
-                                <i class="bi bi-link-45deg me-1"></i>Customer Quote Link
-                            </div>
-                            <p class="mb-1 small text-muted mt-1">
-                                Share via email, Line, or WhatsApp. Customer can view and accept online.
-                            </p>
-                            <code id="quotePublicLink">@Model.Quote.PaymentLinkUrl</code>
-                            <div class="d-flex gap-2 mt-2 flex-wrap">
-                                <button type="button"
-                                        class="btn btn-sm btn-outline-primary"
-                                        onclick="copyQuoteLink()"
-                                        id="copyLinkBtn">
-                                    <i class="bi bi-clipboard me-1"></i>Copy Link
-                                </button>
-                                <a href="@Model.Quote.PaymentLinkUrl"
-                                   target="_blank"
-                                   class="btn btn-sm btn-outline-secondary">
-                                    <i class="bi bi-eye me-1"></i>Preview
-                                </a>
-                            </div>
-                        </div>
-                        @if (Model.Quote.Status == "Viewed")
-                        {
-                            <span class="badge flex-shrink-0"
-                                  style="background:#dcfce7;color:#15803d;font-size:0.78rem;padding:0.4rem 0.6rem;">
-                                <i class="bi bi-eye-fill me-1"></i>Viewed by customer
-                            </span>
-                        }
-                    </div>
-                </div>
-            }
-
-            <!-- Quote Meta -->
-            <div class="quote-header">
-                <div class="row g-2">
-                    <div class="col-sm-7">
-                        <div class="quote-number mb-2">@Model.Quote.Number</div>
-                        <p class="mb-1 small"><strong>Deal:</strong> @Model.Quote.DealTitle</p>
-                        <p class="mb-1 small"><strong>Company:</strong> @Model.Quote.CompanyName</p>
-                        @if (!string.IsNullOrEmpty(Model.Quote.VerticalName))
-                        {
-                            <p class="mb-1 small">
-                                <strong>Industry:</strong>
-                                <span class="badge bg-light text-dark border ms-1">
-                                    <i class="bi bi-diagram-3 me-1"></i>@Model.Quote.VerticalName
-                                </span>
-                            </p>
-                        }
-                        <p class="mb-0 small">
-                            <strong>Status:</strong>
-                            <span class="badge @Model.GetStatusBadgeClass(Model.Quote.Status) ms-1">
-                                @MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel.StatusLabel(Model.Quote.Status)
-                            </span>
-                        </p>
-                    </div>
-                    <div class="col-sm-5 text-sm-end mt-2 mt-sm-0">
-                        <p class="mb-1 small"><strong>Issued:</strong> @Model.FormatDate(Model.Quote.IssueDateUtc)</p>
-                        <p class="mb-1 small"><strong>Expires:</strong> @Model.FormatDate(Model.Quote.ExpiresAtUtc)</p>
-                        <p class="mb-0 small"><strong>Created:</strong> @Model.FormatDate(Model.Quote.CreatedAtUtc)</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Line Items -->
-            <h6 class="mb-2"><i class="bi bi-list-ul me-2"></i>Line Items</h6>
-            <div class="table-responsive">
-                <table class="table table-bordered table-sm align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>Item</th>
-                            <th class="d-none d-md-table-cell">Description</th>
-                            <th class="text-center">Qty</th>
-                            <th class="text-end">Price</th>
-                            <th class="text-end d-none d-sm-table-cell">Tax</th>
-                            <th class="text-end">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @for (int i = 0; i < Model.Quote.Items.Count; i++)
-                        {
-                            var item = Model.Quote.Items[i];
-                            <tr>
-                                <td>@(i + 1)</td>
-                                <td>
-                                    <strong>@item.Name</strong>
-                                    @if (!string.IsNullOrWhiteSpace(item.Description))
-                                    {
-                                        <div class="text-muted small d-md-none">@item.Description</div>
-                                    }
-                                </td>
-                                <td class="d-none d-md-table-cell text-muted small">@item.Description</td>
-                                <td class="text-center">@item.Quantity</td>
-                                <td class="text-end">@Model.FormatCurrency(item.UnitPrice)</td>
-                                <td class="text-end d-none d-sm-table-cell text-muted">
-                                    @((item.TaxRate * 100).ToString("N0"))%
-                                </td>
-                                <td class="text-end fw-semibold">
-                                    @Model.FormatCurrency(item.LineGrandTotal)
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Totals -->
-            <div class="row justify-content-end">
-                <div class="col-sm-8 col-md-5">
-                    <div class="totals-section">
-                        <div class="total-row">
-                            <span class="text-muted">Subtotal</span>
-                            <strong>@Model.FormatCurrency(Model.Quote.Subtotal)</strong>
-                        </div>
-                        <div class="total-row">
-                            <span class="text-muted">Discount</span>
-                            <strong>@Model.FormatCurrency(Model.Quote.DiscountTotal)</strong>
-                        </div>
-                        <div class="total-row">
-                            <span class="text-muted">Tax</span>
-                            <strong>@Model.FormatCurrency(Model.Quote.TaxTotal)</strong>
-                        </div>
-                        <div class="total-row grand-total">
-                            <span>Grand Total</span>
-                            <strong>@Model.FormatCurrency(Model.Quote.GrandTotal)</strong>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Attachments -->
-            <div class="card shadow-sm mt-4 mb-2">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
-                    <h6 class="mb-0"><i class="bi bi-paperclip me-2"></i>Attachments</h6>
-                    <span class="badge bg-secondary">@Model.Attachments.Count</span>
-                </div>
-                <div class="card-body">
-
-                    @* ✅ Upload form — only if has update permission *@
-                    @if (Model.CanUpdate)
-                    {
-                        <div class="mb-3 p-3 border rounded bg-light">
-                            <form method="post"
-                                  asp-page-handler="UploadAttachment"
-                                  asp-route-id="@Model.Id"
-                                  enctype="multipart/form-data">
-                                @Html.AntiForgeryToken()
-                                <div class="row g-2 align-items-end">
-                                    <div class="col-12 col-sm">
-                                        <input type="file" name="file" class="form-control form-control-sm"
-                                               accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv"
-                                               required />
-                                        <small class="text-muted">PDF, Word, Excel, Images, CSV — max 10 MB</small>
-                                    </div>
-                                    <div class="col-12 col-sm-auto">
-                                        <button type="submit" class="btn btn-primary btn-sm w-100">
-                                            <i class="bi bi-upload me-1"></i>Upload
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    }
-
-                    @if (!Model.Attachments.Any())
-                    {
-                        <div class="text-center text-muted py-3">
-                            <i class="bi bi-paperclip fs-3 d-block mb-1"></i>
-                            <p class="mb-0 small">No attachments yet.</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="list-group list-group-flush">
-                            @foreach (var att in Model.Attachments)
-                            {
-                                <div class="list-group-item px-0 py-2">
-                                    <div class="d-flex align-items-center gap-2">
-                                        <i class="bi @att.FileIcon fs-4 flex-shrink-0"></i>
-                                        <div class="flex-grow-1 overflow-hidden">
-                                            <div class="fw-semibold text-truncate small">@att.FileName</div>
-                                            <div class="text-muted" style="font-size:0.75rem;">
-                                                @att.FileSizeDisplay · @Model.FormatDateTime(att.CreatedAtUtc)
-                                                @if (!string.IsNullOrEmpty(att.CreatedBy))
-                                                {
-                                                    <text> by @att.CreatedBy</text>
-                                                }
-                                            </div>
-                                        </div>
-                                        <div class="flex-shrink-0 d-flex gap-1">
-                                            <a href="@att.FileUrl" target="_blank"
-                                               class="btn btn-sm btn-outline-primary" title="Download">
-                                                <i class="bi bi-download"></i>
-                                            </a>
-                                            @* ✅ Delete attachment — only if has delete permission *@
-                                            @if (Model.CanDelete)
-                                            {
-                                                <form method="post"
-                                                      asp-page-handler="DeleteAttachment"
-                                                      asp-route-id="@Model.Id"
-                                                      asp-route-attachmentId="@att.Id"
-                                                      class="d-inline"
-                                                      onsubmit="return confirm('Delete this attachment?');">
-                                                    @Html.AntiForgeryToken()
-                                                    <button type="submit"
-                                                            class="btn btn-sm btn-outline-danger"
-                                                            title="Delete">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </form>
-                                            }
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <!-- ✅ Action Bar — role-based permission gates -->
-            <div class="action-bar">
-
-                @* Send to Customer — Draft/Revised within the rules (or admin), or Approved.
-                   Model.CanChangeStatus applies the approval gate. *@
-                @if (Model.Quote.Status is "Draft" or "Revised" or "Approved" && Model.CanUpdate
-                     && Model.CanChangeStatus(Model.Quote.Status, "Sent"))
+    @* ── header ─────────────────────────────────────────────────── *@
+    <div class="qd-head">
+        <div style="min-width:0;">
+            <h1 class="qd-num">@q.Number</h1>
+            <p class="qd-sub">
+                <span class="badge @Model.GetStatusBadgeClass(q.Status)">
+                    <i class="bi @DetailModel.StatusIcon(q.Status) me-1"></i>@DetailModel.StatusLabel(q.Status)
+                </span>
+                <span class="ms-1">@q.CompanyName</span>
+                @if (!string.IsNullOrWhiteSpace(q.DealTitle))
                 {
-                    <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id">
-                        <input type="hidden" name="newStatus" value="Sent" />
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-send me-1"></i>Send to Customer
-                        </button>
-                    </form>
+                    <span class="text-muted">· @q.DealTitle</span>
                 }
+            </p>
+        </div>
 
-                @* Mark as Accepted — only if Sent/Viewed AND has update permission *@
-                @if ((Model.Quote.Status == "Sent" || Model.Quote.Status == "Viewed")
-                            && Model.CanUpdate)
+        <div class="qd-acts ms-auto">
+            @* Status moves, from Model.StatusActions — already filtered through
+               CanChangeStatus, so this list and the workflow cannot drift. *@
+            @foreach (var m in moves)
+            {
+                <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id"
+                      class="qd-move" data-confirm="@m.Confirm">
+                    <input type="hidden" name="newStatus" value="@m.Status" />
+                    <button type="submit" class="btn btn-sm @m.Css">
+                        <i class="bi @m.Icon me-1"></i>@m.Label
+                    </button>
+                </form>
+            }
+
+            @* PDF — reading is enough, so this shows for a locked quote too.
+               rel="noopener" because target="_blank" without it hands the new
+               tab a window.opener reference to this page. *@
+            <a asp-page="/Quotes/Detail" asp-page-handler="DownloadPdf" asp-route-id="@Model.Id"
+               class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
+                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+            </a>
+
+            @if (!Model.IsLocked && Model.CanUpdate && Model.IsEditableStatus)
+            {
+                <a asp-page="/Quotes/Edit" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-pencil me-1"></i>Edit
+                </a>
+            }
+
+            @if (showDelete)
+            {
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                        data-bs-toggle="modal" data-bs-target="#qdDeleteModal">
+                    <i class="bi bi-trash me-1"></i>Delete
+                </button>
+            }
+
+            @if (Model.IsLocked)
+            {
+                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-2">
+                    <i class="bi bi-lock-fill me-1"></i>
+                    @(Model.Invoice != null ? "Invoiced — view only" : "Closed — view only")
+                </span>
+            }
+        </div>
+    </div>
+
+    @* ── state strip ────────────────────────────────────────────── *@
+    @* ONE strip, not three stacked alerts. Which one you get is decided by
+       priority: a live invoice outranks "accepted, raise an invoice",
+       which outranks the plain status hint. *@
+    @if (Model.Invoice != null)
+    {
+        <div class="qd-state" style="--tone:#0d6efd;">
+            <i class="bi bi-receipt" style="font-size:1.1rem;color:#0d6efd;"></i>
+            <span class="txt">
+                @if (Model.InvoiceIsDraft)
                 {
-                    <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id">
-                        <input type="hidden" name="newStatus" value="Accepted" />
-                        <button type="submit" class="btn btn-success">
-                            <i class="bi bi-check-circle me-1"></i>Mark as Accepted
-                        </button>
-                    </form>
+                    <text><strong>A draft invoice exists</strong> for this quote — check the dates, then issue it to give it a number.</text>
                 }
-
-                @* Revise — a rejected or expired quote can be reworked and sent again *@
-                @if (Model.Quote.Status is "Expired" or "Rejected" && Model.CanUpdate && Model.Invoice == null)
+                else
                 {
-                    <form method="post" asp-page-handler="UpdateStatus" asp-route-id="@Model.Id">
-                        <input type="hidden" name="newStatus" value="Revised" />
-                        <button type="submit" class="btn btn-outline-primary">
-                            <i class="bi bi-arrow-repeat me-1"></i>Revise
-                        </button>
-                    </form>
+                    <text>Invoiced as <strong>@Model.Invoice.Number</strong>.</text>
                 }
-
-                @if (!Model.IsLocked)
+            </span>
+            <a href="/Invoices/Detail?id=@Model.Invoice.Id" class="btn btn-sm btn-primary sp qd-noprint">
+                @(Model.InvoiceIsDraft ? "Open draft" : "View invoice")
+                <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+        </div>
+    }
+    else if (q.Status == "Accepted")
+    {
+        <div class="qd-state" style="--tone:#198754;">
+            <i class="bi bi-check-circle-fill" style="font-size:1.1rem;color:#198754;"></i>
+            <span class="txt">
+                @* The old page promised "You can now create an invoice" to
+                   everybody, including a rep with read-only Invoices who had
+                   no button to press. The promise matches the button. *@
+                @if (canInvoice)
                 {
-                    @* PDF download — always visible (read is enough) *@
-                    <a asp-page="/Quotes/Detail"
-                       asp-page-handler="DownloadPdf"
-                       asp-route-id="@Model.Id"
-                       class="btn btn-outline-secondary"
-                       target="_blank">
-                        <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                    </a>
-
-                    @* ✅ Edit — update permission AND an editable status (Draft/Revised/Approved) *@
-                    @if (Model.CanUpdate && Model.IsEditableStatus)
+                    <text><strong>The customer accepted.</strong> Raise an invoice from it when you're ready.</text>
+                    @if (Model.VoidInvoiceCount > 0)
                     {
-                        <a asp-page="/Quotes/Edit" asp-route-id="@Model.Id"
-                           class="btn btn-outline-primary">
-                            <i class="bi bi-pencil me-1"></i>Edit
-                        </a>
-                    }
-
-                    @* ✅ Delete — only if has delete permission *@
-                    @if (Model.CanDelete)
-                    {
-                        <button type="button" class="btn btn-outline-danger"
-                                data-bs-toggle="modal" data-bs-target="#deleteModal">
-                            <i class="bi bi-trash me-1"></i>Delete
-                        </button>
+                        <text> The previous invoice was voided.</text>
                     }
                 }
                 else
                 {
-                    @* Locked — show badge; also show PDF since viewing is always allowed *@
-                    <a asp-page="/Quotes/Detail"
-                       asp-page-handler="DownloadPdf"
-                       asp-route-id="@Model.Id"
-                       class="btn btn-outline-secondary"
-                       target="_blank">
-                        <i class="bi bi-file-earmark-pdf me-1"></i>PDF
-                    </a>
-                    <span class="badge align-self-center px-3 py-2"
-                          style="background:#e0f2fe;color:#0369a1;font-size:0.78rem;">
-                        <i class="bi bi-lock-fill me-1"></i>
-                        @(Model.Invoice != null ? "Invoiced — View Only" : "Accepted — View Only")
-                    </span>
+                    <text><strong>The customer accepted this quote.</strong></text>
                 }
-
-            </div>
-        }
-        else
+            </span>
+            @if (canInvoice)
+            {
+                <form method="post" asp-page-handler="CreateInvoice" asp-route-id="@Model.Id"
+                      class="sp qd-noprint">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-receipt-cutoff me-1"></i>Create invoice
+                    </button>
+                </form>
+            }
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(Model.StatusHint))
+    {
+        var tone = q.Status switch
         {
-            <div class="alert alert-warning">
-                <i class="bi bi-exclamation-triangle me-2"></i>Quote not found or has been deleted.
-            </div>
-        }
-    </div>
-</div>
+            "PendingApproval" => "#ffc107",
+            "Approved"        => "#20c997",
+            "Sent"            => "#0d6efd",
+            "Viewed"          => "#0dcaf0",
+            "Rejected"        => "#dc3545",
+            "Expired"         => "#fd7e14",
+            "Revised"         => "#6c757d",
+            _                 => "#94a3b8"
+        };
 
-<!-- Delete Modal -->
-<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">
-                    <i class="bi bi-exclamation-triangle me-2"></i>Delete Quote
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <div class="qd-state" style="--tone:@tone;">
+            <i class="bi @DetailModel.StatusIcon(q.Status)" style="font-size:1.1rem;color:@tone;"></i>
+            <span class="txt">@Model.StatusHint</span>
+            @if (expiryUrgent)
+            {
+                <span class="sp badge @(expiryDays < 0 ? "bg-danger" : "bg-warning text-dark")">
+                    <i class="bi bi-hourglass-split me-1"></i>@Model.ExpiryNote(q.ExpiresAtUtc)
+                </span>
+            }
+        </div>
+    }
+
+    @* (017) Approval panel — draws nothing when there's nothing to say *@
+    <partial name="_QuoteApprovalPanel" model="Model" />
+
+    <div class="row g-3">
+
+        @* ── LEFT: line items + totals ──────────────────────────── *@
+        <div class="col-lg-8">
+
+            <div class="qd-card">
+                <h2>
+                    <i class="bi bi-list-ul"></i>Line items
+                    <span class="badge bg-light text-dark border ms-1">@q.Items.Count</span>
+                </h2>
+                <div class="bd flush">
+                    <div class="table-responsive">
+                        <table class="qd-items">
+                            <thead>
+                                <tr>
+                                    <th style="width:2.2rem;">#</th>
+                                    <th>Item</th>
+                                    <th class="c">Qty</th>
+                                    <th class="n">Unit price</th>
+                                    @* NEW. The totals show a Discount line; without this
+                                       column the money came off with no explanation. *@
+                                    <th class="n">Discount</th>
+                                    <th class="n">Tax</th>
+                                    <th class="n">Line total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (q.Items.Count == 0)
+                                {
+                                    <tr>
+                                        <td colspan="7" class="qd-empty">
+                                            This quote has no line items, so its total is zero.
+                                            @if (Model.CanUpdate && Model.IsEditableStatus)
+                                            {
+                                                <a asp-page="/Quotes/Edit" asp-route-id="@Model.Id">Add some</a><text>.</text>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                @for (var i = 0; i < q.Items.Count; i++)
+                                {
+                                    var it = q.Items[i];
+                                    <tr>
+                                        <td class="muted">@(i + 1)</td>
+                                        <td>
+                                            <div class="nm">@it.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(it.Description))
+                                            {
+                                                <div class="ds">@it.Description</div>
+                                            }
+                                        </td>
+                                        <td class="c">@it.Quantity</td>
+                                        <td class="n">@Model.Money(it.UnitPrice)</td>
+                                        <td class="n @(it.LineDiscount > 0 ? "" : "muted")">
+                                            @(it.LineDiscount > 0 ? "−" + Model.Money(it.LineDiscount) : "—")
+                                        </td>
+                                        @* TaxRate on the DTO is a FRACTION (0.18 = 18%), unlike
+                                           QuoteItemData on the Create/Edit pages where it is a
+                                           percentage. "0.##" instead of "N0" so a 7.5% rate stops
+                                           printing as 8%. *@
+                                        <td class="n muted">@((it.TaxRate * 100).ToString("0.##"))%</td>
+                                        <td class="n fw-semibold">@Model.Money(it.LineGrandTotal)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div class="modal-body">
-                <p class="mb-1">Are you sure you want to delete this quote?</p>
-                <p class="mb-0 fw-semibold">@Model.Quote?.Number — @Model.Quote?.DealTitle</p>
-                <p class="text-muted small mt-1 mb-0">This action cannot be undone.</p>
+
+            <div class="qd-card">
+                <h2><i class="bi bi-calculator"></i>Totals</h2>
+                <div class="bd">
+                    <div class="row justify-content-end">
+                        <div class="col-sm-8 col-md-7">
+                            <div class="qd-tot">
+                                <div class="lbl">Subtotal</div>
+                                <div class="amt">@Model.Money(q.Subtotal)</div>
+
+                                <div class="lbl">Discount</div>
+                                <div class="amt @(q.DiscountTotal > 0 ? "text-success" : "")">
+                                    @(q.DiscountTotal > 0 ? "−" + Model.Money(q.DiscountTotal) : Model.Money(0))
+                                </div>
+
+                                <div class="lbl">Tax</div>
+                                <div class="amt">@Model.Money(q.TaxTotal)</div>
+
+                                <div class="rule"></div>
+
+                                <div class="lbl big">Grand total</div>
+                                <div class="amt big">@Model.Money(q.GrandTotal)</div>
+                            </div>
+
+                            @* Spelled out whenever the quote is priced in something
+                               other than the workspace currency — the case the old
+                               page silently mislabelled with the workspace symbol. *@
+                            @if (Model.QuoteInForeignCurrency)
+                            {
+                                <div class="qd-fx">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Priced in <strong>@q.Currency</strong>, not your workspace currency
+                                    (@Model.CurrencyCode). No conversion is applied.
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                @* ✅ Delete confirm — requires BOTH not locked AND delete permission *@
-                @if (!Model.IsLocked && Model.CanDelete)
+        </div>
+
+        @* ── RIGHT: facts, link, attachments ────────────────────── *@
+        <div class="col-lg-4">
+
+            <div class="qd-card">
+                <h2><i class="bi bi-info-circle"></i>Details</h2>
+                <div class="bd">
+                    <dl class="qd-facts">
+                        <dt>Company</dt>
+                        <dd>@q.CompanyName</dd>
+
+                        <dt>Deal</dt>
+                        <dd>@(string.IsNullOrWhiteSpace(q.DealTitle) ? "—" : q.DealTitle)</dd>
+
+                        @if (!string.IsNullOrWhiteSpace(q.VerticalName))
+                        {
+                            <dt>Industry</dt>
+                            <dd>@q.VerticalName</dd>
+                        }
+
+                        <dt>Issued</dt>
+                        <dd>@Model.FormatDate(q.IssueDateUtc)</dd>
+
+                        <dt>Expires</dt>
+                        <dd>
+                            @if (hasExpiry)
+                            {
+                                @Model.FormatDate(q.ExpiresAtUtc)
+                                @if (outWithCustomer)
+                                {
+                                    <span class="d-block @(expiryDays < 0 ? "text-danger fw-semibold" : expiryDays <= 3 ? "text-warning-emphasis fw-semibold" : "text-muted")"
+                                          style="font-size:.78rem;">
+                                        @Model.ExpiryNote(q.ExpiresAtUtc)
+                                    </span>
+                                }
+                            }
+                            else
+                            {
+                                @* The old page printed 01-01-0001 here. *@
+                                <span class="text-muted">Not set</span>
+                            }
+                        </dd>
+
+                        <dt>Currency</dt>
+                        <dd>@(string.IsNullOrWhiteSpace(q.Currency) ? Model.CurrencyCode : q.Currency)</dd>
+
+                        <dt>Created</dt>
+                        <dd>@Model.FormatDate(q.CreatedAtUtc)</dd>
+                    </dl>
+                </div>
+            </div>
+
+            @* Customer link — only exists once the quote has gone out *@
+            @if (outWithCustomer && !string.IsNullOrEmpty(q.PaymentLinkUrl))
+            {
+                <div class="qd-card qd-link qd-noprint">
+                    <h2>
+                        <i class="bi bi-link-45deg"></i>Customer link
+                        @if (q.Status == "Viewed")
+                        {
+                            <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle ms-auto">
+                                <i class="bi bi-eye-fill me-1"></i>Opened
+                            </span>
+                        }
+                    </h2>
+                    <div class="bd">
+                        <div class="text-muted" style="font-size:.8rem;">
+                            Send by email, LINE or WhatsApp. The customer can view and accept it online.
+                        </div>
+                        <code id="qdLink">@q.PaymentLinkUrl</code>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="qdCopy">
+                                <i class="bi bi-clipboard me-1"></i>Copy link
+                            </button>
+                            <a href="@q.PaymentLinkUrl" target="_blank" rel="noopener"
+                               class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Preview
+                            </a>
+                        </div>
+                        <div class="text-danger mt-2 d-none" id="qdCopyFail" style="font-size:.78rem;">
+                            Couldn't copy automatically — select the link above and copy it by hand.
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="qd-card">
+                <h2>
+                    <i class="bi bi-paperclip"></i>Attachments
+                    <span class="badge bg-light text-dark border ms-1">@Model.Attachments.Count</span>
+                </h2>
+
+                @* The UPLOAD form and the DELETE button are both gated on
+                   CanUpdate, because OnPostUploadAttachment and
+                   OnPostDeleteAttachment both call
+                   ValidatePermissionAsync(Actions.Update). Delete used to be
+                   gated on CanDelete, which disagreed with its own handler in
+                   both directions. *@
+                @if (Model.CanUpdate)
                 {
-                    <form method="post" asp-page-handler="Delete"
-                          asp-route-id="@Model.Id" class="d-inline">
-                        <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-trash me-1"></i>Delete
-                        </button>
-                    </form>
+                    <div class="bd border-bottom qd-noprint">
+                        <form method="post" asp-page-handler="UploadAttachment" asp-route-id="@Model.Id"
+                              enctype="multipart/form-data">
+                            <div class="input-group input-group-sm">
+                                <input type="file" name="file" class="form-control" required
+                                       accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv" />
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-upload"></i>
+                                </button>
+                            </div>
+                            <div class="text-muted mt-1" style="font-size:.74rem;">
+                                PDF, Word, Excel, images, CSV — up to 10 MB
+                            </div>
+                        </form>
+                    </div>
                 }
+
+                <div class="bd flush">
+                    @if (!Model.Attachments.Any())
+                    {
+                        <div class="qd-empty">Nothing attached yet.</div>
+                    }
+                    else
+                    {
+                        @foreach (var att in Model.Attachments)
+                        {
+                            <div class="qd-att">
+                                <i class="bi @att.FileIcon ico"></i>
+                                <div style="min-width:0;">
+                                    <div class="nm text-truncate" title="@att.FileName">@att.FileName</div>
+                                    <div class="mt">
+                                        @att.FileSizeDisplay · @Model.FormatDateTime(att.CreatedAtUtc)
+                                        @if (!string.IsNullOrEmpty(att.CreatedBy))
+                                        {
+                                            <text> · @att.CreatedBy</text>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="btns qd-noprint">
+                                    <a href="@att.FileUrl" target="_blank" rel="noopener"
+                                       class="btn btn-sm btn-outline-secondary" title="Download @att.FileName">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                    @if (Model.CanUpdate)
+                                    {
+                                        @* The file name goes in a data- attribute, never into an
+                                           inline onsubmit string: Razor encodes an apostrophe in
+                                           "Client's brief.pdf" to &#x27;, the parser decodes it
+                                           before the JS is parsed, and the handler becomes a
+                                           syntax error. A throwing onsubmit does not return
+                                           false, so the form would submit and delete the file
+                                           without asking. *@
+                                        <form method="post" asp-page-handler="DeleteAttachment"
+                                              asp-route-id="@Model.Id" asp-route-attachmentId="@att.Id"
+                                              class="qd-attdel" data-name="@att.FileName">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                    title="Delete @att.FileName">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
             </div>
         </div>
     </div>
 </div>
+}
 
-@* Bootstrap JS is already loaded once by _Layout.cshtml — do not load it again here. *@
+@* Delete modal — rendered only when the button that opens it exists.
+   The old page emitted it for every quote, including locked ones where it
+   had no Delete button in its footer at all. *@
+@if (showDelete)
+{
+    <div class="modal fade" id="qdDeleteModal" tabindex="-1" aria-hidden="true" aria-labelledby="qdDeleteTitle">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="qdDeleteTitle">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Delete this quote?
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1 fw-semibold">@q.Number — @q.DealTitle</p>
+                    <p class="text-muted small mb-0">
+                        @q.Items.Count line @(q.Items.Count == 1 ? "item" : "items"),
+                        @Model.Money(q.GrandTotal). This cannot be undone.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Id" class="d-inline">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash me-1"></i>Delete quote
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Bootstrap JS is already loaded once by _Layout.cshtml — not loaded again.
+   Alert auto-dismiss is handled globally by _Layout too. *@
 <script>
-    // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+    (function () {
+        'use strict';
 
-    function copyQuoteLink() {
-        const link = document.getElementById('quotePublicLink')?.textContent?.trim();
-        if (!link) return;
-        navigator.clipboard.writeText(link).then(() => {
-            const btn = document.getElementById('copyLinkBtn');
-            const orig = btn.innerHTML;
-            btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
-            btn.classList.replace('btn-outline-primary', 'btn-success');
-            setTimeout(() => {
-                btn.innerHTML = orig;
-                btn.classList.replace('btn-success', 'btn-outline-primary');
-            }, 2000);
+        // ── 1. copy the customer link ────────────────────────────────
+        // navigator.clipboard does NOT exist outside a secure context, so on
+        // plain http:// the old handler threw a TypeError and the button just
+        // sat there. Try the modern API, fall back to a hidden textarea, and
+        // say so when neither works.
+        var copyBtn = document.getElementById('qdCopy');
+        var linkEl = document.getElementById('qdLink');
+        var failEl = document.getElementById('qdCopyFail');
+
+        function flash(ok) {
+            if (!copyBtn) return;
+            if (!ok) { if (failEl) failEl.classList.remove('d-none'); return; }
+            if (failEl) failEl.classList.add('d-none');
+
+            var original = copyBtn.innerHTML;
+            copyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied';
+            copyBtn.classList.remove('btn-outline-primary');
+            copyBtn.classList.add('btn-success');
+            setTimeout(function () {
+                copyBtn.innerHTML = original;
+                copyBtn.classList.remove('btn-success');
+                copyBtn.classList.add('btn-outline-primary');
+            }, 1800);
+        }
+
+        function legacyCopy(text) {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '-1000px';
+                document.body.appendChild(ta);
+                ta.select();
+                var ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return ok;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        if (copyBtn && linkEl) {
+            copyBtn.addEventListener('click', function () {
+                var text = (linkEl.textContent || '').trim();
+                if (!text) return;
+
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text)
+                        .then(function () { flash(true); })
+                        .catch(function () { flash(legacyCopy(text)); });
+                } else {
+                    flash(legacyCopy(text));
+                }
+            });
+        }
+
+        // ── 2. confirmations, from data- attributes ──────────────────
+        // One delegated listener for both the status moves and the attachment
+        // deletes. Nothing is interpolated into a JS string, so a quote number
+        // or a file name containing an apostrophe cannot break the handler.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.classList) return;
+
+            if (form.classList.contains('qd-move')) {
+                var msg = form.getAttribute('data-confirm');
+                if (msg && !window.confirm(msg)) e.preventDefault();
+                return;
+            }
+
+            if (form.classList.contains('qd-attdel')) {
+                var name = form.getAttribute('data-name') || 'this file';
+                if (!window.confirm('Delete ' + name + '? This cannot be undone.')) e.preventDefault();
+            }
         });
-    }
+    })();
 </script>

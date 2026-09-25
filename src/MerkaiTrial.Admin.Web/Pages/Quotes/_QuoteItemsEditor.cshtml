@@ -1,0 +1,774 @@
+@using System.Globalization
+@using System.Text.Json
+@model MerkaiTrial.Admin.Web.Pages.Quotes.QuoteItemsEditorVm
+@{
+    var hasCatalog = Model.Products is { Count: > 0 };
+}
+@* =====================================================================
+   _QuoteItemsEditor.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/_QuoteItemsEditor.cshtml
+
+   NEW FILE (029) — the one line-item editor, rendered by both
+   Create.cshtml and Edit.cshtml. QuoteItemsEditorVm.cs says why it exists
+   and what went wrong with two copies.
+
+   IT MUST BE RENDERED INSIDE THE FORM it posts with: it owns the hidden
+   itemsJson field, and the host page owns the form, the dates and the
+   buttons.
+
+   WHAT THIS FIXES, beyond removing the duplication
+
+   1. NONE OF THE VALIDATION ON THE OLD PAGES EVER RAN. Every input had
+      required / min="1" / max="100" on it, and both pages submitted with
+      form.submit() — which by specification skips HTML5 constraint
+      validation AND the submit event. So a quantity of 0, a 500% tax rate
+      and a negative discount all went to the server, and the page looked
+      like it was validating. Validation is now done in JS before
+      submitting, marks the offending cell, and lists what's wrong; the
+      API is still the real gate.
+
+   2. TYPED VALUES COULD BE LOST. The old syncLineItemsFromUI() copied only
+      name and description out of the DOM; qty, price, tax and discount
+      lived in the array and were only ever updated by an oninput handler.
+      Anything that changes an input's value without firing `input` — and a
+      few browser autofill paths don't — was silently dropped on submit.
+      Every input now has an id and syncFromDom() re-reads all six.
+
+   3. THE DISCOUNT ROW COULD CONTRADICT THE GRAND TOTAL. Per-line discount
+      was clamped to the line subtotal for the tax calculation but NOT when
+      summing the Discount row, so a discount bigger than the line showed a
+      Discount larger than the Subtotal with a Grand Total of 0. The clamp
+      is applied once, in one place, and the input's own max follows the
+      line.
+
+   4. NO INLINE onclick / oninput ANYWHERE. Everything is delegated
+      listeners plus data- attributes, so no product name, description or
+      quantity is ever interpolated into a JavaScript string. That is what
+      broke the Edit page's catalogue on a product named  Widget "Pro".
+
+   5. THE REMOVE CONTROL WAS AN <i> WITH AN onclick. Not focusable, not
+      reachable by keyboard, no accessible name. It is a <button> now.
+   ===================================================================== *@
+
+<style>
+    .qe-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .6rem; }
+    .qe-head h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                  font-weight: 650; margin: 0; }
+    .qe-head .sp { margin-left: auto; display: flex; gap: .4rem; flex-wrap: wrap; }
+
+    .qe-shell { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; }
+    .qe-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .qe-table th { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                   font-weight: 650; padding: .5rem .5rem; background: #fbfcfd;
+                   border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .qe-table td { padding: .4rem .5rem; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+    .qe-table tbody tr:last-child td { border-bottom: 0; }
+    .qe-table .form-control, .qe-table .form-select { font-size: .84rem; }
+    .qe-table input[type="number"] { text-align: right; }
+    .qe-n { text-align: right; }
+    .qe-row-no { color: #94a3b8; font-size: .8rem; padding-top: .8rem !important; }
+    .qe-line-total { font-weight: 650; white-space: nowrap; padding-top: .8rem !important; }
+    .qe-pct { font-size: .7rem; color: #94a3b8; display: block; margin-top: .15rem; text-align: right; }
+    .qe-pct.over { color: #b45309; font-weight: 650; }
+    .qe-over td { background: #fff8f1; }
+    .qe-rm { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .4rem; }
+
+    .qe-empty { padding: 1.6rem 1rem; text-align: center; color: #94a3b8; font-size: .86rem; }
+    .qe-empty i { font-size: 1.8rem; color: #d7dde3; display: block; margin-bottom: .4rem; }
+
+    .qe-problems { border: 1px solid #f5c2c7; border-left: 5px solid #dc3545; border-radius: 10px;
+                   background: #fff5f5; padding: .7rem 1rem; margin-top: .75rem; }
+    .qe-problems ul { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .86rem; }
+
+    .qe-hint { border: 1px solid #fed7aa; border-left: 5px solid #fd7e14; border-radius: 10px;
+               background: #fff7ed; padding: .7rem 1rem; margin-top: .75rem; }
+    .qe-hint ul { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .86rem; }
+    .qe-hint .ft { font-size: .78rem; color: #64748b; margin-top: .35rem; }
+
+    .qe-tot { display: grid; grid-template-columns: 1fr auto; gap: .3rem .9rem; font-size: .9rem; }
+    .qe-tot .lbl { color: #64748b; }
+    .qe-tot .amt { text-align: right; font-weight: 600; white-space: nowrap; }
+    .qe-tot .rule { grid-column: 1 / -1; border-top: 1px solid #e5e8ec; margin: .3rem 0 .1rem; }
+    .qe-tot .big { font-size: 1.2rem; font-weight: 700; color: #0f172a; }
+
+    .qe-prod { cursor: pointer; }
+    .qe-prod .pn { font-weight: 600; font-size: .9rem; }
+    .qe-prod .pd { font-size: .8rem; color: #64748b; }
+
+    /* Stack the table into cards on a phone. A 7-column editor with number
+       inputs in it is unusable at 390px wide otherwise. */
+    @@media (max-width: 767.98px) {
+        .qe-table thead { display: none; }
+        .qe-table, .qe-table tbody, .qe-table tr, .qe-table td { display: block; width: 100%; }
+        .qe-table tr { border-bottom: 1px solid #eceff2; padding: .5rem .25rem; }
+        .qe-table td { border: 0; padding: .25rem .5rem; }
+        .qe-table td[data-lbl]::before { content: attr(data-lbl); display: block; font-size: .66rem;
+            text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; font-weight: 650;
+            margin-bottom: .1rem; }
+        .qe-row-no, .qe-line-total { padding-top: .25rem !important; }
+        .qe-line-total { text-align: right; }
+    }
+</style>
+
+@* The hidden field the host form posts. Named itemsJson on both pages
+   because both handlers take `string itemsJson`. *@
+<input type="hidden" name="itemsJson" id="qeItemsJson" />
+
+<div class="qe-head">
+    <h2><i class="bi bi-list-ul me-1"></i>Line items</h2>
+    <div class="sp">
+        @if (hasCatalog)
+        {
+            <button type="button" class="btn btn-sm btn-outline-primary" id="qeOpenCatalog">
+                <i class="bi bi-box-seam me-1"></i>Add from catalogue
+            </button>
+        }
+        <button type="button" class="btn btn-sm btn-primary" id="qeAddLine">
+            <i class="bi bi-plus-lg me-1"></i>Add line
+        </button>
+    </div>
+</div>
+
+<div class="qe-shell">
+    <div class="table-responsive">
+        <table class="qe-table" id="qeTable">
+            <thead>
+                <tr>
+                    <th style="width:2rem;">#</th>
+                    <th>Item</th>
+                    <th style="width:5.5rem;" class="qe-n">Qty</th>
+                    <th style="width:8rem;" class="qe-n">Unit price</th>
+                    <th style="width:8rem;" class="qe-n">Discount</th>
+                    <th style="width:6rem;" class="qe-n">@Model.TaxLabel %</th>
+                    <th style="width:8.5rem;" class="qe-n">Line total</th>
+                    <th style="width:2.5rem;"></th>
+                </tr>
+            </thead>
+            <tbody id="qeBody"></tbody>
+        </table>
+    </div>
+
+    <div class="qe-empty" id="qeEmpty">
+        <i class="bi bi-inbox"></i>
+        <div>No lines yet.</div>
+        <div class="small">Add a line, or pick something from the catalogue.</div>
+    </div>
+</div>
+
+@* Validation summary. Replaces three alert() calls — an alert cannot tell
+   you WHICH line is wrong, and on a ten-line quote that matters. *@
+<div class="qe-problems d-none" id="qeProblems" role="alert">
+    <div class="fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>Fix these before saving</div>
+    <ul id="qeProblemList"></ul>
+</div>
+
+@* (017) Live approval hint — the API enforces the same rules; this only
+   tells the rep before they click. *@
+<div class="qe-hint d-none" id="qeHint">
+    <div class="fw-semibold">
+        <i class="bi bi-shield-exclamation me-1" style="color:#fd7e14"></i>
+        <span id="qeHintTitle">This quote will need approval</span>
+    </div>
+    <ul id="qeHintList"></ul>
+    <div class="ft" id="qeHintFoot"></div>
+</div>
+
+<div class="row justify-content-end mt-3">
+    <div class="col-sm-8 col-md-6 col-lg-5">
+        <div class="qe-tot">
+            <div class="lbl">Subtotal</div>
+            <div class="amt" id="qeSubtotal">—</div>
+
+            <div class="lbl">Discount</div>
+            <div class="amt" id="qeDiscount">—</div>
+
+            <div class="lbl">@Model.TaxLabel</div>
+            <div class="amt" id="qeTax">—</div>
+
+            <div class="rule"></div>
+
+            <div class="lbl big">Grand total</div>
+            <div class="amt big" id="qeGrand">—</div>
+        </div>
+        <div class="text-muted mt-1" style="font-size:.74rem;">
+            Amounts in <strong>@Model.CurrencyCode</strong>. The server recalculates
+            every total when you save.
+        </div>
+    </div>
+</div>
+
+@if (hasCatalog)
+{
+    <div class="modal fade" id="qeCatalog" tabindex="-1" aria-hidden="true" aria-labelledby="qeCatalogTitle">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="qeCatalogTitle">
+                        <i class="bi bi-box-seam me-2"></i>Product catalogue
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group input-group-sm mb-3">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="search" class="form-control" id="qeProdSearch"
+                               placeholder="Search by name or description" autocomplete="off"
+                               aria-label="Search the product catalogue" />
+                    </div>
+
+                    <div class="list-group" id="qeProdList">
+                        @foreach (var p in Model.Products)
+                        {
+                            @* Everything the click needs is in data- attributes, which
+                               Razor HTML-encodes. Nothing is interpolated into a JS
+                               string, so a product called  Widget "Pro"  or  Bob's Kit
+                               is just data. The old Edit page built this with
+                               Html.Raw(name.Replace("'","\\'")) inside a double-quoted
+                               onclick, which a double quote in the name broke open —
+                               and a null name crashed the page outright. *@
+                            <button type="button" class="list-group-item list-group-item-action qe-prod"
+                                    data-id="@p.Id"
+                                    data-name="@(p.Name ?? string.Empty)"
+                                    data-desc="@(p.Description ?? string.Empty)"
+                                    data-price="@p.ListPrice.ToString(CultureInfo.InvariantCulture)">
+                                <div class="d-flex justify-content-between align-items-start gap-3">
+                                    <div style="min-width:0;">
+                                        <div class="pn">@(string.IsNullOrWhiteSpace(p.Name) ? "(unnamed product)" : p.Name)</div>
+                                        @if (!string.IsNullOrWhiteSpace(p.Description))
+                                        {
+                                            <div class="pd">@p.Description</div>
+                                        }
+                                    </div>
+                                    <span class="badge bg-light text-dark border flex-shrink-0">
+                                        @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)
+                                    </span>
+                                </div>
+                            </button>
+                        }
+                    </div>
+
+                    <div class="qe-empty d-none" id="qeProdNone">
+                        <i class="bi bi-search"></i>
+                        <div>Nothing matches that.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* Bootstrap JS is loaded once by _Layout.cshtml — not loaded again here. *@
+<script>
+    (function () {
+        'use strict';
+
+        // ── configuration from the server ────────────────────────────
+        var DEFAULT_TAX = @Model.DefaultTaxRate.ToString(CultureInfo.InvariantCulture);
+        var RULES       = @Html.Raw(string.IsNullOrWhiteSpace(Model.ApprovalRulesJson) ? "{\"enabled\":false}" : Model.ApprovalRulesJson);
+        var LIST_PRICES = @Html.Raw(string.IsNullOrWhiteSpace(Model.ListPricesJson) ? "{}" : Model.ListPricesJson);
+        var SEED        = @Html.Raw(string.IsNullOrWhiteSpace(Model.InitialItemsJson) ? "[]" : Model.InitialItemsJson);
+        var SEED_BLANK  = @(Model.StartWithOneBlankLine ? "true" : "false");
+        var FORM_ID     = '@Model.FormId';
+
+        // ── money ────────────────────────────────────────────────────
+        // MerkaiCurrency comes from _Layout and uses Intl.NumberFormat with
+        // the tenant's culture, so the client and the server agree. If the
+        // layout ever stops providing it, fall back rather than throwing on
+        // every keystroke.
+        function money(x) {
+            var n = Number(x) || 0;
+            try {
+                if (window.MerkaiCurrency && typeof window.MerkaiCurrency.format === 'function') {
+                    return window.MerkaiCurrency.format(n);
+                }
+            } catch (e) { /* fall through */ }
+            return n.toFixed(2);
+        }
+
+        var body     = document.getElementById('qeBody');
+        var emptyEl  = document.getElementById('qeEmpty');
+        var jsonEl   = document.getElementById('qeItemsJson');
+        if (!body || !jsonEl) return;
+
+        var rows = [];      // the model
+        var uid  = 1;       // DOM key, never sent to the server
+
+        function num(v, fallback) {
+            var n = parseFloat(v);
+            return Number.isFinite(n) ? n : (fallback || 0);
+        }
+
+        // ── the model ────────────────────────────────────────────────
+        function blank() {
+            return {
+                key: uid++, itemId: null, productId: null,
+                name: '', description: '',
+                quantity: 1, unitPrice: 0, lineDiscount: 0,
+                taxRate: num(DEFAULT_TAX, 0), listPrice: 0
+            };
+        }
+
+        function seed() {
+            if (Array.isArray(SEED)) {
+                SEED.forEach(function (s) {
+                    var pid = s.productId || null;
+                    rows.push({
+                        key: uid++,
+                        itemId: s.itemId || null,
+                        productId: pid,
+                        name: s.name || '',
+                        description: s.description || '',
+                        quantity: num(s.quantity, 1),
+                        unitPrice: num(s.unitPrice, 0),
+                        lineDiscount: num(s.lineDiscount, 0),
+                        // num(), NOT asPercent(). The seed is ALREADY a
+                        // percentage — Edit.cshtml multiplies the DTO's fraction
+                        // by 100 before serialising. Running asPercent() over it
+                        // again would turn a genuine 0.5% rate into 50%, because
+                        // asPercent treats anything in (0,1] as a fraction.
+                        taxRate: num(s.taxRate, num(DEFAULT_TAX, 0)),
+                        listPrice: (pid && LIST_PRICES && LIST_PRICES[pid] != null)
+                            ? num(LIST_PRICES[pid], 0) : num(s.unitPrice, 0)
+                    });
+                });
+            }
+            if (rows.length === 0 && SEED_BLANK) rows.push(blank());
+        }
+
+        // ── maths, in ONE place ──────────────────────────────────────
+        // Every caller uses these, so the Discount row, the line totals, the
+        // grand total and the approval hint can never disagree.
+        function lineSubtotal(r) { return Math.max(0, num(r.quantity, 0)) * Math.max(0, num(r.unitPrice, 0)); }
+
+        /// Discount actually applied — never more than the line is worth.
+        function lineDiscount(r) {
+            return Math.min(Math.max(0, num(r.lineDiscount, 0)), lineSubtotal(r));
+        }
+
+        function lineNet(r)   { return lineSubtotal(r) - lineDiscount(r); }
+        function lineTax(r)   { return lineNet(r) * (Math.max(0, num(r.taxRate, 0)) / 100); }
+        function lineTotal(r) { return lineNet(r) + lineTax(r); }
+
+        /// Percentage off the reference price, which is the catalogue list
+        /// price when there is one and the entered unit price otherwise.
+        /// Same shape as the server's rule.
+        function discountPct(r) {
+            var qty = Math.max(0, num(r.quantity, 0));
+            var ref = (num(r.listPrice, 0) > 0 ? num(r.listPrice, 0) : num(r.unitPrice, 0)) * qty;
+            if (ref <= 0) return 0;
+            var pct = (ref - lineNet(r)) / ref * 100;
+            return pct > 0 ? pct : 0;
+        }
+
+        // ── render ───────────────────────────────────────────────────
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .split('&').join('&amp;')
+                .split('<').join('&lt;')
+                .split('>').join('&gt;')
+                .split('"').join('&quot;')
+                .split("'").join('&#39;');
+        }
+
+        function render() {
+            if (rows.length === 0) {
+                body.innerHTML = '';
+                if (emptyEl) emptyEl.classList.remove('d-none');
+                recalc();
+                return;
+            }
+            if (emptyEl) emptyEl.classList.add('d-none');
+
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var k = r.key;
+                html +=
+                '<tr data-key="' + k + '">' +
+                  '<td class="qe-row-no">' + (i + 1) + '</td>' +
+                  '<td data-lbl="Item">' +
+                    '<input type="text" class="form-control form-control-sm" id="qe-name-' + k + '"' +
+                      ' data-key="' + k + '" data-f="name" value="' + esc(r.name) + '"' +
+                      ' placeholder="What are you selling?" maxlength="200"' +
+                      ' aria-label="Item name, line ' + (i + 1) + '" />' +
+                    '<input type="text" class="form-control form-control-sm mt-1" id="qe-desc-' + k + '"' +
+                      ' data-key="' + k + '" data-f="description" value="' + esc(r.description) + '"' +
+                      ' placeholder="Description (optional)" maxlength="500"' +
+                      ' aria-label="Description, line ' + (i + 1) + '" />' +
+                  '</td>' +
+                  '<td data-lbl="Qty">' +
+                    '<input type="number" class="form-control form-control-sm" id="qe-qty-' + k + '"' +
+                      ' data-key="' + k + '" data-f="quantity" value="' + r.quantity + '"' +
+                      ' min="1" step="1" aria-label="Quantity, line ' + (i + 1) + '" />' +
+                  '</td>' +
+                  '<td data-lbl="Unit price">' +
+                    '<input type="number" class="form-control form-control-sm" id="qe-price-' + k + '"' +
+                      ' data-key="' + k + '" data-f="unitPrice" value="' + r.unitPrice + '"' +
+                      ' min="0" step="0.01" aria-label="Unit price, line ' + (i + 1) + '" />' +
+                  '</td>' +
+                  '<td data-lbl="Discount">' +
+                    '<input type="number" class="form-control form-control-sm" id="qe-disc-' + k + '"' +
+                      ' data-key="' + k + '" data-f="lineDiscount" value="' + r.lineDiscount + '"' +
+                      ' min="0" step="0.01" aria-label="Discount amount, line ' + (i + 1) + '" />' +
+                    '<span class="qe-pct" id="qe-pct-' + k + '"></span>' +
+                  '</td>' +
+                  '<td data-lbl="Tax %">' +
+                    '<input type="number" class="form-control form-control-sm" id="qe-tax-' + k + '"' +
+                      ' data-key="' + k + '" data-f="taxRate" value="' + r.taxRate + '"' +
+                      ' min="0" max="100" step="0.01" aria-label="Tax percent, line ' + (i + 1) + '" />' +
+                  '</td>' +
+                  '<td class="qe-line-total qe-n" data-lbl="Line total" id="qe-total-' + k + '"></td>' +
+                  '<td class="qe-n">' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger qe-rm" data-rm="' + k + '"' +
+                      ' title="Remove line ' + (i + 1) + '" aria-label="Remove line ' + (i + 1) + '">' +
+                      '<i class="bi bi-trash"></i></button>' +
+                  '</td>' +
+                '</tr>';
+            }
+            body.innerHTML = html;
+            recalc();
+        }
+
+        function rowByKey(k) {
+            for (var i = 0; i < rows.length; i++) if (rows[i].key === k) return rows[i];
+            return null;
+        }
+
+        // ── recalc ───────────────────────────────────────────────────
+        function recalc() {
+            var sub = 0, disc = 0, tax = 0;
+
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                sub  += lineSubtotal(r);
+                disc += lineDiscount(r);
+                tax  += lineTax(r);
+
+                var tEl = document.getElementById('qe-total-' + r.key);
+                if (tEl) tEl.textContent = money(lineTotal(r));
+
+                // Deliberately NOT setting a max= on the discount input. The
+                // buttons are type="submit", so a max= the user exceeds makes
+                // the browser block the post with its own native bubble — and
+                // the submit event never fires, so this editor's own message
+                // never appears and the two compete. validate() catches it and
+                // says which line, which the native bubble cannot.
+
+                var pEl = document.getElementById('qe-pct-' + r.key);
+                if (pEl) {
+                    var pct = discountPct(r);
+                    pEl.textContent = pct > 0 ? ('−' + pct.toFixed(1) + '%') : '';
+                }
+            }
+
+            var grand = sub - disc + tax;
+
+            set('qeSubtotal', money(sub));
+            set('qeDiscount', disc > 0 ? '−' + money(disc) : money(0));
+            set('qeTax', money(tax));
+            set('qeGrand', money(grand));
+
+            hint(grand);
+        }
+
+        function set(id, text) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        // ── approval hint ────────────────────────────────────────────
+        function hint(grand) {
+            var box   = document.getElementById('qeHint');
+            var list  = document.getElementById('qeHintList');
+            var title = document.getElementById('qeHintTitle');
+            var foot  = document.getElementById('qeHintFoot');
+            if (!box || !list) return;
+
+            var reasons = [];
+            var over = {};
+
+            if (RULES && RULES.enabled) {
+                var limit = RULES.maxDiscountPercent;
+                if (limit !== null && limit !== undefined) {
+                    for (var i = 0; i < rows.length; i++) {
+                        var pct = discountPct(rows[i]);
+                        if (pct > limit + 0.0001) {
+                            over[rows[i].key] = true;
+                            reasons.push('"' + esc(rows[i].name || 'Unnamed line') + '" is ' +
+                                         pct.toFixed(1) + '% below list price (limit ' + limit + '%).');
+                        }
+                    }
+                }
+                var maxTotal = RULES.maxQuoteTotal;
+                if (maxTotal !== null && maxTotal !== undefined && grand > maxTotal) {
+                    reasons.push('The total ' + money(grand) + ' is above the ' + money(maxTotal) + ' limit.');
+                }
+            }
+
+            for (var j = 0; j < rows.length; j++) {
+                var tr = body.querySelector('tr[data-key="' + rows[j].key + '"]');
+                if (tr) tr.classList.toggle('qe-over', !!over[rows[j].key]);
+                var pEl = document.getElementById('qe-pct-' + rows[j].key);
+                if (pEl) pEl.classList.toggle('over', !!over[rows[j].key]);
+            }
+
+            var needs  = reasons.length > 0;
+            var exempt = !!(RULES && RULES.exempt);
+
+            box.classList.toggle('d-none', !needs);
+            list.innerHTML = reasons.map(function (r) { return '<li>' + r + '</li>'; }).join('');
+
+            if (title) title.textContent = exempt
+                ? "Over your workspace's limits"
+                : 'This quote will need approval before it can be sent';
+            if (foot) foot.textContent = exempt
+                ? "You're a workspace admin, so you can still send it yourself."
+                : 'You can still save it as a draft. Submitting it for approval sends it to whoever your workspace’s rules name.';
+
+            // Tell the host page, so it can relabel its primary button. Nothing
+            // here reaches into the page's own markup.
+            document.dispatchEvent(new CustomEvent('quote-items:approval', {
+                detail: { needsApproval: needs, exempt: exempt, grandTotal: grand, reasons: reasons }
+            }));
+        }
+
+        // ── read the DOM back into the model ─────────────────────────
+        // The old pages copied only name and description out of the DOM and
+        // trusted oninput for the four numbers. Read all six, every time.
+        function syncFromDom() {
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i], k = r.key;
+                var n = document.getElementById('qe-name-' + k);
+                var d = document.getElementById('qe-desc-' + k);
+                var q = document.getElementById('qe-qty-' + k);
+                var p = document.getElementById('qe-price-' + k);
+                var c = document.getElementById('qe-disc-' + k);
+                var t = document.getElementById('qe-tax-' + k);
+
+                if (n) r.name         = n.value || '';
+                if (d) r.description  = d.value || '';
+                if (q) r.quantity     = num(q.value, 0);
+                if (p) r.unitPrice    = num(p.value, 0);
+                if (c) r.lineDiscount = num(c.value, 0);
+                if (t) r.taxRate      = num(t.value, 0);
+            }
+        }
+
+        function mark(id, bad) {
+            var el = document.getElementById(id);
+            if (el) el.classList.toggle('is-invalid', !!bad);
+        }
+
+        /// Returns a list of problems, and marks the cells. Empty means OK.
+        function validate() {
+            var problems = [];
+
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i], k = r.key, n = i + 1;
+
+                var noName = !r.name || !r.name.trim();
+                mark('qe-name-' + k, noName);
+                if (noName) problems.push('Line ' + n + ' has no item name.');
+
+                var badQty = !(r.quantity >= 1) || Math.floor(r.quantity) !== r.quantity;
+                mark('qe-qty-' + k, badQty);
+                if (badQty) problems.push('Line ' + n + ' needs a whole quantity of 1 or more.');
+
+                var badPrice = !(r.unitPrice > 0);
+                mark('qe-price-' + k, badPrice);
+                if (badPrice) problems.push('Line ' + n + ' needs a unit price above zero.');
+
+                var badTax = !(r.taxRate >= 0 && r.taxRate <= 100);
+                mark('qe-tax-' + k, badTax);
+                if (badTax) problems.push('Line ' + n + ' has a tax rate outside 0–100%.');
+
+                var sub = lineSubtotal(r);
+                var badDisc = r.lineDiscount < 0 || r.lineDiscount > sub + 0.0001;
+                mark('qe-disc-' + k, badDisc);
+                if (badDisc) {
+                    problems.push(r.lineDiscount < 0
+                        ? 'Line ' + n + ' has a negative discount.'
+                        : 'Line ' + n + ' has a discount larger than the line itself (' + money(sub) + ').');
+                }
+            }
+
+            if (rows.length === 0) problems.push('A quote needs at least one line.');
+            return problems;
+        }
+
+        function showProblems(problems) {
+            var box  = document.getElementById('qeProblems');
+            var list = document.getElementById('qeProblemList');
+            if (!box || !list) return;
+
+            if (problems.length === 0) { box.classList.add('d-none'); return; }
+
+            list.innerHTML = problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('');
+            box.classList.remove('d-none');
+            box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+            var firstBad = body.querySelector('.is-invalid');
+            if (firstBad) firstBad.focus({ preventScroll: true });
+        }
+
+        // ── the public bit the host page calls ───────────────────────
+        // Returns true when the hidden field has been filled and the form may
+        // be submitted; false when there is something to fix.
+        window.QuoteItemsEditor = {
+            prepare: function () {
+                syncFromDom();
+                recalc();
+
+                var problems = validate();
+                showProblems(problems);
+                if (problems.length > 0) return false;
+
+                jsonEl.value = JSON.stringify(rows.map(function (r) {
+                    return {
+                        // The server's QuoteItemData.Id is a Guid? — an existing
+                        // line's DB id, or null for a new one. `key` is a DOM
+                        // counter and must never be sent: Create's old code sent
+                        // item.dbId, which nothing ever set.
+                        id: r.itemId || null,
+                        productId: r.productId || null,
+                        name: (r.name || '').trim(),
+                        description: (r.description || '').trim(),
+                        quantity: r.quantity,
+                        unitPrice: r.unitPrice,
+                        lineDiscount: lineDiscount(r),   // clamped, as displayed
+                        taxRate: r.taxRate               // percentage; the server divides by 100
+                    };
+                }));
+                return true;
+            },
+            count: function () { return rows.length; }
+        };
+
+        // ── events ───────────────────────────────────────────────────
+        body.addEventListener('input', function (e) {
+            var el = e.target;
+            if (!el || !el.getAttribute) return;
+            var f = el.getAttribute('data-f');
+            var k = parseInt(el.getAttribute('data-key'), 10);
+            if (!f || !Number.isFinite(k)) return;
+
+            var r = rowByKey(k);
+            if (!r) return;
+
+            if (f === 'name' || f === 'description') {
+                r[f] = el.value || '';
+                if (f === 'name' && el.value.trim()) el.classList.remove('is-invalid');
+            } else {
+                r[f] = num(el.value, 0);
+                el.classList.remove('is-invalid');
+            }
+            recalc();
+        });
+
+        body.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-rm]') : null;
+            if (!btn) return;
+            var k = parseInt(btn.getAttribute('data-rm'), 10);
+            // Read the DOM first: re-rendering throws the inputs away, so
+            // anything typed into another line and not yet echoed into the
+            // model would be lost when a line is removed.
+            syncFromDom();
+            rows = rows.filter(function (r) { return r.key !== k; });
+            render();
+        });
+
+        var addBtn = document.getElementById('qeAddLine');
+        if (addBtn) addBtn.addEventListener('click', function () {
+            syncFromDom();
+            rows.push(blank());
+            render();
+            var last = rows[rows.length - 1];
+            var el = document.getElementById('qe-name-' + last.key);
+            if (el) el.focus();
+        });
+
+        // ── catalogue ────────────────────────────────────────────────
+        var openBtn = document.getElementById('qeOpenCatalog');
+        var catalog = document.getElementById('qeCatalog');
+
+        if (openBtn) openBtn.addEventListener('click', function () {
+            if (!catalog || typeof bootstrap === 'undefined') {
+                // Don't fail silently the way the old page did — say so.
+                window.alert('The catalogue needs JavaScript from the page layout to open. Add the line by hand instead.');
+                return;
+            }
+            bootstrap.Modal.getOrCreateInstance(catalog).show();
+        });
+
+        if (catalog) {
+            catalog.addEventListener('click', function (e) {
+                var b = e.target && e.target.closest ? e.target.closest('.qe-prod') : null;
+                if (!b) return;
+
+                syncFromDom();
+
+                var price = num(b.getAttribute('data-price'), 0);
+                rows.push({
+                    key: uid++, itemId: null,
+                    productId: b.getAttribute('data-id') || null,
+                    name: b.getAttribute('data-name') || '',
+                    description: b.getAttribute('data-desc') || '',
+                    quantity: 1,
+                    unitPrice: price,
+                    lineDiscount: 0,
+                    taxRate: num(DEFAULT_TAX, 0),
+                    listPrice: price    // the discount maths measures against this
+                });
+                render();
+
+                if (typeof bootstrap !== 'undefined') {
+                    bootstrap.Modal.getOrCreateInstance(catalog).hide();
+                }
+            });
+
+            var search = document.getElementById('qeProdSearch');
+            if (search) search.addEventListener('input', function () {
+                var term = (search.value || '').trim().toLowerCase();
+                var items = catalog.querySelectorAll('.qe-prod');
+                var shown = 0;
+                for (var i = 0; i < items.length; i++) {
+                    var hit = term === '' || (items[i].textContent || '').toLowerCase().indexOf(term) !== -1;
+                    items[i].classList.toggle('d-none', !hit);
+                    if (hit) shown++;
+                }
+                var none = document.getElementById('qeProdNone');
+                if (none) none.classList.toggle('d-none', shown !== 0);
+            });
+        }
+
+        // ── the form's submit event is the ONLY path ─────────────────
+        // The old pages had onclick="submitQuote(true)" calling
+        // form.submit(), which skips constraint validation AND the submit
+        // event. The host page's buttons are plain type="submit" now, so the
+        // browser validates, this listener serialises the lines, and Enter in
+        // a text box behaves like everything else.
+        var form = document.getElementById(FORM_ID);
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                if (!window.QuoteItemsEditor.prepare()) e.preventDefault();
+            });
+        } else if (window.console && console.warn) {
+            console.warn('_QuoteItemsEditor: no form with id "' + FORM_ID +
+                         '" — line items will not be submitted.');
+        }
+
+        // ── first paint ──────────────────────────────────────────────
+        // Deferred to DOMContentLoaded on purpose. window.MerkaiCurrency is
+        // defined by _Layout in a script near the end of <body>, which has not
+        // run yet while this partial is being parsed. Calling money() now would
+        // fall through to toFixed(2) and the opening totals would render
+        // ungrouped ("255000.00") until the first keystroke redrew them.
+        function start() { seed(); render(); }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', start);
+        } else {
+            start();
+        }
+    })();
+</script>

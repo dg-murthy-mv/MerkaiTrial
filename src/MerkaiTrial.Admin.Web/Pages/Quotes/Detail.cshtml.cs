@@ -1,5 +1,43 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Quotes/Detail.cshtml.cs
+//
+// COMPLETE FILE — replaces the 018 version.
+//
+// CHANGES (029 — page rebuild)
+//
+//   1. FormatDate / FormatDateTime DELETED. AuthorizedPageModel already
+//      declares both with exactly these signatures, so the copies here
+//      were hiding the base members (CS0108) and doing the same thing —
+//      both route through ICurrentTenantService. FormatCurrency(decimal)
+//      went too: the base has FormatCurrency(decimal, int? decimals = null)
+//      and honours the tenant's configured decimal places, which this
+//      page's two-line version did not.
+//
+//   2. MONEY IS SHOWN IN THE QUOTE'S OWN CURRENCY. The page formatted
+//      every amount with the TENANT's symbol. A quote raised in USD on an
+//      Indian workspace printed "₹1,200.00" against dollar figures —
+//      wrong by a factor of about 85. GetSymbol() was already here for
+//      exactly this and was never called. Money() now uses it, and
+//      appends the ISO code whenever the quote is not in the workspace
+//      currency so there is no doubt what the number means.
+//
+//   3. A MISSING EXPIRY DATE PRINTED "01-01-0001". ExpiresAtUtc is a
+//      non-nullable DateTime, so a quote saved without one carries
+//      default(DateTime). HasExpiry() is the same guard the Quotes list
+//      got in round 028.
+//
+//   4. StatusHint replaces the nine-branch if/else chain that lived in
+//      the view, so the wording for a status is written once. It is
+//      approval-aware: a Draft that is over the workspace's limits says
+//      so instead of "send this quote to get started".
+//
+//   5. StatusActions lists the status moves to offer as buttons, each one
+//      filtered through CanChangeStatus. The view used to hand-roll
+//      "Sent || Viewed" beside a CanChangeStatus call, so the two could
+//      drift — and they had: the flow allows Sent/Viewed → Rejected and
+//      → Expired, but the page offered no way to record either. A rep
+//      whose customer said no had nowhere to put that.
+//
 // CHANGES (018 — invoice workflow)
 //   ✅ The invoice shown on the quote is the one that isn't void. A voided
 //      invoice no longer blocks "Create Invoice" — that's how a mistake on
@@ -10,23 +48,18 @@
 //   ✅ Approval state loaded with the quote (Approval). The panel is drawn
 //      by _QuoteApprovalPanel.cshtml — one line in Detail.cshtml:
 //          <partial name="_QuoteApprovalPanel" model="Model" />
-//   ✅ New handlers: SubmitForApproval, Approve, RequestChanges, Recall.
+//   ✅ Handlers: SubmitForApproval, Approve, RequestChanges, Recall.
 //      Approve / RequestChanges need only Quotes.Read — the API decides
 //      whether THIS user may approve THIS quote.
 //   ✅ CanChangeStatus follows the new flow: Draft → Sent only when the
 //      quote needs no approval (or you're an admin); Approved → Sent;
 //      nothing while PendingApproval.
-//   ✅ Status / delete refusals from the API now show their real message
+//   ✅ Status / delete refusals from the API show their real message
 //      ("This quote needs approval before it can be sent…") instead of
 //      "Failed to update quote status".
-//   ✅ Badge classes and descriptions for PendingApproval / Approved.
-//
-// EARLIER FIXES:
-//   ✅ ICurrentTenantService injected
-//   ✅ FormatDate() / FormatDateTime() / FormatCurrency() helpers
-//   ✅ TenantCurrencySymbol / TenantCurrencyCode for views
 // =====================================================================
 
+using System.Globalization;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
@@ -75,8 +108,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         [TempData] public string? ErrorMessage   { get; set; }
         [TempData] public string? SuccessMessage { get; set; }
 
-        public QuoteDto?          Quote       { get; set; }
-        public InvoiceDto?        Invoice     { get; set; }
+        public QuoteDto?           Quote       { get; set; }
+        public InvoiceDto?         Invoice     { get; set; }
         public List<AttachmentDto> Attachments { get; set; } = new();
 
         /// <summary>(018) Invoices raised from this quote and then voided.</summary>
@@ -204,19 +237,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
-                // ✅ Pass BaseUrl so handler can generate full public link
+                // BaseUrl so the handler can build the full public link,
                 // e.g. https://yourapp.com/q/{token}
-                var dto = new UpdateQuoteStatusDto
+                var baseUrl = $"{Request.Scheme}://{Request.Host}";
+
+                await _quoteService.UpdateStatusAsync(tenantId, Id, newStatus, baseUrl);
+
+                SuccessMessage = newStatus switch
                 {
-                    Status = newStatus,
-                    BaseUrl = $"{Request.Scheme}://{Request.Host}"  // ← ADD THIS LINE
+                    "Sent"     => "Quote sent. A customer link has been generated.",
+                    "Accepted" => "Marked as accepted. You can raise an invoice from it now.",
+                    "Rejected" => "Marked as declined. You can still revise it and send it again.",
+                    "Expired"  => "Marked as expired. Revise it to send a fresh version.",
+                    "Revised"  => "Back in revision. Edit it, then send it again.",
+                    _          => $"Status updated to {StatusLabel(newStatus)}."
                 };
-
-                await _quoteService.UpdateStatusAsync(tenantId, Id, newStatus, dto.BaseUrl);
-
-                SuccessMessage = newStatus == "Sent"
-                    ? "Quote sent! A customer link has been generated."
-                    : $"Quote status updated to {newStatus} successfully!";
 
                 return RedirectToPage(new { id = Id });
             }
@@ -344,6 +379,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         }
 
         // ── DELETE ATTACHMENT ──────────────────────────────────────────
+        // NOTE the permission: Actions.Update, not Actions.Delete. An
+        // attachment is part of the quote, so changing which files hang off
+        // it is an update to the quote. The view gates the button on
+        // CanUpdate to match — it used to gate on CanDelete, which meant a
+        // user with Update but not Delete never saw a button the server
+        // would have accepted, and a user with Delete but not Update saw
+        // one that always bounced to Access Denied.
         public async Task<IActionResult> OnPostDeleteAttachmentAsync(Guid attachmentId)
         {
             try
@@ -421,13 +463,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var pdfBytes = await _quoteService.DownloadPdfAsync(tenantId, Id);
 
-                // Resolve quote number for filename (Quote is loaded in OnGetAsync,
-                // but this is a separate GET handler so we load it fresh)
+                // Resolve the quote number for the filename. This is a separate
+                // GET handler, so OnGetAsync has not run and Quote is null here.
                 string filename;
                 try
                 {
                     var quote = await _quoteService.GetByIdAsync(tenantId, Id);
-                    filename = $"{quote.Number}.pdf";
+                    // A null quote here would have thrown an NRE on .Number and
+                    // been swallowed by the catch below, which worked but by
+                    // accident. Be explicit.
+                    filename = string.IsNullOrWhiteSpace(quote?.Number)
+                        ? $"quote-{Id.ToString()[..8]}.pdf"
+                        : $"{quote!.Number}.pdf";
                 }
                 catch
                 {
@@ -483,7 +530,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 if (quote.Status != "Accepted")
                 {
-                    ErrorMessage = $"Only accepted quotes can be invoiced. Current status: {quote.Status}";
+                    ErrorMessage = $"Only accepted quotes can be invoiced. Current status: {StatusLabel(quote.Status)}";
                     return RedirectToPage("/Quotes/Detail", new { id = Id });
                 }
 
@@ -525,22 +572,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             }
         }
 
-        // ── VIEW HELPERS ──────────────────────────────────────────────
+        // =============================================================
+        // VIEW HELPERS
+        //
+        // FormatDate, FormatDateTime and FormatCurrency are NOT declared
+        // here. AuthorizedPageModel provides all three, routed through
+        // ICurrentTenantService. The copies that used to sit here hid the
+        // base members (CS0108) and the FormatCurrency one ignored the
+        // tenant's configured decimal places.
+        // =============================================================
 
-        /// <summary>UTC → tenant local date</summary>
-        public string FormatDate(DateTime utcDate)
-            => _tenantService.FormatDate(utcDate);
-
-        /// <summary>UTC → tenant local date + time</summary>
-        public string FormatDateTime(DateTime utcDate)
-            => _tenantService.FormatDateTime(utcDate);
-
-        /// <summary>Amount with tenant currency symbol e.g. ₱9,408.00</summary>
-        public string FormatCurrency(decimal amount)
-            => _tenantService.FormatCurrency(amount);
-
-        /// <summary>Currency symbol for a specific code — falls back to tenant symbol</summary>
-        public string GetSymbol(string? code) => code switch
+        /// <summary>
+        /// Currency symbol for a specific ISO code. Unlike the old version
+        /// this does NOT fall back to the tenant symbol: printing ₹ next to
+        /// a dollar figure is worse than printing the code, so an unknown
+        /// code comes back as the code itself.
+        /// </summary>
+        public string GetSymbol(string? code) => (code ?? string.Empty).ToUpperInvariant() switch
         {
             "INR" => "₹",
             "THB" => "฿",
@@ -549,8 +597,79 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             "USD" => "$",
             "EUR" => "€",
             "GBP" => "£",
-            _     => _tenantService.GetCurrencySymbol()
+            ""    => CurrencySymbol,
+            _     => code!.ToUpperInvariant() + " "
         };
+
+        /// <summary>
+        /// True when this quote is priced in something other than the
+        /// workspace currency — the case the old page got wrong.
+        /// </summary>
+        public bool QuoteInForeignCurrency =>
+            !string.IsNullOrWhiteSpace(Quote?.Currency)
+            && !string.Equals(Quote!.Currency, CurrencyCode, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// An amount on THIS quote, in THIS quote's currency. Use this for
+        /// every figure that came off the quote; FormatCurrency is for
+        /// workspace-level figures.
+        /// </summary>
+        public string Money(decimal amount)
+        {
+            if (!QuoteInForeignCurrency) return FormatCurrency(amount);
+
+            // Deliberately invariant grouping for a foreign currency: Indian
+            // lakh grouping on a US dollar figure reads as a mistake. The ISO
+            // code is appended by the view next to the totals.
+            return GetSymbol(Quote!.Currency) + amount.ToString("N2", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// ExpiresAtUtc is a non-nullable DateTime, so "no expiry" arrives as
+        /// default(DateTime) and formatted straight out as 01-01-0001. Same
+        /// guard the Quotes list uses.
+        /// </summary>
+        public static bool HasExpiry(DateTime d) => d != default && d.Year > 1900;
+
+        /// <summary>Two instants that fall on the same day in the TENANT's timezone.</summary>
+        private bool SameTenantDay(DateTime a, DateTime b)
+            => string.Equals(FormatDate(a), FormatDate(b), StringComparison.Ordinal);
+
+        /// <summary>
+        /// Whole days until the quote expires. 0 means it expires today.
+        /// Negative once it has passed. Only meaningful when HasExpiry.
+        /// Same helper as the Quotes list (028) — comparing against
+        /// DateTime.UtcNow.Date on its own is wrong for five and a half hours
+        /// of every Indian day.
+        /// </summary>
+        public int DaysUntilExpiry(DateTime expiresUtc)
+        {
+            if (SameTenantDay(expiresUtc, DateTime.UtcNow)) return 0;
+
+            var raw = (int)Math.Round((expiresUtc - DateTime.UtcNow).TotalDays,
+                                      MidpointRounding.AwayFromZero);
+
+            // Different tenant-local days, so the answer must not be 0 — the
+            // UTC arithmetic can land there inside the timezone offset.
+            if (raw == 0) return expiresUtc > DateTime.UtcNow ? 1 : -1;
+            return raw;
+        }
+
+        /// <summary>
+        /// "Expires in 3 days" / "Expired 2 days ago" — or nothing at all when
+        /// the quote is not out with a customer, because a draft's expiry date
+        /// is not news.
+        /// </summary>
+        public string ExpiryNote(DateTime expiresUtc)
+        {
+            if (!HasExpiry(expiresUtc)) return "No expiry set";
+
+            var d = DaysUntilExpiry(expiresUtc);
+            if (d < 0)  return d == -1 ? "Expired yesterday" : $"Expired {-d} days ago";
+            if (d == 0) return "Expires today";
+            if (d == 1) return "Expires tomorrow";
+            return $"Expires in {d} days";
+        }
 
         public string GetStatusBadgeClass(string status) => status switch
         {
@@ -558,12 +677,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             "PendingApproval" => "bg-warning text-dark",
             "Approved"        => "bg-success-subtle text-success-emphasis border border-success",
             "Sent"            => "bg-primary",
-            "Viewed"          => "bg-info",
+            "Viewed"          => "bg-info text-dark",
             "Accepted"        => "bg-success",
             "Rejected"        => "bg-danger",
             "Expired"         => "bg-warning text-dark",
             "Revised"         => "bg-dark",
             _                 => "bg-secondary"
+        };
+
+        public static string StatusIcon(string status) => status switch
+        {
+            "Draft"           => "bi-file-earmark",
+            "PendingApproval" => "bi-hourglass-split",
+            "Approved"        => "bi-patch-check",
+            "Sent"            => "bi-send",
+            "Viewed"          => "bi-eye",
+            "Accepted"        => "bi-check-circle",
+            "Rejected"        => "bi-x-circle",
+            "Expired"         => "bi-clock-history",
+            "Revised"         => "bi-arrow-repeat",
+            _                 => "bi-question-circle"
         };
 
         /// <summary>"PendingApproval" → "Pending approval" for badges.</summary>
@@ -592,19 +725,83 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 _          => false   // Accepted, PendingApproval
             };
 
-        public string GetStatusDescription(string status) => status switch
+        /// <param name="Status">The status to move to.</param>
+        /// <param name="Label">The button text.</param>
+        /// <param name="Icon">Bootstrap icon name.</param>
+        /// <param name="Css">Bootstrap button classes.</param>
+        /// <param name="Confirm">Confirmation text, or null for no prompt.</param>
+        public record StatusMove(string Status, string Label, string Icon, string Css, string? Confirm);
+
+        /// <summary>
+        /// The status buttons to draw, already filtered through
+        /// CanChangeStatus so the view and the flow cannot drift apart.
+        /// Empty when the user can't update, or the quote has nowhere to go.
+        /// </summary>
+        public List<StatusMove> StatusActions
         {
-            "Draft"           => "Quote is being prepared",
-            "PendingApproval" => "Waiting for a manager to approve it",
-            "Approved"        => "Approved — ready to send to the customer",
-            "Sent"            => "Quote has been sent to customer",
-            "Viewed"          => "Customer has viewed the quote",
-            "Accepted"        => "Customer accepted the quote",
-            "Rejected"        => "Customer rejected the quote",
-            "Expired"         => "Quote has expired",
-            "Revised"         => "Quote has been revised",
-            _                 => "Unknown status"
-        };
+            get
+            {
+                var moves = new List<StatusMove>();
+                if (Quote == null || !CanUpdate) return moves;
+
+                // "Mark as expired" is left off deliberately: a quote expires
+                // on its own date and the API can set it. Offering a button to
+                // expire a live quote by hand invites mistakes, and Revise
+                // covers the real need.
+                var all = new[]
+                {
+                    new StatusMove("Sent",     "Send to customer",  "bi-send",         "btn-primary",          null),
+                    new StatusMove("Accepted", "Customer accepted", "bi-check-circle", "btn-success",          null),
+                    new StatusMove("Rejected", "Customer declined", "bi-x-circle",     "btn-outline-danger",
+                        "Mark this quote as declined by the customer?"),
+                    new StatusMove("Revised",  "Revise",            "bi-arrow-repeat", "btn-outline-primary",  null)
+                };
+
+                foreach (var m in all)
+                {
+                    if (!CanChangeStatus(Quote.Status, m.Status)) continue;
+                    // A quote that has been invoiced is part of the financial
+                    // trail; don't offer to reopen it.
+                    if (m.Status == "Revised" && Invoice != null) continue;
+                    moves.Add(m);
+                }
+
+                return moves;
+            }
+        }
+
+        /// <summary>
+        /// One sentence explaining where the quote stands. Written once here
+        /// rather than as a nine-branch if/else in the view, and
+        /// approval-aware for a Draft that is over the workspace's limits.
+        /// </summary>
+        public string StatusHint
+        {
+            get
+            {
+                var status = Quote?.Status ?? string.Empty;
+
+                if (status == "Draft")
+                {
+                    return Approval?.RequiresApproval == true && Approval?.IsExempt != true
+                        ? "This quote is over your workspace's limits, so it needs approval before it can be sent."
+                        : "Still a draft. Send it to the customer when you're ready.";
+                }
+
+                return status switch
+                {
+                    "PendingApproval" => "Waiting for a manager to approve it before it can be sent.",
+                    "Approved"        => "Approved — ready to send to the customer.",
+                    "Sent"            => "Sent. Waiting for the customer to respond.",
+                    "Viewed"          => "The customer has opened it. Waiting for a decision.",
+                    "Accepted"        => "The customer accepted this quote.",
+                    "Rejected"        => "The customer declined this quote. You can revise it and send it again.",
+                    "Expired"         => "This quote has expired. Revise it to send a fresh version.",
+                    "Revised"         => "Being revised. Edit it, then send it again.",
+                    _                 => string.Empty
+                };
+            }
+        }
 
         /// <summary>Edit shows for these only — the API refuses the rest.</summary>
         public bool IsEditableStatus => Quote?.Status is "Draft" or "Revised" or "Approved";

@@ -1,583 +1,792 @@
 @page
+@using MerkaiTrial.Application.DTOs
+@using MerkaiTrial.Admin.Web.Pages.Quotes
 @model MerkaiTrial.Admin.Web.Pages.Quotes.IndexModel
-@* (017) + "Awaiting approval" and "Approved" columns, "Approvals (n)" and
-   "Approval rules" buttons in the header. *@
 @{
     ViewData["Title"] = "Quotes";
-}
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    var statuses = IndexModel.StatusOrder;
+    var view = Model.ActiveView;
+    var odd = Model.Unclassified;
+    var emptyColumns = statuses.Count(s => Model.CountOf(s.Key) == 0);
+}
+@* =====================================================================
+   QUOTES (028a)
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/Index.cshtml
+
+   COMPLETE FILE — replaces the 028 version.
+
+   WHAT CHANGED SINCE 028 AND WHY
+
+   1. YOU COULD ONLY SEE "OPEN". Nine columns did not fit a 1366px
+      screen, .table-responsive quietly scrolled sideways, and the last
+      column — the one holding Open / Edit / Delete — sat off the
+      right-hand edge with nothing to tell you it was there. That column
+      is now PINNED to the right edge (position: sticky) with a soft
+      shadow, so all three buttons are on screen at every width and the
+      middle of the table scrolls underneath them. The header cell is
+      labelled "Actions" instead of being blank.
+
+      No column is hidden to make room. Hiding one would mean the value
+      is nowhere on the page — a hidden cell cannot even show a tooltip,
+      because it generates no box and takes no pointer events — and a
+      quote's expiry date, for example, is only drawn on a board card
+      while the quote is Sent or Viewed. The table scrolls instead.
+
+   2. Quote numbers wrapped to "QUO-" / "0007" and dates to "16-09-" /
+      "2026", which made every row two lines tall and pushed the table
+      wider than it needed to be. Both are nowrap now, and .q-clip came
+      down from 210px to 170px, which is what actually bought the width
+      back.
+
+   3. DELETE COULD DELETE WHAT THE DETAIL PAGE REFUSES TO. The only gate
+      on the trash button was CanDelete. The Detail page also hides it
+      for an Accepted or Rejected quote and refuses an invoiced one
+      server-side, so the list was a way around a guard that page was
+      written to enforce. The button now matches: no trash on an
+      Accepted or Rejected quote. (Index.cshtml.cs in this same round
+      adds the matching server-side invoice check.)
+
+   4. DELETING THREW AWAY YOUR FILTERS. The delete form posted to a bare
+      /Quotes?handler=Delete. StatusFilter / FromDate / ToDate / View are
+      query-string-bound, so they came back null on that POST and Back()
+      redirected to an unfiltered list — the opposite of what Back() was
+      written to do. The form now carries all four.
+
+   EVERYTHING ELSE IS UNCHANGED from 028. The counting rules still hold:
+   every per-column number comes from the same filtered list the cards
+   come from, and the workspace strip is labelled as workspace-wide. The
+   two are never mixed in one row.
+
+   No Bootstrap <link> here: _Layout.cshtml already loads Bootstrap and
+   the icon font, and loading them again inside <body> is both a wasted
+   download and invalid markup. TempData alerts are rendered once by
+   _Layout — not repeated here.
+   ===================================================================== *@
 
 <style>
-    .page-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem 0;
-        margin: -1rem -1rem 2rem -1rem;
-        border-radius: 0 0 1rem 1rem;
+    .q-wrap { max-width: 1400px; margin: 0 auto; }
+
+    /* ── header ─────────────────────────────────────────────────── */
+    .q-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .q-head .q-sub { font-size: 13px; color: #64748b; margin: .15rem 0 0; }
+
+    /* ── workspace strip ────────────────────────────────────────── */
+    .q-stats { display: flex; flex-wrap: wrap; border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; margin-bottom: 1rem; }
+    .q-stat { flex: 1 1 170px; padding: .7rem 1rem; border-right: 1px solid #f1f3f5; }
+    .q-stat:last-child { border-right: 0; }
+    .q-stat .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: #94a3b8; font-weight: 650; }
+    .q-stat .val { font-size: 1.15rem; font-weight: 700; color: #0f172a; line-height: 1.3; }
+    .q-stat .sub { font-size: .72rem; color: #94a3b8; }
+
+    /* ── toolbar ────────────────────────────────────────────────── */
+    .q-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .6rem .75rem; border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .q-toggle .btn { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .6rem; font-size: .8rem; font-weight: 600; }
+    .q-count { font-size: .78rem; color: #64748b; }
+
+    /* ── list ───────────────────────────────────────────────────── */
+    /* overflow: hidden here is what rounds the table's corners. It is an
+       ancestor of the scroll container, not an element between the sticky
+       cell and its scrollport, so it does not break position: sticky. */
+    .q-shell { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; }
+
+    .q-table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; }
+    .q-table th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b; font-weight: 650; padding: .6rem .8rem; background: #fbfcfd; border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .q-table th.sortable { cursor: pointer; user-select: none; }
+    .q-table th.sortable:hover, .q-table th.sortable:focus-visible { color: #0f172a; outline: none; }
+    .q-table th.sortable:focus-visible { box-shadow: inset 0 0 0 2px #4f46e5; }
+    .q-table th .caret { opacity: .25; font-size: .65rem; }
+    .q-table th.sorted .caret { opacity: 1; color: #4f46e5; }
+    .q-table td { padding: .6rem .8rem; border-bottom: 1px solid #f4f6f8; vertical-align: middle; font-size: .85rem; }
+    .q-table tbody tr:hover { background: #fcfdfe; }
+    .q-table tbody tr:last-child td { border-bottom: 0; }
+
+    /* Quote number and both date columns on one line. Without this a
+       number breaks after the hyphen and a date after the month, which
+       doubles the height of every row and widens the whole table. */
+    .q-table .num { font-weight: 650; white-space: nowrap; }
+    .q-table .date { white-space: nowrap; }
+    .q-table .money { text-align: right; font-weight: 650; white-space: nowrap; }
+    .q-table .muted { color: #94a3b8; }
+    .q-clip { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── pinned actions column ──────────────────────────────────── */
+    /* This is the fix for "I can only see Open". The last cell in every
+       row stays glued to the right edge while the rest of the table
+       scrolls under it, so Edit and Delete are always reachable.
+       border-collapse: separate above is required — sticky does not apply
+       to cells of a collapsed-border table in Chrome. */
+    .q-table th.q-stick, .q-table td.q-stick {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        background: #fff;
+        box-shadow: -8px 0 8px -8px rgba(15, 23, 42, .18);
+        padding-left: .5rem;
+    }
+    .q-table th.q-stick { background: #fbfcfd; z-index: 3; }
+    /* The row hover colour is painted on <tr>, which a sticky cell with
+       its own background would ignore — the pinned cell would stay white
+       while the row went grey. Repaint it here. */
+    .q-table tbody tr:hover td.q-stick { background: #fcfdfe; }
+
+    .q-actions { display: flex; gap: .25rem; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
+    .q-actions .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .45rem; line-height: 1.35; }
+
+    /* ── board ──────────────────────────────────────────────────── */
+    .q-board { display: flex; gap: .85rem; overflow-x: auto; padding-bottom: .75rem; align-items: flex-start; }
+    .q-col { flex: 0 0 286px; width: 286px; background: #f8fafc; border: 1px solid #eef1f4; border-radius: 12px; display: flex; flex-direction: column; max-height: 66vh; }
+    .q-col-head { padding: .65rem .8rem; border-bottom: 1px solid #e9edf1; border-top: 3px solid var(--tone, #94a3b8); border-radius: 12px 12px 0 0; flex: 0 0 auto; }
+    .q-col-title { display: flex; align-items: center; gap: .4rem; font-size: .82rem; font-weight: 650; color: #334155; }
+    .q-col-pill { margin-left: auto; min-width: 22px; text-align: center; font-size: .72rem; font-weight: 700; color: #fff; background: var(--tone, #94a3b8); border-radius: 20px; padding: .05rem .45rem; }
+    .q-col-val { font-size: .7rem; color: #94a3b8; margin-top: .2rem; }
+    .q-col-body { padding: .6rem; overflow-y: auto; flex: 1 1 auto; }
+    .q-col-empty { padding: .9rem .6rem; text-align: center; color: #b9c2cc; font-size: .76rem; }
+
+    /* ── card ───────────────────────────────────────────────────── */
+    .q-card { background: #fff; border: 1px solid #e9ecef; border-radius: 9px; margin-bottom: .55rem; transition: box-shadow .15s, transform .15s; }
+    .q-card:last-child { margin-bottom: 0; }
+    .q-card:hover { box-shadow: 0 3px 10px rgba(16,24,40,.09); transform: translateY(-1px); }
+    .q-card-link { display: block; padding: .65rem .7rem; text-decoration: none; color: inherit; }
+    .q-card-link:hover { color: inherit; }
+    .q-card-link:focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; border-radius: 9px; }
+    .q-card-top { display: flex; align-items: baseline; gap: .4rem; }
+    .q-num { font-weight: 700; color: #4f46e5; font-size: .86rem; }
+    .q-amt { margin-left: auto; font-weight: 700; color: #15803d; font-size: .86rem; white-space: nowrap; }
+    .q-party { font-size: .78rem; color: #475569; margin-top: .3rem; display: flex; align-items: center; gap: .3rem; min-width: 0; }
+    .q-party i { color: #94a3b8; flex: 0 0 auto; }
+    .q-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-deal { font-size: .74rem; color: #94a3b8; margin-top: .1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-foot { display: flex; justify-content: space-between; gap: .4rem; font-size: .72rem; color: #94a3b8; margin-top: .45rem; }
+    .q-foot i { margin-right: .2rem; }
+    .q-expiry { font-size: .72rem; color: #64748b; margin-top: .35rem; }
+    .q-expiry i { margin-right: .25rem; }
+    .q-expiry.is-soon { color: #b45309; font-weight: 600; }
+    .q-expiry.is-gone { color: #b91c1c; font-weight: 600; }
+    .q-card-actions { padding: 0 .7rem .6rem; text-align: right; }
+    .q-card-actions .btn { --bs-btn-padding-y: .1rem; --bs-btn-padding-x: .4rem; font-size: .72rem; }
+
+    .q-empty-all { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
+    .q-empty-all i.big { font-size: 2.4rem; color: #d7dde3; display: block; margin-bottom: .6rem; }
+
+    .q-hidden { display: none !important; }
+
+    /* Set on <html> before the list or the board is parsed, so somebody
+       who prefers the board never sees the list paint first and swap. */
+    html[data-qview="board"] #qList { display: none !important; }
+    html[data-qview="list"] #qBoard { display: none !important; }
+
+    /* ── narrow screens ─────────────────────────────────────────── */
+    /* No column is hidden here on purpose. Tighter padding and shorter
+       ellipsised text buy width; anything that still doesn't fit scrolls
+       sideways under the pinned actions column. */
+    @@media (max-width: 1399.98px) {
+        .q-clip { max-width: 150px; }
     }
 
-    .stat-card {
-        background: white;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: transform 0.2s;
-        border-left: 4px solid #667eea;
-    }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-
-    .stat-value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: #667eea;
-    }
-
-    .stat-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 1.5rem;
-    }
-
-    .quote-card {
-        background: white;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 0.75rem;
-        border: 1px solid #e9ecef;
-        cursor: pointer;
-        transition: all 0.2s;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-
-        .quote-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-
-    .quote-number {
-        font-weight: 700;
-        color: #667eea;
-        font-size: 1.1rem;
-    }
-
-    .quote-deal {
-        font-size: 0.875rem;
-        color: #6c757d;
-        margin-bottom: 0.5rem;
-    }
-
-    .quote-amount {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #28a745;
-    }
-
-    .status-column {
-        background: #f8f9fa;
-        border-radius: 12px;
-        padding: 1rem;
-        min-height: 400px;
-    }
-
-    .column-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 0;
-        margin-bottom: 1rem;
-        border-bottom: 2px solid #dee2e6;
-    }
-
-    .column-title {
-        font-weight: 600;
-        font-size: 1.1rem;
-        color: #495057;
-    }
-
-    .column-count {
-        background: white;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.875rem;
-        font-weight: 600;
-    }
-
-    .status-draft .column-count {
-        background: #6c757d;
-        color: white;
-    }
-
-    .status-sent .column-count {
-        background: #0d6efd;
-        color: white;
-    }
-
-    .status-viewed .column-count {
-        background: #0dcaf0;
-        color: white;
-    }
-
-    .status-accepted .column-count {
-        background: #198754;
-        color: white;
-    }
-
-    .status-rejected .column-count {
-        background: #dc3545;
-        color: white;
-    }
-
-    .status-expired .column-count {
-        background: #ffc107;
-        color: #000;
-    }
-
-    .status-pending .column-count {
-        background: #fd7e14;
-        color: white;
-    }
-
-    .status-approved .column-count {
-        background: #20c997;
-        color: white;
-    }
-
-    .approval-chip {
-        display: inline-block;
-        font-size: .75rem;
-        font-weight: 600;
-        padding: .1rem .5rem;
-        border-radius: 20px;
-        background: #fff3cd;
-        color: #664d03;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 2rem 1rem;
-        color: #6c757d;
-    }
-
-        .empty-state i {
-            font-size: 3rem;
-            opacity: 0.3;
-            margin-bottom: 1rem;
-        }
-
-    @@media (max-width: 991.98px) {
-        .status-columns {
-            display: block !important;
-        }
-
-        .status-column {
-            margin-bottom: 1rem;
-            min-height: auto;
-        }
+    @@media (max-width: 767.98px) {
+        .q-col { flex-basis: 84vw; width: 84vw; max-height: none; }
+        .q-stat { flex-basis: 50%; }
+        .q-clip { max-width: 130px; }
+        .q-table td, .q-table th { padding: .55rem .5rem; }
     }
 </style>
 
-<div class="container-fluid">
+<script>
+    // Runs during parse, before #qList and #qBoard exist. Only sets an
+    // attribute the CSS above keys off — no DOM access, so it cannot
+    // throw on a half-built page.
+    (function () {
+        try {
+            var p = new URLSearchParams(window.location.search);
+            // The server binds query keys case-insensitively; URLSearchParams
+            // does not. Read every casing or a bookmarked ?view=board loses
+            // to whatever localStorage happens to hold.
+            var u = p.get('View') || p.get('view') || p.get('VIEW');
+            var v = u ? u.toLowerCase() : (localStorage.getItem('merkai.quotes.view') || '@view');
+            document.documentElement.setAttribute('data-qview', v === 'board' ? 'board' : 'list');
+        } catch (e) {
+            document.documentElement.setAttribute('data-qview', '@view');
+        }
+    })();
+</script>
 
-    <!-- Page Header -->
-    <div class="page-header">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6 mb-3 mb-md-0">
-                    <h2 class="mb-0">
-                        <i class="bi bi-file-earmark-text me-2"></i>Quotes
-                    </h2>
-                    <p class="mb-0 mt-1 opacity-75">Manage sales quotations</p>
-                </div>
-                <div class="col-md-6 text-md-end">
+<div class="q-wrap">
 
-                    <div class="d-inline-flex align-items-center gap-2">
-
-                        @* ✅ Plan badge *@
-                        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
-                            @Model.PlanDisplayName
-                        </span>
-
-                        <a asp-page="/Pipeline/Index" class="btn btn-outline-light">
-                            <i class="bi bi-kanban me-2"></i>View Pipeline
-                        </a>
-
-                        @* (017) Requests waiting for MY decision *@
-                        <a asp-page="/Quotes/Approvals" class="btn btn-outline-light position-relative">
-                            <i class="bi bi-patch-check me-2"></i>Approvals
-                            @if (Model.PendingForMeCount > 0)
-                            {
-                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                                    @Model.PendingForMeCount
-                                </span>
-                            }
-                        </a>
-
-                        @if (Model.IsWorkspaceAdmin)
+    @* ── header ─────────────────────────────────────────────── *@
+    <div class="q-head">
+        <div>
+            <h1 class="lf-page-title mb-0">Quotes</h1>
+            <p class="q-sub">
+                @if (Model.LoadFailed)
+                {
+                    <span class="text-danger">Couldn't load quotes.</span>
+                }
+                else
+                {
+                    <span>
+                        @if (Model.HasFilter)
                         {
-                            <a asp-page="/Settings/QuoteApprovals/Index" class="btn btn-outline-light" title="Approval rules">
-                                <i class="bi bi-sliders"></i>
-                            </a>
+                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1">filtered</span>
                         }
+                        @Model.ShownCount @(Model.ShownCount == 1 ? "quote" : "quotes")
+                        worth @Model.FormatCurrency(Model.ShownValue)
+                    </span>
+                }
+            </p>
+        </div>
 
-                        @* ✅ Create Quote — permission aware (tied to Deals module) *@
+        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <a asp-page="/Quotes/Approvals" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-inbox me-1"></i>Waiting for me
+                @if (Model.PendingForMeCount > 0)
+                {
+                    <span class="badge rounded-pill bg-danger ms-1">@Model.PendingForMeCount</span>
+                }
+            </a>
+
+            @if (Model.UserCanRead("settings"))
+            {
+                <a asp-page="/Settings/QuoteApprovals/Index" class="btn btn-sm btn-outline-secondary" title="Approval rules">
+                    <i class="bi bi-sliders"></i>
+                </a>
+            }
+
+            <a asp-page="/Pipeline/Index" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-kanban me-1"></i>Pipeline
+            </a>
+
+            @if (Model.CanCreate)
+            {
+                <a asp-page="/Quotes/Create" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus-lg me-1"></i>Create quote
+                </a>
+            }
+        </div>
+    </div>
+
+    @* ── workspace totals ────────────────────────────────────── *@
+    @* EVERY tile here comes from GetStatisticsAsync and ignores the
+       filters — which is why the strip says so. The old page put a
+       filtered number next to unfiltered ones with no way to tell. Filtered
+       numbers live in the header line and in the column pills, nowhere
+       else. *@
+    @if (!Model.LoadFailed)
+    {
+        <div class="q-stats">
+            <div class="q-stat">
+                <div class="lbl">Workspace — all quotes</div>
+                <div class="val">@Model.Statistics.TotalQuotes</div>
+                <div class="sub">@Model.FormatCurrency(Model.Statistics.TotalValue)</div>
+            </div>
+            <div class="q-stat">
+                <div class="lbl">Workspace — accepted</div>
+                <div class="val text-success">@Model.Statistics.AcceptedQuotes</div>
+                <div class="sub">@Model.FormatCurrency(Model.Statistics.AcceptedValue)</div>
+            </div>
+            <div class="q-stat">
+                <div class="lbl">Workspace — out with customers</div>
+                <div class="val" style="color:#b45309;">@Model.Statistics.SentQuotes</div>
+                <div class="sub">@Model.FormatCurrency(Model.Statistics.PendingValue)</div>
+            </div>
+        </div>
+    }
+
+    @* ── toolbar ────────────────────────────────────────────── *@
+    <div class="q-bar">
+        <div class="btn-group btn-group-sm q-toggle" role="group" aria-label="View as list or board">
+            <button type="button" class="btn @(view == "list" ? "btn-primary" : "btn-outline-secondary")" data-view="list">
+                <i class="bi bi-list-ul me-1"></i>List
+            </button>
+            <button type="button" class="btn @(view == "board" ? "btn-primary" : "btn-outline-secondary")" data-view="board">
+                <i class="bi bi-kanban me-1"></i>Board
+            </button>
+        </div>
+
+        <div class="input-group input-group-sm" style="width:260px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" class="form-control" id="qSearch"
+                   aria-label="Search quotes by number, customer or deal"
+                   placeholder="Number, customer or deal" autocomplete="off" />
+        </div>
+
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="qFilter">
+            <input type="hidden" name="View" value="@view" class="q-view-field" />
+
+            <select name="StatusFilter" class="form-select form-select-sm" style="width:auto;"
+                    onchange="this.form.submit()" aria-label="Filter by status">
+                <option value="">All statuses</option>
+                @foreach (var s in statuses)
+                {
+                    <option value="@s.Key" selected="@(string.Equals(Model.StatusFilter, s.Key, StringComparison.OrdinalIgnoreCase))">
+                        @s.Label
+                    </option>
+                }
+            </select>
+
+            @* ISO, invariant. A Buddhist-calendar server culture would emit
+               2569-03-16, which <input type="date"> silently refuses — the
+               filter would look cleared while still being applied. *@
+            <input type="date" name="FromDate" class="form-control form-control-sm" style="width:auto;"
+                   value="@IndexModel.IsoDate(Model.FromDate)" aria-label="Issued from" />
+            <span class="q-count">to</span>
+            <input type="date" name="ToDate" class="form-control form-control-sm" style="width:auto;"
+                   value="@IndexModel.IsoDate(Model.ToDate)" aria-label="Issued to" />
+
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Apply</button>
+
+            @if (Model.HasFilter)
+            {
+                @* The href is baked at render time with the SERVER's idea of
+                   the view — which is "list" whenever the board came from
+                   localStorage, so clearing threw board users into the list.
+                   apply() rewrites it. With scripting off the server value is
+                   already correct, because localStorage never applied. *@
+                <a asp-page="/Quotes/Index" asp-route-View="@view" class="btn btn-sm btn-link px-1 q-clear">Clear</a>
+            }
+        </form>
+
+        <div class="ms-auto d-flex align-items-center gap-3">
+            <span class="q-count" id="qShowing"></span>
+
+            @if (emptyColumns > 0)
+            {
+                <div class="form-check form-switch mb-0 q-hidden" id="qEmptyWrap">
+                    <input class="form-check-input" type="checkbox" role="switch" id="qShowEmpty" />
+                    <label class="form-check-label q-count" for="qShowEmpty">
+                        Show @emptyColumns empty column@(emptyColumns == 1 ? "" : "s")
+                    </label>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (odd.Count > 0)
+    {
+        <div class="alert alert-warning py-2 small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            @odd.Count @(odd.Count == 1 ? "quote has a status" : "quotes have statuses") this page doesn't
+            recognise (@string.Join(", ", odd.Select(q => string.IsNullOrWhiteSpace(q.Status) ? "(blank)" : q.Status).Distinct())).
+            @(odd.Count == 1 ? "It is" : "They are") shown below so nothing is hidden — but the status should be
+            added to StatusOrder.
+        </div>
+    }
+
+    @if (Model.LoadFailed)
+    {
+        <div class="q-shell">
+            <div class="q-empty-all">
+                <i class="bi bi-wifi-off big"></i>
+                <div class="fw-semibold text-body mb-1">Couldn't load your quotes</div>
+                <div class="small">
+                    Nothing has been lost — the list just couldn't be fetched.
+                    <a asp-page="/Quotes/Index">Try again</a>.
+                </div>
+            </div>
+        </div>
+    }
+    else if (Model.ShownCount == 0)
+    {
+        <div class="q-shell">
+            <div class="q-empty-all">
+                <i class="bi bi-file-earmark-text big"></i>
+                @if (Model.HasFilter)
+                {
+                    <div class="fw-semibold text-body mb-1">No quotes match those filters</div>
+                    <div class="small">
+                        Widen the dates, or
+                        <a asp-page="/Quotes/Index" asp-route-View="@view" class="q-clear">clear the filters</a>.
+                    </div>
+                }
+                else
+                {
+                    <div class="fw-semibold text-body mb-1">No quotes yet</div>
+                    <div class="small">
+                        A quote starts from a deal.
                         @if (Model.CanCreate)
                         {
-                            <a asp-page="/Quotes/Create" class="btn btn-light">
-                                <i class="bi bi-plus-circle me-2"></i>Create Quote
-                            </a>
+                            <a asp-page="/Quotes/Create">Create the first one</a><text>.</text>
                         }
-                        @* No quota bar — no MaxQuotes in any plan *@
-                        @* No plan gate — "deals" feature is available on all plans *@
-
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="container">
-
-        @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
-
-        <!-- Statistics Cards -->
-        <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
-                <div class="stat-card">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="text-muted small mb-1">Total Quotes</div>
-                            <div class="stat-value">@Model.Statistics.TotalQuotes</div>
-                        </div>
-                        <div class="stat-icon bg-primary">
-                            <i class="bi bi-file-earmark-text"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="stat-card border-success">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="text-muted small mb-1">Accepted</div>
-                            <div class="stat-value text-success">@Model.Statistics.AcceptedQuotes</div>
-                            <small class="text-muted">@Model.FormatCurrency(Model.Statistics.AcceptedValue)</small>
-                        </div>
-                        <div class="stat-icon bg-success">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="stat-card border-warning">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="text-muted small mb-1">Pending</div>
-                            <div class="stat-value text-warning">@Model.Statistics.SentQuotes</div>
-                            <small class="text-muted">@Model.FormatCurrency(Model.Statistics.PendingValue)</small>
-                        </div>
-                        <div class="stat-icon bg-warning">
-                            <i class="bi bi-clock-history"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="stat-card border-info">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <div class="text-muted small mb-1">Total Value</div>
-                            <div class="stat-value text-info">@Model.FormatCurrency(Model.Statistics.TotalValue)</div>
-                        </div>
-                        <div class="stat-icon bg-info">
-                            <span style="font-size:1.2rem;font-weight:700;line-height:1;">@Model.TenantCurrencySymbol</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Status Columns (Kanban-style) -->
-        <div class="status-columns"
-             style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1rem;">
-
-            <!-- Draft Column -->
-            <div class="status-column status-draft">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-file-earmark me-2"></i>Draft
-                    </div>
-                    <span class="column-count">@(Model.GetQuotesByStatus("Draft").Count)</span>
-                </div>
-                @{
-                    var draftQuotes = Model.GetQuotesByStatus("Draft");
                 }
-                @if (draftQuotes.Any())
+            </div>
+        </div>
+    }
+    else
+    {
+        @* Shown by the script when a search matches nothing — otherwise
+           both views go blank with no explanation. *@
+        <div class="q-shell q-hidden" id="qNoMatch">
+            <div class="q-empty-all">
+                <i class="bi bi-search big"></i>
+                <div class="fw-semibold text-body mb-1">Nothing matches “<span id="qNoMatchTerm"></span>”</div>
+                <div class="small">Try a quote number, a customer or part of a deal name.</div>
+            </div>
+        </div>
+
+        @* ── LIST ───────────────────────────────────────────── *@
+        <div id="qList" class="q-shell @(view == "list" ? "" : "q-hidden")">
+            @* Bootstrap's own scroll wrapper. The pinned actions column is
+               sticky WITHIN this element, which is exactly what makes it
+               stay put while the rest of the table scrolls. *@
+            <div class="table-responsive">
+                <table class="q-table" id="qTable">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="text" data-col="0" tabindex="0" role="button">Quote <i class="bi bi-chevron-expand caret"></i></th>
+                            <th class="sortable" data-sort="text" data-col="1" tabindex="0" role="button">Customer <i class="bi bi-chevron-expand caret"></i></th>
+                            <th>Deal</th>
+                            <th class="sortable" data-sort="text" data-col="3" tabindex="0" role="button">Status <i class="bi bi-chevron-expand caret"></i></th>
+                            <th class="sortable money" data-sort="num" data-col="4" tabindex="0" role="button">Value <i class="bi bi-chevron-expand caret"></i></th>
+                            <th class="text-center">Items</th>
+                            <th class="sortable" data-sort="num" data-col="6" tabindex="0" role="button">Issued <i class="bi bi-chevron-expand caret"></i></th>
+                            <th>Expires</th>
+                            <th class="q-stick text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var q in Model.Quotes
+                                    .OrderByDescending(x => x.IssueDateUtc)
+                                    .ThenByDescending(x => x.Number))
+                        {
+                            var m = IndexModel.Meta(q.Status);
+                            var live = IndexModel.IsLive(q.Status) && IndexModel.HasExpiry(q.ExpiresAtUtc);
+                            var days = live ? Model.DaysLeft(q.ExpiresAtUtc) : 0;
+
+                            <tr data-find="@($"{q.Number} {q.CompanyName} {q.DealTitle} {m.Label}".ToLowerInvariant())">
+                                <td class="num" data-v="@q.Number">
+                                    <a asp-page="/Quotes/Detail" asp-route-id="@q.Id" class="text-decoration-none">@q.Number</a>
+                                </td>
+                                <td data-v="@q.CompanyName"><div class="q-clip" title="@q.CompanyName">@q.CompanyName</div></td>
+                                <td class="muted"><div class="q-clip" title="@q.DealTitle">@q.DealTitle</div></td>
+                                <td data-v="@m.Label">
+                                    <span class="badge @m.Badge"><i class="bi @m.Icon me-1"></i>@m.Label</span>
+                                </td>
+                                <td class="money" data-v="@q.GrandTotal.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+                                    @Model.FormatCurrency(q.GrandTotal)
+                                </td>
+                                <td class="text-center muted">@q.ItemCount</td>
+                                <td class="date" data-v="@q.IssueDateUtc.Ticks">@Model.FormatDate(q.IssueDateUtc)</td>
+                                <td class="date @(live && days < 0 ? "text-danger fw-semibold" : live && days <= 3 ? "text-warning-emphasis fw-semibold" : "muted")">
+                                    @if (live)
+                                    {
+                                        @Model.ExpiryNote(q.ExpiresAtUtc)
+                                    }
+                                    else if (IndexModel.HasExpiry(q.ExpiresAtUtc))
+                                    {
+                                        @Model.FormatDate(q.ExpiresAtUtc)
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                @* PINNED. This cell stays on screen at every window
+                                   width — that is the whole point of .q-stick. *@
+                                <td class="q-stick">
+                                    <div class="q-actions">
+                                        <a asp-page="/Quotes/Detail" asp-route-id="@q.Id"
+                                           class="btn btn-sm btn-outline-secondary" title="Open quote"
+                                           aria-label="Open quote @q.Number">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        @if (Model.CanUpdate && (q.Status == "Draft" || q.Status == "Revised"))
+                                        {
+                                            <a asp-page="/Quotes/Edit" asp-route-id="@q.Id"
+                                               class="btn btn-sm btn-outline-secondary" title="Edit quote"
+                                               aria-label="Edit quote @q.Number">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        }
+                                        @* Same gate as the Detail page: it hides Delete whenever
+                                           IsLocked, which is Accepted/Rejected OR "has an invoice".
+                                           Without the status half of that test the list was a way
+                                           round a guard Detail was written to enforce. The invoice
+                                           half needs the server (the list DTO doesn't carry it) and
+                                           lives in OnPostDelete. *@
+                                        @if (Model.CanDelete && q.Status != "Accepted" && q.Status != "Rejected")
+                                        {
+                                            @* The quote number goes in a data- attribute, not into an
+                                               onsubmit string. Razor encodes an apostrophe to &#x27;, the
+                                               parser decodes it before the JS is parsed, and the handler
+                                               becomes a syntax error — a throwing onsubmit does not return
+                                               false, so the form would submit and delete without asking.
+
+                                               The four filter values ride along so Back() can return the
+                                               user to the list they were looking at. asp-route-* puts them
+                                               in the query string, where DateTime binds with the invariant
+                                               culture — a hidden form field would bind with the request
+                                               culture and an Indian or Thai culture rejects yyyy-MM-dd.
+                                               View is a hidden field instead, because the script rewrites
+                                               it when the user switches board/list. *@
+                                            <form method="post" asp-page-handler="Delete" class="d-inline q-del"
+                                                  data-number="@q.Number"
+                                                  asp-route-StatusFilter="@Model.StatusFilter"
+                                                  asp-route-FromDate="@IndexModel.IsoDate(Model.FromDate)"
+                                                  asp-route-ToDate="@IndexModel.IsoDate(Model.ToDate)">
+                                                <input type="hidden" name="quoteId" value="@q.Id" />
+                                                <input type="hidden" name="View" value="@view" class="q-view-field" />
+                                                <button class="btn btn-sm btn-outline-danger" title="Delete quote"
+                                                        aria-label="Delete quote @q.Number">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @* ── BOARD ──────────────────────────────────────────── *@
+        <div id="qBoard" class="@(view == "board" ? "" : "q-hidden")">
+            <div class="q-board">
+                @foreach (var s in statuses)
                 {
-                    foreach (var quote in draftQuotes)
-                    {
-                        @* ✅ Draft quotes are editable — only show edit hint if user can update *@
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="quote-number">@quote.Number</div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
+                    var items = Model.GetQuotesByStatus(s.Key);
+                    var isEmpty = items.Count == 0;
+
+                    <div class="q-col @(isEmpty ? "q-hidden" : "")"
+                         data-empty="@(isEmpty ? "1" : "0")"
+                         data-total="@Model.FormatCurrency(Model.ValueOf(s.Key))"
+                         style="--tone:@s.Accent;">
+                        <div class="q-col-head">
+                            <div class="q-col-title">
+                                <i class="bi @s.Icon"></i>@s.Label
+                                <span class="q-col-pill" data-full="@items.Count">@items.Count</span>
                             </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
-                                <span>@quote.ItemCount items</span>
-                            </div>
-                            @* ✅ Edit shortcut — only for users with update permission *@
-                            @if (Model.CanUpdate)
+                            <div class="q-col-val">@(items.Count > 0 ? Model.FormatCurrency(Model.ValueOf(s.Key)) : "")</div>
+                        </div>
+                        <div class="q-col-body">
+                            @if (isEmpty)
                             {
-                                <div class="mt-2 text-end">
-                                    <a asp-page="/Quotes/Edit" asp-route-id="@quote.Id"
-                                       class="btn btn-sm btn-outline-secondary"
-                                       onclick="event.stopPropagation()">
-                                        <i class="bi bi-pencil me-1"></i>Edit
-                                    </a>
-                                </div>
+                                <div class="q-col-empty">Nothing here</div>
+                            }
+                            else
+                            {
+                                foreach (var q in items.OrderByDescending(x => x.IssueDateUtc))
+                                {
+                                    <partial name="_QuoteCard" model="new QuoteCardVm(q, Model)" />
+                                }
                             }
                         </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>No draft quotes</div>
                     </div>
                 }
-            </div>
 
-            <!-- (017) Awaiting Approval Column -->
-            <div class="status-column status-pending">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-hourglass-split me-2"></i>Awaiting approval
-                    </div>
-                    <span class="column-count">@(Model.GetQuotesByStatus("PendingApproval").Count)</span>
-                </div>
-                @{
-                    var pendingQuotes = Model.GetQuotesByStatus("PendingApproval");
-                }
-                @if (pendingQuotes.Any())
+                @if (odd.Count > 0)
                 {
-                    foreach (var quote in pendingQuotes)
-                    {
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div class="quote-number">@quote.Number</div>
-                                <span class="approval-chip">Needs sign-off</span>
+                    @* data-empty="0" matters: without it this column matches
+                       neither the search filter nor the empty-column switch,
+                       and a search that misses it leaves a header with no
+                       cards under it. *@
+                    <div class="q-col" data-empty="0" style="--tone:#94a3b8;">
+                        <div class="q-col-head">
+                            <div class="q-col-title">
+                                <i class="bi bi-question-circle"></i>Other
+                                <span class="q-col-pill" data-full="@odd.Count">@odd.Count</span>
                             </div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
-                            </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
-                                <span>@quote.ItemCount items</span>
-                            </div>
+                            <div class="q-col-val">@Model.FormatCurrency(odd.Sum(q => q.GrandTotal))</div>
                         </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>Nothing waiting for approval</div>
-                    </div>
-                }
-            </div>
-
-            <!-- (017) Approved Column -->
-            <div class="status-column status-approved">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-patch-check me-2"></i>Approved
-                    </div>
-                    <span class="column-count">@(Model.GetQuotesByStatus("Approved").Count)</span>
-                </div>
-                @{
-                    var approvedQuotes = Model.GetQuotesByStatus("Approved");
-                }
-                @if (approvedQuotes.Any())
-                {
-                    foreach (var quote in approvedQuotes)
-                    {
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="quote-number">@quote.Number</div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
-                            </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span><i class="bi bi-send me-1"></i>Ready to send</span>
-                                <span>@quote.ItemCount items</span>
-                            </div>
+                        <div class="q-col-body">
+                            @foreach (var q in odd)
+                            {
+                                <partial name="_QuoteCard" model="new QuoteCardVm(q, Model)" />
+                            }
                         </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>No approved quotes waiting to go out</div>
                     </div>
                 }
             </div>
-
-            <!-- Sent Column -->
-            <div class="status-column status-sent">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-send me-2"></i>Sent
-                    </div>
-                    <span class="column-count">@Model.Statistics.SentQuotes</span>
-                </div>
-                @{
-                    var sentQuotes = Model.GetQuotesByStatus("Sent");
-                }
-                @if (sentQuotes.Any())
-                {
-                    foreach (var quote in sentQuotes)
-                    {
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="quote-number">@quote.Number</div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
-                            </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
-                                <span>Expires: @Model.FormatDate(quote.ExpiresAtUtc)</span>
-                            </div>
-                        </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>No sent quotes</div>
-                    </div>
-                }
-            </div>
-
-            <!-- In Review (Viewed) Column -->
-            <div class="status-column status-viewed">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-eye me-2"></i>In Review
-                    </div>
-                    <span class="column-count">@(Model.GetQuotesByStatus("Viewed").Count)</span>
-                </div>
-                @{
-                    var viewedQuotes = Model.GetQuotesByStatus("Viewed");
-                }
-                @if (viewedQuotes.Any())
-                {
-                    foreach (var quote in viewedQuotes)
-                    {
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="quote-number">@quote.Number</div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
-                            </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span><i class="bi bi-calendar me-1"></i>@Model.FormatDate(quote.IssueDateUtc)</span>
-                                <span>@quote.ItemCount items</span>
-                            </div>
-                        </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>No quotes in review</div>
-                    </div>
-                }
-            </div>
-
-            <!-- Accepted Column -->
-            <div class="status-column status-accepted">
-                <div class="column-header">
-                    <div class="column-title">
-                        <i class="bi bi-check-circle me-2"></i>Accepted
-                    </div>
-                    <span class="column-count">@Model.Statistics.AcceptedQuotes</span>
-                </div>
-                @{
-                    var acceptedQuotes = Model.GetQuotesByStatus("Accepted");
-                }
-                @if (acceptedQuotes.Any())
-                {
-                    foreach (var quote in acceptedQuotes)
-                    {
-                        <div class="quote-card"
-                             onclick="window.location.href='/Quotes/Detail?id=@quote.Id'">
-                            <div class="quote-number">@quote.Number</div>
-                            <div class="quote-deal">
-                                <i class="bi bi-building me-1"></i>@quote.CompanyName
-                            </div>
-                            <div class="quote-deal">@quote.DealTitle</div>
-                            <div class="quote-amount mb-2">
-                                @Model.FormatCurrency(quote.GrandTotal)
-                            </div>
-                            <div class="d-flex justify-content-between text-muted small">
-                                <span>
-                                    <i class="bi bi-check-circle-fill text-success me-1"></i>Accepted
-                                </span>
-                                <span>@quote.ItemCount items</span>
-                            </div>
-                        </div>
-                    }
-                }
-                else
-                {
-                    <div class="empty-state">
-                        <i class="bi bi-inbox d-block"></i>
-                        <div>No accepted quotes</div>
-                    </div>
-                }
-            </div>
-
         </div>
-    </div>
+    }
 </div>
 
-@* Bootstrap JS is already loaded once by _Layout.cshtml — do not load it again here. *@
-@* Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here. *@
+<script>
+    (function () {
+        'use strict';
+
+        var root = document.documentElement;
+        var list = document.getElementById('qList');
+        var board = document.getElementById('qBoard');
+        var noMatch = document.getElementById('qNoMatch');
+        var noMatchTerm = document.getElementById('qNoMatchTerm');
+        var search = document.getElementById('qSearch');
+        var showing = document.getElementById('qShowing');
+        var showEmpty = document.getElementById('qShowEmpty');
+        var emptyWrap = document.getElementById('qEmptyWrap');
+        var KEY = 'merkai.quotes.view';
+        var EMPTY_KEY = 'merkai.quotes.showEmpty';
+
+        function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+        function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+        // ── 1. list / board ──────────────────────────────────────────
+        // Runs even when there are no quotes to draw: the buttons, the
+        // remembered choice and the filter form's hidden View must stay
+        // consistent, or filtering down to zero leaves a dead toggle.
+        function apply(v) {
+            var isBoard = v === 'board';
+
+            root.setAttribute('data-qview', isBoard ? 'board' : 'list');
+            if (list) list.classList.toggle('q-hidden', isBoard);
+            if (board) board.classList.toggle('q-hidden', !isBoard);
+
+            var btns = document.querySelectorAll('.q-toggle [data-view]');
+            for (var i = 0; i < btns.length; i++) {
+                var on = btns[i].getAttribute('data-view') === v;
+                btns[i].classList.toggle('btn-primary', on);
+                btns[i].classList.toggle('btn-outline-secondary', !on);
+                btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+            }
+
+            // The empty-column switch only means anything on the board.
+            if (emptyWrap) emptyWrap.classList.toggle('q-hidden', !isBoard);
+
+            // Keep every hidden View field on the view the user is actually
+            // looking at: the filter form's (so Apply comes back to the same
+            // view) and each delete form's (so Back() does too). The server
+            // rendered them with its own idea of the view, which is "list"
+            // whenever the board came from localStorage.
+            var vf = document.querySelectorAll('.q-view-field');
+            for (var f = 0; f < vf.length; f++) vf[f].value = v;
+
+            // Clear is a plain link, so its href was fixed at render time
+            // with the server's view. Point it at the real one.
+            var clears = document.querySelectorAll('a.q-clear');
+            for (var c = 0; c < clears.length; c++) {
+                var href = clears[c].getAttribute('href') || '';
+                var base = href.split('?')[0];
+                clears[c].setAttribute('href', base + '?View=' + v);
+            }
+
+            store(KEY, v);
+        }
+
+        document.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('.q-toggle [data-view]') : null;
+            if (!btn) return;
+            apply(btn.getAttribute('data-view'));
+        });
+
+        // The attribute was already resolved by the inline script in the
+        // head of the body; mirror it into the classes and the form.
+        apply(root.getAttribute('data-qview') === 'board' ? 'board' : 'list');
+
+        // ── 2. empty columns ─────────────────────────────────────────
+        function applyEmpty() {
+            var show = showEmpty ? showEmpty.checked : false;
+            var cols = document.querySelectorAll('.q-col[data-empty="1"]');
+            for (var i = 0; i < cols.length; i++) cols[i].classList.toggle('q-hidden', !show);
+            store(EMPTY_KEY, show ? '1' : '0');
+        }
+        if (showEmpty) {
+            showEmpty.checked = read(EMPTY_KEY) === '1';
+            showEmpty.addEventListener('change', applyEmpty);
+            applyEmpty();
+        }
+
+        // ── 3. search, across both views at once ─────────────────────
+        function filter() {
+            var q = search ? search.value.trim().toLowerCase() : '';
+            var shown = 0, total = 0;
+
+            var rows = document.querySelectorAll('#qTable tbody tr');
+            for (var i = 0; i < rows.length; i++) {
+                total++;
+                var hit = q === '' || (rows[i].getAttribute('data-find') || '').indexOf(q) !== -1;
+                rows[i].classList.toggle('q-hidden', !hit);
+                if (hit) shown++;
+            }
+
+            var cards = document.querySelectorAll('.q-card');
+            for (var j = 0; j < cards.length; j++) {
+                var hit2 = q === '' || (cards[j].getAttribute('data-find') || '').indexOf(q) !== -1;
+                cards[j].classList.toggle('q-hidden', !hit2);
+            }
+
+            // Column headers must follow the cards. A server-rendered "7"
+            // over a single matching card is the same lie the old page told
+            // with its workspace-wide counts.
+            var cols = document.querySelectorAll('.q-col[data-empty="0"]');
+            for (var k = 0; k < cols.length; k++) {
+                var visible = cols[k].querySelectorAll('.q-card:not(.q-hidden)').length;
+                var pill = cols[k].querySelector('.q-col-pill');
+                var val = cols[k].querySelector('.q-col-val');
+
+                if (pill) pill.textContent = q === '' ? pill.getAttribute('data-full') : String(visible);
+                if (val) val.textContent = q === '' ? (cols[k].getAttribute('data-total') || '') : '';
+
+                cols[k].classList.toggle('q-hidden', q !== '' && visible === 0);
+            }
+
+            var none = q !== '' && shown === 0;
+            if (noMatch) noMatch.classList.toggle('q-hidden', !none);
+            if (noMatchTerm) noMatchTerm.textContent = search ? search.value.trim() : '';
+
+            // Hide whichever view is active while nothing matches, so the
+            // explanation isn't sitting above an empty table head.
+            if (list) list.classList.toggle('q-hidden', none || root.getAttribute('data-qview') === 'board');
+            if (board) board.classList.toggle('q-hidden', none || root.getAttribute('data-qview') !== 'board');
+
+            if (showing) showing.textContent = (q === '' || shown === total)
+                ? ''
+                : 'showing ' + shown + ' of ' + total;
+        }
+        if (search) search.addEventListener('input', filter);
+
+        // ── 4. delete, with the number read from an attribute ────────
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.classList || !form.classList.contains('q-del')) return;
+            var n = form.getAttribute('data-number') || 'this quote';
+            if (!window.confirm('Delete quote ' + n + '? This cannot be undone.')) e.preventDefault();
+        });
+
+        // ── 5. sort the list ─────────────────────────────────────────
+        var table = document.getElementById('qTable');
+
+        function sortBy(th) {
+            var col = parseInt(th.getAttribute('data-col'), 10);
+            var numeric = th.getAttribute('data-sort') === 'num';
+            var asc = th.getAttribute('data-dir') !== 'asc';
+
+            var heads = table.querySelectorAll('th');
+            for (var i = 0; i < heads.length; i++) {
+                heads[i].classList.remove('sorted');
+                heads[i].removeAttribute('data-dir');
+            }
+            th.classList.add('sorted');
+            th.setAttribute('data-dir', asc ? 'asc' : 'desc');
+
+            var body = table.tBodies[0];
+            var rows = Array.prototype.slice.call(body.rows);
+
+            rows.sort(function (a, b) {
+                var av = a.cells[col].getAttribute('data-v') || a.cells[col].textContent.trim();
+                var bv = b.cells[col].getAttribute('data-v') || b.cells[col].textContent.trim();
+                var r = numeric
+                    ? (parseFloat(av) || 0) - (parseFloat(bv) || 0)
+                    : av.localeCompare(bv, undefined, { sensitivity: 'base' });
+                return asc ? r : -r;
+            });
+
+            for (var j = 0; j < rows.length; j++) body.appendChild(rows[j]);
+        }
+
+        if (table) {
+            table.addEventListener('click', function (e) {
+                var th = e.target && e.target.closest ? e.target.closest('th.sortable') : null;
+                if (th) sortBy(th);
+            });
+            table.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                var th = e.target && e.target.closest ? e.target.closest('th.sortable') : null;
+                if (!th) return;
+                e.preventDefault();
+                sortBy(th);
+            });
+        }
+    })();
+</script>

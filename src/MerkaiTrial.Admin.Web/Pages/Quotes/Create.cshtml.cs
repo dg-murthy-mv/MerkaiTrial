@@ -1,5 +1,37 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Quotes/Create.cshtml.cs
+//
+// COMPLETE FILE — replaces the 017 version.
+//
+// CHANGES (029)
+//
+//   1. OnGetAsync NEVER CALLED InitializePermissionsAsync(). Every other
+//      page in the app does. Without it CanCreate / CanUpdate / CanRead /
+//      CanDelete are all false for the whole render, so any permission gate
+//      the view puts on a control silently hides it — and the next person
+//      to add one here would have spent an afternoon on that.
+//
+//   2. A QUOTE COULD EXPIRE BEFORE IT WAS ISSUED. Nothing checked, on the
+//      client or the server. The view checks it now; this is the half that
+//      still holds when the form is posted by hand.
+//
+//   3. THE LINE VALIDATION STOPPED AT "has a name". The old page relied on
+//      required / min="1" / max="100" attributes in the markup, but its
+//      buttons called form.submit(), which by specification skips HTML5
+//      constraint validation — so none of those ever ran. A quantity of 0,
+//      a negative discount and a 500% tax rate all reached the API. The
+//      shared editor validates in the browser; these are the server-side
+//      equivalents, and they match Edit's exactly.
+//
+//   4. CurrencySymbol was hiding AuthorizedPageModel.CurrencySymbol
+//      (CS0108). Marked `new`, since this one deliberately holds the DEAL's
+//      symbol rather than the workspace's.
+//
+//   Not changed: the currency is still resolved server-side by
+//   ResolveCurrencyAsync and never taken from the browser, and the dates are
+//   still stored as midnight UTC via SpecifyKind. Both were right already —
+//   and both were the bugs still present on the Edit page, now fixed there.
+//
 // CHANGES (017 — quote approvals)
 //   ✅ "Send to Customer" on a quote that breaks an approval rule now
 //      creates it and SUBMITS IT FOR APPROVAL instead (the API would
@@ -78,7 +110,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
         // ✅ Tenant-driven — set from ICurrentTenantService
         public string  Currency            { get; set; } = string.Empty;
-        public string  CurrencySymbol      { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The DEAL's currency symbol, which is not necessarily the
+        /// workspace's. `new` because AuthorizedPageModel also has a
+        /// CurrencySymbol (the workspace one) and hiding it without saying so
+        /// is a CS0108 warning.
+        /// </summary>
+        public new string CurrencySymbol  { get; set; } = string.Empty;
         public decimal DefaultTaxRate      { get; set; } = 0m;   // percentage e.g. 18
         public string  DefaultTaxRateName  { get; set; } = "Tax";
 
@@ -96,6 +135,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         {
             var check = await ValidatePermissionAsync(Actions.Create);
             if (check != null) return check;
+
+            // ✅ (029) Was missing entirely. Without it every Can* flag on the
+            // base class stays false for the whole render, so any permission
+            // gate in the view hides the control it guards.
+            await InitializePermissionsAsync();
 
             try
             {
@@ -189,6 +233,43 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 if (items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
                 {
                     ErrorMessage = "All items must have a name";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                // ✅ (029) The rest of the line validation. The markup carried
+                // required / min="1" / max="100", but the old page submitted with
+                // form.submit(), which skips HTML5 validation — so a quantity of
+                // 0, a negative discount and a 500% tax rate all got this far.
+                // These match the checks in Edit.cshtml.cs one for one.
+                if (items.Any(i => i.Quantity < 1))
+                {
+                    ErrorMessage = "Every line needs a quantity of 1 or more.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                if (items.Any(i => i.UnitPrice <= 0))
+                {
+                    ErrorMessage = "Every line needs a unit price above zero.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                if (items.Any(i => i.TaxRate < 0 || i.TaxRate > 100))
+                {
+                    ErrorMessage = "Tax rates must be between 0 and 100%.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                if (items.Any(i => i.LineDiscount < 0))
+                {
+                    ErrorMessage = "A line discount can't be negative.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                // ✅ (029) A quote that expires before it is issued was accepted
+                // by both the page and the API.
+                if (ExpiryDate.Date < IssueDate.Date)
+                {
+                    ErrorMessage = "The expiry date can't be before the issue date.";
                     return RedirectToPage(new { DealId = DealId.Value });
                 }
 

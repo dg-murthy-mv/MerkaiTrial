@@ -1,0 +1,61 @@
+@model MerkaiTrial.Admin.Web.Pages.Quotes.QuoteCardVm
+@{
+    var q = Model.Quote;
+    var p = Model.Page;
+}
+@* =====================================================================
+   _QuoteCard.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/_QuoteCard.cshtml
+
+   NEW FILE (028). One card on the board — replacing six hand-copied
+   variants that had already drifted apart.
+
+   The whole card is an <a>, not a div with an onclick. That means middle
+   click opens a new tab, Tab reaches it, Enter follows it and the status
+   bar shows where it goes — none of which the old onclick div did.
+   The inline Edit button sits OUTSIDE that anchor rather than inside it,
+   because a link inside a link is invalid HTML and browsers resolve it
+   by dropping one of them.
+   ===================================================================== *@
+
+<div class="q-card" data-find="@Model.SearchText">
+    <a class="q-card-link" asp-page="/Quotes/Detail" asp-route-id="@q.Id">
+        <div class="q-card-top">
+            <span class="q-num">@q.Number</span>
+            <span class="q-amt" title="@p.FormatCurrency(q.GrandTotal)">@p.FormatCompact(q.GrandTotal)</span>
+        </div>
+
+        @* min-width:0 on the flex child is what lets the ellipsis work —
+           without it a long unbroken customer name pushes the card wider
+           than its 286px column. *@
+        <div class="q-party">
+            <i class="bi bi-building"></i><span class="q-ellipsis" title="@q.CompanyName">@q.CompanyName</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(q.DealTitle))
+        {
+            <div class="q-deal" title="@q.DealTitle">@q.DealTitle</div>
+        }
+
+        <div class="q-foot">
+            <span><i class="bi bi-calendar3"></i>@p.FormatDate(q.IssueDateUtc)</span>
+            <span>@q.ItemCount @(q.ItemCount == 1 ? "item" : "items")</span>
+        </div>
+
+        @if (Model.ShowExpiry)
+        {
+            <div class="q-expiry @(Model.HasExpired ? "is-gone" : Model.IsExpiringSoon ? "is-soon" : "")">
+                <i class="bi bi-hourglass"></i>@Model.ExpiryNote
+            </div>
+        }
+    </a>
+
+    @if (Model.CanEditInline)
+    {
+        <div class="q-card-actions">
+            <a asp-page="/Quotes/Edit" asp-route-id="@q.Id" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-pencil"></i>Edit
+            </a>
+        </div>
+    }
+</div>

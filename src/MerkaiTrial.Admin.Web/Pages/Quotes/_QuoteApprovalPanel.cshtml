@@ -1,0 +1,366 @@
+@model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
+@{
+    var a = Model.Approval;
+    var status = a?.QuoteStatus ?? Model.Quote?.Status ?? "";
+    var isPreSend = status is "Draft" or "Revised";
+
+    // Draw nothing when there is nothing to say: rules off, quote within
+    // the limits, and never submitted.
+    var show = a != null && (
+        a.Pending != null ||
+        status == "Approved" ||
+        (isPreSend && a.RequiresApproval) ||
+        a.History.Any());
+}
+@* =====================================================================
+   _QuoteApprovalPanel.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Quotes/_QuoteApprovalPanel.cshtml
+
+   THIS FILE MUST EXIST AT THAT EXACT PATH. Detail.cshtml renders it with
+   <partial name="_QuoteApprovalPanel" model="Model" />, and a missing
+   partial is an unhandled InvalidOperationException — every quote's
+   Detail page returns 500, not a degraded panel. If you ever see
+   "The partial view '_QuoteApprovalPanel' was not found", this file is
+   the answer.
+
+   It reads Model.Approval (QuoteApprovalStateDto), which round 027 kept
+   byte-for-byte compatible on purpose, so this panel needs no change to
+   work with approval chains.
+
+   ApproverNames is whoever the server says may decide the request AS
+   THINGS STAND — with a multi-step rule that is the step the quote is
+   sitting on, not the whole chain. The DTO carries no step number, so
+   this panel does not claim to show "step 2 of 3"; it names the people
+   who can act now and says plainly that a longer rule asks the next
+   approver afterwards. Putting the real step count here is a follow-up
+   (027b) and needs QuoteApprovalEngine.ToDto to pass CurrentStepOrder /
+   TotalSteps / RuleName through.
+
+   CHANGES vs the 017 version
+     • History opens with a native <details>, not a Bootstrap collapse, so
+       it works whether or not Bootstrap's JS has loaded.
+     • The approve/request-changes comment box no longer relies on an
+       inline onclick returning false; the guard is a submit listener, so
+       a stray character in the page can't let an empty "request changes"
+       through.
+     • The three states are visually distinct at a glance — amber waiting,
+       green approved, orange needs-approval — with the money and the
+       reason in the same place each time.
+   ===================================================================== *@
+
+@if (show && a != null)
+{
+    <style>
+        .qap { border: 1px solid #e9ecef; border-left: 5px solid #94a3b8; border-radius: 12px; background: #fff; padding: 1rem 1.15rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(16,24,40,.06); }
+        .qap.needs { border-left-color: #fd7e14; }
+        .qap.pending { border-left-color: #ffc107; }
+        .qap.ok { border-left-color: #198754; }
+        .qap-title { font-weight: 650; font-size: 1rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+        .qap-meta { color: #64748b; font-size: .84rem; margin-top: .2rem; }
+        .qap-reasons { margin: .6rem 0 0; padding-left: 1.1rem; font-size: .88rem; }
+        .qap-reasons li { margin-bottom: .15rem; }
+        .qap-quote { background: #f8f9fb; border-radius: 8px; padding: .55rem .8rem; margin-top: .6rem; font-size: .86rem; white-space: pre-line; }
+        .qap-who { font-size: .84rem; color: #334155; margin-top: .6rem; }
+        .qap-who .lbl { color: #94a3b8; }
+        .qap-hist summary { cursor: pointer; list-style: none; font-weight: 650; font-size: .9rem; color: #3b4fd4; display: inline-flex; align-items: center; gap: .35rem; }
+        .qap-hist summary::-webkit-details-marker { display: none; }
+        .qap-row { padding: .55rem 0; border-top: 1px solid #f1f3f5; font-size: .86rem; }
+        .qap-row:first-of-type { border-top: 0; }
+        /* Own rule rather than Bootstrap's .invalid-feedback, so the message
+           appears whether or not that selector survives a theme change. */
+        .qap-err { display: none; margin-top: .4rem; color: #dc3545; font-size: .84rem; }
+        .form-control.is-invalid ~ .qap-err, .form-control.is-invalid ~ * .qap-err { display: block; }
+    </style>
+
+    @* ── 1. WAITING ─────────────────────────────────────────────── *@
+    @if (a.Pending != null)
+    {
+        var p = a.Pending;
+
+        <div class="qap pending">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                    <div class="qap-title">
+                        <i class="bi bi-hourglass-split text-warning"></i>Waiting for approval
+                    </div>
+                    <div class="qap-meta">
+                        Asked by <strong>@p.RequestedByName</strong> on @Model.FormatDateTime(p.RequestedAtUtc)
+                    </div>
+                </div>
+                <span class="badge bg-warning text-dark">Pending approval</span>
+            </div>
+
+            @if (p.Reasons.Any())
+            {
+                <ul class="qap-reasons">
+                    @foreach (var r in p.Reasons)
+                    {
+                        <li>@r</li>
+                    }
+                </ul>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(p.RequestComment))
+            {
+                <div class="qap-quote"><i class="bi bi-chat-left-text me-1"></i>@p.RequestComment</div>
+            }
+
+            @* ApproverNames is whoever the server says may decide this request
+               right now — it already includes workspace admins where the rule
+               puts them, each marked "(admin)". So this line names them and
+               makes no extra claim about who else could step in; asserting
+               "an admin can also sign it" would be guessing at the rule. *@
+            @if (a.ApproverNames.Any())
+            {
+                <div class="qap-who">
+                    <span class="lbl">Waiting on:</span> @string.Join(", ", a.ApproverNames)
+                </div>
+            }
+            else
+            {
+                <div class="qap-who text-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Nobody can approve this as things stand. A workspace admin needs to check
+                    <strong>Quotes → Approval rules</strong> — if that's you, open it from the
+                    button on the Quotes page.
+                </div>
+            }
+
+            @if (a.CanApprove)
+            {
+                @* Both buttons carry their own asp-page-handler, which the tag
+                   helper renders as formaction — so one textarea serves both
+                   decisions and there is no duplicate comment box. *@
+                <form method="post" class="mt-3" id="qapDecide">
+                    <label class="form-label small text-muted mb-1" for="qapComment">
+                        Comment <span class="text-muted">(required to send it back)</span>
+                    </label>
+                    <textarea class="form-control mb-2" id="qapComment" name="comment" rows="2" maxlength="1000"
+                              placeholder="e.g. OK at 15% because they're signing for 2 years — or: max 10%, please revise"></textarea>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-success"
+                                asp-page-handler="Approve" asp-route-id="@Model.Id">
+                            <i class="bi bi-check2-circle me-1"></i>Approve
+                        </button>
+                        <button type="submit" class="btn btn-outline-danger" id="qapSendBack"
+                                asp-page-handler="RequestChanges" asp-route-id="@Model.Id">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Request changes
+                        </button>
+                    </div>
+                    @* Shown by CSS alone when the textarea carries .is-invalid.
+                       Deliberately no `hidden` attribute: Bootstrap Reboot sets
+                       [hidden] { display: none !important }, so a later rule
+                       could not un-hide it and the message would never appear. *@
+                    <div class="qap-err">Say what needs to change, so the rep knows what to fix.</div>
+                </form>
+
+                <script>
+                    // The guard lives on the SUBMIT event, not on an inline
+                    // onclick. An onclick handler that throws — which is what a
+                    // stray quote in a rendered string does — does not return
+                    // false, so the old version could post an empty comment.
+                    // Server side is still the real gate (OnPostRequestChanges
+                    // rejects a blank comment); this only saves the round trip.
+                    (function () {
+                        var form = document.getElementById('qapDecide');
+                        var box = document.getElementById('qapComment');
+                        if (!form || !box) return;
+
+                        // e.submitter is missing on older Safari, so remember the
+                        // last button pressed as a fallback.
+                        var clicked = null;
+                        form.addEventListener('click', function (e) {
+                            var b = e.target && e.target.closest ? e.target.closest('button[type="submit"]') : null;
+                            if (b) clicked = b;
+                        });
+
+                        form.addEventListener('submit', function (e) {
+                            var who = e.submitter || clicked;
+                            if (!who || who.id !== 'qapSendBack') return;
+                            if (box.value.trim()) return;
+
+                            e.preventDefault();
+                            box.classList.add('is-invalid');
+                            box.focus();
+                        });
+
+                        box.addEventListener('input', function () {
+                            if (box.value.trim()) box.classList.remove('is-invalid');
+                        });
+                    })();
+                </script>
+            }
+
+            @if (a.CanRecall)
+            {
+                @* The confirm string is a static literal with no apostrophe and
+                   no Razor value in it, so it cannot become a syntax error the
+                   way an interpolated quote number would. *@
+                <form method="post" class="mt-3" asp-page-handler="Recall" asp-route-id="@Model.Id"
+                      onsubmit="return confirm('Recall this approval request? The quote goes back to draft.');">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i>Recall request
+                    </button>
+                    <span class="qap-meta ms-2">Puts the quote back in draft so you can change it.</span>
+                </form>
+            }
+        </div>
+    }
+    else if (status == "Approved")
+    {
+        @* ── 2. APPROVED ────────────────────────────────────────── *@
+        var last = a.History.FirstOrDefault(h => h.Status == "Approved");
+
+        <div class="qap ok">
+            <div class="qap-title">
+                <i class="bi bi-patch-check-fill text-success"></i>Approved — ready to send
+            </div>
+            @if (last != null)
+            {
+                <div class="qap-meta">
+                    Approved by <strong>@last.DecidedByName</strong>
+                    @if (last.DecidedAtUtc.HasValue)
+                    {
+                        <span>on @Model.FormatDateTime(last.DecidedAtUtc.Value)</span>
+                    }
+                </div>
+                @if (!string.IsNullOrWhiteSpace(last.DecisionComment))
+                {
+                    <div class="qap-quote"><i class="bi bi-chat-left-text me-1"></i>@last.DecisionComment</div>
+                }
+            }
+            @* Same promise the Edit page makes in its own words
+               (Edit.cshtml.cs → StatusWarning, "Approved" case), so the two
+               pages cannot tell the user different things. *@
+            <div class="qap-meta mt-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Saving a change now sends it back to draft — and if it's still over your
+                workspace's limits it will need approval again.
+            </div>
+        </div>
+    }
+    else if (isPreSend && a.RequiresApproval)
+    {
+        @* ── 3. NEEDS APPROVAL ──────────────────────────────────── *@
+        var sentBack = a.History.FirstOrDefault();
+
+        <div class="qap needs">
+            <div class="qap-title">
+                <i class="bi bi-shield-exclamation" style="color:#fd7e14"></i>
+                @(a.IsExempt ? "Over your workspace's limits" : "This quote needs approval before it can be sent")
+            </div>
+
+            <ul class="qap-reasons">
+                @foreach (var r in a.Reasons)
+                {
+                    <li>@r</li>
+                }
+            </ul>
+
+            @if (sentBack != null && sentBack.Status == "ChangesRequested")
+            {
+                <div class="qap-quote mt-2">
+                    <strong>@sentBack.DecidedByName asked for changes:</strong>
+                    @sentBack.DecisionComment
+                </div>
+            }
+
+            @if (a.IsExempt)
+            {
+                <div class="qap-meta mt-2">
+                    You're a workspace admin, so you can send it without approval.
+                </div>
+            }
+            else if (a.CanSubmit)
+            {
+                <form method="post" class="mt-3" asp-page-handler="SubmitForApproval" asp-route-id="@Model.Id">
+                    <label class="form-label small text-muted mb-1" for="qapSubmitComment">
+                        Note for the approver (optional)
+                    </label>
+                    <textarea class="form-control mb-2" id="qapSubmitComment" name="comment" rows="2" maxlength="1000"
+                              placeholder="Why this price? e.g. competitor offered 12%, 3-year commitment"></textarea>
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="bi bi-send-check me-1"></i>Submit for approval
+                        </button>
+                        @if (a.ApproverNames.Any())
+                        {
+                            @* Deliberately "goes to first", not "goes to". With a
+                               multi-step rule (round 027) these are the people the
+                               FIRST step names, and the next step is asked only
+                               after they sign; with a single-step rule they are the
+                               whole list. The panel is not told which it is — the
+                               request DTO carries no step number — so it says the
+                               one thing that is true either way. *@
+                            <span class="qap-meta">
+                                Goes first to @string.Join(", ", a.ApproverNames).
+                                If your workspace's rule has more than one step, the next
+                                approver is asked once this one signs.
+                            </span>
+                        }
+                    </div>
+                </form>
+            }
+            else if (!a.ApproverNames.Any())
+            {
+                <div class="qap-meta mt-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    Nobody is set up to approve this quote. Ask your workspace admin to check
+                    <strong>Quote approval rules</strong>, or to set a manager for the deal owner's team
+                    under <strong>Record visibility → Manages</strong>.
+                </div>
+            }
+            else
+            {
+                <div class="qap-meta mt-2">Only someone who can edit this quote can send it for approval.</div>
+            }
+        </div>
+    }
+
+    @* ── HISTORY ────────────────────────────────────────────────── *@
+    @if (a.History.Any())
+    {
+        <div class="qap">
+            <details class="qap-hist">
+                <summary>
+                    <i class="bi bi-clock-history"></i>Approval history
+                    <span class="badge bg-light text-dark border ms-1">@a.History.Count</span>
+                </summary>
+                <div class="mt-2">
+                    @foreach (var h in a.History)
+                    {
+                        var (label, cls) = h.Status switch
+                        {
+                            "Approved" => ("Approved", "bg-success"),
+                            "ChangesRequested" => ("Changes requested", "bg-danger"),
+                            "Recalled" => ("Recalled", "bg-secondary"),
+                            "Superseded" => ("Approved, then edited", "bg-light text-dark border"),
+                            _ => (h.Status, "bg-secondary")
+                        };
+
+                        <div class="qap-row">
+                            <span class="badge @cls me-2">@label</span>
+                            Asked by <strong>@h.RequestedByName</strong> on @Model.FormatDateTime(h.RequestedAtUtc)
+                            @if (!string.IsNullOrWhiteSpace(h.DecidedByName))
+                            {
+                                <span> · decided by @h.DecidedByName</span>
+                                @if (h.DecidedAtUtc.HasValue)
+                                {
+                                    <span> on @Model.FormatDateTime(h.DecidedAtUtc.Value)</span>
+                                }
+                            }
+                            <div class="qap-meta">
+                                Total @Model.FormatCurrency(h.QuoteTotal)
+                                · deepest discount @h.MaxLineDiscountPercent.ToString("0.##")%
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(h.DecisionComment))
+                            {
+                                <div class="qap-quote">@h.DecisionComment</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </details>
+        </div>
+    }
+}
