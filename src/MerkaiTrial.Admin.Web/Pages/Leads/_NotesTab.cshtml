@@ -97,6 +97,8 @@
     </div>
 </div>
 
-@section Scripts {
-    <partial name="_ValidationScriptsPartial" />
-}
+@* (031) Removed an `@@section Scripts { ... }` block from here. A PARTIAL
+   cannot define a layout section: partials get their own RazorPage instance,
+   so the section writer was registered on an object the layout never renders
+   from and the validation scripts were never emitted. Detail.cshtml already
+   has its own @@section Scripts, which is the one that runs. *@

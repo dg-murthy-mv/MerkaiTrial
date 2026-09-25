@@ -28,14 +28,10 @@
                 </div>
             </div>
 
-            <!-- Error Messages -->
-            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-            {
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>@Model.ErrorMessage
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            }
+            @* (031) Removed an in-page render of Model.ErrorMessage. It is
+               [TempData]-backed and _Layout.cshtml renders TempData alerts once,
+               globally, so a failure produced two identical red banners. The
+               validation summary below still shows field-level problems. *@
 
             <!-- Form Card -->
             <div class="card shadow-sm">
@@ -173,8 +169,15 @@
                                 <div class="col-md-6">
                                     <label asp-for="Input.EstimatedValue" class="form-label">Estimated Value</label>
                                     <div class="input-group">
-                                        @* ✅ FIXED: Use dynamic currency symbol based on lead's currency *@
-                                        <span class="input-group-text">@Model.TenantCurrencySymbol</span>
+                                        @* (031) id="currency-symbol" added. The script in @@section
+                                           Scripts below does
+                                               document.getElementById('currency-symbol')
+                                           and this span had no id, so on the Edit page the symbol
+                                           never changed when the country did — the Create page has
+                                           the id and works. The comment above it claimed the symbol
+                                           was "based on lead's currency"; it was the workspace
+                                           symbol. It now starts from the lead's currency. *@
+                                        <span class="input-group-text" id="currency-symbol">@Model.CurrencySymbolFor(Model.Input.CurrencyId)</span>
                                         <input asp-for="Input.EstimatedValue" type="number" step="0.01"
                                                class="form-control" />
                                     </div>

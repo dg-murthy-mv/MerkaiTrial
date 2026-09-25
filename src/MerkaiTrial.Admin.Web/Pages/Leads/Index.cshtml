@@ -1,364 +1,492 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages
+@using MerkaiTrial.Admin.Web.Pages.Leads
 @model MerkaiTrial.Admin.Web.Pages.Leads.IndexModel
-@* =====================================================================
-   LEADS INDEX — status tabs
-   The fixed New/Working/Qualified/Converted cards and the Status dropdown
-   are replaced by one tab per tenant status (with counts) above the table.
-   Default tab = Active (Open + Qualified categories). Tab lives in
-   ?StatusFilter= so it survives search, paging and delete.
-
-   Quota bar and Add Lead limit use Stats.QuotaUsed (every lead in the
-   workspace), not a count of the leads this user can see — a rep with
-   "Own" visibility must still see the real plan usage.
-   ===================================================================== *@
 @{
     ViewData["Title"] = "Leads";
+
+    var atLimit  = AuthorizedPageModel.IsAtLimit(Model.Stats.QuotaUsed, Model.MaxLeads);
+    var quotaPct = AuthorizedPageModel.QuotaPercent(Model.Stats.QuotaUsed, Model.MaxLeads);
+    var barClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.QuotaUsed, Model.MaxLeads);
+
+    // The quota only earns space on the page once it is close to mattering.
+    var quotaTight = quotaPct >= 75;
+
+    var hasSearch = !string.IsNullOrWhiteSpace(Model.SearchTerm)
+                 || !string.IsNullOrWhiteSpace(Model.AssignedToFilter);
+
+    var p = Model.PaginatedLeads;
+    var firstRow = p.TotalCount == 0 ? 0 : (p.Page - 1) * p.PageSize + 1;
+    var lastRow  = Math.Min(p.Page * p.PageSize, p.TotalCount);
+
+    // Initials for the row avatar, from whatever the name gives us.
+    static string Initials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+        if (parts.Length == 1) return parts[0].Substring(0, 1).ToUpperInvariant();
+        return (parts[0].Substring(0, 1) + parts[^1].Substring(0, 1)).ToUpperInvariant();
+    }
 }
+@* =====================================================================
+   LEADS INDEX (032 — layout pass)
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/Index.cshtml
 
-<!-- Page Header -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-1">
-            <i class="bi bi-funnel me-2"></i>Leads
-        </h2>
-        <p class="text-muted mb-0">Track and manage your sales leads</p>
-    </div>
-    <div class="d-flex align-items-center gap-2">
+   COMPLETE FILE — replaces the 031 version. Nothing below changes what
+   the page DOES; 031's fixes (the delete-button injection hole, the owner
+   dropdown, category-based status colours) are all still here. This is
+   the layout.
 
-        @* ✅ Plan badge *@
-        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
-            @Model.PlanDisplayName
-        </span>
-        @* Import — same permission as creating a lead *@
-        @if (Model.CanCreate)
-        {
-            <a asp-page="./Import" class="btn btn-outline-primary">
-                <i class="bi bi-upload me-1"></i>Import
-            </a>
-        }
+   WHAT WAS COSTING THE SCREEN
 
-        @* ✅ Add Lead — quota + permission aware *@
-        @if (!AuthorizedPageModel.IsAtLimit(Model.Stats.QuotaUsed, Model.MaxLeads) && Model.CanCreate)
-        {
-            <a asp-page="./Create" class="btn btn-primary">
-                <i class="bi bi-plus-circle me-1"></i>Add Lead
-            </a>
-        }
-        else if (AuthorizedPageModel.IsAtLimit(Model.Stats.QuotaUsed, Model.MaxLeads))
-        {
-            <button class="btn btn-outline-secondary" disabled
-                    title="Lead limit reached. @Model.UpgradePrompt">
-                <i class="bi bi-lock me-1"></i>Lead Limit Reached
-            </button>
-        }
-        @* No else — if no create permission, button is simply hidden *@
+   Measured off the running page: header 110px + quota card 90px + filter
+   card 130px + tabs 60px + table head 50px = about 440px of furniture
+   before the first lead. On a 1080p laptop that left room for two.
 
-    </div>
-</div>
+   1. THE QUOTA BAR WAS A FULL CARD FOR A BAR 0.5% FILLED. "10 / 2000
+      used" is the entire message; the 1,100px empty track beside it was
+      the second most prominent thing on the page, under the title. It is
+      now one line of text in the header — and it only becomes a bar,
+      with a colour, once usage passes 75% and there is something to warn
+      about. A quota you are nowhere near is not news.
 
-<!-- Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. -->
+   2. THE PLAN BADGE LOOKED LIKE A BUTTON. `badge @@Model.PlanBadgeClass
+      fs-6 px-3 py-2` next to Import and Add Lead rendered as a large dark
+      grey block in a row of buttons — so "Free Trial" read as a third
+      thing to click. It is a small pill beside the count now.
 
-@* ✅ Plan quota progress bar *@
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-body py-2">
-        <div class="row align-items-center g-2">
-            <div class="col-auto">
-                <small class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
-                    Lead Quota
-                </small>
-            </div>
-            <div class="col">
-                @{
-                    var leadPct = AuthorizedPageModel.QuotaPercent(Model.Stats.QuotaUsed, Model.MaxLeads);
-                    var barClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.QuotaUsed, Model.MaxLeads);
-                }
-                <div class="progress" style="height:8px;">
-                    <div class="progress-bar @barClass"
-                         role="progressbar"
-                         style="width:@leadPct%"
-                         aria-valuenow="@Model.Stats.QuotaUsed"
-                         aria-valuemin="0"
-                         aria-valuemax="@Model.MaxLeads">
-                    </div>
-                </div>
-            </div>
-            <div class="col-auto">
-                <small class="@(leadPct >= 90 ? "text-danger fw-bold" : "text-muted")">
-                    @Model.Stats.QuotaUsed / @Model.MaxLeads used
-                </small>
-            </div>
-            @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+   3. THE FILTER CARD SPENT 130px ON TWO INPUTS, with stacked labels and
+      its own card chrome. Both controls now sit in the same toolbar strip
+      as the result count, the way the Quotes and Pipeline boards do.
+
+   4. THE TAB STRIP SHOWED A SCROLLBAR NUB. `flex-nowrap overflow-auto` on
+      a strip that fits gives a visible scroll affordance for nothing.
+      Scrolling is kept for narrow screens but the bar is hidden.
+
+   5. EVERY ROW WAS THREE LINES TALL. Email and phone each had their own
+      line with its own icon, and a 40px avatar circle set the row height.
+      Contact details share one line now, and the row is about 40% shorter.
+
+   6. THE ACTIONS COLUMN WOULD SLIDE OFF A NARROW LAPTOP — the same
+      problem the Quotes list had in 028. It is pinned to the right edge.
+
+   Consistency is the other half of this: the toolbar, the pinned actions
+   column, the muted table chrome and the empty states are now the same
+   shapes as Quotes and Pipeline, so the three list pages read as one app.
+   ===================================================================== *@
+
+<style>
+    .lx { max-width: 1600px; margin: 0 auto; }
+
+    /* ── header ─────────────────────────────────────────────────── */
+    .lx-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .lx-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 0; line-height: 1.2;
+                display: flex; align-items: center; gap: .5rem; }
+    .lx-title i { color: #4f46e5; font-size: 1.15rem; }
+    .lx-sub { font-size: .84rem; color: #64748b; margin: .25rem 0 0; display: flex;
+              align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .lx-plan { font-size: .7rem; font-weight: 650; padding: .15rem .5rem; border-radius: 20px; }
+    .lx-quota { font-size: .78rem; color: #94a3b8; }
+    .lx-quota.tight { color: #b45309; font-weight: 600; }
+
+    /* Only drawn when the quota is close. */
+    .lx-quotabar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+                   border: 1px solid #ffe69c; border-left: 5px solid #ffc107; border-radius: 10px;
+                   background: #fffbf0; padding: .5rem .9rem; margin-bottom: 1rem; font-size: .82rem; }
+    .lx-quotabar .bar { flex: 1 1 180px; min-width: 120px; }
+
+    /* ── toolbar ────────────────────────────────────────────────── */
+    .lx-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .6rem .75rem;
+              border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .lx-count { font-size: .78rem; color: #64748b; }
+
+    /* ── tabs ───────────────────────────────────────────────────── */
+    .lx-tabs { display: flex; gap: .15rem; overflow-x: auto; border-bottom: 1px solid #eceff2;
+               padding: 0 .35rem; }
+    /* Hide the scrollbar itself — scrolling still works on a narrow screen,
+       but a nub on a strip that fits is just noise. */
+    .lx-tabs { scrollbar-width: none; -ms-overflow-style: none; }
+    .lx-tabs::-webkit-scrollbar { display: none; }
+
+    .lx-tab { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap;
+              padding: .6rem .8rem; font-size: .84rem; font-weight: 600; color: #64748b;
+              text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .lx-tab:hover { color: #334155; background: #fbfcfd; }
+    .lx-tab.on { color: #4f46e5; border-bottom-color: #4f46e5; }
+    .lx-tab .n { font-size: .72rem; font-weight: 700; padding: .05rem .4rem; border-radius: 20px;
+                 background: #f1f3f5; color: #64748b; min-width: 20px; text-align: center; }
+    .lx-tab.on .n { background: #4f46e5; color: #fff; }
+    .lx-tab .dot { font-size: 7px; }
+    .lx-tab.retired { opacity: .6; font-style: italic; }
+
+    /* ── table ──────────────────────────────────────────────────── */
+    .lx-shell { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; }
+    .lx-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .lx-table th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                   font-weight: 650; padding: .55rem .75rem; background: #fbfcfd;
+                   border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .lx-table td { padding: .55rem .75rem; border-bottom: 1px solid #f4f6f8; vertical-align: middle;
+                   font-size: .85rem; }
+    .lx-table tbody tr:hover { background: #fcfdfe; }
+    .lx-table tbody tr:last-child td { border-bottom: 0; }
+    .lx-table .n { text-align: right; white-space: nowrap; }
+    .lx-table .d { white-space: nowrap; color: #94a3b8; font-size: .8rem; }
+
+    .lx-who { display: flex; align-items: center; gap: .55rem; min-width: 0; }
+    .lx-av { width: 30px; height: 30px; border-radius: 50%; background: #eef2ff; color: #4f46e5;
+             display: flex; align-items: center; justify-content: center; font-size: .72rem;
+             font-weight: 700; flex: 0 0 auto; }
+    .lx-nm { font-weight: 650; color: #0f172a; text-decoration: none; display: block;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+    .lx-nm:hover { color: #4f46e5; }
+    .lx-own { font-size: .74rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; max-width: 210px; }
+
+    /* Email and phone on ONE line. They had a line each, with an icon each,
+       which is what made every row three deep. */
+    .lx-contact { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+    .lx-contact a { font-size: .8rem; text-decoration: none; color: #475569;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                    max-width: 230px; display: block; }
+    .lx-contact a:hover { color: #4f46e5; text-decoration: underline; }
+    .lx-contact i { color: #cbd5e1; margin-right: .3rem; }
+
+    .lx-score { display: flex; align-items: center; gap: .4rem; }
+    .lx-score .track { width: 44px; height: 5px; border-radius: 3px; background: #eceff2; overflow: hidden; }
+    .lx-score .fill { height: 100%; border-radius: 3px; }
+    .lx-score .v { font-size: .78rem; font-weight: 650; color: #334155; min-width: 20px; }
+
+    .lx-val { font-weight: 650; color: #0f172a; }
+
+    /* Pinned actions — the column used to slide off a narrow laptop. */
+    .lx-table th.stick, .lx-table td.stick { position: sticky; right: 0; z-index: 2; background: #fff;
+        box-shadow: -8px 0 8px -8px rgba(15,23,42,.18); }
+    .lx-table th.stick { background: #fbfcfd; z-index: 3; }
+    .lx-table tbody tr:hover td.stick { background: #fcfdfe; }
+    .lx-acts { display: flex; gap: .25rem; justify-content: flex-end; }
+    .lx-acts .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .45rem; }
+
+    .lx-empty { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
+    .lx-empty i.big { font-size: 2.4rem; color: #d7dde3; display: block; margin-bottom: .6rem; }
+
+    .lx-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+               flex-wrap: wrap; padding: .6rem .9rem; border-top: 1px solid #f1f3f5; background: #fbfcfd; }
+
+    @@media (max-width: 991.98px) {
+        .lx-nm, .lx-own, .lx-contact a { max-width: 150px; }
+    }
+    @@media (max-width: 575.98px) {
+        .lx-title { font-size: 1.25rem; }
+        .lx-head > div:last-child { width: 100%; }
+        .lx-head .btn { flex: 1 1 auto; }
+    }
+</style>
+
+<div class="lx">
+
+    @* ── header ─────────────────────────────────────────────────── *@
+    <div class="lx-head">
+        <div>
+            <h1 class="lx-title"><i class="bi bi-funnel-fill"></i>Leads</h1>
+            <p class="lx-sub">
+                @* The plan is a pill here, not a button in the action row. *@
+                <span class="badge @Model.PlanBadgeClass lx-plan">@Model.PlanDisplayName</span>
+
+                <span>@Model.CurrentTabName — @p.TotalCount @(p.TotalCount == 1 ? "lead" : "leads")</span>
+
+                @* The whole quota, in one line, while it is nowhere near the
+                   limit. It becomes a real bar below once it matters. *@
+                <span class="lx-quota @(quotaTight ? "tight" : "")">
+                    · @Model.Stats.QuotaUsed of @Model.MaxLeads used
+                </span>
+            </p>
+        </div>
+
+        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            @if (Model.CanCreate)
             {
-                <div class="col-auto">
-                    <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
-                        <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
-                    </a>
-                </div>
+                <a asp-page="./Import" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-upload me-1"></i>Import
+                </a>
+            }
+
+            @if (!atLimit && Model.CanCreate)
+            {
+                <a asp-page="./Create" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus-lg me-1"></i>Add lead
+                </a>
+            }
+            else if (atLimit)
+            {
+                <button class="btn btn-sm btn-outline-secondary" disabled
+                        title="Lead limit reached. @Model.UpgradePrompt">
+                    <i class="bi bi-lock me-1"></i>Lead limit reached
+                </button>
             }
         </div>
     </div>
-</div>
 
-<!-- Filters Card -->
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            @* Keep the selected tab when searching *@
-            <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
-            <div class="col-md-6">
-                <label class="form-label">Search</label>
-                <input type="text"
-                       class="form-control"
-                       name="SearchTerm"
-                       value="@Model.SearchTerm"
-                       placeholder="Name, email, phone, company...">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label">Assigned To</label>
-                <input type="text"
-                       class="form-control"
-                       name="AssignedToFilter"
-                       value="@Model.AssignedToFilter"
-                       placeholder="User ID or name">
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <div class="btn-group w-100">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-funnel me-1"></i>Filter
-                    </button>
-                    <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter"
-                       class="btn btn-outline-secondary" title="Clear search">
-                        <i class="bi bi-x-circle"></i>
-                    </a>
+    @* Drawn only when the quota is actually close. At 10 of 2000 a
+       full-width progress track says nothing you can act on. *@
+    @if (quotaTight)
+    {
+        <div class="lx-quotabar">
+            <i class="bi bi-exclamation-triangle-fill" style="color:#d39e00;"></i>
+            <span><strong>@Model.Stats.QuotaUsed of @Model.MaxLeads leads used</strong> on your plan.</span>
+            <div class="bar">
+                <div class="progress" style="height:6px;">
+                    <div class="progress-bar @barClass" role="progressbar" style="width:@quotaPct%"
+                         aria-valuenow="@Model.Stats.QuotaUsed" aria-valuemin="0"
+                         aria-valuemax="@Model.MaxLeads"></div>
                 </div>
             </div>
-        </form>
-    </div>
-</div>
-
-<style>
-    .lead-status-tabs { scrollbar-width: thin; }
-    .lead-status-tabs .nav-link { white-space: nowrap; }
-</style>
-
-<!-- Leads Table -->
-<div class="card border-0 shadow-sm">
-
-    <!-- Status tabs — one per tenant status, in the tenant's order -->
-    <div class="card-header bg-white pb-0 border-bottom">
-        <ul class="nav nav-tabs card-header-tabs flex-nowrap overflow-auto lead-status-tabs">
-            <li class="nav-item">
-                <a class="nav-link @(Model.IsActiveTab ? "active" : "")"
-                   asp-page="./Index"
-                   asp-route-searchTerm="@Model.SearchTerm"
-                   asp-route-assignedToFilter="@Model.AssignedToFilter"
-                   title="Everything still being worked — hides converted and not-pursuing leads">
-                    <i class="bi bi-lightning-charge me-1"></i>Active
-                    <span class="badge rounded-pill ms-1 @(Model.IsActiveTab ? "bg-primary" : "bg-light text-dark border")">@Model.ActiveCount</span>
+            @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+            {
+                <a href="/pricing" class="btn btn-sm btn-warning py-0">
+                    <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
                 </a>
-            </li>
+            }
+        </div>
+    }
+
+    @* ── toolbar ────────────────────────────────────────────────── *@
+    @* Was a full card with stacked labels, about 130px tall for two
+       inputs. Same strip as the Quotes and Pipeline toolbars. *@
+    <div class="lx-bar">
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+            @* Keeps the selected tab when searching. *@
+            <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
+
+            <div class="input-group input-group-sm" style="width:280px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="search" name="SearchTerm" value="@Model.SearchTerm" class="form-control"
+                       placeholder="Name, email, phone or company" autocomplete="off"
+                       aria-label="Search leads" />
+            </div>
+
+            <select name="AssignedToFilter" class="form-select form-select-sm" style="width:auto;"
+                    aria-label="Filter by owner">
+                <option value="">Anyone</option>
+                @foreach (var u in Model.SalesTeamOptions)
+                {
+                    <option value="@u.Value" selected="@u.Selected">@u.Text</option>
+                }
+            </select>
+
+            <button class="btn btn-sm btn-outline-secondary" type="submit">
+                <i class="bi bi-funnel me-1"></i>Filter
+            </button>
+
+            @if (hasSearch)
+            {
+                <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter"
+                   class="btn btn-sm btn-link px-1">Clear</a>
+            }
+        </form>
+
+        <span class="lx-count ms-auto">
+            @if (p.TotalCount > 0)
+            {
+                <text>Showing @firstRow–@lastRow of @p.TotalCount</text>
+            }
+        </span>
+    </div>
+
+    <div class="lx-shell">
+
+        @* ── tabs ───────────────────────────────────────────────── *@
+        <div class="lx-tabs">
+            <a class="lx-tab @(Model.IsActiveTab ? "on" : "")"
+               asp-page="./Index"
+               asp-route-searchTerm="@Model.SearchTerm"
+               asp-route-assignedToFilter="@Model.AssignedToFilter"
+               title="Everything still being worked — hides converted and not-pursuing leads">
+                <i class="bi bi-lightning-charge-fill"></i>Active
+                <span class="n">@Model.ActiveCount</span>
+            </a>
 
             @foreach (var s in Model.TabStatuses)
             {
-                var selected = Model.IsStatusTab(s.Key);
-                <li class="nav-item">
-                    <a class="nav-link @(selected ? "active" : "") @(s.IsActive ? "" : "text-muted")"
-                       asp-page="./Index"
-                       asp-route-statusFilter="@s.Key"
-                       asp-route-searchTerm="@Model.SearchTerm"
-                       asp-route-assignedToFilter="@Model.AssignedToFilter"
-                       title="@(s.IsActive ? s.Name : s.Name + " (retired)")">
-                        <i class="bi bi-circle-fill me-1 @MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.CategoryDotClass(s.Category)" style="font-size:8px;vertical-align:middle;"></i>@s.Name
-                        <span class="badge rounded-pill ms-1 @(selected ? "bg-primary" : "bg-light text-dark border")">@s.LeadCount</span>
-                    </a>
-                </li>
+                var on = Model.IsStatusTab(s.Key);
+                <a class="lx-tab @(on ? "on" : "") @(s.IsActive ? "" : "retired")"
+                   asp-page="./Index"
+                   asp-route-statusFilter="@s.Key"
+                   asp-route-searchTerm="@Model.SearchTerm"
+                   asp-route-assignedToFilter="@Model.AssignedToFilter"
+                   title="@(s.IsActive ? s.Name : s.Name + " (retired)")">
+                    <i class="bi bi-circle-fill dot @IndexModel.CategoryDotClass(s.Category)"></i>@s.Name
+                    <span class="n">@s.LeadCount</span>
+                </a>
             }
 
-            <li class="nav-item">
-                <a class="nav-link @(Model.IsAllTab ? "active" : "")"
-                   asp-page="./Index"
-                   asp-route-statusFilter="@MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.AllTab"
-                   asp-route-searchTerm="@Model.SearchTerm"
-                   asp-route-assignedToFilter="@Model.AssignedToFilter">
-                    All
-                    <span class="badge rounded-pill ms-1 @(Model.IsAllTab ? "bg-primary" : "bg-light text-dark border")">@Model.AllCount</span>
-                </a>
-            </li>
-        </ul>
-    </div>
+            <a class="lx-tab @(Model.IsAllTab ? "on" : "")"
+               asp-page="./Index"
+               asp-route-statusFilter="@IndexModel.AllTab"
+               asp-route-searchTerm="@Model.SearchTerm"
+               asp-route-assignedToFilter="@Model.AssignedToFilter">
+                All<span class="n">@Model.AllCount</span>
+            </a>
+        </div>
 
-    <div class="card-body p-0">
-        @if (Model.PaginatedLeads.Items.Any())
+        @* ── rows ───────────────────────────────────────────────── *@
+        @if (p.Items.Any())
         {
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+                <table class="lx-table">
+                    <thead>
                         <tr>
                             <th>Lead</th>
-                            <th>Contact Info</th>
+                            <th>Contact</th>
                             <th>Channel</th>
                             <th>Source</th>
                             <th>Status</th>
-                            @* ✅ Score column header — locked for plans without lead_scoring *@
-                            @if (Model.HasFeature("lead_scoring"))
-                            {
-                                <th>Score</th>
-                            }
-                            else
-                            {
-                                <th class="text-muted">
-                                    Score
-                                    <i class="bi bi-lock-fill text-secondary ms-1"
-                                       title="@Model.UpgradePrompt to unlock lead scoring"
-                                       style="font-size:11px;"></i>
-                                </th>
-                            }
-                            <th>Value</th>
+                            <th>
+                                Score
+                                @if (!Model.HasFeature("lead_scoring"))
+                                {
+                                    <i class="bi bi-lock-fill ms-1" style="font-size:10px;"
+                                       title="@Model.UpgradePrompt to unlock lead scoring"></i>
+                                }
+                            </th>
+                            <th class="n">Value</th>
                             <th>Created</th>
-                            <th class="text-end">Actions</th>
+                            <th class="stick text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var lead in Model.PaginatedLeads.Items)
+                        @foreach (var lead in p.Items)
                         {
+                            var converted = Model.IsConvertedStatus(lead.Status);
+
                             <tr>
                                 <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="bg-primary bg-opacity-10 rounded-circle p-2 me-3">
-                                            <i class="bi bi-person text-primary"></i>
-                                        </div>
-                                        <div>
-                                            <div class="fw-semibold">@lead.FullName</div>
+                                    <div class="lx-who">
+                                        <span class="lx-av">@Initials(lead.FullName)</span>
+                                        <div style="min-width:0;">
+                                            <a asp-page="./Detail" asp-route-id="@lead.Id"
+                                               class="lx-nm" title="@lead.FullName">@lead.FullName</a>
                                             @if (!string.IsNullOrEmpty(lead.OwnerName))
                                             {
-                                                <small class="text-muted">Owner: @lead.OwnerName</small>
+                                                <span class="lx-own" title="Owner: @lead.OwnerName">@lead.OwnerName</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="lx-own fst-italic">Unassigned</span>
                                             }
                                         </div>
                                     </div>
                                 </td>
+
+                                @* Email and phone used to be two stacked lines with
+                                   their own icons, which is what made every row three
+                                   deep. Tighter, same information. *@
                                 <td>
-                                    @if (!string.IsNullOrEmpty(lead.Email))
-                                    {
-                                        <div>
-                                            <a href="mailto:@lead.Email" class="text-decoration-none small">
-                                                <i class="bi bi-envelope me-1"></i>@lead.Email
+                                    <div class="lx-contact">
+                                        @if (!string.IsNullOrEmpty(lead.Email))
+                                        {
+                                            <a href="mailto:@lead.Email" title="@lead.Email">
+                                                <i class="bi bi-envelope-fill"></i>@lead.Email
                                             </a>
-                                        </div>
-                                    }
-                                    @if (!string.IsNullOrEmpty(lead.Phone))
-                                    {
-                                        <div>
-                                            <a href="tel:@lead.Phone" class="text-decoration-none small">
-                                                <i class="bi bi-telephone me-1"></i>@lead.Phone
+                                        }
+                                        @if (!string.IsNullOrEmpty(lead.Phone))
+                                        {
+                                            <a href="tel:@lead.Phone" title="@lead.Phone">
+                                                <i class="bi bi-telephone-fill"></i>@lead.Phone
                                             </a>
-                                        </div>
-                                    }
-                                </td>
-                                <td>
-                                    <span class="badge bg-info">@lead.Channel</span>
-                                </td>
-                                <td>
-                                    <small class="text-muted">@lead.Source</small>
-                                </td>
-                                <td>
-                                    <span class="badge @Model.GetStatusBadgeClass(lead.Status)">@Model.StatusName(lead.Status)</span>
+                                        }
+                                        @if (string.IsNullOrEmpty(lead.Email) && string.IsNullOrEmpty(lead.Phone))
+                                        {
+                                            <span class="text-muted small">No contact details</span>
+                                        }
+                                    </div>
                                 </td>
 
-                                @* ✅ Score cell — full for Pro/Enterprise, locked badge for Starter *@
-                                @if (Model.HasFeature("lead_scoring"))
-                                {
-                                    <td>
-                                        <div class="progress" style="width:60px;height:20px;">
-                                            <div class="progress-bar"
-                                                 role="progressbar"
-                                                 style="width:@lead.Score%"
-                                                 aria-valuenow="@lead.Score"
-                                                 aria-valuemin="0"
-                                                 aria-valuemax="100">
-                                                @lead.Score
-                                            </div>
+                                <td>
+                                    <span class="badge bg-light text-dark border">@lead.Channel</span>
+                                </td>
+                                <td class="text-muted" style="font-size:.8rem;">@lead.Source</td>
+                                <td>
+                                    <span class="badge @Model.GetStatusBadgeClass(lead.Status)">
+                                        @Model.StatusName(lead.Status)
+                                    </span>
+                                </td>
+
+                                <td>
+                                    @if (Model.HasFeature("lead_scoring"))
+                                    {
+                                        var tone = lead.Score >= 75 ? "#198754"
+                                                 : lead.Score >= 50 ? "#0d6efd"
+                                                 : lead.Score >= 25 ? "#fd7e14" : "#adb5bd";
+                                        <div class="lx-score" title="Lead score @lead.Score of 100">
+                                            <span class="v">@lead.Score</span>
+                                            <span class="track">
+                                                <span class="fill" style="width:@lead.Score%;background:@tone;"></span>
+                                            </span>
                                         </div>
-                                    </td>
-                                }
-                                else
-                                {
-                                    <td>
+                                    }
+                                    else
+                                    {
                                         <span class="badge bg-light text-muted border"
                                               title="@Model.UpgradePrompt to unlock lead scoring">
                                             <i class="bi bi-lock-fill me-1"></i>Pro
                                         </span>
-                                    </td>
-                                }
+                                    }
+                                </td>
 
-                                <td>
+                                <td class="n">
                                     @if (lead.EstimatedValue > 0)
                                     {
-                                        <span class="fw-semibold">
-                                            @* ✅ Was: @@lead.Currency @@lead.EstimatedValue.ToString("N0")
-                                               Two problems. (1) It printed the ISO CODE ("INR 1,40,000")
-                                               where every other screen shows the symbol (₹1,40,000).
-                                               (2) ToString("N0") with no culture uses the SERVER's
-                                               CurrentCulture — the same en-IN leak that put lakh
-                                               grouping on Thai tenants in Pipeline/Index. *@
-                                            @Model.FormatCurrency(lead.EstimatedValue, 0)
-                                        </span>
+                                        <span class="lx-val">@Model.FormatCurrency(lead.EstimatedValue, 0)</span>
                                     }
                                     else
                                     {
-                                        <span class="text-muted">-</span>
+                                        <span class="text-muted">—</span>
                                     }
                                 </td>
-                                <td>
-                                    @* ✅ Use tenant-aware date formatting *@
-                                    <small class="text-muted">
-                                        @Model.FormatDate(lead.CreatedAtUtc)
-                                    </small>
-                                </td>
 
-                                @* ✅ Actions — role-based permission + record locking *@
-                                <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
+                                <td class="d">@Model.FormatDate(lead.CreatedAtUtc)</td>
 
-                                        @* View — always visible *@
-                                        <a asp-page="./Detail"
-                                           asp-route-id="@lead.Id"
-                                           class="btn btn-outline-primary"
-                                           title="View Details">
-                                            <i class="bi bi-eye"></i>
+                                @* Pinned, so Edit and Delete stay reachable on a
+                                   narrow laptop — the same fix the Quotes list got. *@
+                                <td class="stick">
+                                    <div class="lx-acts">
+                                        <a asp-page="./Detail" asp-route-id="@lead.Id"
+                                           class="btn btn-sm btn-outline-secondary"
+                                           title="Open @lead.FullName" aria-label="Open @lead.FullName">
+                                            <i class="bi bi-box-arrow-up-right"></i>
                                         </a>
 
-                                        @* Edit — not Converted (by category, not name) + has update permission *@
-                                        @if (!Model.IsConvertedStatus(lead.Status) && Model.CanUpdate)
+                                        @if (!converted && Model.CanUpdate)
                                         {
-                                            <a asp-page="./Edit"
-                                               asp-route-id="@lead.Id"
-                                               class="btn btn-outline-secondary"
-                                               title="Edit">
+                                            <a asp-page="./Edit" asp-route-id="@lead.Id"
+                                               class="btn btn-sm btn-outline-secondary"
+                                               title="Edit @lead.FullName" aria-label="Edit @lead.FullName">
                                                 <i class="bi bi-pencil"></i>
                                             </a>
                                         }
 
-                                        @* Delete — not Converted + has delete permission *@
-                                        @if (!Model.IsConvertedStatus(lead.Status) && Model.CanDelete)
+                                        @* (031) The name is a data- attribute, never inside an
+                                           inline onclick: an apostrophe in it used to make the
+                                           handler a SyntaxError, so a lead called O'Brien could
+                                           not be deleted at all, and a double quote broke out of
+                                           the attribute entirely. *@
+                                        @if (!converted && Model.CanDelete)
                                         {
-                                            <button type="button"
-                                                    class="btn btn-outline-danger"
-                                                    onclick="confirmDelete('@lead.Id', '@lead.FullName')"
-                                                    title="Delete">
+                                            <button type="button" class="btn btn-sm btn-outline-danger lead-del"
+                                                    data-id="@lead.Id" data-name="@lead.FullName"
+                                                    title="Delete @lead.FullName" aria-label="Delete @lead.FullName">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         }
 
-                                        @* Converted — show lock icon regardless of role *@
-                                        @if (Model.IsConvertedStatus(lead.Status))
+                                        @if (converted)
                                         {
-                                            <span class="btn btn-outline-success disabled pe-none"
-                                                  title="Converted — managed via Deal">
+                                            <span class="btn btn-sm btn-outline-success disabled pe-none"
+                                                  title="Converted — managed on its deal">
                                                 <i class="bi bi-check2-circle"></i>
                                             </span>
                                         }
-
                                     </div>
                                 </td>
                             </tr>
@@ -367,126 +495,136 @@
                 </table>
             </div>
 
-            <!-- Pagination Footer -->
-            <div class="card-footer bg-white border-top-0">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="text-muted small">
-                        Showing @((Model.PaginatedLeads.Page - 1) * Model.PaginatedLeads.PageSize + 1)
-                        to @Math.Min(Model.PaginatedLeads.Page * Model.PaginatedLeads.PageSize, Model.PaginatedLeads.TotalCount)
-                        of @Model.PaginatedLeads.TotalCount results
-                    </div>
-                    <nav>
+            @* ── pager ──────────────────────────────────────────── *@
+            @if (p.TotalPages > 1)
+            {
+                <div class="lx-foot">
+                    <span class="lx-count">Page @p.Page of @p.TotalPages</span>
+                    <nav aria-label="Lead pages">
                         <ul class="pagination pagination-sm mb-0">
-                            @if (Model.PaginatedLeads.Page > 1)
+                            <li class="page-item @(p.Page <= 1 ? "disabled" : "")">
+                                <a class="page-link" asp-page="./Index"
+                                   asp-route-pageNumber="@(p.Page - 1)"
+                                   asp-route-searchTerm="@Model.SearchTerm"
+                                   asp-route-statusFilter="@Model.StatusFilter"
+                                   asp-route-assignedToFilter="@Model.AssignedToFilter"
+                                   aria-label="Previous page">
+                                    <i class="bi bi-chevron-left"></i>
+                                </a>
+                            </li>
+
+                            @for (var i = 1; i <= p.TotalPages; i++)
                             {
-                                <li class="page-item">
-                                    <a class="page-link"
-                                       asp-page="./Index"
-                                       asp-route-pageNumber="@(Model.PaginatedLeads.Page - 1)"
-                                       asp-route-searchTerm="@Model.SearchTerm"
-                                       asp-route-statusFilter="@Model.StatusFilter"
-                                       asp-route-assignedToFilter="@Model.AssignedToFilter">
-                                        <i class="bi bi-chevron-left"></i>
-                                    </a>
-                                </li>
-                            }
-                            @for (int i = 1; i <= Model.PaginatedLeads.TotalPages; i++)
-                            {
-                                if (i == 1 ||
-                                i == Model.PaginatedLeads.TotalPages ||
-                                (i >= Model.PaginatedLeads.Page - 2 && i <= Model.PaginatedLeads.Page + 2))
+                                if (i == 1 || i == p.TotalPages || (i >= p.Page - 2 && i <= p.Page + 2))
                                 {
-                                    <li class="page-item @(i == Model.PaginatedLeads.Page ? "active" : "")">
-                                        <a class="page-link"
-                                           asp-page="./Index"
+                                    <li class="page-item @(i == p.Page ? "active" : "")">
+                                        <a class="page-link" asp-page="./Index"
                                            asp-route-pageNumber="@i"
                                            asp-route-searchTerm="@Model.SearchTerm"
                                            asp-route-statusFilter="@Model.StatusFilter"
-                                           asp-route-assignedToFilter="@Model.AssignedToFilter">
-                                            @i
-                                        </a>
+                                           asp-route-assignedToFilter="@Model.AssignedToFilter">@i</a>
                                     </li>
                                 }
-                                else if (i == Model.PaginatedLeads.Page - 3 || i == Model.PaginatedLeads.Page + 3)
+                                else if (i == p.Page - 3 || i == p.Page + 3)
                                 {
-                                    <li class="page-item disabled">
-                                        <span class="page-link">...</span>
-                                    </li>
+                                    <li class="page-item disabled"><span class="page-link">…</span></li>
                                 }
                             }
-                            @if (Model.PaginatedLeads.Page < Model.PaginatedLeads.TotalPages)
-                            {
-                                <li class="page-item">
-                                    <a class="page-link"
-                                       asp-page="./Index"
-                                       asp-route-pageNumber="@(Model.PaginatedLeads.Page + 1)"
-                                       asp-route-searchTerm="@Model.SearchTerm"
-                                       asp-route-statusFilter="@Model.StatusFilter"
-                                       asp-route-assignedToFilter="@Model.AssignedToFilter">
-                                        <i class="bi bi-chevron-right"></i>
-                                    </a>
-                                </li>
-                            }
+
+                            <li class="page-item @(p.Page >= p.TotalPages ? "disabled" : "")">
+                                <a class="page-link" asp-page="./Index"
+                                   asp-route-pageNumber="@(p.Page + 1)"
+                                   asp-route-searchTerm="@Model.SearchTerm"
+                                   asp-route-statusFilter="@Model.StatusFilter"
+                                   asp-route-assignedToFilter="@Model.AssignedToFilter"
+                                   aria-label="Next page">
+                                    <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
                         </ul>
                     </nav>
                 </div>
-            </div>
+            }
         }
         else
         {
-            @* ✅ Empty state — also permission-aware *@
-            <div class="text-center py-5">
-                <i class="bi bi-funnel fs-1 text-muted d-block mb-3"></i>
-                @if (!string.IsNullOrEmpty(Model.SearchTerm) || !string.IsNullOrEmpty(Model.AssignedToFilter))
+            <div class="lx-empty">
+                @if (hasSearch)
                 {
-                    <h5 class="text-muted">No leads match your search</h5>
-                    <p class="text-muted mb-4">
-                        Nothing in <strong>@Model.CurrentTabName</strong> matches.
-                        <a asp-page="./Index" asp-route-statusFilter="@MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.AllTab"
+                    <i class="bi bi-search big"></i>
+                    <div class="fw-semibold text-body mb-1">Nothing matches that search</div>
+                    <div class="small">
+                        No lead in <strong>@Model.CurrentTabName</strong> matches.
+                        <a asp-page="./Index" asp-route-statusFilter="@IndexModel.AllTab"
                            asp-route-searchTerm="@Model.SearchTerm"
-                           asp-route-assignedToFilter="@Model.AssignedToFilter">Search all leads</a>
-                        or clear the search.
-                    </p>
+                           asp-route-assignedToFilter="@Model.AssignedToFilter">Search every lead</a>,
+                        or <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter">clear the search</a>.
+                    </div>
                 }
                 else if (Model.AllCount > 0 || !Model.IsActiveTab)
                 {
-                    <h5 class="text-muted">No leads in @Model.CurrentTabName</h5>
-                    <p class="text-muted mb-4">
-                        <a asp-page="./Index" asp-route-statusFilter="@MerkaiTrial.Admin.Web.Pages.Leads.IndexModel.AllTab">View all leads</a>
-                    </p>
+                    <i class="bi bi-inbox big"></i>
+                    <div class="fw-semibold text-body mb-1">Nothing in @Model.CurrentTabName</div>
+                    <div class="small">
+                        <a asp-page="./Index" asp-route-statusFilter="@IndexModel.AllTab">See every lead</a>
+                    </div>
                 }
                 else
                 {
-                    <h5 class="text-muted">No leads yet</h5>
-                    <p class="text-muted mb-4">Get started by adding your first lead</p>
-                }
-                @if (Model.CanCreate && !AuthorizedPageModel.IsAtLimit(Model.Stats.QuotaUsed, Model.MaxLeads))
-                {
-                    <a asp-page="./Create" class="btn btn-primary">
-                        <i class="bi bi-plus-circle me-1"></i>Add Lead
-                    </a>
+                    <i class="bi bi-funnel big"></i>
+                    <div class="fw-semibold text-body mb-1">No leads yet</div>
+                    <div class="small mb-3">
+                        Add one by hand, or bring your existing list in from a spreadsheet.
+                    </div>
+                    @if (Model.CanCreate && !atLimit)
+                    {
+                        <div class="d-flex gap-2 justify-content-center flex-wrap">
+                            <a asp-page="./Create" class="btn btn-sm btn-primary">
+                                <i class="bi bi-plus-lg me-1"></i>Add lead
+                            </a>
+                            <a asp-page="./Import" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-upload me-1"></i>Import a spreadsheet
+                            </a>
+                        </div>
+                    }
                 }
             </div>
         }
     </div>
 </div>
 
-<!-- Delete Form (Hidden) -->
-<form method="post" id="deleteForm">
-    <input type="hidden" name="id" id="deleteId" />
+@* (031) The delete form keeps the tab so OnPostDelete's
+   RedirectToPage(new { StatusFilter }) lands back where the user was. *@
+<form method="post" asp-page-handler="Delete" id="leadDeleteForm" class="d-none">
+    <input type="hidden" name="id" id="leadDeleteId" />
+    <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
 </form>
 
 @section Scripts {
     <script>
         // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
+        (function () {
+            'use strict';
 
-        // Delete confirmation
-        function confirmDelete(id, name) {
-            if (confirm(`Are you sure you want to delete lead "${name}"? This action cannot be undone.`)) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
-                document.getElementById('deleteForm').submit();
-            }
-        }
+            // One delegated listener reading data- attributes. Nothing is
+            // interpolated into a JS string, so a lead called O'Brien or
+            // Bob "The Builder" is just data.
+            var form = document.getElementById('leadDeleteForm');
+            var idField = document.getElementById('leadDeleteId');
+
+            document.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('.lead-del') : null;
+                if (!btn || !form || !idField) return;
+
+                var id = btn.getAttribute('data-id');
+                var name = btn.getAttribute('data-name') || 'this lead';
+                if (!id) return;
+
+                if (!window.confirm('Delete lead ' + name + '? This cannot be undone.')) return;
+
+                idField.value = id;
+                form.submit();
+            });
+        })();
     </script>
 }

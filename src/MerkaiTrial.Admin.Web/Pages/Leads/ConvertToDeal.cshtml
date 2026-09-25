@@ -1,204 +1,331 @@
 @page "{id:guid}"
+@using MerkaiTrial.Domain.Entities
 @model MerkaiTrial.Admin.Web.Pages.Leads.ConvertToDealModel
 @{
-    ViewData["Title"] = "Convert Lead to Deal";
+    ViewData["Title"] = "Convert to deal";
+    var stages = Model.Stages.OrderBy(s => s.SortOrder).ToList();
 }
+@* =====================================================================
+   Leads/ConvertToDeal.cshtml   (031 — rebuild)
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/ConvertToDeal.cshtml
 
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <nav aria-label="breadcrumb">
-                <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="/Leads">Leads</a></li>
-                    <li class="breadcrumb-item"><a href="/Leads/Detail/@Model.LeadId">@Model.LeadName</a></li>
-                    <li class="breadcrumb-item active">Convert to Deal</li>
-                </ol>
-            </nav>
-            <h2><i class="bi bi-arrow-right-circle me-2"></i>Convert Lead to Deal</h2>
-            <p class="text-muted">Create a new deal from this qualified lead</p>
+   COMPLETE FILE — replaces the existing one.
+
+   WHAT WAS WRONG
+
+   1. ★ THE PIPELINE STAGES WERE HARDCODED, with invented probabilities:
+
+          <option value="Discovery">🔍 Discovery (20% probability)</option>
+          <option value="Qualification" selected>✅ Qualification (50% probability)</option>
+          <option value="Proposal">📄 Proposal (40% probability)</option>
+          <option value="Negotiation">🤝 Negotiation (60% probability)</option>
+
+      Rounds 019 and 020 made stages tenant-configurable — renamed,
+      reordered, added, retired. This page ignored all of it. A workspace
+      whose stages are Enquiry / Site Visit / Quote / Won was offered four
+      stages that do not exist in its pipeline, and the conversion was
+      refused by the server.
+
+      Note the probabilities too: Proposal at 40% sat BELOW Qualification
+      at 50%, so the numbers were not just unconfigurable, they were wrong.
+      They are the tenant's own figures now.
+
+   2. ★ @@GetCurrencySymbol(Model.TenantCurrencySymbol) — the local
+      @@functions helper took an ISO CODE ("INR") and was being handed the
+      SYMBOL ("₹"). Nothing matched, so it fell through to
+      `_ => currencyCode ?? "$"` and returned its own input. It worked by
+      accident and would have printed "$" for any tenant whose symbol
+      lookup failed. The @@functions block is gone; the page model resolves
+      the symbol for the LEAD's currency, which is what the deal is raised
+      in.
+
+   3. The form posted Input.Currency as a hidden field and the server
+      trusted it. Currency decides what the customer is billed, so it is
+      resolved server-side now — see change 4 in ConvertToDeal.cshtml.cs.
+
+   4. "What Happens Next" claimed the lead's status would change to
+      "Converted" — our key, not the tenant's word for it.
+   ===================================================================== *@
+
+<style>
+    .lc { max-width: 1080px; margin: 0 auto; }
+    .lc-back { font-size: .82rem; color: #64748b; text-decoration: none; }
+    .lc-back:hover { color: #334155; }
+    .lc-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: .35rem 0 0; line-height: 1.2; }
+    .lc-sub { font-size: .84rem; color: #64748b; margin: .2rem 0 1rem; }
+
+    .lc-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .lc-card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                    font-weight: 650; margin: 0; padding: .7rem 1rem; border-bottom: 1px solid #f1f3f5;
+                    display: flex; align-items: center; gap: .4rem; }
+    .lc-card .bd { padding: 1rem; }
+
+    .lc-lead { border-left: 5px solid #198754; }
+    .lc-facts { display: grid; grid-template-columns: auto 1fr; gap: .3rem .9rem; font-size: .86rem; }
+    .lc-facts dt { color: #94a3b8; font-weight: 500; }
+    .lc-facts dd { margin: 0; color: #0f172a; overflow-wrap: anywhere; }
+
+    .lc-money { position: relative; }
+    .lc-money .sym { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+                     font-weight: 650; color: #64748b; pointer-events: none; }
+    .lc-money input { padding-left: 34px; }
+
+    /* Stage picker: real radios styled as chips — focusable, announced, and
+       working with no script. */
+    .lc-stages { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .lc-stage input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .lc-stage span { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer;
+                     padding: .45rem .8rem; border-radius: 8px; border: 2px solid #e9ecef;
+                     background: #f8fafc; font-size: .86rem; font-weight: 600; color: #334155; }
+    .lc-stage span:hover { border-color: #cbd5e1; }
+    .lc-stage input:checked + span { border-color: #4f46e5; background: #fff;
+                                     box-shadow: 0 0 0 3px rgba(79,70,229,.18); }
+    .lc-stage input:focus-visible + span { outline: 2px solid #4f46e5; outline-offset: 2px; }
+    .lc-stage .pct { font-weight: 500; color: #94a3b8; font-size: .78rem; }
+
+    .lc-next { font-size: .86rem; }
+    .lc-next li { margin-bottom: .35rem; }
+
+    .lc-bar { display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
+              border-top: 1px solid #e9ecef; padding-top: 1rem; margin-top: 1rem; }
+
+    @@media (max-width: 575.98px) {
+        .lc-title { font-size: 1.25rem; }
+        .lc-bar { justify-content: stretch; }
+        .lc-bar > * { flex: 1 1 100%; }
+        .lc-bar .btn { width: 100%; }
+    }
+</style>
+
+<div class="lc">
+
+    <a href="/Leads/Detail/@Model.LeadId" class="lc-back">
+        <i class="bi bi-arrow-left me-1"></i>Back to @Model.LeadName
+    </a>
+    <h1 class="lc-title">Convert to a deal</h1>
+    <p class="lc-sub">
+        This creates a deal in your pipeline and closes the lead out.
+    </p>
+
+    @* TempData alerts are rendered once, globally, by _Layout.cshtml. This
+       block is only for ModelState errors, which TempData does not carry. *@
+    @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+    {
+        <div class="alert alert-warning d-flex gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                {
+                    <div>@err.ErrorMessage</div>
+                }
+            </div>
         </div>
-    </div>
+    }
 
-    <div class="row">
-        <!-- Left Column: Form -->
-        <div class="col-lg-8">
-            <form method="post">
-                <!-- Lead Summary Card -->
-                <div class="card shadow-sm mb-4 border-success">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0">
-                            <i class="bi bi-person-check-fill me-2"></i>Converting Lead
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <p class="mb-1"><strong>Name:</strong> @Model.LeadName</p>
-                                <p class="mb-1"><strong>Email:</strong> @Model.LeadEmail</p>
-                            </div>
-                            <div class="col-md-6">
-                                <p class="mb-1"><strong>Phone:</strong> @Model.LeadPhone</p>
-                                <p class="mb-1"><strong>Status:</strong> <span class="badge bg-success">Qualified</span></p>
-                            </div>
-                        </div>
+    <form method="post" asp-route-id="@Model.LeadId">
+        <div class="row g-3">
+
+            <div class="col-lg-7">
+                <div class="lc-card lc-lead">
+                    <h2><i class="bi bi-person-check"></i>The lead</h2>
+                    <div class="bd">
+                        <dl class="lc-facts mb-0">
+                            <dt>Name</dt>
+                            <dd><strong>@Model.LeadName</strong></dd>
+
+                            @if (!string.IsNullOrWhiteSpace(Model.LeadCompany))
+                            {
+                                <dt>Company</dt>
+                                <dd>@Model.LeadCompany</dd>
+                            }
+
+                            <dt>Email</dt>
+                            <dd>
+                                @if (!string.IsNullOrWhiteSpace(Model.LeadEmail))
+                                {
+                                    <a href="mailto:@Model.LeadEmail">@Model.LeadEmail</a>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Not provided</span>
+                                }
+                            </dd>
+
+                            <dt>Phone</dt>
+                            <dd>
+                                @if (!string.IsNullOrWhiteSpace(Model.LeadPhone))
+                                {
+                                    <a href="tel:@Model.LeadPhone">@Model.LeadPhone</a>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">Not provided</span>
+                                }
+                            </dd>
+
+                            <dt>Status</dt>
+                            @* The tenant's own name for the status, not the key. *@
+                            <dd><span class="badge bg-success">@Model.LeadStatusName</span></dd>
+                        </dl>
                     </div>
                 </div>
 
-                <!-- Deal Information Card -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-white">
-                        <h5 class="mb-0">
-                            <i class="bi bi-briefcase me-2"></i>Deal Information
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+                <div class="lc-card">
+                    <h2><i class="bi bi-briefcase"></i>The deal</h2>
+                    <div class="bd">
+                        <div class="mb-3">
+                            <label asp-for="Input.DealTitle" class="form-label small text-muted mb-1">
+                                Deal title <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.DealTitle" class="form-control" required maxlength="200" />
+                            <span asp-validation-for="Input.DealTitle" class="text-danger small"></span>
+                        </div>
 
                         <div class="row g-3">
-                            <!-- Deal Title -->
-                            <div class="col-12">
-                                <label asp-for="Input.DealTitle" class="form-label">
-                                    Deal Title <span class="text-danger">*</span>
-                                </label>
-                                <input asp-for="Input.DealTitle" class="form-control" required>
-                                <span asp-validation-for="Input.DealTitle" class="text-danger"></span>
-                            </div>
-
-                            <!-- Pipeline Stage -->
                             <div class="col-md-6">
-                                <label asp-for="Input.Stage" class="form-label">
-                                    Pipeline Stage <span class="text-danger">*</span>
+                                <label asp-for="Input.ExpectedValue" class="form-label small text-muted mb-1">
+                                    Expected value <span class="text-danger">*</span>
                                 </label>
-                                <select asp-for="Input.Stage" class="form-select" required>
-                                    <option value="Discovery">🔍 Discovery (20% probability)</option>
-                                    <option value="Qualification" selected>✅ Qualification (50% probability)</option>
-                                    <option value="Proposal">📄 Proposal (40% probability)</option>
-                                    <option value="Negotiation">🤝 Negotiation (60% probability)</option>
-                                </select>
-                                <span asp-validation-for="Input.Stage" class="text-danger"></span>
-                                <small class="text-muted d-block mt-1">Recommended: Qualification (lead is already qualified)</small>
-                            </div>
-
-                            <!-- Expected Close Date -->
-                            <div class="col-md-6">
-                                <label asp-for="Input.ExpectedCloseDate" class="form-label">
-                                    Expected Close Date <span class="text-danger">*</span>
-                                </label>
-                                <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" required>
-                                <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger"></span>
-                                <small class="text-muted d-block mt-1">Default: 30 days from today</small>
-                            </div>
-
-                            <!-- Expected Value -->
-                            <div class="col-md-6">
-                                <label asp-for="Input.ExpectedValue" class="form-label">
-                                    Expected Value <span class="text-danger">*</span>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text">@GetCurrencySymbol(Model.TenantCurrencySymbol)</span>
-                                    <input asp-for="Input.ExpectedValue" type="number" step="0.01" class="form-control" required min="0">
+                                <div class="lc-money">
+                                    @* The symbol for the currency the DEAL will be in —
+                                       the lead's, or the workspace's. *@
+                                    <span class="sym">@Model.SymbolFor(Model.DealCurrency)</span>
+                                    <input asp-for="Input.ExpectedValue" type="number" step="0.01" min="0.01"
+                                           class="form-control" required />
                                 </div>
-                                <span asp-validation-for="Input.ExpectedValue" class="text-danger"></span>
+                                <span asp-validation-for="Input.ExpectedValue" class="text-danger small"></span>
+                                <div class="form-text" style="font-size:.74rem;">
+                                    In <strong>@Model.DealCurrency</strong>
+                                    @if (!string.Equals(Model.DealCurrency, Model.TenantCurrency,
+                                                        StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <text> — from the lead, not your workspace currency
+                                        (@Model.TenantCurrency).</text>
+                                    }
+                                    else
+                                    {
+                                        <text> — your workspace currency.</text>
+                                    }
+                                </div>
                             </div>
 
-                            <!-- Currency (Read-only) -->
                             <div class="col-md-6">
-                                <label class="form-label">Currency</label>
-                                <input type="text" class="form-control" value="@Model.TenantCurrency" readonly>
-                                <input asp-for="Input.Currency" type="hidden">
-                            </div>
-
-                            <!-- Description -->
-                            <div class="col-12">
-                                <label asp-for="Input.Description" class="form-label">
-                                    Description (Optional)
+                                <label asp-for="Input.ExpectedCloseDate" class="form-label small text-muted mb-1">
+                                    Expected close date <span class="text-danger">*</span>
                                 </label>
-                                <textarea asp-for="Input.Description" class="form-control" rows="3" 
-                                          placeholder="Additional notes about this deal..."></textarea>
-                                <span asp-validation-for="Input.Description" class="text-danger"></span>
+                                <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" required />
+                                <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger small"></span>
+                                <div class="form-text" style="font-size:.74rem;">
+                                    Defaults to 30 days out.
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <label asp-for="Input.Description" class="form-label small text-muted mb-1">
+                                    Description <span class="text-muted">(optional)</span>
+                                </label>
+                                <textarea asp-for="Input.Description" class="form-control" rows="3" maxlength="2000"
+                                          placeholder="Anything the pipeline should know about this deal…"></textarea>
+                                <span asp-validation-for="Input.Description" class="text-danger small"></span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
-                <div class="card shadow-sm mb-4">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <a href="/Leads/Detail/@Model.LeadId" class="btn btn-outline-secondary">
-                                <i class="bi bi-x-circle me-2"></i>Cancel
-                            </a>
-                            <button type="submit" class="btn btn-success btn-lg">
-                                <i class="bi bi-check-circle me-2"></i>Create Deal
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </form>
-        </div>
-
-        <!-- Right Column: Info -->
-        <div class="col-lg-4">
-            <!-- What Happens Next -->
-            <div class="card shadow-sm mb-4 border-info">
-                <div class="card-header bg-info text-white">
-                    <h6 class="mb-0">
-                        <i class="bi bi-info-circle-fill me-2"></i>What Happens Next?
-                    </h6>
-                </div>
-                <div class="card-body">
-                    <ol class="mb-0 ps-3">
-                        <li class="mb-2">Deal will be created in the pipeline</li>
-                        <li class="mb-2">Lead status will change to "Converted"</li>
-                        @if (!Model.ContactId.HasValue)
+                <div class="lc-card">
+                    <h2><i class="bi bi-funnel"></i>Where it starts</h2>
+                    <div class="bd">
+                        @if (!stages.Any())
                         {
-                            <li class="mb-2">A new contact will be created automatically</li>
+                            <div class="alert alert-warning mb-0 py-2 small">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Your workspace has no pipeline stages set up, so this lead can't be
+                                converted yet.
+                                <a asp-page="/Settings/Pipeline/Index">Add them under Settings</a> first.
+                            </div>
                         }
                         else
                         {
-                            <li class="mb-2">Deal will be linked to existing contact</li>
+                            @* ★ The tenant's OWN stages, with the tenant's OWN
+                               probabilities. This was four hardcoded options. *@
+                            <div class="lc-stages" role="radiogroup" aria-label="Starting stage">
+                                @foreach (var s in stages)
+                                {
+                                    <label class="lc-stage">
+                                        <input type="radio" asp-for="Input.Stage" value="@s.Key" required />
+                                        <span>
+                                            @s.Name
+                                            <span class="pct">@s.Probability%</span>
+                                        </span>
+                                    </label>
+                                }
+                            </div>
+                            <span asp-validation-for="Input.Stage" class="text-danger small d-block mt-1"></span>
+                            <div class="form-text mt-2" style="font-size:.74rem;">
+                                These are your workspace's own stages and their own win
+                                probabilities, from
+                                <a asp-page="/Settings/Pipeline/Index">Settings → Pipeline</a>.
+                            </div>
                         }
-                        <li class="mb-0">You'll be redirected to the pipeline view</li>
-                    </ol>
+                    </div>
                 </div>
             </div>
 
-            <!-- Tips -->
-            <div class="card shadow-sm">
-                <div class="card-header bg-white">
-                    <h6 class="mb-0">
-                        <i class="bi bi-lightbulb me-2"></i>Tips
-                    </h6>
+            <div class="col-lg-5">
+                <div class="lc-card">
+                    <h2><i class="bi bi-signpost-2"></i>What happens next</h2>
+                    <div class="bd">
+                        <ol class="lc-next ps-3 mb-0">
+                            <li>A deal is created in your pipeline at the stage you chose.</li>
+                            <li>
+                                @* The old page said the status becomes "Converted" — our key.
+                                   The tenant may well call it something else. *@
+                                This lead is closed out and moves to your workspace's converted
+                                status, so it stops appearing in the active list.
+                            </li>
+                            @if (!Model.ContactId.HasValue)
+                            {
+                                <li>A contact is created for @Model.LeadName automatically.</li>
+                            }
+                            else
+                            {
+                                <li>The deal is linked to the contact this lead already has.</li>
+                            }
+                            <li>You land on the pipeline board with the new deal on it.</li>
+                        </ol>
+
+                        <div class="alert alert-light border small mt-3 mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            The lead's notes, activities and tasks carry across and stay readable on
+                            the deal — nothing is lost. Converting cannot be undone from here.
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <ul class="mb-0 ps-3 small">
-                        <li class="mb-2">Choose a realistic close date based on your sales cycle</li>
-                        <li class="mb-2">The expected value helps with pipeline forecasting</li>
-                        <li class="mb-2">You can update deal details later from the pipeline</li>
-                    </ul>
+
+                <div class="lc-card">
+                    <h2><i class="bi bi-lightbulb"></i>Worth knowing</h2>
+                    <div class="bd">
+                        <ul class="lc-next ps-3 mb-0 text-muted">
+                            <li>The close date drives your pipeline forecast, so a realistic one is
+                                worth more than an optimistic one.</li>
+                            <li>You can change the title, value and close date on the deal afterwards.</li>
+                            <li>The stage can be changed on the deal page — through your process,
+                                not a dropdown.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
+
+        <div class="lc-bar">
+            <a href="/Leads/Detail/@Model.LeadId" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-success" @(stages.Any() ? "" : "disabled")>
+                <i class="bi bi-arrow-right-circle me-1"></i>Create the deal
+            </button>
+        </div>
+    </form>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
-}
-
-@functions {
-    string GetCurrencySymbol(string? currencyCode)
-    {
-        return currencyCode switch
-        {
-            "INR" => "₹",
-            "USD" => "$",
-            "EUR" => "€",
-            "GBP" => "£",
-            "THB" => "฿",
-            "PHP" => "₱",
-            _ => currencyCode ?? "$"
-        };
-    }
 }

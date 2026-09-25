@@ -4,8 +4,15 @@
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
 @{
-    var isQualified = Model.Lead.Status?.Trim().Equals("Qualified", StringComparison.OrdinalIgnoreCase) ?? false;
-    var isConverted = Model.Lead.DealId.HasValue;
+    @* ★ (031) By CATEGORY, not by the literal string "Qualified". Lead
+       statuses are tenant-configurable: a workspace that renamed "Qualified"
+       to "Ready to quote", or that added a second qualified status, never saw
+       the "Convert to Deal" button at all — the one action this whole card
+       exists for. Model.IsQualifiedLead resolves the status through the
+       tenant's own list and falls back to the old literal only if that list
+       could not be loaded. *@
+    var isQualified = Model.IsQualifiedLead;
+    var isConverted = Model.IsConvertedLead;
 }
 
 <!-- Quick Stats Card -->
@@ -17,8 +24,9 @@
         <div class="mb-3">
             <label class="text-muted small">Status</label>
             <p class="mb-0">
+                @* (031) The tenant's own name for the status, not the stored key. *@
                 <span class="badge @Model.GetStatusBadgeClass(Model.Lead.Status)">
-                    @Model.Lead.Status
+                    @Model.StatusName(Model.Lead.Status)
                 </span>
             </p>
         </div>

@@ -68,7 +68,9 @@
                                     <small class="text-muted">
                                         @file.FileSizeDisplay
                                         &nbsp;•&nbsp;
-                                        @file.CreatedAtUtc.ToString("MMM dd, yyyy HH:mm")
+                                        @* (031) FormatDateTime — this printed the raw UTC value in
+                                           the SERVER's culture, unlike every other date in the app. *@
+                                        @Model.FormatDateTime(file.CreatedAtUtc)
                                         @if (!string.IsNullOrEmpty(file.CreatedBy))
                                         {
                                             <span>&nbsp;•&nbsp; @file.CreatedBy</span>
@@ -87,12 +89,20 @@
                                 </a>
                                 @if (Model.CanUpdate)
                                 {
+                                    @* ★ (031) Was
+                                         onsubmit="return confirm('Delete @@Html.Raw(file.FileName.Replace("'", "\\'"))?');"
+                                       Html.Raw turns encoding OFF and only the single quote was
+                                       escaped, so a file called  Q3 "final".pdf  closed the
+                                       double-quoted onsubmit attribute and put the rest of the
+                                       name into the markup as attributes. A file with a NULL
+                                       name threw an NRE and 500'd the tab. The name is a data-
+                                       attribute now, read by a delegated listener. *@
                                     <form method="post"
                                           asp-page-handler="DeleteAttachment"
                                           asp-route-id="@Model.Lead.Id"
                                           asp-route-attachmentId="@file.Id"
-                                          onsubmit="return confirm('Delete @Html.Raw(file.FileName.Replace("'", "\\'"))?');"
-                                          class="d-inline">
+                                          class="d-inline lead-att-del"
+                                          data-name="@(file.FileName ?? "this file")">
                                         <button type="submit"
                                                 class="btn btn-sm btn-outline-danger"
                                                 title="Delete">
@@ -110,3 +120,16 @@
 
     </div>
 </div>
+
+@* (031) One delegated listener for the delete confirmations, so no file name
+   is ever interpolated into a JavaScript string. *@
+<script>
+    (function () {
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.classList || !form.classList.contains('lead-att-del')) return;
+            var name = form.getAttribute('data-name') || 'this file';
+            if (!window.confirm('Delete ' + name + '? This cannot be undone.')) e.preventDefault();
+        });
+    })();
+</script>

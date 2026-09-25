@@ -11,6 +11,33 @@
 //   3. OnPostAsync's defense-in-depth check now uses
 //      ValidatePermissionAsync(Actions.Update) instead of the old
 //      hand-rolled CanUpdate("Leads") claim check
+//
+// CHANGES (031)
+//   1. THE COUNTRY DEFAULT BLOCK COMPARED A COUNTRY CODE AGAINST A NULL
+//      GUID's ToString(). It read:
+//
+//          Selected = c.Id == Input.CountryId ||
+//                     (!Input.CountryId.HasValue && c.Code == Input.CountryId.ToString())
+//          ...
+//          var tenantCountry = countries.FirstOrDefault(c => c.Code == Input.CountryId.ToString());
+//
+//      Input.CountryId is a Guid?; on the branch where it has NO value,
+//      .ToString() is "" — so it looked for a country whose Code is the empty
+//      string and never found one. It was copy-pasted from Create.cshtml.cs,
+//      where the same lines correctly compare against TenantCountryCode. Dead
+//      code that did nothing; replaced with the tenant's country code, which
+//      is what it was meant to be.
+//
+//   2. InitializePermissionsAsync() was never called on either handler, so
+//      every Can* flag on the base class was false for the whole render.
+//
+//   3. CurrencySymbolFor(code) added, so the Estimated Value box shows the
+//      symbol for the LEAD's currency rather than the workspace's. The view's
+//      span also had no id, so the script that keeps it in step with the
+//      country never found it — see Edit.cshtml.
+//
+//   4. A null lead on GET now redirects with "Lead not found." instead of
+//      falling into the generic catch via an NRE on lead.FullName.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -68,6 +95,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public string TenantCurrencySymbol { get; private set; } = "₹";
         public string TenantCurrency { get; private set; } = "INR";
 
+        /// <summary>(031) The workspace's ISO country code, for the country default.</summary>
+        public string TenantCountryCode { get; private set; } = "IN";
+
         [TempData] public string? ErrorMessage { get; set; }
 
         public class InputModel
@@ -116,6 +146,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             var permissionCheck = await ValidatePermissionAsync(Actions.Update);
             if (permissionCheck != null) return permissionCheck;
 
+            // ✅ (031) Was missing on both handlers.
+            await InitializePermissionsAsync();
+
             try
             {
                 Id = id;
@@ -123,6 +156,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var lead = await _leadService.GetByIdAsync(tenantId, id);
+
+                // ✅ (031) A null here used to NRE on lead.FullName and land in
+                // the generic catch as "Failed to load lead".
+                if (lead == null)
+                {
+                    TempData["ErrorMessage"] = "Lead not found.";
+                    return RedirectToPage("./Index");
+                }
 
                 Input = new InputModel
                 {
@@ -171,6 +212,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var permissionCheck = await ValidatePermissionAsync(Actions.Update);
                 if (permissionCheck != null) return permissionCheck;
 
+                await InitializePermissionsAsync();
                 LoadTenantContext();
 
                 if (!ModelState.IsValid)
@@ -220,8 +262,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private void LoadTenantContext()
         {
             TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
-            TenantCurrency = _tenantService.GetCurrencyCode();
+            TenantCurrency       = _tenantService.GetCurrencyCode();
+            TenantCountryCode    = _tenantService.GetCountryCode();
         }
+
+        /// <summary>
+        /// (031) Symbol for an ISO code, so the value box carries the LEAD's
+        /// currency rather than the workspace's. An unknown code comes back as
+        /// the code — printing ₹ beside a dollar figure is worse than printing
+        /// "USD".
+        /// </summary>
+        public string CurrencySymbolFor(string? code) => (code ?? string.Empty).ToUpperInvariant() switch
+        {
+            "INR" => "₹",
+            "THB" => "฿",
+            "PHP" => "₱",
+            "AED" => "د.إ",
+            "USD" => "$",
+            "EUR" => "€",
+            "GBP" => "£",
+            ""    => TenantCurrencySymbol,
+            _     => code!.ToUpperInvariant()
+        };
 
         private async Task LoadDropdownsAsync()
         {
@@ -273,18 +335,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 var countries = await _leadService.GetCountriesAsync();
 
+                // ★ (031) Was comparing a country Code against
+                // Input.CountryId.ToString() on the branch where CountryId has
+                // NO value — i.e. against "" — so it never matched anything.
+                // Copy-pasted from Create.cshtml.cs, where the same lines
+                // correctly use TenantCountryCode. Now they do here too.
                 CountryOptions = countries.Select(c => new SelectListItem
                 {
-                    Value = c.Id.ToString(),
-                    Text = c.Name,
+                    Value    = c.Id.ToString(),
+                    Text     = c.Name,
                     Selected = c.Id == Input.CountryId ||
-                               (!Input.CountryId.HasValue && c.Code == Input.CountryId.ToString())
+                               (!Input.CountryId.HasValue && c.Code == TenantCountryCode)
                 }).ToList();
 
-                // Auto-set CountryId default from tenant if not already set
                 if (!Input.CountryId.HasValue)
                 {
-                    var tenantCountry = countries.FirstOrDefault(c => c.Code == Input.CountryId.ToString());
+                    var tenantCountry = countries.FirstOrDefault(c => c.Code == TenantCountryCode);
                     if (tenantCountry != null)
                         Input.CountryId = tenantCountry.Id;
                 }

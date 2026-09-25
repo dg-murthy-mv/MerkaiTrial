@@ -154,8 +154,11 @@
             <div class="col-md-6">
                 <label class="text-muted small">Status</label>
                 <p class="mb-0">
+                    @* (031) The tenant's own name for the status. This printed the
+                       stored KEY, so a workspace with "Site Visit Booked" saw
+                       "SiteVisitBooked" here and the proper name on the list. *@
                     <span class="badge @Model.GetStatusBadgeClass(Model.Lead.Status)">
-                        @Model.Lead.Status
+                        @Model.StatusName(Model.Lead.Status)
                     </span>
                 </p>
             </div>

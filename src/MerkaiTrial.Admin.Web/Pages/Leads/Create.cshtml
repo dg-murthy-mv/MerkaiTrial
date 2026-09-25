@@ -29,14 +29,10 @@
                 </a>
             </div>
 
-            <!-- Error Messages -->
-            @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-            {
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>@Model.ErrorMessage
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            }
+            @* (031) Removed an in-page render of Model.ErrorMessage. It is
+               [TempData]-backed and _Layout.cshtml renders TempData alerts once,
+               globally, so a failure produced two identical red banners. The
+               validation summary below still shows field-level problems. *@
 
             <!-- Form Card -->
             <div class="card shadow-sm">

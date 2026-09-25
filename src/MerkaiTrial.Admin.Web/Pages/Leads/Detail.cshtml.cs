@@ -17,6 +17,31 @@
 //   • Editing someone else's entry needs tenant admin. Correcting your own
 //     typo is not the same as rewriting another rep's record.
 //
+// CHANGES (031)
+//   1. ★ A DELETED LEAD 500'd THE PAGE. Lead is declared `= null!` and
+//      OnGetAsync assigned whatever GetByIdAsync returned without checking.
+//      Detail.cshtml's first line is
+//          ViewData["Title"] = "Lead Details - " + Model.Lead.FullName;
+//      so a null return threw a NullReferenceException in the view — an
+//      unhandled 500, not the "Lead not found." redirect the KeyNotFound
+//      path gives. It also hits a lead outside this user's record scope.
+//
+//   2. ★ THE SIDEBAR'S "Convert to Deal" BUTTON MATCHED THE LITERAL STRING
+//      "Qualified". Lead statuses are tenant-configurable with a CATEGORY;
+//      a workspace that renamed "Qualified" to "Ready to quote", or that has
+//      two qualified statuses, got no Convert button at all. IsQualifiedLead
+//      tests the category, the way IsConvertedStatus already did on the list.
+//
+//   3. StatusName(key) added. _OverviewTab and _RightSidebar printed
+//      Lead.Status — the stored KEY — so a tenant saw "SiteVisitBooked" on
+//      the detail page and "Site Visit Booked" on the list.
+//
+//   4. OnPostConvertToDealAsync HAD LOST ITS GUARDS. There is a blank gap in
+//      it where the "only qualified leads" and "not already converted"
+//      checks used to be, so it would convert any lead at all. Nothing in
+//      the UI posts to it — ConvertToDeal.cshtml is the real path — but it is
+//      still a reachable POST endpoint. Both guards restored, by category.
+//
 // The API enforces all of this again; the flags here only decide which
 // buttons render.
 // =====================================================================
@@ -273,6 +298,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
                 var tenantId = me.TenantId;
                 Lead = await _leadService.GetByIdAsync(tenantId, id);
+
+                // ★ (031) A null here used to reach the view, where
+                // Model.Lead.FullName threw an unhandled NRE — a 500 page for a
+                // lead that had simply been deleted, or that this user's record
+                // scope does not include.
+                if (Lead == null)
+                {
+                    TempData["ErrorMessage"] = "That lead could not be found. It may have been deleted.";
+                    return RedirectToPage("./Index");
+                }
 
                 await LoadStatusOptionsAsync();
 
@@ -693,7 +728,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 // null — load it before checking status.
                 var lead = await _leadService.GetByIdAsync(tenantId, id);
 
-               
+                if (lead == null)
+                {
+                    TempData["ErrorMessage"] = "That lead could not be found.";
+                    return RedirectToPage("./Index");
+                }
+
+                // ★ (031) These two checks had gone missing — there was a blank
+                // gap here — so this handler would convert any lead at all,
+                // including one already converted. Nothing in the UI posts to
+                // it (ConvertToDeal.cshtml is the real path), but it is a
+                // reachable endpoint. Checked by CATEGORY, not by the literal
+                // string "Qualified", so a renamed status still works.
+                var statuses = await _statusService.GetAsync(selectableOnly: false);
+                var leadStatus = statuses.FirstOrDefault(x => x.Key == lead.Status);
+
+                if (leadStatus?.Category != LeadStatusCategory.Qualified)
+                {
+                    TempData["ErrorMessage"] = "Only a qualified lead can be converted to a deal.";
+                    return RedirectToPage(new { id });
+                }
+
+                if (lead.DealId.HasValue)
+                {
+                    TempData["ErrorMessage"] = "This lead has already been converted to a deal.";
+                    return RedirectToPage(new { id });
+                }
 
                 var result = await _leadService.ConvertToDealAsync(new ConvertLeadToDealDto
                 {
@@ -966,6 +1026,45 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public bool IsEditing(ActivityDto a) => EditId.HasValue && EditId.Value == a.Id;
         public bool IsAddingOutcome(ActivityDto a) => OutcomeId.HasValue && OutcomeId.Value == a.Id;
+
+        /// <summary>
+        /// (031) The tenant's own NAME for a status key. _OverviewTab and
+        /// _RightSidebar printed the raw key, so a workspace with a status
+        /// called "Site Visit Booked" saw "SiteVisitBooked" on this page and
+        /// the proper name on the list. Same helper the list has.
+        /// </summary>
+        public string StatusName(string? key)
+        {
+            if (string.IsNullOrEmpty(key)) return "—";
+            return Statuses.FirstOrDefault(s => s.Key == key)?.Name ?? key;
+        }
+
+        /// <summary>
+        /// (031) True when this lead's status is in the tenant's QUALIFIED
+        /// category — whatever they call it. _RightSidebar used to compare
+        /// Lead.Status against the literal "Qualified", so a workspace that
+        /// renamed it, or that has a second qualified status, never saw the
+        /// "Convert to Deal" button at all.
+        ///
+        /// If the status list failed to load, fall back to the old literal
+        /// rather than hiding the button on every lead.
+        /// </summary>
+        public bool IsQualifiedLead
+        {
+            get
+            {
+                if (Lead == null) return false;
+
+                var status = Statuses.FirstOrDefault(s => s.Key == Lead.Status);
+                if (status != null) return status.Category == LeadStatusCategory.Qualified;
+
+                return string.Equals(Lead.Status?.Trim(), "Qualified",
+                                     StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>True when this lead already has a deal behind it.</summary>
+        public bool IsConvertedLead => Lead?.DealId.HasValue == true;
 
         public string FormatDate(DateTime utcDateTime)
             => _tenantService.FormatDate(utcDateTime);

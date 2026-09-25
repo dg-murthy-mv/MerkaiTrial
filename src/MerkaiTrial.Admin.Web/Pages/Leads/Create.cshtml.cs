@@ -12,6 +12,13 @@
 //      hand-rolled CanCreate("Leads") claim check, so a denied user gets
 //      the same AccessDenied redirect as everywhere else in the app
 //      instead of a bare Forbid()
+//
+// CHANGES (031)
+//   ✅ InitializePermissionsAsync() on both handlers — it was never called, so
+//      every Can* flag on the base class was false for the whole render.
+//   ✅ The view no longer renders Model.ErrorMessage itself: it is [TempData]
+//      and _Layout renders TempData alerts globally, so a failure gave two
+//      identical banners.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -113,6 +120,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             var permissionCheck = await ValidatePermissionAsync(Actions.Create);
             if (permissionCheck != null) return permissionCheck;
 
+            // ✅ (031) Was missing. Without it every Can* flag on the base class
+            // stays false for the whole render, so any permission gate in the
+            // view silently hides what it guards.
+            await InitializePermissionsAsync();
+
             try
             {
                 LoadTenantContext();
@@ -143,6 +155,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var permissionCheck = await ValidatePermissionAsync(Actions.Create);
                 if (permissionCheck != null) return permissionCheck;
 
+                await InitializePermissionsAsync();
                 LoadTenantContext();
 
                 if (!ModelState.IsValid)

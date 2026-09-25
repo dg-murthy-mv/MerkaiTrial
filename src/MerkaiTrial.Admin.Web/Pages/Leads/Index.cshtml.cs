@@ -28,6 +28,12 @@
 //   Counts come from /api/lead-statuses (LeadCount per status) — no new
 //   endpoint.
 //
+// CHANGES (031)
+//   ✅ SalesTeamOptions, so the "Assigned to" filter can be a dropdown of
+//      names. It was a free-text box captioned "User ID or name" — and the
+//      API filters on the owner's ID, so the only values that ever worked
+//      were GUIDs nobody could be expected to type.
+//
 // Earlier passes: tenant statuses (ILeadStatusService), StatusName helper,
 // category-based badges, IsConverted delete guard, AuthorizedPageModel.
 // =====================================================================
@@ -36,6 +42,7 @@ using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
@@ -83,6 +90,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrency { get; private set; } = string.Empty;
+
+        /// <summary>(031) The sales team, for the "Assigned to" filter dropdown.</summary>
+        public List<SelectListItem> SalesTeamOptions { get; private set; } = new();
 
         [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
@@ -155,6 +165,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Could not load lead stats");
+                }
+
+                // (031) For the owner filter. A failure here just means the
+                // dropdown has only "Anyone" in it — never a broken page.
+                try
+                {
+                    var salesTeam = await _leadService.GetSalesTeamAsync(tenantId);
+                    SalesTeamOptions = salesTeam.Select(u => new SelectListItem
+                    {
+                        Value    = u.Id.ToString(),
+                        Text     = u.FullName,
+                        Selected = string.Equals(u.Id.ToString(), AssignedToFilter,
+                                                 StringComparison.OrdinalIgnoreCase)
+                    }).ToList();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not load the sales team for the owner filter");
                 }
 
                 return Page();
