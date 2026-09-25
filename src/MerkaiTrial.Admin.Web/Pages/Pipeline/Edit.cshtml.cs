@@ -2,7 +2,57 @@
 // EDIT DEAL PAGE MODEL
 // Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Edit.cshtml.cs
 //
-// COMPLETE FILE — replaces the 019 version.
+// COMPLETE FILE — replaces the 020 version.
+//
+// CHANGES (030)
+//
+//   1. ★ EVERY SAVE MOVED THE CLOSE DATE BACK A DAY. The old pair was
+//
+//          // GET
+//          ExpectedCloseDate = deal.ExpectedCloseDateUtc.ToLocalTime()
+//          // POST
+//          ExpectedCloseDateUtc = Input.ExpectedCloseDate.ToUniversalTime()
+//
+//      A close date is a CALENDAR DATE, stored as midnight UTC. That
+//      round-trip is not symmetric for a date-only value:
+//
+//        • ToLocalTime() converts by the SERVER's timezone, so on a UTC−5
+//          server midnight UTC on the 25th opens the box showing the 24th.
+//        • Coming back, <input type="date"> posts midnight with
+//          Kind=Unspecified, and ToUniversalTime() treats Unspecified as
+//          LOCAL and subtracts the offset. On IST (UTC+5:30)
+//          2026-10-25 00:00 becomes 2026-10-24 18:30 UTC.
+//
+//      So: open a deal, press Save without touching anything, and the
+//      close date moves back a day. Every save shifts it again. This is
+//      the same bug the Quote Edit page had, and the same fix — .Date on
+//      the way in, SpecifyKind on the way out, no conversion either way.
+//      CreatedAt now goes through FormatDateTime for the same reason.
+//
+//   2. ★ THE DELETE BUTTON HERE BYPASSED BOTH OF THE DEAL PAGE's GUARDS.
+//      Detail.OnPostDeleteAsync refuses to delete (a) a closed deal —
+//      "part of the revenue audit trail" — and (b) any deal with an
+//      accepted or invoiced quote. This page's OnPostDeleteAsync went
+//      straight from the permission check to _dealService.DeleteAsync, so
+//      the Edit page was a way round a guard written specifically to stop
+//      it. Both checks now run here too, in the same words.
+//
+//   3. THE CURRENCY WAS A FREE DROPDOWN OF EVERY COUNTRY. The Create page
+//      says "Fixed to your workspace" and posts the workspace currency;
+//      this page let anyone re-denominate an existing deal from a list of
+//      ~200 currencies, with no conversion of the value. Changing a deal
+//      from THB to INR left the number alone and multiplied its real worth
+//      by about 2.6. The currency is shown read-only now and taken from
+//      the stored deal on save, never from the post.
+//
+//   4. A CLOSED DEAL COULD STILL BE EDITED by URL. The deal page hides its
+//      Edit link when the deal is closed; nothing stopped
+//      /Pipeline/Edit/{id} being opened directly. OnGetAsync now redirects
+//      a closed deal back to the deal page with the reason, and OnPostAsync
+//      refuses it as well.
+//
+//   ICountryService is no longer injected — it existed only to fill the
+//   currency dropdown that change 3 removed.
 //
 // CHANGES (020 — Blueprint transitions)
 //   ✅ THE STAGE SELECTOR IS GONE. A deal no longer moves by picking a
@@ -37,8 +87,8 @@
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Contacts;
-using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
@@ -59,7 +109,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly IDealService _dealService;
         private readonly IContactService _contactService;
         private readonly IUserService _userService;
-        private readonly ICountryService _countryService;
+        // (030) For the delete guard: an accepted quote blocks deletion, exactly
+        // as it does on the deal page. Already registered in DI.
+        private readonly IQuoteService _quoteService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _currentTenantService;
         private readonly IPipelineStageService _stageService;
@@ -71,7 +123,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             IDealService dealService,
             IContactService contactService,
             IUserService userService,
-            ICountryService countryService,
+            IQuoteService quoteService,
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
             IPipelineStageService stageService,
@@ -82,7 +134,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _dealService = dealService;
             _contactService = contactService;
             _userService = userService;
-            _countryService = countryService;
+            _quoteService = quoteService;
             _currentUserService = currentUserService;
             _currentTenantService = currentTenantService;
             _stageService = stageService;
@@ -95,7 +147,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public DealInputModel Input { get; set; } = new();
 
         public List<SelectListItem> SalesTeam { get; set; } = new();
-        public List<CountryListItem> Countries { get; set; } = new();
 
         /// <summary>
         /// Loaded only to resolve the deal's current stage to its name for
@@ -105,7 +156,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
         public Guid DealId { get; set; }
         public string ContactName { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; }
+        /// <summary>Kept as UTC; the view formats it with the TENANT's timezone and culture.</summary>
+        public DateTime CreatedAtUtc { get; set; }
         public string? CreatedBy { get; set; }
 
         [TempData]
@@ -198,16 +250,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 var dealTask      = _dealService.GetByIdAsync(tenantId, id);
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
-                var countriesTask = _countryService.GetActiveAsync();
                 // activeOnly: false — a deal can sit in a retired stage, and
                 // the page has to be able to name where it currently is.
                 var stagesTask    = _stageService.GetAsync(activeOnly: false);
 
-                await Task.WhenAll(dealTask, salesTeamTask, countriesTask, stagesTask);
+                await Task.WhenAll(dealTask, salesTeamTask, stagesTask);
 
                 var deal      = await dealTask;
                 var salesTeam = await salesTeamTask;
-                Countries     = await countriesTask;
                 Stages        = await stagesTask;
 
                 try
@@ -228,14 +278,33 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     Currency          = deal.Currency ?? _currentTenantService.GetCurrencyCode(),
                     Stage             = deal.Stage,          // carried, not chosen
                     Probability       = deal.Probability,
-                    ExpectedCloseDate = deal.ExpectedCloseDateUtc.ToLocalTime(),
+                    // ★ .Date, NOT .ToLocalTime(). A close date is a calendar
+                    // date stored as midnight UTC; converting it by the
+                    // SERVER's timezone shows the wrong day on any server west
+                    // of UTC. See change 1 in the header.
+                    ExpectedCloseDate = deal.ExpectedCloseDateUtc.Date,
                     OwnerUserId       = deal.OwnerUserId,
                     SourceId          = deal.SourceId,
                     Tags              = deal.Tags
                 };
 
-                CreatedAt  = deal.CreatedAtUtc.ToLocalTime();
-                CreatedBy  = deal.CreatedBy;
+                // A close date that was never set arrives as default(DateTime),
+                // which <input type="date"> silently refuses — the box would
+                // look empty and then post as 01-01-0001.
+                if (Input.ExpectedCloseDate.Year <= 1900)
+                    Input.ExpectedCloseDate = DateTime.UtcNow.Date.AddDays(30);
+
+                // ✅ (030) A closed deal is part of the revenue audit trail.
+                // The deal page hides its Edit link; nothing stopped this page
+                // being opened directly by URL.
+                if (IsClosed)
+                {
+                    ErrorMessage = $"This deal is closed ({StageName(Input.Stage)}), so its details can't be edited. Reopen it from the deal page first.";
+                    return RedirectToPage("/Pipeline/Detail", new { id });
+                }
+
+                CreatedAtUtc = deal.CreatedAtUtc;
+                CreatedBy    = deal.CreatedBy;
 
                 SalesTeam = salesTeam.Select(u => new SelectListItem
                 {
@@ -274,21 +343,44 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId    = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
-                // The stage posted back is the one the deal already has, so
-                // UpdateDealHandler's `deal.Stage != dto.Stage` test is false
-                // and no transition is evaluated. Belt and braces: if a stale
-                // form somehow carried a different stage, the guard would
-                // still apply every rule to it rather than letting this page
-                // move a deal by the back door.
+                // ✅ (030) The stage and the currency both come from the STORED
+                // deal, not from the post. The stage so this page can never
+                // move a deal by the back door; the currency because a hidden
+                // or dropdown value would let anyone re-denominate a deal from
+                // dev tools, and the value is not converted.
+                var stored = await _dealService.GetByIdAsync(tenantId, id);
+                if (stored == null)
+                {
+                    ErrorMessage = "That deal could not be found.";
+                    return RedirectToPage("/Pipeline/Index");
+                }
+
+                Stages = await _stageService.GetAsync(activeOnly: false);
+                Input.Stage = stored.Stage;
+
+                // ✅ (030) A closed deal is part of the revenue audit trail.
+                // OnGetAsync redirects one away; the POST has to as well, or a
+                // stale form is a way straight past it.
+                if (IsClosed)
+                {
+                    ErrorMessage = $"This deal is closed ({StageName(stored.Stage)}), so its details can't be edited.";
+                    return RedirectToPage("/Pipeline/Detail", new { id });
+                }
+
                 var updateDto = new UpdateDealDto
                 {
                     Title                = Input.Title,
                     Description          = Input.Description,
-                    Stage                = Input.Stage,
+                    Stage                = stored.Stage,
                     ExpectedValue        = Input.ExpectedValue,
-                    Currency             = Input.Currency,
+                    Currency             = stored.Currency ?? _currentTenantService.GetCurrencyCode(),
                     Probability          = Input.Probability,
-                    ExpectedCloseDateUtc = Input.ExpectedCloseDate.ToUniversalTime(),
+                    // ★ (030) SpecifyKind, not ToUniversalTime. See change 1 in
+                    // the header: this is a calendar date stored as midnight
+                    // UTC, and ToUniversalTime() on an Unspecified midnight
+                    // subtracts the server's offset, moving the date back a day
+                    // on every single save.
+                    ExpectedCloseDateUtc = DateTime.SpecifyKind(Input.ExpectedCloseDate.Date, DateTimeKind.Utc),
                     OwnerUserId          = Input.OwnerUserId,
                     SourceId             = Input.SourceId,
                     Tags                 = Input.Tags,
@@ -331,6 +423,40 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 if (check != null) return check;
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
+
+                // ★ (030) The same two guards Detail.OnPostDeleteAsync enforces.
+                // This handler used to go straight to DeleteAsync, so the Edit
+                // page's Delete button was a way round a guard the deal page was
+                // written to apply — a closed deal or one with an accepted quote
+                // could be deleted from here.
+                var deal   = await _dealService.GetByIdAsync(tenantId, id);
+                if (deal == null)
+                {
+                    ErrorMessage = "That deal could not be found.";
+                    return RedirectToPage("/Pipeline/Index");
+                }
+
+                var stages = await _stageService.GetAsync(activeOnly: false);
+                var stage  = stages.FirstOrDefault(s => s.Key == deal.Stage);
+                var isTerminal = stage?.Category is StageCategory.Won or StageCategory.Lost;
+
+                if (isTerminal)
+                {
+                    ErrorMessage = $"Closed deals cannot be deleted — they are part of the revenue audit trail. Stage: {stage?.Name ?? deal.Stage}";
+                    return RedirectToPage("/Pipeline/Detail", new { id });
+                }
+
+                var quotes = await _quoteService.GetAllAsync(tenantId);
+                var hasAcceptedQuote = quotes?.Any(q =>
+                    q.DealId == id &&
+                    (q.Status == "Accepted" || q.Status == "Invoiced")) == true;
+
+                if (hasAcceptedQuote)
+                {
+                    ErrorMessage = "This deal cannot be deleted — it has an accepted quote. Manage it via the Quote, or close the deal as Lost.";
+                    return RedirectToPage("/Pipeline/Detail", new { id });
+                }
+
                 await _dealService.DeleteAsync(tenantId, id);
 
                 SuccessMessage = "Deal deleted successfully!";
@@ -360,13 +486,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
-                var countriesTask = _countryService.GetActiveAsync();
                 var stagesTask    = _stageService.GetAsync(activeOnly: false);
 
-                await Task.WhenAll(salesTeamTask, countriesTask, stagesTask);
+                await Task.WhenAll(salesTeamTask, stagesTask);
 
-                Countries = await countriesTask;
-                Stages    = await stagesTask;
+                Stages = await stagesTask;
 
                 SalesTeam = (await salesTeamTask).Select(u => new SelectListItem
                 {
@@ -378,7 +502,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 try
                 {
                     var deal = await _dealService.GetByIdAsync(tenantId, id);
-                    CreatedAt = deal.CreatedAtUtc.ToLocalTime();
+                    CreatedAtUtc = deal.CreatedAtUtc;
                     CreatedBy = deal.CreatedBy;
 
                     var contact = await _contactService.GetByIdAsync(tenantId, deal.ContactId);

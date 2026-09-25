@@ -1,312 +1,318 @@
 @page "/Pipeline/Edit/{id}"
-@model MerkaiTrial.Admin.Web.Pages.Pipeline.EditModel
 @using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.EditModel
 @{
-    ViewData["Title"] = "Edit Deal";
+    ViewData["Title"] = "Edit deal";
 }
-@* (020) The stage selector has gone. A deal moves by pressing a named
-   button on the deal page — "Send Quote", "Mark as Lost" — not by picking
-   a destination from a list here. This page edits the deal's details.
+@* =====================================================================
+   Pipeline/Edit.cshtml   (030 — rebuild)
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Edit.cshtml
 
-   The stage is still SHOWN, read-only, with a way back: a rep editing a
-   deal should not have to remember where it sits. *@
+   COMPLETE FILE — replaces the 020 version.
+
+   WHAT WAS WRONG
+
+   1. ★ THE CURRENCY WAS A FREE DROPDOWN OF EVERY COUNTRY. The Create page
+      says "Fixed to your workspace" and posts the workspace currency; this
+      page offered ~200 currencies on an EXISTING deal and changed nothing
+      but the label. Switching a ฿2,000,000 deal from THB to INR left the
+      number alone, so its real worth jumped by a factor of about 2.6 and
+      every pipeline total moved with it. The currency is read-only now and
+      the page model takes it from the stored deal.
+
+   2. ★ THE DELETE BUTTON BYPASSED THE DEAL PAGE's GUARDS — a closed deal,
+      or one with an accepted quote, could be deleted from here even though
+      the deal page refuses both. Fixed in Edit.cshtml.cs.
+
+   3. ★ EVERY SAVE MOVED THE CLOSE DATE BACK A DAY. Also in
+      Edit.cshtml.cs — that one is worth reading.
+
+   4. "Created On" was @@Model.CreatedAt.ToString("MMM dd, yyyy 'at' hh:mm tt")
+      on a value that had already been through .ToLocalTime() — the
+      SERVER's timezone and the SERVER's culture, on a page where every
+      other date goes through the tenant's. It is FormatDateTime now.
+
+   5. A 2rem PURPLE GRADIENT BANNER reading "Edit Deal / Update deal
+      information", above a 2rem-padded card.
+   ===================================================================== *@
 
 <style>
-.page-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 2rem 0;
-    margin: -1rem -1rem 2rem -1rem;
-    border-radius: 0 0 1rem 1rem;
-}
-.form-container {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    padding: 2rem;
-    max-width: 900px;
-    margin: 0 auto;
-}
-.form-section {
-    margin-bottom: 2rem;
-    padding-bottom: 2rem;
-    border-bottom: 1px solid #e9ecef;
-}
-.form-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-.section-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #495057;
-    margin-bottom: 1.25rem;
-    display: flex;
-    align-items: center;
-}
-.section-title i { margin-right: 0.5rem; color: #667eea; }
-.form-label { font-weight: 600; color: #495057; margin-bottom: 0.5rem; }
-.read-only-field {
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    padding: 0.75rem 1rem;
-    border-radius: 0.375rem;
-    color: #495057;
-    font-weight: 500;
-}
-.currency-group { position: relative; }
-.currency-symbol {
-    position: absolute;
-    left: 12px; top: 50%;
-    transform: translateY(-50%);
-    font-weight: 600; color: #667eea; font-size: 1.1rem;
-    pointer-events: none; z-index: 2;
-}
-.currency-input { padding-left: 35px !important; }
+    .px { max-width: 980px; margin: 0 auto; }
+    .px-back { font-size: .82rem; color: #64748b; text-decoration: none; }
+    .px-back:hover { color: #334155; }
+    .px-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin: .35rem 0 1rem; }
+    .px-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 0; line-height: 1.2; }
+    .px-sub { font-size: .84rem; color: #64748b; margin: .2rem 0 0; }
 
-.probability-display { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
-.probability-value { font-size: 2rem; font-weight: 700; color: #667eea; min-width: 80px; }
-.info-box {
-    background-color: #f8f9fa;
-    border-left: 4px solid #0dcaf0;
-    padding: 1rem;
-    border-radius: 0.375rem;
-    margin-bottom: 1.5rem;
-}
-.info-box .info-label { font-size: 0.875rem; color: #6c757d; margin-bottom: 0.25rem; }
-.info-box .info-value { font-weight: 600; color: #495057; }
+    .px-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .px-card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                    font-weight: 650; margin: 0; padding: .7rem 1rem; border-bottom: 1px solid #f1f3f5;
+                    display: flex; align-items: center; gap: .4rem; }
+    .px-card .bd { padding: 1rem; }
 
-@@media (max-width: 767.98px) {
-    .form-container { padding: 1.5rem; }
-    .page-header { padding: 1.5rem 0; }
-}
+    .px-ro { background: #f8fafc; border: 1px solid #e9ecef; border-radius: 8px;
+             padding: .55rem .8rem; color: #334155; font-weight: 500; font-size: .88rem;
+             display: flex; align-items: center; justify-content: space-between;
+             gap: .6rem; flex-wrap: wrap; }
+    .px-lock { font-size: .74rem; color: #94a3b8; display: block; margin-bottom: .2rem; }
+
+    .px-money { position: relative; }
+    .px-money .sym { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+                     font-weight: 650; color: #64748b; pointer-events: none; }
+    .px-money input { padding-left: 34px; }
+
+    .px-prob { display: flex; align-items: center; gap: 1rem; }
+    .px-prob .v { font-size: 1.6rem; font-weight: 700; color: #4f46e5; min-width: 68px; text-align: right; }
+
+    .px-bar { display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
+              border-top: 1px solid #e9ecef; padding-top: 1rem; margin-top: 1rem; }
+
+    @@media (max-width: 575.98px) {
+        .px-title { font-size: 1.25rem; }
+        .px-bar { justify-content: stretch; }
+        .px-bar > * { flex: 1 1 100%; }
+        .px-bar .btn { width: 100%; }
+    }
 </style>
 
-<div class="container-fluid">
-    <div class="page-header">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center flex-wrap">
-                <div class="mb-3 mb-md-0">
-                    <h1 class="h3 mb-1"><i class="bi bi-pencil-square me-2"></i>Edit Deal</h1>
-                    <p class="mb-0 opacity-75">Update deal information</p>
-                </div>
-                <div>
-                    <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-light me-2">
-                        <i class="bi bi-arrow-left me-2"></i>Back to Detail
-                    </a>
-                    <a asp-page="./Index" class="btn btn-outline-light">
-                        <i class="bi bi-kanban me-2"></i>Pipeline
-                    </a>
-                </div>
-            </div>
+<div class="px">
+
+    <a href="/Pipeline/Detail/@Model.DealId" class="px-back">
+        <i class="bi bi-arrow-left me-1"></i>Back to the deal
+    </a>
+
+    <div class="px-head">
+        <div>
+            <h1 class="px-title">Edit deal</h1>
+            <p class="px-sub">
+                <span class="badge @Model.StageBadgeClass(Model.Input.Stage)">@Model.StageName(Model.Input.Stage)</span>
+                <span class="ms-1">@Model.ContactName</span>
+            </p>
         </div>
     </div>
 
-    <div class="form-container">
-        @* alerts handled by _Layout.cshtml TempData rendering *@
-
-        @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
-        {
-            <div class="alert alert-warning d-flex gap-2" role="alert">
-                <i class="bi bi-exclamation-triangle-fill mt-1"></i>
-                <div>
-                    @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
-                    {
-                        <div>@err.ErrorMessage</div>
-                    }
-                </div>
+    @* TempData alerts are rendered once, globally, by _Layout.cshtml. This
+       block is only for ModelState errors the API added, which TempData does
+       not carry. *@
+    @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+    {
+        <div class="alert alert-warning d-flex gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                {
+                    <div>@err.ErrorMessage</div>
+                }
             </div>
-        }
+        </div>
+    }
 
-        <!-- Created info -->
-        <div class="info-box">
-            <div class="row">
-                <div class="col-md-6">
-                    <div class="info-label">Created On</div>
-                    <div class="info-value"><i class="bi bi-calendar me-2"></i>@Model.CreatedAt.ToString("MMM dd, yyyy 'at' hh:mm tt")</div>
+    <form method="post" id="pxForm" asp-route-id="@Model.DealId">
+        @* The deal's current stage, carried straight back so the API sees no
+           change. Not a choice — moving a deal is the transition bar's job on
+           the deal page, and OnPostAsync re-reads the stored stage anyway so a
+           stale form cannot move anything. *@
+        <input type="hidden" asp-for="Input.Stage" />
+        @* Currency is read-only and the server takes it from the stored deal;
+           this only keeps [Required] on the input model satisfied. *@
+        <input type="hidden" asp-for="Input.Currency" />
+
+        <div class="px-card">
+            <h2><i class="bi bi-info-circle"></i>The basics</h2>
+            <div class="bd">
+                <div class="mb-3">
+                    <label asp-for="Input.Title" class="form-label small text-muted mb-1">
+                        Deal title <span class="text-danger">*</span>
+                    </label>
+                    <input asp-for="Input.Title" class="form-control" required maxlength="200" />
+                    <span asp-validation-for="Input.Title" class="text-danger small"></span>
                 </div>
-                <div class="col-md-6">
-                    <div class="info-label">Created By</div>
-                    <div class="info-value"><i class="bi bi-person me-2"></i>@Model.CreatedBy</div>
+                <div class="mb-0">
+                    <label asp-for="Input.Description" class="form-label small text-muted mb-1">Description</label>
+                    <textarea asp-for="Input.Description" class="form-control" rows="3" maxlength="2000"></textarea>
+                    <span asp-validation-for="Input.Description" class="text-danger small"></span>
                 </div>
             </div>
         </div>
 
-        <form method="post" id="editDealForm" asp-route-id="@Model.DealId">
-            @* The deal's current stage, carried straight back so the API
-               sees no change. Not a choice — moving the deal happens on the
-               deal page, through its own process. *@
-            <input type="hidden" asp-for="Input.Stage" />
-            <input type="hidden" asp-for="Input.Probability" id="probabilityInput" />
-
-            <!-- Basic Information -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-info-circle"></i>Basic Information</div>
-                <div class="row">
-                    <div class="col-md-12 mb-3">
-                        <label asp-for="Input.Title" class="form-label">Deal Title <span class="text-danger">*</span></label>
-                        <input asp-for="Input.Title" class="form-control" placeholder="e.g., TechCorp CRM Implementation" />
-                        <span asp-validation-for="Input.Title" class="text-danger small"></span>
+        <div class="px-card">
+            <h2><i class="bi bi-lock"></i>Fixed for this deal</h2>
+            <div class="bd">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <span class="px-lock"><i class="bi bi-person me-1"></i>Contact</span>
+                        <div class="px-ro">@Model.ContactName</div>
+                        <div class="form-text" style="font-size:.74rem;">
+                            A deal keeps its original contact so its history stays intact.
+                        </div>
                     </div>
-                    <div class="col-md-12 mb-3">
-                        <label asp-for="Input.Description" class="form-label">Description</label>
-                        <textarea asp-for="Input.Description" class="form-control" rows="3"
-                                  placeholder="Brief description of the deal..."></textarea>
-                        <span asp-validation-for="Input.Description" class="text-danger small"></span>
+
+                    <div class="col-md-6">
+                        <span class="px-lock"><i class="bi bi-currency-exchange me-1"></i>Currency</span>
+                        <div class="px-ro">
+                            <span>
+                                @Model.GetCurrencySymbol(Model.Input.Currency)
+                                <strong class="ms-1">@Model.Input.Currency</strong>
+                            </span>
+                        </div>
+                        @* Was an editable dropdown of every country. Changing it
+                           re-labelled the deal without converting the value, so a
+                           ฿2,000,000 deal became "₹2,000,000" and every pipeline
+                           total moved with it. *@
+                        <div class="form-text" style="font-size:.74rem;">
+                            Set when the deal was created. Changing it here would relabel the
+                            value without converting it.
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <span class="px-lock"><i class="bi bi-signpost-split me-1"></i>Stage</span>
+                        <div class="px-ro">
+                            <span>
+                                <span class="badge @Model.StageBadgeClass(Model.Input.Stage) me-1">
+                                    @Model.StageName(Model.Input.Stage)
+                                </span>
+                                @if (Model.IsClosed)
+                                {
+                                    <span class="text-muted small">this deal is closed</span>
+                                }
+                            </span>
+                            <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-signpost-split me-1"></i>Move this deal
+                            </a>
+                        </div>
+                        <div class="form-text" style="font-size:.74rem;">
+                            Deals move through the steps your workspace has set up — open the deal
+                            to see what it can do next.
+                        </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Contact (read-only) -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-person-circle"></i>Contact Information</div>
-                <div class="mb-3">
-                    <div class="text-muted small mb-1"><i class="bi bi-lock me-1"></i>Contact (cannot be changed)</div>
-                    <div class="read-only-field"><i class="bi bi-person me-2"></i>@Model.ContactName</div>
-                    <small class="text-muted">Deals are permanently linked to their original contact to maintain history</small>
-                </div>
-            </div>
-
-            <!-- Deal Value -->
-            <div class="form-section">
-                <div class="section-title"><span style="margin-right:0.5rem;color:#667eea;font-weight:700;">@Model.GetCurrencySymbol(Model.Input.Currency)</span>Deal Value</div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.Currency" class="form-label">Currency <span class="text-danger">*</span></label>
-                        <select asp-for="Input.Currency" class="form-select" id="currencySelect">
-                            @foreach (var country in Model.Countries.OrderBy(c => c.CurrencyCode))
-                            {
-                                <option value="@country.CurrencyCode"
-                                        data-symbol="@Model.GetCurrencySymbol(country.CurrencyCode)"
-                                        selected="@(country.CurrencyCode == Model.Input.Currency)">
-                                    @country.CurrencyCode — @country.Name
-                                </option>
-                            }
-                        </select>
-                        <span asp-validation-for="Input.Currency" class="text-danger small"></span>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.ExpectedValue" class="form-label">Expected Value <span class="text-danger">*</span></label>
-                        <div class="currency-group">
-                            <span class="currency-symbol" id="currencySymbol">@Model.GetCurrencySymbol(Model.Input.Currency)</span>
-                            <input asp-for="Input.ExpectedValue" type="number" step="0.01"
-                                   class="form-control currency-input" placeholder="0.00" />
+        <div class="px-card">
+            <h2><i class="bi bi-graph-up-arrow"></i>Value and timing</h2>
+            <div class="bd">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.ExpectedValue" class="form-label small text-muted mb-1">
+                            Expected value <span class="text-danger">*</span>
+                        </label>
+                        <div class="px-money">
+                            <span class="sym">@Model.GetCurrencySymbol(Model.Input.Currency)</span>
+                            <input asp-for="Input.ExpectedValue" type="number" step="0.01" min="0.01"
+                                   class="form-control" required />
                         </div>
                         <span asp-validation-for="Input.ExpectedValue" class="text-danger small"></span>
                     </div>
-                </div>
-            </div>
 
-            <!-- Stage (read-only) & Timeline -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-funnel"></i>Stage &amp; Timeline</div>
-
-                <div class="mb-4">
-                    <div class="text-muted small mb-1">
-                        <i class="bi bi-lock me-1"></i>Stage
-                    </div>
-                    <div class="read-only-field d-flex align-items-center justify-content-between flex-wrap gap-2">
-                        <span>
-                            <span class="badge @Model.StageBadgeClass(Model.Input.Stage) me-2">
-                                @Model.StageName(Model.Input.Stage)
-                            </span>
-                            @if (Model.IsClosed)
-                            {
-                                <span class="text-muted small">this deal is closed</span>
-                            }
-                        </span>
-                        <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-signpost-split me-1"></i>Move this deal
-                        </a>
-                    </div>
-                    <small class="text-muted">
-                        Deals move through the steps your workspace has set up — open the deal to see
-                        what it can do next.
-                    </small>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Probability of Closing</label>
-                    <div class="probability-display">
-                        <input type="range" class="form-range" min="0" max="100"
-                               value="@Model.Input.Probability" id="probabilitySlider" />
-                        <span class="probability-value" id="probabilityDisplay">@Model.Input.Probability%</span>
-                    </div>
-                    <small class="text-muted">
-                        Each stage has its own default, applied whenever the deal moves. Set it here
-                        only when this particular deal is more or less likely than the stage suggests.
-                    </small>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.ExpectedCloseDate" class="form-label">
-                            Expected Close Date <span class="text-danger">*</span>
+                    <div class="col-md-6">
+                        <label asp-for="Input.ExpectedCloseDate" class="form-label small text-muted mb-1">
+                            Expected close date <span class="text-danger">*</span>
                         </label>
-                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" />
+                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" required />
                         <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger small"></span>
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.OwnerUserId" class="form-label">Deal Owner</label>
+
+                    <div class="col-12">
+                        <label class="form-label small text-muted mb-1" for="pxProbSlider">
+                            Probability of closing
+                        </label>
+                        <div class="px-prob">
+                            <input type="range" class="form-range" min="0" max="100" id="pxProbSlider"
+                                   value="@Model.Input.Probability" aria-describedby="pxProbValue" />
+                            <span class="v" id="pxProbValue">@Model.Input.Probability%</span>
+                        </div>
+                        <input type="hidden" asp-for="Input.Probability" id="pxProb" />
+                        <div class="form-text" style="font-size:.74rem;">
+                            Each stage has its own default, applied whenever the deal moves. Set it here
+                            only when this particular deal is more or less likely than the stage suggests.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Input.OwnerUserId" class="form-label small text-muted mb-1">Owner</label>
                         <select asp-for="Input.OwnerUserId" class="form-select">
-                            <option value="">— Select Owner —</option>
+                            <option value="">Choose an owner…</option>
                             @foreach (var u in Model.SalesTeam)
                             {
-                                <option value="@u.Value" selected="@(u.Selected ? "selected" : null)">@u.Text</option>
+                                <option value="@u.Value" selected="@u.Selected">@u.Text</option>
                             }
                         </select>
                     </div>
-                </div>
-            </div>
 
-            <!-- Actions -->
-            <div class="d-flex justify-content-between align-items-center">
-                @if (Model.CanDelete)
-                {
-                    <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
-                        <i class="bi bi-trash me-2"></i>Delete Deal
-                    </button>
-                }
-                else
-                {
-                    <span></span>
-                }
-                <div>
-                    <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-secondary me-2">
-                        <i class="bi bi-x-circle me-2"></i>Cancel
-                    </a>
-                    <button type="submit" class="btn btn-primary btn-lg">
-                        <i class="bi bi-save me-2"></i>Save Changes
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
-
-@if (Model.CanDelete)
-{
-    <!-- Delete Confirmation Modal -->
-    <div class="modal fade" id="deleteModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Delete Deal</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <p><strong>⚠️ Warning:</strong> This action cannot be undone!</p>
-                    <div class="alert alert-warning mb-0">
-                        <strong>Deal:</strong> @Model.Input.Title<br />
-                        <strong>Value:</strong> @Model.GetCurrencySymbol(Model.Input.Currency) @Model.Input.ExpectedValue.ToString("N2")<br />
-                        @* The stage's NAME, not its key — "Closed Won", not "ClosedWon". *@
-                        <strong>Stage:</strong> @Model.StageName(Model.Input.Stage)
+                    <div class="col-md-6">
+                        <label asp-for="Input.Tags" class="form-label small text-muted mb-1">
+                            Tags <span class="text-muted">(comma-separated)</span>
+                        </label>
+                        <input asp-for="Input.Tags" class="form-control" />
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="text-muted mb-3" style="font-size:.78rem;">
+            @* FormatDateTime, not .ToLocalTime().ToString(...) — the tenant's
+               timezone and culture, like every other date in the app. *@
+            <i class="bi bi-clock-history me-1"></i>Created @Model.FormatDateTime(Model.CreatedAtUtc)
+            @if (!string.IsNullOrEmpty(Model.CreatedBy))
+            {
+                <text> by @Model.CreatedBy</text>
+            }
+        </div>
+
+        <div class="px-bar">
+            @if (Model.CanDelete && !Model.IsClosed)
+            {
+                <button type="button" class="btn btn-outline-danger"
+                        data-bs-toggle="modal" data-bs-target="#pxDeleteModal">
+                    <i class="bi bi-trash me-1"></i>Delete deal
+                </button>
+            }
+            else
+            {
+                <span></span>
+            }
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="/Pipeline/Detail/@Model.DealId" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check2 me-1"></i>Save changes
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+@* The modal is rendered only when the button that opens it exists. The old
+   page rendered it whenever CanDelete, including for a closed deal whose
+   deletion the server refuses. *@
+@if (Model.CanDelete && !Model.IsClosed)
+{
+    <div class="modal fade" id="pxDeleteModal" tabindex="-1" aria-hidden="true" aria-labelledby="pxDeleteTitle">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="pxDeleteTitle">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Delete this deal?
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-1 fw-semibold">@Model.Input.Title</p>
+                    <p class="text-muted small mb-2">
+                        @Model.GetCurrencySymbol(Model.Input.Currency)@Model.Input.ExpectedValue.ToString("N2")
+                        · @Model.StageName(Model.Input.Stage)
+                    </p>
+                    <p class="text-muted small mb-0">
+                        This cannot be undone. A deal with an accepted quote, or one that has
+                        already closed, will be refused — close it as Lost instead.
+                    </p>
+                </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="bi bi-x me-2"></i>Cancel
-                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <form method="post" asp-page-handler="Delete" asp-route-id="@Model.DealId" class="d-inline">
                         <button type="submit" class="btn btn-danger">
-                            <i class="bi bi-trash me-2"></i>Delete Permanently
+                            <i class="bi bi-trash me-1"></i>Delete deal
                         </button>
                     </form>
                 </div>
@@ -318,24 +324,16 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const probabilityInput  = document.getElementById('probabilityInput');
-        const probabilitySlider = document.getElementById('probabilitySlider');
-        const probabilityDisplay= document.getElementById('probabilityDisplay');
-        const currencySelect    = document.getElementById('currencySelect');
-        const currencySymbol    = document.getElementById('currencySymbol');
+        (function () {
+            'use strict';
+            var slider = document.getElementById('pxProbSlider');
+            var out = document.getElementById('pxProbValue');
+            var hidden = document.getElementById('pxProb');
 
-        probabilitySlider.addEventListener('input', function () {
-            probabilityInput.value = this.value;
-            probabilityDisplay.textContent = this.value + '%';
-        });
-
-        function updateCurrencySymbol() {
-            const opt = currencySelect.options[currencySelect.selectedIndex];
-            currencySymbol.textContent = opt ? (opt.dataset.symbol || currencySelect.value) : '';
-        }
-        currencySelect.addEventListener('change', updateCurrencySymbol);
-        updateCurrencySymbol();
-    });
+            if (slider) slider.addEventListener('input', function () {
+                if (out) out.textContent = this.value + '%';
+                if (hidden) hidden.value = this.value;
+            });
+        })();
     </script>
 }

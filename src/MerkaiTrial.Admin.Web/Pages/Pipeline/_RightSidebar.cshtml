@@ -58,17 +58,10 @@
             <p class="mb-0">
                 <i class="bi bi-calendar3 me-1"></i>@Model.FormatDate(Model.Deal.ExpectedCloseDateUtc)
                 <br />
-                @{
-                    var daysUntilClose = (Model.Deal.ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days;
-                    var daysClass = daysUntilClose < 0 ? "text-danger" : daysUntilClose < 7 ? "text-warning" : "text-muted";
-                }
-                <small class="@daysClass">
-                    @if (daysUntilClose < 0)
-                    { <text>@Math.Abs(daysUntilClose) days overdue</text> }
-                    else if (daysUntilClose == 0)
-                    { <text>Closes today!</text> }
-                    else
-                    { <text>@daysUntilClose days remaining</text> }
+                @* (030) Was its own copy of the UTC day arithmetic, identical to
+                   the one in _OverviewTab. One helper, in the tenant's day. *@
+                <small class="@Model.CloseNoteClass(Model.Deal.ExpectedCloseDateUtc)">
+                    @Model.CloseNote(Model.Deal.ExpectedCloseDateUtc)
                 </small>
             </p>
         </div>
@@ -220,7 +213,7 @@
             @if (!Model.IsClosedDeal)
             {
                 <button class="btn btn-sm btn-outline-success"
-                        onclick="document.getElementById('activities-tab').click();">
+                        onclick="document.getElementById('activities-tab')?.click();">
                     <i class="bi bi-clock-history me-2"></i>Log Activity
                 </button>
                 <button class="btn btn-sm btn-outline-warning"

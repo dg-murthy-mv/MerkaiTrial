@@ -66,18 +66,14 @@
                 <label class="text-muted small">Expected Close Date</label>
                 <p class="mb-0">
                     <i class="bi bi-calendar me-1"></i>@Model.FormatDate(Model.Deal.ExpectedCloseDateUtc)
-                    @{
-                        var daysLeft = (Model.Deal.ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days;
-                        var cls = daysLeft < 0 ? "text-danger" : daysLeft < 7 ? "text-warning" : "text-muted";
-                    }
                     <br />
-                    <small class="@cls">
-                        @if (daysLeft < 0)
-                        { <text>@Math.Abs(daysLeft) days overdue</text> }
-                        else if (daysLeft == 0)
-                        { <text>Closes today!</text> }
-                        else
-                        { <text>@daysLeft days remaining</text> }
+                    @* (030) Model.CloseNote, in the TENANT's timezone. This was
+                       (ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days —
+                       UTC arithmetic, so for the hours after 18:30 UTC an Indian
+                       workspace was already a day out. The same block was
+                       duplicated in _RightSidebar; both call the helper now. *@
+                    <small class="@Model.CloseNoteClass(Model.Deal.ExpectedCloseDateUtc)">
+                        @Model.CloseNote(Model.Deal.ExpectedCloseDateUtc)
                     </small>
                 </p>
             </div>

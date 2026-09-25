@@ -1,582 +1,631 @@
 @page
-@model MerkaiTrial.Admin.Web.Pages.Pipeline.IndexModel
 @using MerkaiTrial.Admin.Web.Pages
-@using MerkaiTrial.Domain.Enums
 @using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.IndexModel
 @{
     ViewData["Title"] = "Pipeline";
+
+    var canDrag = Model.CanUpdate;
+    var stages = Model.Stages.OrderBy(s => s.SortOrder).ToList();
+    var emptyColumns = stages.Count(s => Model.GetDealsByStage(s.Key).Count == 0);
+    var atLimit = AuthorizedPageModel.IsAtLimit(Model.DealQuotaUsed, Model.MaxDeals);
+    var dealPct = AuthorizedPageModel.QuotaPercent(Model.DealQuotaUsed, Model.MaxDeals);
+    var barClass = AuthorizedPageModel.QuotaBarClass(Model.DealQuotaUsed, Model.MaxDeals);
+    var hasFilter = !string.IsNullOrWhiteSpace(Model.SearchTerm)
+                 || !string.IsNullOrWhiteSpace(Model.StageFilter)
+                 || !string.IsNullOrWhiteSpace(Model.OwnerFilter);
 }
-@* (017) Quota bar and New Deal limit use Model.DealQuotaUsed (whole
-   workspace), not Model.TotalDeals (deals this user can see).
+@* =====================================================================
+   PIPELINE BOARD (030)
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Index.cshtml
 
-   (019) A refused move puts the card back where it came from instead of
-   reloading the whole board and leaving the rep to work out what
-   happened.
+   COMPLETE FILE — replaces the 020 version.
 
-   (020) The board reads the tenant's MATRIX. A drag onto a column the
-   process has no step to is refused before it posts, in the same words
-   the server would have used, and a move that wants a note asks the
-   transition's OWN question rather than a generic one. *@
+   WHAT WAS WRONG, IN ORDER OF HOW MUCH IT MATTERED
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+   1. ★ DRAG AND DROP DID NOT WORK AT ALL. The handlers were attached like
+      this:
+
+          <div class="deals-container"
+               @@(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\"" : "")>
+
+      Razor HTML-ENCODES the result of @@(...). The browser therefore
+      received
+
+          ondrop=&quot;drop(event)&quot;
+
+      so the attribute's value was the six-character string "drop(event)"
+      INCLUDING the quotes — a JavaScript string literal that evaluates to
+      itself and does nothing. Same for ondragover, ondragenter and the
+      cards' ondragstart.
+
+      Consequence: draggable="true" rendered correctly (that one is a
+      normal attribute value, so encoding is harmless), so cards picked up
+      and followed the cursor — but ondragstart never fired, so
+      draggedElement stayed null, and drop() returned on its own first
+      line even if it had been wired. Every drag silently did nothing and
+      the card snapped back, which reads exactly like "the board is
+      broken".
+
+      Everything is attached with addEventListener now. No inline handler
+      is built by string concatenation anywhere on this page.
+
+   2. THE BOARD WRAPPED ONTO TWO ROWS AND STRETCHED. It was
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)) — so
+      with six or more stages the columns wrapped, and a wrapped grid row
+      stretches every column to the height of the tallest. Combined with
+      min-height: 500px per column, a workspace with six stages and four
+      deals spent about 1,200px of scrolling to say very little. A board
+      scrolls sideways; it does not wrap. Empty columns now collapse
+      behind a switch that counts them.
+
+   3. IT LOADED BOOTSTRAP THREE TIMES. Bootstrap CSS and Bootstrap Icons
+      from a CDN inside <body>, and then bootstrap.bundle.min.js as well —
+      all three already loaded by _Layout.cshtml. Loading the bundle a
+      second time replaces window.bootstrap, so any component instance the
+      FIRST copy created is invisible to the second: a modal opened
+      through getOrCreateInstance can end up with two backdrops, or
+      refuse to close. That is the likeliest cause of any odd modal
+      behaviour on this page.
+
+   4. THE FILTERS EXISTED BUT HAD NO UI. OwnerFilter, StageFilter and
+      SearchTerm are all [BindProperty(SupportsGet = true)] and the page
+      passes them to GetAllAsync — but nothing on the page ever set them,
+      so the only way to filter the board was to hand-write a URL.
+
+   5. CARD DATES WERE RAW UTC, in the SERVER's culture:
+      deal.ExpectedCloseDateUtc.ToString("MMM dd"). Everything else on the
+      page goes through the tenant's timezone and culture, so a deal
+      closing on the 1st showed as the 30th for a Thai or Indian
+      workspace late in the day.
+
+   6. SWITCHING TO THE TABLE VIEW DIDN'T STICK. A move reloads the board
+      (so the totals catch up), which threw a table-view user back to the
+      board every time. The choice is remembered now, and an early script
+      sets it before the first paint so there is no flash.
+
+   7. "Total Deals" SAT BESIDE A QUOTA BAR COUNTING SOMETHING ELSE.
+      TotalDeals is the deals THIS user can see; DealQuotaUsed is the
+      whole workspace. Both are still shown — they are both useful — but
+      they are now labelled so nobody has to work out why 4 and 12 are
+      both right.
+   ===================================================================== *@
 
 <style>
-    .page-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem 0;
-        margin: -1rem -1rem 2rem -1rem;
-        border-radius: 0 0 1rem 1rem;
+    .pb { max-width: 1600px; margin: 0 auto; }
+
+    /* ── header ─────────────────────────────────────────────────── */
+    .pb-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .pb-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 0; line-height: 1.2; }
+    .pb-sub { font-size: .84rem; color: #64748b; margin: .2rem 0 0; }
+
+    /* ── stats ──────────────────────────────────────────────────── */
+    .pb-stats { display: flex; flex-wrap: wrap; border: 1px solid #e9ecef; border-radius: 12px;
+                background: #fff; overflow: hidden; margin-bottom: 1rem; }
+    .pb-stat { flex: 1 1 190px; padding: .7rem 1rem; border-right: 1px solid #f1f3f5; }
+    .pb-stat:last-child { border-right: 0; }
+    .pb-stat .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em;
+                    color: #94a3b8; font-weight: 650; }
+    .pb-stat .val { font-size: 1.15rem; font-weight: 700; color: #0f172a; line-height: 1.3; }
+    .pb-stat .sub { font-size: .72rem; color: #94a3b8; }
+
+    /* ── quota ──────────────────────────────────────────────────── */
+    .pb-quota { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+                border: 1px solid #e9ecef; border-radius: 12px; background: #fff;
+                padding: .55rem .9rem; margin-bottom: 1rem; font-size: .8rem; }
+    .pb-quota .bar { flex: 1 1 160px; min-width: 120px; }
+
+    /* ── toolbar ────────────────────────────────────────────────── */
+    .pb-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; padding: .6rem .75rem;
+              border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .pb-toggle .btn { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .6rem; font-size: .8rem; font-weight: 600; }
+    .pb-count { font-size: .78rem; color: #64748b; }
+
+    /* ── board ──────────────────────────────────────────────────── */
+    /* flex, not grid: a board scrolls sideways. A wrapped grid row
+       stretches every column to the tallest, which is where the wall of
+       white space came from. */
+    .pb-board { display: flex; gap: .85rem; overflow-x: auto; padding-bottom: .75rem; align-items: flex-start; }
+    .pb-col { flex: 0 0 292px; width: 292px; background: #f8fafc; border: 1px solid #eef1f4;
+              border-radius: 12px; display: flex; flex-direction: column; max-height: 72vh; }
+    .pb-col-head { padding: .65rem .8rem; border-bottom: 1px solid #e9edf1;
+                   border-top: 3px solid var(--tone, #94a3b8); border-radius: 12px 12px 0 0; flex: 0 0 auto; }
+    .pb-col-title { display: flex; align-items: center; gap: .4rem; font-size: .84rem;
+                    font-weight: 650; color: #334155; }
+    .pb-col-pill { margin-left: auto; min-width: 22px; text-align: center; font-size: .72rem;
+                   font-weight: 700; color: #fff; background: var(--tone, #94a3b8);
+                   border-radius: 20px; padding: .05rem .45rem; }
+    .pb-col-val { font-size: .72rem; color: #94a3b8; margin-top: .2rem; }
+    .pb-gate { font-size: .68rem; color: #b45309; margin-top: .25rem; display: block; }
+    .pb-drop { padding: .6rem; overflow-y: auto; flex: 1 1 auto; min-height: 90px;
+               border-radius: 0 0 12px 12px; transition: background-color .12s, box-shadow .12s; }
+    .pb-drop.over { background: rgba(79,70,229,.07); box-shadow: inset 0 0 0 2px rgba(79,70,229,.35); }
+    .pb-drop.no-drop.over { background: rgba(220,53,69,.06); box-shadow: inset 0 0 0 2px rgba(220,53,69,.35); }
+    .pb-col-empty { padding: .9rem .6rem; text-align: center; color: #b9c2cc; font-size: .76rem; }
+
+    /* ── card ───────────────────────────────────────────────────── */
+    .pb-card { background: #fff; border: 1px solid #e9ecef; border-left: 4px solid var(--tone, #94a3b8);
+               border-radius: 9px; padding: .65rem .7rem; margin-bottom: .55rem;
+               transition: box-shadow .15s, transform .15s; }
+    .pb-card:last-child { margin-bottom: 0; }
+    .pb-card[draggable="true"] { cursor: grab; }
+    .pb-card:hover { box-shadow: 0 3px 10px rgba(16,24,40,.09); transform: translateY(-1px); }
+    .pb-card.dragging { opacity: .45; }
+    .pb-card.refused { animation: pbRefuse 1.4s ease-out; }
+    @@keyframes pbRefuse {
+        0%   { box-shadow: 0 0 0 3px rgba(220,53,69,.55); }
+        100% { box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     }
+    .pb-card a.t { font-weight: 650; color: #0f172a; font-size: .88rem; text-decoration: none;
+                   display: block; }
+    .pb-card a.t:hover { color: #4f46e5; }
+    .pb-card .co { font-size: .78rem; color: #64748b; margin-top: .15rem; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+    .pb-card .amt { font-size: .95rem; font-weight: 700; color: #4f46e5; margin-top: .3rem; }
+    .pb-card.is-lost .amt { color: #94a3b8; }
+    .pb-card .meta { display: flex; align-items: center; justify-content: space-between; gap: .4rem;
+                     font-size: .72rem; color: #94a3b8; margin-top: .45rem; }
+    .pb-card .own { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+    .pb-av { width: 22px; height: 22px; border-radius: 50%; background: #4f46e5; color: #fff;
+             display: flex; align-items: center; justify-content: center; font-size: .62rem;
+             font-weight: 700; flex: 0 0 auto; }
+    .pb-card.is-lost .pb-av { background: #adb5bd; }
+    .pb-q { font-size: .7rem; border-radius: 6px; padding: .2rem .4rem; margin-bottom: .4rem;
+            display: block; }
+    .pb-q.ok { background: #dcfce7; color: #15803d; }
+    .pb-q.sent { background: #dbeafe; color: #1d4ed8; }
 
-    .view-toggle {
-        display: inline-flex;
-        background: white;
-        border-radius: 8px;
-        padding: 0.25rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    /* ── table ──────────────────────────────────────────────────── */
+    .pb-shell { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; }
+    .pb-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .pb-table th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                   font-weight: 650; padding: .6rem .8rem; background: #fbfcfd;
+                   border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .pb-table td { padding: .6rem .8rem; border-bottom: 1px solid #f4f6f8; vertical-align: middle;
+                   font-size: .85rem; }
+    .pb-table tbody tr:hover { background: #fcfdfe; }
+    .pb-table tbody tr:last-child td { border-bottom: 0; }
+    .pb-table .n { text-align: right; white-space: nowrap; font-weight: 650; }
+    .pb-table .d { white-space: nowrap; }
+    .pb-clip { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pb-table th.q-stick, .pb-table td.q-stick { position: sticky; right: 0; z-index: 2; background: #fff;
+        box-shadow: -8px 0 8px -8px rgba(15,23,42,.18); }
+    .pb-table th.q-stick { background: #fbfcfd; z-index: 3; }
+    .pb-table tbody tr:hover td.q-stick { background: #fcfdfe; }
+
+    .pb-empty { text-align: center; padding: 2.5rem 1rem; color: #94a3b8; }
+    .pb-empty i.big { font-size: 2.4rem; color: #d7dde3; display: block; margin-bottom: .6rem; }
+
+    .pb-hidden { display: none !important; }
+
+    /* Set on <html> before either view is parsed, so somebody who prefers
+       the table never sees the board paint first and swap. */
+    html[data-pbview="table"] #pbBoard { display: none !important; }
+    html[data-pbview="board"] #pbTable { display: none !important; }
+
+    #pbRefused { position: sticky; top: .5rem; z-index: 1030; }
+
+    @@media (max-width: 767.98px) {
+        .pb-col { flex-basis: 86vw; width: 86vw; max-height: none; }
+        .pb-stat { flex-basis: 50%; }
+        .pb-title { font-size: 1.25rem; }
     }
-
-        .view-toggle .btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 6px;
-            background: transparent;
-            color: #6c757d;
-            transition: all 0.2s;
-        }
-
-            .view-toggle .btn.active {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            }
-
-    .stat-card {
-        background: white;
-        border-radius: 0.5rem;
-        padding: 1rem;
-        border-left: 4px solid #667eea;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: transform 0.2s;
-    }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-        }
-
-    .stat-value {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: #667eea;
-    }
-
-    .stat-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-size: 1.5rem;
-    }
-
-    .kanban-board {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1rem;
-        margin-top: 1.5rem;
-        overflow-x: auto;
-    }
-
-    .kanban-column {
-        background: #f8f9fa;
-        border-radius: 12px;
-        padding: 1rem;
-        min-height: 500px;
-        min-width: 250px;
-    }
-
-    .column-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.75rem 0;
-        margin-bottom: 1rem;
-        border-bottom: 2px solid #dee2e6;
-    }
-
-    .column-title { font-weight: 600; font-size: 1.1rem; color: #495057; }
-    .column-count { background: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem; font-weight: 600; }
-    .column-value { font-size: 0.875rem; color: #6c757d; margin-top: 0.25rem; }
-
-    /* ✅ 019 — a stage with entry requirements says so in its header, so a
-       rep learns the rule from the board rather than from a refusal. */
-    .column-gate {
-        font-size: 0.7rem;
-        color: #6c757d;
-        margin-top: 0.15rem;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    .deals-container { min-height: 120px; border-radius: 8px; transition: background-color 0.15s; }
-    .deals-container.drag-over { background-color: rgba(102,126,234,0.08); outline: 2px dashed rgba(102,126,234,0.45); }
-
-    .deal-card {
-        background: white;
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 0.75rem;
-        border: 1px solid #e9ecef;
-        transition: all 0.2s;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        position: relative;
-    }
-
-        .deal-card[draggable="true"] { cursor: move; }
-        .deal-card[draggable="false"] { cursor: pointer; user-select: none; }
-
-        .deal-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .deal-card.dragging { opacity: 0.5; }
-
-        /* Briefly marks the card that bounced back, so the rep's eye finds
-           it again after a refused drop. */
-        .deal-card.move-refused { animation: refuseFlash 1.4s ease-out; }
-
-    @@keyframes refuseFlash {
-        0%   { box-shadow: 0 0 0 3px rgba(220,53,69,0.55); }
-        100% { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    }
-
-    .deal-title   { font-weight: 600; color: #212529; margin-bottom: 0.5rem; }
-    .deal-company { font-size: 0.875rem; color: #6c757d; margin-bottom: 0.5rem; }
-    .deal-value   { font-size: 1.25rem; font-weight: 700; color: #667eea; margin-bottom: 0.5rem; }
-    .deal-meta    { display: flex; align-items: center; justify-content: space-between; font-size: 0.75rem; color: #6c757d; }
-    .deal-owner   { display: flex; align-items: center; }
-
-    .owner-avatar {
-        width: 24px; height: 24px; border-radius: 50%;
-        background: #667eea; color: white;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 0.7rem; font-weight: 600; margin-right: 0.5rem;
-    }
-
-    .deal-date { display: flex; align-items: center; }
-
-    .empty-column { text-align: center; padding: 3rem 1rem; color: #6c757d; }
-        .empty-column i { font-size: 3rem; opacity: 0.3; margin-bottom: 1rem; }
-
-    /* Stage Colors */
-    .stage-discovery    { border-left: 4px solid #6c757d; }
-    .stage-qualification{ border-left: 4px solid #17a2b8; }
-    .stage-proposal     { border-left: 4px solid #0d6efd; }
-    .stage-negotiation  { border-left: 4px solid #ffc107; }
-    .stage-won          { border-left: 4px solid #198754; }
-    .stage-lost         { border-left: 4px solid #dc3545; }
-
-    .column-discovery    .column-count { background: #6c757d; color: white; }
-    .column-qualification .column-count { background: #17a2b8; color: white; }
-    .column-proposal     .column-count { background: #0d6efd; color: white; }
-    .column-negotiation  .column-count { background: #ffc107; color: #000; }
-    .column-won          .column-count { background: #198754; color: white; }
-    .column-lost         .column-count { background: #dc3545; color: white; }
-
-    .table-view { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-
-    .quote-alert { border-radius: 6px; margin: 0 0 0.5rem 0; animation: slideIn 0.3s ease-out; }
-        .quote-alert .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
-
-    @@keyframes slideIn {
-        from { opacity: 0; transform: translateY(-10px); }
-        to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .quote-alert.alert-success { background-color: #d1f2d1; border-color: #28a745; color: #155724; }
-    .quote-alert.alert-info    { background-color: #d1ecf1; border-color: #17a2b8; color: #0c5460; }
-
-    /* ✅ 019 — a refused move explains itself here rather than in a
-       browser alert() the rep dismisses without reading. */
-    #moveRefusedBanner { position: sticky; top: 0.5rem; z-index: 1030; }
 </style>
 
-<!-- Page Header -->
-<div class="page-header">
-    <div class="container-fluid">
-        <div class="d-flex justify-content-between align-items-center">
-            <div>
-                <h1 class="mb-2"><i class="bi bi-kanban me-2"></i>Sales Pipeline</h1>
-                <p class="mb-0 opacity-75">Track and manage your deals through each stage</p>
-            </div>
+<script>
+    // Runs during parse, before either view exists. Only sets an attribute
+    // the CSS above keys off, so it cannot throw on a half-built page.
+    (function () {
+        try {
+            var p = new URLSearchParams(window.location.search);
+            var u = p.get('View') || p.get('view') || p.get('VIEW');
+            var v = u ? u.toLowerCase() : (localStorage.getItem('merkai.pipeline.view') || 'board');
+            document.documentElement.setAttribute('data-pbview', v === 'table' ? 'table' : 'board');
+        } catch (e) {
+            document.documentElement.setAttribute('data-pbview', 'board');
+        }
+    })();
+</script>
 
-            @* ✅ New Deal button — quota + permission aware *@
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
-                    @Model.PlanDisplayName
-                </span>
-                @if (!AuthorizedPageModel.IsAtLimit(Model.DealQuotaUsed, Model.MaxDeals) && Model.CanCreate)
+<div class="pb">
+
+    @* ── header ─────────────────────────────────────────────────── *@
+    <div class="pb-head">
+        <div>
+            <h1 class="pb-title">Sales pipeline</h1>
+            <p class="pb-sub">
+                @if (hasFilter)
                 {
-                    <a asp-page="/Pipeline/Create" class="btn btn-light btn-lg">
-                        <i class="bi bi-plus-circle me-2"></i>New Deal
-                    </a>
+                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1">filtered</span>
                 }
-                else if (AuthorizedPageModel.IsAtLimit(Model.DealQuotaUsed, Model.MaxDeals))
-                {
-                    <button class="btn btn-outline-light btn-lg" disabled
-                            title="Deal limit reached. @Model.UpgradePrompt">
-                        <i class="bi bi-lock me-2"></i>Deal Limit Reached
-                    </button>
-                }
-            </div>
+                @Model.TotalDeals @(Model.TotalDeals == 1 ? "deal" : "deals") you can see,
+                worth @Model.FormatCurrency(Model.TotalValue, 0)
+            </p>
+        </div>
+
+        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <span class="badge @Model.PlanBadgeClass px-3 py-2">@Model.PlanDisplayName</span>
+
+            @if (Model.UserCanRead("settings"))
+            {
+                <a asp-page="/Settings/PipelineRules/Index" class="btn btn-sm btn-outline-secondary"
+                   title="Sales process">
+                    <i class="bi bi-diagram-3"></i>
+                </a>
+            }
+
+            @if (!atLimit && Model.CanCreate)
+            {
+                <a asp-page="/Pipeline/Create" class="btn btn-sm btn-primary">
+                    <i class="bi bi-plus-lg me-1"></i>New deal
+                </a>
+            }
+            else if (atLimit)
+            {
+                <button class="btn btn-sm btn-outline-secondary" disabled
+                        title="Deal limit reached. @Model.UpgradePrompt">
+                    <i class="bi bi-lock me-1"></i>Deal limit reached
+                </button>
+            }
         </div>
     </div>
-</div>
 
-<div class="container-fluid">
-
-    @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
-
-    @* ✅ 019 — where a refused drag explains itself. Hidden until needed. *@
-    <div id="moveRefusedBanner" class="alert alert-warning alert-dismissible d-none" role="alert">
+    @* Where a refused drag explains itself. Hidden until needed. *@
+    <div id="pbRefused" class="alert alert-warning alert-dismissible pb-hidden" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        <span id="moveRefusedText"></span>
-        <button type="button" class="btn-close" onclick="hideMoveRefused()"></button>
+        <span id="pbRefusedText"></span>
+        <button type="button" class="btn-close" id="pbRefusedClose" aria-label="Dismiss"></button>
     </div>
 
-    <!-- Stats Row -->
-    <div class="row g-3 mb-3">
-        <div class="col-md-3">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Total Deals</div>
-                        <div class="stat-value">@Model.TotalDeals</div>
-                    </div>
-                    <div class="stat-icon" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
-                        <i class="bi bi-briefcase"></i>
-                    </div>
-                </div>
-            </div>
+    @* ── stats ──────────────────────────────────────────────────── *@
+    @* The first two tiles count what YOU can see; the quota strip below
+       counts the whole workspace. Both are true and they disagree, so
+       both say which they are. *@
+    <div class="pb-stats">
+        <div class="pb-stat">
+            <div class="lbl">Deals you can see</div>
+            <div class="val">@Model.TotalDeals</div>
+            <div class="sub">@Model.FormatCurrency(Model.TotalValue, 0)</div>
         </div>
-        <div class="col-md-3">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Total Value</div>
-                        <div class="stat-value">@Model.FormatCurrency(Model.TotalValue, 0)</div>
-                    </div>
-                    <div class="stat-icon" style="background:linear-gradient(135deg,#f093fb 0%,#f5576c 100%);">
-                        <span style="font-size:1.2rem;font-weight:700;line-height:1;">@Model.TenantCurrencySymbol</span>
-                    </div>
-                </div>
-            </div>
+        <div class="pb-stat">
+            <div class="lbl">Weighted value</div>
+            <div class="val" style="color:#0d6efd;">@Model.FormatCurrency(Model.WeightedValue, 0)</div>
+            <div class="sub">open deals × probability</div>
         </div>
-        <div class="col-md-3">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Weighted Value</div>
-                        <div class="stat-value">@Model.FormatCurrency(Model.WeightedValue, 0)</div>
-                        <small class="text-muted">Based on probability</small>
-                    </div>
-                    <div class="stat-icon" style="background:linear-gradient(135deg,#4facfe 0%,#00f2fe 100%);">
-                        <i class="bi bi-graph-up"></i>
-                    </div>
-                </div>
-            </div>
+        <div class="pb-stat">
+            <div class="lbl">Win rate</div>
+            <div class="val text-success">@Model.WinRate%</div>
+            <div class="sub">@Model.ClosedWonCount won of @(Model.ClosedWonCount + Model.ClosedLostCount) closed</div>
         </div>
-        <div class="col-md-3">
-            <div class="stat-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small">Win Rate</div>
-                        <div class="stat-value">@Model.WinRate%</div>
-                        @* Win rate is won ÷ (won + lost), so the caption says the same. *@
-                        <small class="text-muted">@Model.ClosedWonCount won of @(Model.ClosedWonCount + Model.ClosedLostCount) closed</small>
-                    </div>
-                    <div class="stat-icon" style="background:linear-gradient(135deg,#43e97b 0%,#38f9d7 100%);">
-                        <i class="bi bi-trophy"></i>
-                    </div>
-                </div>
-            </div>
+        <div class="pb-stat">
+            <div class="lbl">Average deal</div>
+            <div class="val">@Model.FormatCurrency(Model.AvgDealSize, 0)</div>
+            <div class="sub">across the deals above</div>
         </div>
     </div>
 
-    @* ✅ Deal quota progress bar *@
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body py-2">
-            <div class="row align-items-center g-2">
-                <div class="col-auto">
-                    <small class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
-                        Deal Quota
-                    </small>
-                </div>
-                <div class="col">
-                    @{
-                        var dealPct  = AuthorizedPageModel.QuotaPercent(Model.DealQuotaUsed, Model.MaxDeals);
-                        var barClass = AuthorizedPageModel.QuotaBarClass(Model.DealQuotaUsed, Model.MaxDeals);
-                    }
-                    <div class="progress" style="height:8px;">
-                        <div class="progress-bar @barClass"
-                             role="progressbar"
-                             style="width:@dealPct%"
-                             aria-valuenow="@Model.DealQuotaUsed"
-                             aria-valuemin="0"
-                             aria-valuemax="@Model.MaxDeals">
-                        </div>
-                    </div>
-                </div>
-                <div class="col-auto">
-                    <small class="@(dealPct >= 90 ? "text-danger fw-bold" : "text-muted")">
-                        @Model.DealQuotaUsed / @Model.MaxDeals used
-                    </small>
-                </div>
-                @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
-                {
-                    <div class="col-auto">
-                        <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
-                            <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
-                        </a>
-                    </div>
-                }
+    @* ── quota ──────────────────────────────────────────────────── *@
+    <div class="pb-quota">
+        <span class="text-muted fw-semibold text-uppercase" style="font-size:10px;letter-spacing:.06em;">
+            Workspace deal quota
+        </span>
+        <div class="bar">
+            <div class="progress" style="height:8px;">
+                <div class="progress-bar @barClass" role="progressbar" style="width:@dealPct%"
+                     aria-valuenow="@Model.DealQuotaUsed" aria-valuemin="0" aria-valuemax="@Model.MaxDeals"></div>
             </div>
         </div>
+        <span class="@(dealPct >= 90 ? "text-danger fw-bold" : "text-muted")">
+            @Model.DealQuotaUsed / @Model.MaxDeals used
+        </span>
+        @if (!string.IsNullOrEmpty(Model.UpgradePrompt))
+        {
+            <a href="/pricing" class="btn btn-sm btn-outline-primary py-0">
+                <i class="bi bi-arrow-up-circle me-1"></i>@Model.UpgradePrompt
+            </a>
+        }
     </div>
 
-    <!-- View Controls -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div class="view-toggle">
-            <button id="boardViewBtn" class="btn active" onclick="switchView('board')">
+    @* ── toolbar ────────────────────────────────────────────────── *@
+    <div class="pb-bar">
+        <div class="btn-group btn-group-sm pb-toggle" role="group" aria-label="View as board or table">
+            <button type="button" class="btn btn-outline-secondary" data-view="board">
                 <i class="bi bi-kanban me-1"></i>Board
             </button>
-            <button id="tableViewBtn" class="btn" onclick="switchView('table')">
+            <button type="button" class="btn btn-outline-secondary" data-view="table">
                 <i class="bi bi-table me-1"></i>Table
             </button>
         </div>
 
-        @if (Model.Rules is not null && Model.LiveMoves.Count > 0)
-        {
-            <small class="text-muted">
-                <i class="bi bi-diagram-3 me-1"></i>
-                @Model.LiveMoves.Count step@(Model.LiveMoves.Count == 1 ? "" : "s") in this workspace's sales process
-            </small>
-        }
-    </div>
+        @* NEW. SearchTerm / StageFilter / OwnerFilter were bound from the
+           query string and the page passed them to the API, but nothing ever
+           set them — the only way to filter was to type a URL by hand. *@
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="pbFilter">
+            <input type="hidden" name="View" value="board" class="pb-view-field" />
 
-    <!-- Content Area -->
-    <div class="content-area">
+            <div class="input-group input-group-sm" style="width:230px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="search" name="SearchTerm" value="@Model.SearchTerm" class="form-control"
+                       placeholder="Deal or company" aria-label="Search deals" autocomplete="off" />
+            </div>
 
-        @* ✅ canDrag — viewers can't drag cards, only those with update permission *@
-        @{ var canDrag = Model.CanUpdate; }
+            <select name="StageFilter" class="form-select form-select-sm" style="width:auto;"
+                    aria-label="Filter by stage">
+                <option value="">All stages</option>
+                @foreach (var s in stages)
+                {
+                    <option value="@s.Key" selected="@(string.Equals(Model.StageFilter, s.Key, StringComparison.OrdinalIgnoreCase))">
+                        @s.Name
+                    </option>
+                }
+            </select>
 
-        <!-- Kanban Board -->
-        <div id="boardView" class="kanban-board">
+            <select name="OwnerFilter" class="form-select form-select-sm" style="width:auto;"
+                    aria-label="Filter by owner">
+                <option value="">All owners</option>
+                @foreach (var u in Model.SalesTeam)
+                {
+                    <option value="@u.Id" selected="@(string.Equals(Model.OwnerFilter, u.Id.ToString(), StringComparison.OrdinalIgnoreCase))">
+                        @u.FullName
+                    </option>
+                }
+            </select>
 
-            @* Columns come from the tenant's own pipeline now. Sathorn
-               renaming "Proposal" to "Quotation" or adding "Site Visit"
-               shows up here with no code change — which is the point of
-               PipelineStages. Six fixed blocks used to live here. *@
-            @foreach (var stage in Model.Stages.OrderBy(s => s.SortOrder))
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Apply</button>
+
+            @if (hasFilter)
             {
-                var isWon = stage.Category == StageCategory.Won;
-                var isLost = stage.Category == StageCategory.Lost;
-                var isClosed = isWon || isLost;
+                <a asp-page="/Pipeline/Index" class="btn btn-sm btn-link px-1 pb-clear">Clear</a>
+            }
+        </form>
 
-                var columnClass = isWon ? "column-won" : isLost ? "column-lost" : "column-discovery";
-                var cardClass = isWon ? "stage-won" : isLost ? "stage-lost" : "stage-discovery";
-                var icon = isWon ? "bi-trophy" : isLost ? "bi-x-circle" : "bi-kanban";
+        <div class="ms-auto d-flex align-items-center gap-3">
+            @if (Model.Rules is not null && Model.LiveMoves.Count > 0)
+            {
+                <span class="pb-count">
+                    <i class="bi bi-diagram-3 me-1"></i>@Model.LiveMoves.Count
+                    step@(Model.LiveMoves.Count == 1 ? "" : "s") in this process
+                </span>
+            }
 
-                var dealsHere = Model.GetDealsByStage(stage.Key);
-
-                // 019 — what this stage asks of a deal, straight from the
-                // tenant's rules. The board uses it to decide whether to
-                // put the reason box up before posting.
-                var hints = Model.EntryHintsFor(stage.Key);
-
-                <div class="kanban-column @columnClass"
-                     data-stage="@stage.Key"
-                     data-stage-name="@stage.Name"
-                     data-category="@((int)stage.Category)">
-                    <div class="column-header">
-                        <div>
-                            <div class="column-title">
-                                <i class="bi @icon me-2"></i>@stage.Name
-                            </div>
-                            <div class="column-value">
-                                @Model.FormatCurrency(Model.GetStageValue(stage.Key), 0)
-                            </div>
-                            @if (hints.Count > 0)
-                            {
-                                <div class="column-gate" title="A deal needs @string.Join(", ", hints) before it can enter this stage.">
-                                    <i class="bi bi-shield-check"></i>needs @string.Join(", ", hints)
-                                </div>
-                            }
-                        </div>
-                        <span class="column-count">@dealsHere.Count</span>
-                    </div>
-
-                    <div class="deals-container"
-                         @(canDrag ? "ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\" ondragenter=\"allowDrop(event)\"" : "")>
-
-                        @foreach (var deal in dealsHere)
-                        {
-                            var quoteStatus = Model.GetQuoteStatus(deal.Id);
-
-                            <div class="deal-card @cardClass"
-                                 draggable="@(canDrag ? "true" : "false")"
-                                 @(canDrag ? "ondragstart=\"drag(event)\"" : "")
-                                 data-deal-id="@deal.Id"
-                                 data-deal-title="@deal.Title">
-
-                                @* Quote alerts only matter on open deals —
-                                   a won deal's quote was obviously accepted. *@
-                                @if (!isClosed && quoteStatus?.HasAcceptedQuote == true)
-                                {
-                                    <div class="quote-alert alert alert-success p-2 mb-2" style="font-size:0.875rem;">
-                                        <div class="d-flex align-items-center justify-content-between">
-                                            <div><i class="bi bi-check-circle-fill me-1"></i><strong>Quote Accepted!</strong></div>
-                                        </div>
-                                    </div>
-                                }
-                                else if (!isClosed && quoteStatus?.LatestQuoteStatus == "Sent")
-                                {
-                                    <div class="quote-alert alert alert-info p-2 mb-2" style="font-size:0.875rem;">
-                                        <i class="bi bi-send me-1"></i><span>Quote sent - awaiting response</span>
-                                    </div>
-                                }
-
-                                <div class="deal-title">@deal.Title</div>
-                                <div class="deal-company"><i class="bi bi-building me-1"></i>@deal.CompanyName</div>
-                                <div class="deal-value @(isLost ? "text-muted" : "")">
-                                    @Model.FormatCurrency(deal.ExpectedValue, 0)
-                                </div>
-                                <div class="deal-meta">
-                                    <div class="deal-owner">
-                                        <div class="owner-avatar @(isLost ? "bg-secondary" : "")">@deal.OwnerInitials</div>
-                                        <span>@deal.OwnerName</span>
-                                    </div>
-                                    <div class="deal-date">
-                                        @if (isClosed)
-                                        {
-                                            <i class="bi @(isWon ? "bi-check-circle" : "bi-x-circle") me-1"></i>
-                                            @(deal.ActualCloseDateUtc?.ToString("MMM dd") ?? "N/A")
-                                        }
-                                        else
-                                        {
-                                            <i class="bi bi-calendar me-1"></i>
-                                            @deal.ExpectedCloseDateUtc.ToString("MMM dd")
-                                        }
-                                    </div>
-                                </div>
-                            </div>
-                        }
-
-                        @if (dealsHere.Count == 0)
-                        {
-                            <div class="empty-column"><i class="bi bi-inbox d-block"></i><div>No deals yet</div></div>
-                        }
-                    </div>
+            @if (emptyColumns > 0)
+            {
+                <div class="form-check form-switch mb-0 pb-hidden" id="pbEmptyWrap">
+                    <input class="form-check-input" type="checkbox" role="switch" id="pbShowEmpty" />
+                    <label class="form-check-label pb-count" for="pbShowEmpty">
+                        Show @emptyColumns empty column@(emptyColumns == 1 ? "" : "s")
+                    </label>
                 </div>
             }
 
-            @if (!Model.Stages.Any())
+            @if (!canDrag)
             {
-                <div class="alert alert-warning">
-                    This workspace has no pipeline stages set up.
+                <span class="pb-count"><i class="bi bi-eye me-1"></i>read-only</span>
+            }
+        </div>
+    </div>
+
+    @if (!stages.Any())
+    {
+        <div class="pb-shell">
+            <div class="pb-empty">
+                <i class="bi bi-diagram-3 big"></i>
+                <div class="fw-semibold text-body mb-1">This workspace has no pipeline stages</div>
+                <div class="small">
                     <a asp-page="/Settings/Pipeline/Index">Add them under Settings</a> before creating deals.
                 </div>
-            }
+            </div>
         </div>
+    }
+    else
+    {
+        @* ── BOARD ──────────────────────────────────────────────── *@
+        <div id="pbBoard">
+            <div class="pb-board">
+                @foreach (var stage in stages)
+                {
+                    var isWon = stage.Category == StageCategory.Won;
+                    var isLost = stage.Category == StageCategory.Lost;
+                    var isClosed = isWon || isLost;
+                    var dealsHere = Model.GetDealsByStage(stage.Key);
+                    var hints = Model.EntryHintsFor(stage.Key);
 
-        <!-- Table View -->
-        <div id="tableView" class="table-view" style="display:none;">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Deal</th>
-                        <th>Company</th>
-                        <th>Stage</th>
-                        <th>Value</th>
-                        <th>Probability</th>
-                        <th>Owner</th>
-                        <th>Close Date</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var deal in Model.Deals)
-                    {
-                        <tr>
-                            <td class="fw-semibold">@deal.Title</td>
-                            <td>@deal.CompanyName</td>
-                            <td>
-                                @* ✅ 019 — resolved through the tenant's own stages. This
-                                   used to switch on the literal keys "Discovery",
-                                   "ClosedWon" and so on, so a client who renamed a stage
-                                   saw their name on the board and ours in the table. *@
-                                <span class="badge @Model.StageBadgeClass(deal.Stage)">
-                                    @Model.StageName(deal.Stage)
+                    // Open stages used to all share one grey accent, so every
+                    // column looked the same. Walk a small palette by sort order
+                    // instead — no per-stage colour column is needed.
+                    var tone = isWon ? "#198754"
+                             : isLost ? "#dc3545"
+                             : new[] { "#64748b", "#0dcaf0", "#0d6efd", "#6f42c1", "#fd7e14", "#20c997" }
+                                 [Math.Abs(stage.SortOrder) % 6];
+
+                    <div class="pb-col @(dealsHere.Count == 0 ? "pb-hidden" : "")"
+                         data-empty="@(dealsHere.Count == 0 ? "1" : "0")"
+                         data-stage="@stage.Key"
+                         data-stage-name="@stage.Name"
+                         style="--tone:@tone;">
+                        <div class="pb-col-head">
+                            <div class="pb-col-title">
+                                <i class="bi @(isWon ? "bi-trophy" : isLost ? "bi-x-circle" : "bi-circle")"></i>@stage.Name
+                                <span class="pb-col-pill">@dealsHere.Count</span>
+                            </div>
+                            <div class="pb-col-val">@Model.FormatCurrency(Model.GetStageValue(stage.Key), 0)</div>
+                            @if (hints.Count > 0)
+                            {
+                                <span class="pb-gate" title="A deal needs @string.Join(", ", hints) before it can enter this stage.">
+                                    <i class="bi bi-shield-check me-1"></i>needs @string.Join(", ", hints)
                                 </span>
-                            </td>
-                            <td class="fw-semibold">@Model.FormatCurrency(deal.ExpectedValue, 0)</td>
-                            <td>@deal.Probability%</td>
-                            <td>@deal.OwnerName</td>
-                            <td>@deal.ExpectedCloseDateUtc.ToString("MMM dd, yyyy")</td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    @* View — always visible *@
-                                    <a asp-page="/Pipeline/Detail" asp-route-id="@deal.Id"
-                                       class="btn btn-primary" title="View">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
-                                    @* ✅ Edit — only if not closed AND has update permission.
-                                       Category-driven, so a tenant's own "Contract Signed"
-                                       counts as closed just like "ClosedWon" did. *@
-                                    @if (Model.CanUpdate && !Model.IsClosedStage(deal.Stage))
+                            }
+                        </div>
+
+                        @* No inline ondrop/ondragover here. That is the bug this
+                           round exists for: Razor encoded them into string
+                           literals and nothing was ever wired up. The script at
+                           the bottom attaches real listeners. *@
+                        <div class="pb-drop" data-drop="@stage.Key">
+                            @foreach (var deal in dealsHere)
+                            {
+                                var qs = Model.GetQuoteStatus(deal.Id);
+
+                                <div class="pb-card @(isLost ? "is-lost" : "")"
+                                     draggable="@(canDrag ? "true" : "false")"
+                                     data-deal-id="@deal.Id"
+                                     data-deal-title="@deal.Title"
+                                     style="--tone:@tone;">
+
+                                    @* Quote flags only matter on an open deal — a won
+                                       deal's quote was obviously accepted. *@
+                                    @if (!isClosed && qs?.HasAcceptedQuote == true)
                                     {
-                                        <a asp-page="/Pipeline/Edit" asp-route-id="@deal.Id"
-                                           class="btn btn-outline-primary" title="Edit">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
+                                        <span class="pb-q ok"><i class="bi bi-check-circle-fill me-1"></i>Quote accepted</span>
                                     }
+                                    else if (!isClosed && qs?.LatestQuoteStatus == "Sent")
+                                    {
+                                        <span class="pb-q sent"><i class="bi bi-send me-1"></i>Quote sent — awaiting reply</span>
+                                    }
+
+                                    @* A real link, not a div with a click handler: it
+                                       opens in a new tab on middle-click, it has a
+                                       status-bar target, and it is reachable by
+                                       keyboard. The old card was a div whose click
+                                       listener set window.location. *@
+                                    <a class="t" asp-page="/Pipeline/Detail" asp-route-id="@deal.Id">@deal.Title</a>
+
+                                    @if (!string.IsNullOrWhiteSpace(deal.CompanyName))
+                                    {
+                                        <div class="co" title="@deal.CompanyName">
+                                            <i class="bi bi-building me-1"></i>@deal.CompanyName
+                                        </div>
+                                    }
+
+                                    <div class="amt">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
+
+                                    <div class="meta">
+                                        <span class="own">
+                                            <span class="pb-av">@deal.OwnerInitials</span>
+                                            <span class="text-truncate">@deal.OwnerName</span>
+                                        </span>
+                                        <span class="flex-shrink-0">
+                                            @* FormatDate, not ToString("MMM dd"): these are UTC
+                                               instants and the old call printed them raw in the
+                                               SERVER's culture. *@
+                                            @if (isClosed && deal.ActualCloseDateUtc.HasValue)
+                                            {
+                                                <i class="bi @(isWon ? "bi-check-circle" : "bi-x-circle") me-1"></i>
+                                                @Model.FormatDate(deal.ActualCloseDateUtc.Value)
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-calendar me-1"></i>
+                                                @Model.FormatDate(deal.ExpectedCloseDateUtc)
+                                            }
+                                        </span>
+                                    </div>
                                 </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                            }
+
+                            @if (dealsHere.Count == 0)
+                            {
+                                <div class="pb-col-empty">Nothing here</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
         </div>
 
-    </div>
+        @* ── TABLE ──────────────────────────────────────────────── *@
+        <div id="pbTable" class="pb-shell">
+            <div class="table-responsive">
+                <table class="pb-table">
+                    <thead>
+                        <tr>
+                            <th>Deal</th>
+                            <th>Company</th>
+                            <th>Stage</th>
+                            <th class="n">Value</th>
+                            <th class="n">Prob.</th>
+                            <th>Owner</th>
+                            <th>Closes</th>
+                            <th class="q-stick text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!Model.Deals.Any())
+                        {
+                            <tr>
+                                <td colspan="8" class="pb-empty">
+                                    @if (hasFilter)
+                                    {
+                                        <text>No deals match those filters.</text>
+                                        <a asp-page="/Pipeline/Index">Clear them</a><text>.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>No deals yet.</text>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        @foreach (var deal in Model.Deals)
+                        {
+                            <tr>
+                                <td>
+                                    <a asp-page="/Pipeline/Detail" asp-route-id="@deal.Id"
+                                       class="text-decoration-none fw-semibold">@deal.Title</a>
+                                </td>
+                                <td><div class="pb-clip" title="@deal.CompanyName">@deal.CompanyName</div></td>
+                                <td>
+                                    <span class="badge @Model.StageBadgeClass(deal.Stage)">@Model.StageName(deal.Stage)</span>
+                                </td>
+                                <td class="n">@Model.FormatCurrency(deal.ExpectedValue, 0)</td>
+                                <td class="n">@deal.Probability%</td>
+                                <td><div class="pb-clip">@deal.OwnerName</div></td>
+                                <td class="d">@Model.FormatDate(deal.ExpectedCloseDateUtc)</td>
+                                <td class="q-stick text-end">
+                                    <div class="d-flex gap-1 justify-content-end">
+                                        <a asp-page="/Pipeline/Detail" asp-route-id="@deal.Id"
+                                           class="btn btn-sm btn-outline-secondary" title="Open @deal.Title">
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        @if (Model.CanUpdate && !Model.IsClosedStage(deal.Stage))
+                                        {
+                                            <a asp-page="/Pipeline/Edit" asp-route-id="@deal.Id"
+                                               class="btn btn-sm btn-outline-secondary" title="Edit @deal.Title">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
 </div>
 
-@* ===================================================================
-   019 — the reason dialog. One modal serves both cases: a deal being
-   marked lost, and a closed deal being reopened. They never happen at
-   once, and two nearly identical modals would drift apart.
-   =================================================================== *@
-<div class="modal fade" id="moveReasonModal" tabindex="-1" data-bs-backdrop="static">
+@* ── the note dialog ───────────────────────────────────────────────
+   One dialog for every move that asks for something. The prompt is the
+   transition's own question, so a tenant asking "Which site did you
+   survey?" gets that rather than a generic box. *@
+<div class="modal fade" id="pbNoteModal" tabindex="-1" data-bs-backdrop="static" aria-labelledby="pbNoteTitle">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="moveReasonTitle">Why?</h5>
+                <h5 class="modal-title" id="pbNoteTitle">Move this deal</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small mb-2" id="moveReasonHelp"></p>
-                <textarea id="moveReasonText" class="form-control" rows="3" maxlength="1000"
+                <label class="form-label" for="pbNoteText" id="pbNotePrompt">Add a note for this change</label>
+                <textarea id="pbNoteText" class="form-control" rows="3" maxlength="1000"
                           placeholder="A sentence is enough."></textarea>
-                <div class="invalid-feedback d-block text-danger small d-none" id="moveReasonError">
-                    Please write a reason.
-                </div>
+                <div class="text-danger small mt-1 pb-hidden" id="pbNoteError">Please write a reason.</div>
+                <div class="form-text">Kept on this deal's stage history.</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="moveReasonConfirm">
+                <button type="button" class="btn btn-primary" id="pbNoteConfirm">
                     <i class="bi bi-check-lg me-1"></i>Save &amp; move
                 </button>
             </div>
@@ -584,252 +633,300 @@
     </div>
 </div>
 
-<form id="stageUpdateForm" method="post" style="display:none;">
-    @Html.AntiForgeryToken()
-</form>
+@* Carries the antiforgery token for the fetch below. *@
+<form id="pbTokenForm" method="post" class="d-none">@Html.AntiForgeryToken()</form>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
+@* No Bootstrap CSS, icon font or JS bundle here. _Layout.cshtml loads all
+   three. The old page loaded every one of them a second time, and a second
+   copy of bootstrap.bundle replaces window.bootstrap — so an instance the
+   first copy created becomes invisible to the second. *@
 <script>
-    // The tenant's live process, keyed "fromStage|toStage". The SERVER is
-    // the authority and checks all of it again — this only decides whether
-    // the board asks for a note before posting, and whether it bothers
-    // posting a move the process plainly has no step for.
-    const MOVES = @Html.Raw(Model.ProcessJson);
+    (function () {
+        'use strict';
 
-    // View Switching
-    function switchView(view) {
-        const boardView = document.getElementById('boardView');
-        const tableView = document.getElementById('tableView');
-        const boardBtn  = document.getElementById('boardViewBtn');
-        const tableBtn  = document.getElementById('tableViewBtn');
+        var root = document.documentElement;
+        var CAN_DRAG = @(canDrag ? "true" : "false");
 
-        if (view === 'board') {
-            boardView.style.display = 'grid';
-            tableView.style.display = 'none';
-            boardBtn.classList.add('active');
-            tableBtn.classList.remove('active');
-        } else {
-            boardView.style.display = 'none';
-            tableView.style.display = 'block';
-            boardBtn.classList.remove('active');
-            tableBtn.classList.add('active');
-        }
-    }
+        // The tenant's live process, keyed "from|to". The SERVER checks all of
+        // it again — this only decides whether to ask for a note before
+        // posting, and whether to bother posting a move the process has no
+        // step for.
+        var MOVES = @Html.Raw(string.IsNullOrWhiteSpace(Model.ProcessJson) ? "{}" : Model.ProcessJson);
 
-    // ── refusal banner ────────────────────────────────────────────────
-    function showMoveRefused(message) {
-        const banner = document.getElementById('moveRefusedBanner');
-        document.getElementById('moveRefusedText').textContent = message;
-        banner.classList.remove('d-none');
-        banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    function hideMoveRefused() {
-        document.getElementById('moveRefusedBanner').classList.add('d-none');
-    }
-</script>
+        var VIEW_KEY = 'merkai.pipeline.view';
+        var EMPTY_KEY = 'merkai.pipeline.showEmpty';
 
-<script>
-    let draggedElement = null;
-    let sourceContainer = null;   // where the card came from, so a refused
-                                  // move can put it back without a reload
+        function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+        function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 
-    function drag(event) {
-        draggedElement = event.target.closest('[data-deal-id]');
-        if (draggedElement) {
-            sourceContainer = draggedElement.closest('.deals-container');
-            draggedElement.classList.add('dragging');
-        }
-    }
+        // ── 1. board / table ─────────────────────────────────────────
+        var board = document.getElementById('pbBoard');
+        var table = document.getElementById('pbTable');
+        var emptyWrap = document.getElementById('pbEmptyWrap');
 
-    function allowDrop(event) {
-        event.preventDefault();
-        const container = event.target.closest('.deals-container');
-        if (container) container.classList.add('drag-over');
-    }
+        function applyView(v) {
+            var isTable = v === 'table';
+            root.setAttribute('data-pbview', isTable ? 'table' : 'board');
+            if (board) board.classList.toggle('pb-hidden', isTable);
+            if (table) table.classList.toggle('pb-hidden', !isTable);
 
-    function drop(event) {
-        event.preventDefault();
-        const container = event.target.closest('.deals-container');
-        if (!container || !draggedElement) return;
+            var btns = document.querySelectorAll('.pb-toggle [data-view]');
+            for (var i = 0; i < btns.length; i++) {
+                var on = btns[i].getAttribute('data-view') === v;
+                btns[i].classList.toggle('btn-primary', on);
+                btns[i].classList.toggle('btn-outline-secondary', !on);
+                btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+            }
 
-        container.classList.remove('drag-over');
+            // The empty-column switch only means anything on the board.
+            if (emptyWrap) emptyWrap.classList.toggle('pb-hidden', isTable);
 
-        const targetColumn = container.closest('.kanban-column');
-        const fromColumn   = sourceContainer ? sourceContainer.closest('.kanban-column') : null;
+            // Keep the filter form — and therefore Apply — on the view the
+            // user is actually looking at. A move reloads the page, so without
+            // this a table user was thrown back to the board every time.
+            var vf = document.querySelectorAll('.pb-view-field');
+            for (var f = 0; f < vf.length; f++) vf[f].value = v;
 
-        // Dropped back where it started — nothing to do, and posting would
-        // write a Stage → same Stage history row.
-        if (fromColumn && targetColumn && fromColumn === targetColumn) {
-            draggedElement.classList.remove('dragging');
-            return;
+            var clears = document.querySelectorAll('a.pb-clear');
+            for (var c = 0; c < clears.length; c++) {
+                var href = (clears[c].getAttribute('href') || '').split('?')[0];
+                clears[c].setAttribute('href', href + '?View=' + v);
+            }
+
+            store(VIEW_KEY, v);
         }
 
-        const card = draggedElement;
-        const from = sourceContainer;
-
-        container.appendChild(card);
-        card.classList.remove('dragging');
-
-        const newStage = targetColumn.dataset.stage;
-        const dealId   = card.dataset.dealId;
-
-        if (!dealId) { console.error('drag: no dealId'); location.reload(); return; }
-
-        hideMoveRefused();
-
-        // ── is this move part of the process at all? ──────────────────
-        const fromStage = fromColumn ? fromColumn.dataset.stage : null;
-        const move      = fromStage ? MOVES[fromStage + '|' + newStage] : null;
-
-        if (fromStage && Object.keys(MOVES).length > 0 && !move) {
-            // The process has no step here. Refusing in the browser saves a
-            // round trip and says the same thing the server would have.
-            const options = Object.keys(MOVES)
-                .filter(k => k.startsWith(fromStage + '|'))
-                .map(k => MOVES[k].label);
-
-            revertCard(card, from);
-            showMoveRefused(
-                `Moving from ${fromColumn.dataset.stageName} to ${targetColumn.dataset.stageName} `
-                + `is not part of this workspace's sales process.`
-                + (options.length ? ` From here you can: ${options.join(', ')}.` : ''));
-            return;
-        }
-
-        // ── does it want a note? Ask the transition's OWN question. ───
-        if (move && move.needsNote) {
-            askForReason({
-                title: move.label,
-                help: move.prompt || 'Add a note for this change. It is kept on the deal\'s stage history.',
-                onConfirm: (reason) => submitMove(card, from, dealId, newStage, reason),
-                onCancel:  () => revertCard(card, from)
-            });
-            return;
-        }
-
-        submitMove(card, from, dealId, newStage, null);
-    }
-
-    document.addEventListener('DOMContentLoaded', function () {
-        let wasDragging = false;
-
-        document.querySelectorAll('.deal-card').forEach(card => {
-            card.addEventListener('dragstart', function () {
-                wasDragging = true;
-                this.classList.add('dragging');
-            });
-
-            card.addEventListener('dragend', function () {
-                this.style.opacity = '1';
-                setTimeout(() => {
-                    this.classList.remove('dragging');
-                    setTimeout(() => { wasDragging = false; }, 50);
-                }, 100);
-            });
-
-            card.addEventListener('click', function (e) {
-                if (wasDragging) return;
-                const dealId = this.getAttribute('data-deal-id');
-                if (dealId) window.location.href = '/Pipeline/Detail/' + dealId;
-            });
+        document.addEventListener('click', function (e) {
+            var b = e.target && e.target.closest ? e.target.closest('.pb-toggle [data-view]') : null;
+            if (b) applyView(b.getAttribute('data-view'));
         });
 
-        document.querySelectorAll('.deals-container').forEach(container => {
-            container.addEventListener('dragleave', function (e) {
-                if (e.target === this) this.classList.remove('drag-over');
-            });
-        });
-    });
+        applyView(root.getAttribute('data-pbview') === 'table' ? 'table' : 'board');
 
-    // ── the reason dialog ─────────────────────────────────────────────
-    let reasonModal = null;
-    let reasonHandlers = { onConfirm: null, onCancel: null };
-    let reasonSettled = false;
-
-    function askForReason({ title, help, onConfirm, onCancel }) {
-        const el = document.getElementById('moveReasonModal');
-
-        document.getElementById('moveReasonTitle').textContent = title;
-        document.getElementById('moveReasonHelp').textContent = help;
-        document.getElementById('moveReasonText').value = '';
-        document.getElementById('moveReasonError').classList.add('d-none');
-
-        reasonHandlers = { onConfirm, onCancel };
-        reasonSettled = false;
-
-        reasonModal = reasonModal || new bootstrap.Modal(el);
-        reasonModal.show();
-        setTimeout(() => document.getElementById('moveReasonText').focus(), 250);
-    }
-
-    document.getElementById('moveReasonConfirm').addEventListener('click', function () {
-        const text = document.getElementById('moveReasonText').value.trim();
-
-        if (!text) {
-            document.getElementById('moveReasonError').classList.remove('d-none');
-            return;
+        // ── 2. empty columns ─────────────────────────────────────────
+        var showEmpty = document.getElementById('pbShowEmpty');
+        function applyEmpty() {
+            var show = showEmpty ? showEmpty.checked : false;
+            var cols = document.querySelectorAll('.pb-col[data-empty="1"]');
+            for (var i = 0; i < cols.length; i++) cols[i].classList.toggle('pb-hidden', !show);
+            store(EMPTY_KEY, show ? '1' : '0');
+        }
+        if (showEmpty) {
+            showEmpty.checked = read(EMPTY_KEY) === '1';
+            showEmpty.addEventListener('change', applyEmpty);
+            applyEmpty();
         }
 
-        reasonSettled = true;
-        reasonModal.hide();
-        if (reasonHandlers.onConfirm) reasonHandlers.onConfirm(text);
-    });
+        // ── 3. the refusal banner ────────────────────────────────────
+        var refused = document.getElementById('pbRefused');
+        var refusedText = document.getElementById('pbRefusedText');
+        var refusedClose = document.getElementById('pbRefusedClose');
 
-    // Cancel, Escape and the X all land here. Without this the card would
-    // sit in its new column having never been saved, and the next refresh
-    // would silently undo what the rep thought they had done.
-    document.getElementById('moveReasonModal').addEventListener('hidden.bs.modal', function () {
-        if (reasonSettled) return;
-        if (reasonHandlers.onCancel) reasonHandlers.onCancel();
-    });
-
-    // ── posting the move ──────────────────────────────────────────────
-    function revertCard(card, fromContainer) {
-        if (card && fromContainer) {
-            fromContainer.appendChild(card);
-            card.classList.add('move-refused');
-            setTimeout(() => card.classList.remove('move-refused'), 1500);
+        function showRefused(msg) {
+            if (!refused || !refusedText) return;
+            refusedText.textContent = msg;
+            refused.classList.remove('pb-hidden');
+            refused.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
-    }
+        function hideRefused() { if (refused) refused.classList.add('pb-hidden'); }
+        if (refusedClose) refusedClose.addEventListener('click', hideRefused);
 
-    async function submitMove(card, fromContainer, dealId, newStage, note) {
-        try {
-            const token = document.querySelector('#stageUpdateForm input[name="__RequestVerificationToken"]')?.value;
-            if (!token) { console.error('Antiforgery token not found'); location.reload(); return; }
+        // ── 4. drag and drop, actually wired this time ───────────────
+        var dragged = null;        // the card element
+        var fromDrop = null;       // the .pb-drop it came out of
 
-            const formData = new FormData();
-            formData.append('dealId', dealId);
-            formData.append('stage', newStage);
-            if (note) formData.append('note', note);
-
-            const response = await fetch('?handler=UpdateStage', {
-                method: 'POST',
-                headers: { 'RequestVerificationToken': token },
-                body: formData
+        if (CAN_DRAG) {
+            document.addEventListener('dragstart', function (e) {
+                var card = e.target && e.target.closest ? e.target.closest('.pb-card[draggable="true"]') : null;
+                if (!card) return;
+                dragged = card;
+                fromDrop = card.closest('.pb-drop');
+                card.classList.add('dragging');
+                // Firefox refuses to start a drag without data on the transfer.
+                try {
+                    e.dataTransfer.setData('text/plain', card.getAttribute('data-deal-id') || '');
+                    e.dataTransfer.effectAllowed = 'move';
+                } catch (err) { /* older browsers */ }
             });
 
-            if (response.ok) {
-                // Reload so the column totals, win rate and weighted value
-                // all catch up with the move.
-                location.reload();
+            document.addEventListener('dragend', function () {
+                if (dragged) dragged.classList.remove('dragging');
+                var overs = document.querySelectorAll('.pb-drop.over');
+                for (var i = 0; i < overs.length; i++) overs[i].classList.remove('over', 'no-drop');
+            });
+
+            // dragover MUST preventDefault or the drop event never fires. This
+            // is the line the encoded inline attribute was failing to deliver.
+            document.addEventListener('dragover', function (e) {
+                var drop = e.target && e.target.closest ? e.target.closest('.pb-drop') : null;
+                if (!drop || !dragged) return;
+                e.preventDefault();
+
+                if (drop === fromDrop) { drop.classList.remove('no-drop'); drop.classList.add('over'); return; }
+
+                // Show up front whether this column will take the card, using
+                // the same matrix the drop handler checks.
+                var from = fromDrop ? fromDrop.getAttribute('data-drop') : null;
+                var to = drop.getAttribute('data-drop');
+                var known = Object.keys(MOVES).length > 0;
+                var allowed = !known || !from || !!MOVES[from + '|' + to];
+
+                drop.classList.add('over');
+                drop.classList.toggle('no-drop', !allowed);
+            });
+
+            document.addEventListener('dragleave', function (e) {
+                var drop = e.target && e.target.closest ? e.target.closest('.pb-drop') : null;
+                if (drop && e.target === drop) drop.classList.remove('over', 'no-drop');
+            });
+
+            document.addEventListener('drop', function (e) {
+                var drop = e.target && e.target.closest ? e.target.closest('.pb-drop') : null;
+                if (!drop || !dragged) return;
+                e.preventDefault();
+                drop.classList.remove('over', 'no-drop');
+
+                var card = dragged;
+                var from = fromDrop;
+                dragged = null;
+                fromDrop = null;
+
+                card.classList.remove('dragging');
+
+                // Dropped back where it started. Posting would write a
+                // Stage → same Stage row in the history.
+                if (from === drop) return;
+
+                var dealId = card.getAttribute('data-deal-id');
+                if (!dealId) return;
+
+                var fromStage = from ? from.getAttribute('data-drop') : null;
+                var toStage = drop.getAttribute('data-drop');
+                var fromCol = from ? from.closest('.pb-col') : null;
+                var toCol = drop.closest('.pb-col');
+
+                hideRefused();
+
+                var move = fromStage ? MOVES[fromStage + '|' + toStage] : null;
+
+                // Move the card now so the drag feels like it landed; put it
+                // back if the answer is no.
+                drop.appendChild(card);
+
+                if (fromStage && Object.keys(MOVES).length > 0 && !move) {
+                    var options = Object.keys(MOVES)
+                        .filter(function (k) { return k.indexOf(fromStage + '|') === 0; })
+                        .map(function (k) { return MOVES[k].label; });
+
+                    revert(card, from);
+                    showRefused(
+                        'Moving from ' + (fromCol ? fromCol.getAttribute('data-stage-name') : 'there') +
+                        ' to ' + (toCol ? toCol.getAttribute('data-stage-name') : 'there') +
+                        " is not part of this workspace's sales process." +
+                        (options.length ? ' From here you can: ' + options.join(', ') + '.' : ''));
+                    return;
+                }
+
+                if (move && move.needsNote) {
+                    askForNote(move, function (note) {
+                        post(card, from, dealId, toStage, note);
+                    }, function () {
+                        revert(card, from);
+                    });
+                    return;
+                }
+
+                post(card, from, dealId, toStage, null);
+            });
+        }
+
+        function revert(card, backTo) {
+            if (!card || !backTo) return;
+            backTo.appendChild(card);
+            card.classList.add('refused');
+            setTimeout(function () { card.classList.remove('refused'); }, 1500);
+        }
+
+        // ── 5. the note dialog ───────────────────────────────────────
+        var noteEl = document.getElementById('pbNoteModal');
+        var noteModal = null;
+        var noteOnOk = null, noteOnCancel = null, noteSettled = false;
+
+        function askForNote(move, onOk, onCancel) {
+            if (!noteEl || typeof bootstrap === 'undefined') {
+                // Don't strand the card in a column it was never saved into.
+                if (onCancel) onCancel();
+                showRefused('That move needs a note, and the dialog could not open. Move the deal from its own page instead.');
                 return;
             }
 
-            // A refusal is an ANSWER, not a failure. Put the card back and
-            // show what the server said — it is written for the rep.
-            let message = 'That move was not allowed.';
-            try {
-                const body = await response.json();
-                if (body && body.error) message = body.error;
-            } catch { /* non-JSON error body — keep the fallback */ }
+            document.getElementById('pbNoteTitle').textContent = move.label || 'Move this deal';
+            document.getElementById('pbNotePrompt').textContent =
+                move.prompt || "Add a note for this change. It is kept on the deal's stage history.";
+            document.getElementById('pbNoteText').value = '';
+            document.getElementById('pbNoteError').classList.add('pb-hidden');
 
-            revertCard(card, fromContainer);
-            showMoveRefused(message);
-        } catch (error) {
-            console.error('Error updating stage:', error);
-            revertCard(card, fromContainer);
-            showMoveRefused('Something went wrong moving that deal. Please try again.');
+            noteOnOk = onOk; noteOnCancel = onCancel; noteSettled = false;
+
+            noteModal = noteModal || bootstrap.Modal.getOrCreateInstance(noteEl);
+            noteModal.show();
+            setTimeout(function () { document.getElementById('pbNoteText').focus(); }, 250);
         }
-    }
+
+        var noteConfirm = document.getElementById('pbNoteConfirm');
+        if (noteConfirm) noteConfirm.addEventListener('click', function () {
+            var text = (document.getElementById('pbNoteText').value || '').trim();
+            if (!text) {
+                document.getElementById('pbNoteError').classList.remove('pb-hidden');
+                return;
+            }
+            noteSettled = true;
+            if (noteModal) noteModal.hide();
+            if (noteOnOk) noteOnOk(text);
+        });
+
+        // Cancel, Escape and the X all land here. Without it the card would sit
+        // in its new column having never been saved, and the next refresh would
+        // silently undo what the rep thought they had done.
+        if (noteEl) noteEl.addEventListener('hidden.bs.modal', function () {
+            if (noteSettled) return;
+            if (noteOnCancel) noteOnCancel();
+        });
+
+        // ── 6. posting the move ──────────────────────────────────────
+        function post(card, backTo, dealId, stage, note) {
+            var token = document.querySelector('#pbTokenForm input[name="__RequestVerificationToken"]');
+            if (!token || !token.value) {
+                revert(card, backTo);
+                showRefused('Could not verify the request. Please refresh the page and try again.');
+                return;
+            }
+
+            var body = new FormData();
+            body.append('dealId', dealId);
+            body.append('stage', stage);
+            if (note) body.append('note', note);
+
+            fetch('?handler=UpdateStage', {
+                method: 'POST',
+                headers: { 'RequestVerificationToken': token.value },
+                body: body
+            }).then(function (res) {
+                if (res.ok) {
+                    // Reload so the column totals, win rate and weighted value
+                    // all catch up with the move.
+                    window.location.reload();
+                    return null;
+                }
+                return res.json().catch(function () { return null; });
+            }).then(function (data) {
+                if (data === null) return;   // already reloading, or no JSON body
+                revert(card, backTo);
+                showRefused((data && data.error) ? data.error : 'That move was not allowed.');
+            }).catch(function () {
+                revert(card, backTo);
+                showRefused('Something went wrong moving that deal. Please try again.');
+            });
+        }
+    })();
 </script>

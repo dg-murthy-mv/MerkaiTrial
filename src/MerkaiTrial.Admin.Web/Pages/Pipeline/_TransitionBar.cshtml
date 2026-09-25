@@ -21,6 +21,9 @@
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
 @using MerkaiTrial.Domain.Entities
 
+@* (030) Two sibling blocks rather than a bare `return;` in the middle of a
+   partial's body. It compiles today, but it is the kind of thing that breaks
+   on a Razor version bump, and a build break costs more than one @@if. *@
 @if (Model.Transitions is null)
 {
     @* The transitions call failed. Say so quietly — the deal is still
@@ -29,9 +32,9 @@
         <i class="bi bi-exclamation-circle me-1"></i>
         The available moves couldn't be loaded. Refresh the page, or move this deal from the pipeline board.
     </div>
-    return;
 }
-
+else
+{
 <div class="card shadow-sm mb-4 transition-bar">
     <div class="card-body py-3">
 
@@ -250,3 +253,4 @@
         });
     })();
 </script>
+}

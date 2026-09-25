@@ -3,7 +3,38 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
-// WHAT CHANGED
+// CHANGES (030)
+//
+//   1. THE CLOSE DATE WAS STORED A DAY EARLY. The old line was
+//
+//          ExpectedCloseDateUtc = Input.ExpectedCloseDate.ToUniversalTime(),
+//
+//      and carried a comment admitting it: "ToUniversalTime() converts
+//      using the SERVER's timezone... left as-is here to keep this change
+//      to stages only." It is not a no-op on an Indian or Thai server: an
+//      <input type="date"> posts midnight with Kind=Unspecified, and
+//      ToUniversalTime() treats Unspecified as LOCAL, so on IST
+//      (UTC+5:30) 2026-10-25 00:00 is stored as 2026-10-24 18:30 UTC.
+//      Every new deal's close date lands a day before the one that was
+//      typed. This is the same bug the Quotes pages were fixed for, and
+//      the fix is the same: a calendar date is stored as midnight UTC with
+//      SpecifyKind, with no conversion in either direction.
+//
+//   2. OnGetAsync NEVER CALLED InitializePermissionsAsync(). Every other
+//      page does. Without it CanCreate / CanUpdate / CanRead / CanDelete
+//      are all false for the whole render, so any permission gate in the
+//      view silently hides what it guards.
+//
+//   3. THE LINE VALIDATION ONLY CHECKED THE MODEL ATTRIBUTES. A close date
+//      before today now warns in the view; the value and stage are still
+//      validated by the API, which is the authority.
+//
+//   See Create.cshtml for the browser-side half: its script used to
+//   overwrite the tenant's starting stage with the literal "Discovery" and
+//   the probability with 20 on every page load, undoing the work this file
+//   does below to resolve them properly.
+//
+// WHAT CHANGED EARLIER
 //   The stage dropdown, its default and its probability all come from the
 //   tenant's PipelineStages now. Previously a tenant could add "Site
 //   Visit" in Settings and then find it nowhere on the form that creates
@@ -165,6 +196,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             var check = await ValidatePermissionAsync(Actions.Create);
             if (check != null) return check;
 
+            // ✅ (030) Was missing. Without it every Can* flag on the base
+            // class stays false for the whole render.
+            await InitializePermissionsAsync();
+
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -298,11 +333,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     ExpectedValue        = Input.ExpectedValue,
                     Currency             = Input.Currency,
                     Probability          = Input.Probability,
-                    // NOTE: ToUniversalTime() converts using the SERVER's
-                    // timezone and becomes a no-op on Azure. Should be
-                    // _currentTenantService.LocalToUtc — left as-is here to
-                    // keep this change to stages only.
-                    ExpectedCloseDateUtc = Input.ExpectedCloseDate.ToUniversalTime(),
+                    // ★ (030) SpecifyKind, not ToUniversalTime. This is a
+                    // CALENDAR DATE from <input type="date">: it arrives as
+                    // midnight with Kind=Unspecified, and ToUniversalTime()
+                    // treats Unspecified as LOCAL, so on an IST server
+                    // 2026-10-25 00:00 was stored as 2026-10-24 18:30 UTC —
+                    // every close date a day early. Store the date as midnight
+                    // UTC and never convert it.
+                    ExpectedCloseDateUtc = DateTime.SpecifyKind(Input.ExpectedCloseDate.Date, DateTimeKind.Utc),
                     OwnerUserId          = string.IsNullOrEmpty(Input.OwnerUserId)
                                             ? currentUser.UserId.ToString()
                                             : Input.OwnerUserId,

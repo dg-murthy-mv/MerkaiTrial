@@ -4,6 +4,22 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (030)
+//   • A DELETED OR OUT-OF-SCOPE DEAL 500'd THE PAGE. Deal is declared
+//     `= null!` and OnGetAsync assigned whatever GetDetailAsync returned
+//     without checking. The try/catch only covers exceptions, so a null
+//     return sailed through and Detail.cshtml's very first line —
+//     ViewData["Title"] = $"Deal - {Model.Deal.Title}" — threw a
+//     NullReferenceException, which is an unhandled 500, not a friendly
+//     "not found". Now it redirects to the pipeline with a message, the way
+//     every other page does.
+//   • DaysUntilClose(): the overdue / days-remaining line was
+//     (ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days, computed in
+//     UTC and written out twice — once in _OverviewTab and again in
+//     _RightSidebar. For five and a half hours of every Indian day, and
+//     seven of every Thai one, "closes today" was a day out. One helper
+//     now, in the tenant's timezone, used by both partials.
+//
 // NEW IN 020 (Blueprint transitions)
 //   • The transition bar. Instead of "go to the Edit page and pick a
 //     stage from a dropdown", the deal shows the moves its own process
@@ -288,6 +304,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var tenantId = me.TenantId;
 
                 Deal = await _dealService.GetDetailAsync(tenantId, id);
+
+                // ✅ (030) A null here used to reach the view, where
+                // Model.Deal.Title threw an unhandled NRE — a 500 page for a
+                // deal that had simply been deleted, or that this user's record
+                // scope does not include.
+                if (Deal == null)
+                {
+                    ErrorMessage = "That deal could not be found. It may have been deleted.";
+                    return RedirectToPage("/Pipeline/Index");
+                }
 
                 var notesTask        = _dealService.GetNotesAsync(tenantId, id);
                 var stageHistoryTask = _dealService.GetStageHistoryAsync(tenantId, id);
@@ -991,6 +1017,48 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             if (span.TotalMinutes < 60) return $"in {(int)span.TotalMinutes}m";
             if (span.TotalHours < 24)   return $"in {(int)span.TotalHours}h";
             return $"in {(int)span.TotalDays}d";
+        }
+
+        /// <summary>
+        /// Whole days until the deal's expected close, in the TENANT's day.
+        /// Negative once it has passed, 0 for today.
+        ///
+        /// (030) Both _OverviewTab and _RightSidebar had their own copy of
+        /// (ExpectedCloseDateUtc.Date - DateTime.UtcNow.Date).Days, which is
+        /// UTC arithmetic: for the five and a half hours after 18:30 UTC an
+        /// Indian workspace is already on the next day, so a deal closing
+        /// "today" read as closing tomorrow, and an overdue count was a day
+        /// short. One helper, one timezone, two callers.
+        /// </summary>
+        public int DaysUntilClose(DateTime closeUtc)
+        {
+            if (string.Equals(FormatDate(closeUtc), FormatDate(DateTime.UtcNow), StringComparison.Ordinal))
+                return 0;
+
+            var raw = (int)Math.Round((closeUtc - DateTime.UtcNow).TotalDays,
+                                      MidpointRounding.AwayFromZero);
+
+            // Different tenant-local days, so the answer must not be 0 — the
+            // UTC arithmetic can land there inside the timezone offset.
+            if (raw == 0) return closeUtc > DateTime.UtcNow ? 1 : -1;
+            return raw;
+        }
+
+        /// <summary>"3 days remaining" / "2 days overdue" / "Closes today".</summary>
+        public string CloseNote(DateTime closeUtc)
+        {
+            var d = DaysUntilClose(closeUtc);
+            if (d < 0)  return d == -1 ? "1 day overdue" : $"{-d} days overdue";
+            if (d == 0) return "Closes today";
+            if (d == 1) return "1 day remaining";
+            return $"{d} days remaining";
+        }
+
+        /// <summary>Bootstrap text class matching CloseNote's urgency.</summary>
+        public string CloseNoteClass(DateTime closeUtc)
+        {
+            var d = DaysUntilClose(closeUtc);
+            return d < 0 ? "text-danger" : d < 7 ? "text-warning-emphasis" : "text-muted";
         }
 
         public bool IsOverdue(ActivityDto task)

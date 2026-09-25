@@ -1,307 +1,253 @@
 @page
-@model MerkaiTrial.Admin.Web.Pages.Pipeline.CreateModel
 @using MerkaiTrial.Domain.Entities
+@model MerkaiTrial.Admin.Web.Pages.Pipeline.CreateModel
 @{
-    ViewData["Title"] = "Create New Deal";
+    ViewData["Title"] = "New deal";
+    var stages = Model.Stages.OrderBy(s => s.SortOrder).ToList();
 }
+@* =====================================================================
+   Pipeline/Create.cshtml   (030 — rebuild)
+   Location: MerkaiTrial.Admin.Web/Pages/Pipeline/Create.cshtml
+
+   COMPLETE FILE — replaces the existing one.
+
+   WHAT WAS WRONG
+
+   1. ★ EVERY NEW DEAL WAS FORCED INTO A STAGE CALLED "Discovery",
+      whatever the workspace's own pipeline said. The page model works out
+      the tenant's starting stage properly —
+
+          var start = Stages.FirstOrDefault(s => s.IsDefault) ?? Stages.FirstOrDefault();
+          Input.Stage = start.Key;
+
+      — and then the page's own script threw it away on load:
+
+          stageInput.value       = 'Discovery';
+          probabilityInput.value = '20';
+
+      A workspace whose first stage is "Site Visit" or "Enquiry" posted
+      the literal string "Discovery" unless the user happened to click a
+      stage badge first. The probability was hardcoded to 20 the same way,
+      overriding the stage's own figure. Both now come from the server.
+
+   2. THERE WERE TWO HIDDEN INPUTS FOR THE SAME FIELD. Input.Stage was
+      rendered twice — id="stageInput" near the top and id="stageValue"
+      further down — so the form posted Input.Stage twice, and only one of
+      them was ever updated by the script. The second one carried a note
+      saying "If your JS already writes to a hidden input, keep that one
+      and delete this." It does. It's deleted.
+
+   3. THE ERROR MESSAGE APPEARED TWICE. Model.ErrorMessage is [TempData]
+      and _Layout.cshtml renders TempData alerts globally, so rendering it
+      here as well gave two identical red banners.
+
+   4. A 2rem PURPLE GRADIENT BANNER reading "Create New Deal / Add a new
+      sales opportunity to your pipeline", above a 2rem-padded card,
+      before any of the form.
+
+   5. THE STAGE BADGES WERE <div>s WITH click HANDLERS. Not focusable, no
+      accessible name, invisible to the keyboard. They are radio inputs
+      now, which also means the choice survives with scripting off — and
+      with no script at all the server's default stage is already selected
+      rather than being silently replaced by "Discovery".
+   ===================================================================== *@
 
 <style>
-.page-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 2rem 0;
-    margin: -1rem -1rem 2rem -1rem;
-    border-radius: 0 0 1rem 1rem;
-}
-.form-container {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    padding: 2rem;
-    max-width: 900px;
-    margin: 0 auto;
-}
-.form-section {
-    margin-bottom: 2rem;
-    padding-bottom: 2rem;
-    border-bottom: 1px solid #e9ecef;
-}
-.form-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-.section-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #495057;
-    margin-bottom: 1.25rem;
-    display: flex;
-    align-items: center;
-}
-.section-title i { margin-right: 0.5rem; color: #667eea; }
-.form-label { font-weight: 600; color: #495057; margin-bottom: 0.5rem; }
-.currency-group { position: relative; }
-.currency-symbol {
-    position: absolute;
-    left: 12px; top: 50%;
-    transform: translateY(-50%);
-    font-weight: 600; color: #667eea; font-size: 1.1rem;
-    pointer-events: none; z-index: 2;
-}
-.currency-input { padding-left: 35px !important; }
+    .pc { max-width: 980px; margin: 0 auto; }
+    .pc-back { font-size: .82rem; color: #64748b; text-decoration: none; }
+    .pc-back:hover { color: #334155; }
+    .pc-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: .35rem 0 0; line-height: 1.2; }
+    .pc-sub { font-size: .84rem; color: #64748b; margin: .2rem 0 1rem; }
 
-/* Stage badge colors */
-.stage-badge {
-    display: inline-block;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-weight: 600;
-    margin-right: 0.5rem;
-    margin-bottom: 0.5rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    border: 2px solid transparent;
-    user-select: none;
-}
-.stage-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
-.stage-badge.active { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.25); }
-.stage-discovery     { background-color: #6c757d; color: white; }
-.stage-qualification { background-color: #17a2b8; color: white; }
-.stage-proposal      { background-color: #0d6efd; color: white; }
-.stage-negotiation   { background-color: #ffc107; color: #000; }
-.stage-closedwon     { background-color: #198754; color: white; }
-.stage-closedlost    { background-color: #dc3545; color: white; }
+    .pc-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; margin-bottom: 1rem; }
+    .pc-card > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                    font-weight: 650; margin: 0; padding: .7rem 1rem; border-bottom: 1px solid #f1f3f5;
+                    display: flex; align-items: center; gap: .4rem; }
+    .pc-card .bd { padding: 1rem; }
 
-.probability-display { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
-.probability-value { font-size: 2rem; font-weight: 700; color: #667eea; min-width: 80px; }
+    .pc-money { position: relative; }
+    .pc-money .sym { position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+                     font-weight: 650; color: #64748b; pointer-events: none; }
+    .pc-money input { padding-left: 32px; }
 
-/* Auto-fill hint badge */
-.autofill-hint {
-    font-size: 0.75rem;
-    color: #6366f1;
-    margin-top: 0.25rem;
-    display: none;
-}
-.autofill-hint.visible { display: block; }
+    /* Stage picker: real radios, styled as chips. The label is the control,
+       so it is focusable and announced, and it works with no script. */
+    .pc-stages { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .pc-stage input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .pc-stage span { display: inline-flex; align-items: center; gap: .35rem; cursor: pointer;
+                     padding: .45rem .8rem; border-radius: 8px; border: 2px solid #e9ecef;
+                     background: #f8fafc; font-size: .86rem; font-weight: 600; color: #334155;
+                     transition: border-color .15s, box-shadow .15s, background-color .15s; }
+    .pc-stage span:hover { border-color: #cbd5e1; }
+    .pc-stage input:checked + span { border-color: var(--tone, #4f46e5); background: #fff;
+                                     box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, #4f46e5) 22%, transparent); }
+    .pc-stage input:focus-visible + span { outline: 2px solid #4f46e5; outline-offset: 2px; }
+    .pc-stage .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tone, #94a3b8); }
+    .pc-stage .pct { font-weight: 500; color: #94a3b8; font-size: .78rem; }
 
-@@media (max-width: 767.98px) {
-    .form-container { padding: 1.5rem; }
-    .page-header { padding: 1.5rem 0; }
-    .stage-badge { font-size: 0.875rem; padding: 0.4rem 0.8rem; }
-}
+    .pc-prob { display: flex; align-items: center; gap: 1rem; }
+    .pc-prob .v { font-size: 1.6rem; font-weight: 700; color: #4f46e5; min-width: 68px; text-align: right; }
+
+    .pc-hint { font-size: .76rem; color: #6366f1; margin-top: .25rem; display: none; }
+    .pc-hint.on { display: block; }
+
+    .pc-bar { display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
+              border-top: 1px solid #e9ecef; padding-top: 1rem; margin-top: 1rem; }
+
+    @@media (max-width: 575.98px) {
+        .pc-title { font-size: 1.25rem; }
+        .pc-bar { justify-content: stretch; }
+        .pc-bar > * { flex: 1 1 100%; }
+        .pc-bar .btn { width: 100%; }
+    }
 </style>
 
-<div class="container-fluid">
-    <div class="page-header">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1 class="h3 mb-1"><i class="bi bi-plus-circle me-2"></i>Create New Deal</h1>
-                    <p class="mb-0 opacity-75">Add a new sales opportunity to your pipeline</p>
+<div class="pc">
+
+    <a asp-page="./Index" class="pc-back"><i class="bi bi-arrow-left me-1"></i>Pipeline</a>
+    <h1 class="pc-title">New deal</h1>
+    <p class="pc-sub">A deal is an opportunity you're working. It starts where your workspace says deals start.</p>
+
+    @* Model.ErrorMessage is [TempData] and _Layout renders it once, globally.
+       The old page rendered it here as well, so a failure showed twice. *@
+
+    <form method="post" id="pcForm">
+        @Html.AntiForgeryToken()
+        @if (Model.Input.LeadId.HasValue)
+        {
+            <input type="hidden" asp-for="Input.LeadId" />
+        }
+        @* Currency is fixed to the workspace and resolved server-side; this
+           hidden field only keeps [Required] on the input model satisfied. *@
+        <input type="hidden" asp-for="Input.Currency" />
+
+        <div class="pc-card">
+            <h2><i class="bi bi-info-circle"></i>The basics</h2>
+            <div class="bd">
+                <div class="mb-3">
+                    <label asp-for="Input.Title" class="form-label small text-muted mb-1">
+                        Deal title <span class="text-danger">*</span>
+                    </label>
+                    <input asp-for="Input.Title" class="form-control" required maxlength="200"
+                           placeholder="e.g. TechCorp CRM implementation" />
+                    <span asp-validation-for="Input.Title" class="text-danger small"></span>
                 </div>
-                <a asp-page="./Index" class="btn btn-light">
-                    <i class="bi bi-arrow-left me-2"></i>Back to Pipeline
-                </a>
+                <div class="mb-0">
+                    <label asp-for="Input.Description" class="form-label small text-muted mb-1">Description</label>
+                    <textarea asp-for="Input.Description" class="form-control" rows="3" maxlength="2000"
+                              placeholder="What is this opportunity?"></textarea>
+                    <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="form-container">
-        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-        {
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        }
-
-        <form method="post" id="createDealForm">
-            @Html.AntiForgeryToken()
-            <input type="hidden" asp-for="Input.Stage"       id="stageInput" />
-            <input type="hidden" asp-for="Input.Probability" id="probabilityInput" />
-            @if (Model.Input.LeadId.HasValue)
-            {
-                <input type="hidden" asp-for="Input.LeadId" />
-            }
-            <input type="hidden" id="tenantCurrencySymbol" value="@Model.TenantCurrencySymbol" />
-            <input type="hidden" id="tenantCurrencyCode"   value="@Model.TenantCurrencyCode" />
-
-            <!-- Basic Information -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-info-circle"></i>Basic Information</div>
-                <div class="row">
-                    <div class="col-md-12 mb-3">
-                        <label asp-for="Input.Title" class="form-label">
-                            Deal Title <span class="text-danger">*</span>
-                        </label>
-                        <input asp-for="Input.Title" class="form-control"
-                               placeholder="e.g., TechCorp CRM Implementation" />
-                        <span asp-validation-for="Input.Title" class="text-danger small"></span>
-                    </div>
-                    <div class="col-md-12 mb-3">
-                        <label asp-for="Input.Description" class="form-label">Description</label>
-                        <textarea asp-for="Input.Description" class="form-control" rows="3"
-                                  placeholder="Brief description of the opportunity..."></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Contact & Company -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-people"></i>Contact & Company</div>
-                <div class="row">
-                    <!-- Contact — carries data-company-id/name for auto-fill -->
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.ContactId" class="form-label">
+        <div class="pc-card">
+            <h2><i class="bi bi-people"></i>Who it's with</h2>
+            <div class="bd">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.ContactId" class="form-label small text-muted mb-1">
                             Contact <span class="text-danger">*</span>
                         </label>
-                        <select asp-for="Input.ContactId" class="form-select" id="contactSelect">
-                            <option value="">-- Select Contact --</option>
+                        <select asp-for="Input.ContactId" class="form-select" id="pcContact" required>
+                            <option value="">Choose a contact…</option>
                             @foreach (var c in Model.ContactItems)
                             {
                                 <option value="@c.Id"
                                         data-company-id="@(c.CompanyId ?? "")"
-                                        data-company-name="@(c.CompanyName ?? "")">
-                                    @c.Text
-                                </option>
+                                        data-company-name="@(c.CompanyName ?? "")">@c.Text</option>
                             }
                         </select>
                         <span asp-validation-for="Input.ContactId" class="text-danger small"></span>
                     </div>
 
-                    <!-- Company — auto-filled from Contact, still manually editable -->
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.CompanyId" class="form-label">
-                            Company <span class="text-muted small">(optional)</span>
+                    <div class="col-md-6">
+                        <label asp-for="Input.CompanyId" class="form-label small text-muted mb-1">
+                            Company <span class="text-muted">(optional)</span>
                         </label>
-                        <select asp-for="Input.CompanyId" class="form-select" id="companySelect">
-                            <option value="">-- Select Company --</option>
+                        <select asp-for="Input.CompanyId" class="form-select" id="pcCompany">
+                            <option value="">Choose a company…</option>
                             @foreach (var c in Model.Companies)
                             {
-                                <option value="@c.Value" selected="@(c.Selected ? "selected" : null)">@c.Text</option>
+                                <option value="@c.Value" selected="@c.Selected">@c.Text</option>
                             }
                         </select>
-                        <!-- ✅ Hint shown when company was auto-filled from contact -->
-                        <div class="autofill-hint" id="companyAutoFillHint">
-                            <i class="bi bi-magic me-1"></i>Auto-filled from contact — you can change this
+                        <div class="pc-hint" id="pcCompanyHint">
+                            <i class="bi bi-magic me-1"></i>Filled in from the contact — change it if that's wrong
                         </div>
                     </div>
 
-                    <!-- Vertical / Industry — manual, loaded from CompanyVerticals table -->
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.VerticalId" class="form-label">
-                            Industry / Vertical <span class="text-muted small">(optional)</span>
+                    <div class="col-md-6">
+                        <label asp-for="Input.VerticalId" class="form-label small text-muted mb-1">
+                            Industry <span class="text-muted">(optional)</span>
                         </label>
-                        <select asp-for="Input.VerticalId" class="form-select" id="verticalSelect">
-                            <option value="">-- Select Industry --</option>
+                        <select asp-for="Input.VerticalId" class="form-select">
+                            <option value="">Choose an industry…</option>
                             @foreach (var v in Model.VerticalOptions)
                             {
                                 <option value="@v.Value">@v.Text</option>
                             }
                         </select>
-                        <small class="text-muted">
-                            Auto-set when converting from a Lead. Set manually for direct deals.
-                        </small>
+                        <div class="form-text" style="font-size:.74rem;">
+                            Set automatically when a lead is converted.
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="Input.SourceId" class="form-label small text-muted mb-1">
+                            Where it came from
+                        </label>
+                        <select asp-for="Input.SourceId" class="form-select">
+                            <option value="">Choose a source…</option>
+                            @foreach (var s in Model.Sources)
+                            {
+                                <option value="@s.Value">@s.Text</option>
+                            }
+                        </select>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Deal Value -->
-            <div class="form-section">
-                <div class="section-title">
-                    <i class="bi bi-currency-exchange"></i>&nbsp;Deal Value
-                    <span class="badge ms-2 text-white" style="background:#6366f1;font-size:0.75rem;">
-                        @Model.TenantCurrencyCode
-                    </span>
-                </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Currency</label>
-                        <input type="text" class="form-control bg-light"
-                               value="@Model.TenantCurrencyCode" readonly />
-                        <input type="hidden" asp-for="Input.Currency" />
-                        <small class="text-muted">
-                            Fixed to your workspace (@Model.TenantCurrencyCode)
-                        </small>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.ExpectedValue" class="form-label">
-                            Expected Value <span class="text-danger">*</span>
+        <div class="pc-card">
+            <h2>
+                <i class="bi bi-currency-exchange"></i>Value and timing
+                <span class="badge bg-light text-dark border ms-auto">@Model.TenantCurrencyCode</span>
+            </h2>
+            <div class="bd">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="Input.ExpectedValue" class="form-label small text-muted mb-1">
+                            Expected value <span class="text-danger">*</span>
                         </label>
-                        <div class="currency-group">
-                            <span class="currency-symbol" id="currencySymbol">
-                                @Model.TenantCurrencySymbol
-                            </span>
-                            <input asp-for="Input.ExpectedValue" type="number" step="0.01"
-                                   class="form-control currency-input" placeholder="0.00" min="0.01" />
+                        <div class="pc-money">
+                            <span class="sym">@Model.TenantCurrencySymbol</span>
+                            <input asp-for="Input.ExpectedValue" type="number" step="0.01" min="0.01"
+                                   class="form-control" placeholder="0.00" required />
                         </div>
                         <span asp-validation-for="Input.ExpectedValue" class="text-danger small"></span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Stage & Timeline -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-funnel"></i>Stage & Timeline</div>
-
-                <div class="mb-3">
-                    <label class="form-label">Deal Stage <span class="text-danger">*</span></label>
-                    <div class="stage-selector">
-                        @* Badges come from the tenant's own pipeline now. Six were
-            hardcoded here, so a tenant who added "Site Visit" in Settings
-            could not actually put a deal in it. The CSS class follows the
-            stage's CATEGORY, not its name — a custom stage has no
-            stage-sitevisit class to match. *@
-                        @foreach (var s in Model.Stages)
-                        {
-                            var cls = s.Category switch
-                            {
-                                StageCategory.Won => "stage-closedwon",
-                                StageCategory.Lost => "stage-closedlost",
-                                _ => "stage-discovery"
-                            };
-
-                            var icon = s.Category switch
-                            {
-                                StageCategory.Won => "bi-trophy",
-                                StageCategory.Lost => "bi-x-circle",
-                                _ => "bi-circle"
-                            };
-
-                            <div class="stage-badge @cls @(s.Key == Model.Input.Stage ? "active" : "")"
-                                 data-stage="@s.Key" data-probability="@s.Probability">
-                                <i class="bi @icon me-1"></i>@s.Name (@s.Probability%)
-                            </div>
-                        }
+                        <div class="form-text" style="font-size:.74rem;">
+                            In @Model.TenantCurrencyCode — your workspace currency.
+                        </div>
                     </div>
 
-                                @* The badges are divs, so something must carry the value to the
-                    server. If your JS already writes to a hidden input, keep that one
-                    and delete this. *@
-                    <input type="hidden" asp-for="Input.Stage" id="stageValue" />
-                    <span asp-validation-for="Input.Stage" class="text-danger"></span>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Probability of Closing</label>
-                    <div class="probability-display">
-                        <input type="range" class="form-range" min="0" max="100"
-                               value="20" id="probabilitySlider" />
-                        <span class="probability-value" id="probabilityDisplay">20%</span>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.ExpectedCloseDate" class="form-label">
-                            Expected Close Date <span class="text-danger">*</span>
+                    <div class="col-md-6">
+                        <label asp-for="Input.ExpectedCloseDate" class="form-label small text-muted mb-1">
+                            Expected close date <span class="text-danger">*</span>
                         </label>
-                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" />
+                        <input asp-for="Input.ExpectedCloseDate" type="date" class="form-control" required />
                         <span asp-validation-for="Input.ExpectedCloseDate" class="text-danger small"></span>
+                        <div class="text-danger mt-1 d-none" id="pcDateErr" style="font-size:.78rem;">
+                            A close date in the past is unusual — check it before saving.
+                        </div>
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.OwnerUserId" class="form-label">
-                            Owner <span class="text-muted small">(optional — defaults to you)</span>
+
+                    <div class="col-12">
+                        <label asp-for="Input.OwnerUserId" class="form-label small text-muted mb-1">
+                            Owner <span class="text-muted">(optional — defaults to you)</span>
                         </label>
                         <select asp-for="Input.OwnerUserId" class="form-select">
-                            <option value="">-- Assign to me --</option>
+                            <option value="">Assign to me</option>
                             @foreach (var u in Model.SalesTeam)
                             {
                                 <option value="@u.Value">@u.Text</option>
@@ -310,124 +256,177 @@
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Additional Information -->
-            <div class="form-section">
-                <div class="section-title"><i class="bi bi-tag"></i>Additional Information</div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.SourceId" class="form-label">Source</label>
-                        <select asp-for="Input.SourceId" class="form-select">
-                            <option value="">-- Select Source --</option>
-                            @foreach (var s in Model.Sources)
+        <div class="pc-card">
+            <h2><i class="bi bi-funnel"></i>Where it starts</h2>
+            <div class="bd">
+                @if (!stages.Any())
+                {
+                    <div class="alert alert-warning mb-0 py-2 small">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        This workspace has no pipeline stages.
+                        <a asp-page="/Settings/Pipeline/Index">Add them under Settings</a> first.
+                    </div>
+                }
+                else
+                {
+                    @* Real radio inputs, all named Input.Stage — ONE field, not
+                       two hidden copies of it. The server's chosen default is
+                       pre-selected, so with scripting off the right stage is
+                       still posted. The old <div> badges needed JS just to have
+                       a value at all, and that JS hardcoded "Discovery". *@
+                    <div class="pc-stages" role="radiogroup" aria-label="Starting stage">
+                        @foreach (var s in stages)
+                        {
+                            var tone = s.Category switch
                             {
-                                <option value="@s.Value">@s.Text</option>
-                            }
-                        </select>
+                                StageCategory.Won => "#198754",
+                                StageCategory.Lost => "#dc3545",
+                                _ => new[] { "#64748b", "#0dcaf0", "#0d6efd", "#6f42c1", "#fd7e14", "#20c997" }
+                                        [Math.Abs(s.SortOrder) % 6]
+                            };
+
+                            <label class="pc-stage" style="--tone:@tone;">
+                                <input type="radio" name="Input.Stage" value="@s.Key"
+                                       data-probability="@s.Probability"
+                                       checked="@(s.Key == Model.Input.Stage)" required />
+                                <span>
+                                    <span class="dot"></span>@s.Name
+                                    <span class="pct">@s.Probability%</span>
+                                </span>
+                            </label>
+                        }
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label asp-for="Input.Tags" class="form-label">
-                            Tags <span class="text-muted small">(comma-separated)</span>
+                    <span asp-validation-for="Input.Stage" class="text-danger small d-block mt-1"></span>
+
+                    <div class="mt-3">
+                        <label class="form-label small text-muted mb-1" for="pcProbSlider">
+                            Probability of closing
                         </label>
-                        <input asp-for="Input.Tags" class="form-control"
-                               placeholder="e.g., enterprise, high-value, urgent" />
+                        <div class="pc-prob">
+                            <input type="range" class="form-range" min="0" max="100" id="pcProbSlider"
+                                   value="@(Model.Input.Probability ?? 0)"
+                                   aria-describedby="pcProbValue" />
+                            <span class="v" id="pcProbValue">@(Model.Input.Probability ?? 0)%</span>
+                        </div>
+                        @* The value that actually posts. ONE hidden field, filled
+                           from the server, not from a hardcoded '20'. *@
+                        <input type="hidden" asp-for="Input.Probability" id="pcProb" />
+                        <div class="form-text" style="font-size:.74rem;">
+                            Each stage has its own default, applied when you pick it. Change this only when
+                            this particular deal is more or less likely than the stage suggests.
+                        </div>
                     </div>
+                }
+
+                <div class="mt-3">
+                    <label asp-for="Input.Tags" class="form-label small text-muted mb-1">
+                        Tags <span class="text-muted">(comma-separated)</span>
+                    </label>
+                    <input asp-for="Input.Tags" class="form-control"
+                           placeholder="e.g. enterprise, high-value, urgent" />
                 </div>
             </div>
+        </div>
 
-            <!-- Actions -->
-            <div class="d-flex justify-content-between">
-                <a asp-page="./Index" class="btn btn-secondary">
-                    <i class="bi bi-x-circle me-2"></i>Cancel
-                </a>
-                <button type="submit" class="btn btn-primary btn-lg">
-                    <i class="bi bi-save me-2"></i>Create Deal
-                </button>
-            </div>
-        </form>
-    </div>
+        <div class="pc-bar">
+            <a asp-page="./Index" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check2 me-1"></i>Create deal
+            </button>
+        </div>
+    </form>
 </div>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
     <script>
-    document.addEventListener('DOMContentLoaded', function () {
+        (function () {
+            'use strict';
 
-        // ── Stage badges ────────────────────────────────────────────
-        const stageBadges        = document.querySelectorAll('.stage-badge');
-        const stageInput         = document.getElementById('stageInput');
-        const probabilityInput   = document.getElementById('probabilityInput');
-        const probabilitySlider  = document.getElementById('probabilitySlider');
-        const probabilityDisplay = document.getElementById('probabilityDisplay');
+            // ── 1. stage → probability ───────────────────────────────
+            // NOTHING is hardcoded here. The old script opened with
+            //     stageInput.value = 'Discovery'; probabilityInput.value = '20';
+            // which overwrote whatever the workspace's own pipeline said.
+            var slider = document.getElementById('pcProbSlider');
+            var out = document.getElementById('pcProbValue');
+            var hidden = document.getElementById('pcProb');
 
-        stageInput.value       = 'Discovery';
-        probabilityInput.value = '20';
-
-        stageBadges.forEach(badge => {
-            badge.addEventListener('click', function () {
-                stageBadges.forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                stageInput.value               = this.dataset.stage;
-                probabilityInput.value         = this.dataset.probability;
-                probabilitySlider.value        = this.dataset.probability;
-                probabilityDisplay.textContent = this.dataset.probability + '%';
-            });
-        });
-
-        probabilitySlider.addEventListener('input', function () {
-            probabilityInput.value         = this.value;
-            probabilityDisplay.textContent = this.value + '%';
-        });
-
-        // ── Currency symbol ─────────────────────────────────────────
-        const tenantSymbol = document.getElementById('tenantCurrencySymbol').value;
-        const symbolEl     = document.getElementById('currencySymbol');
-        if (symbolEl) symbolEl.textContent = tenantSymbol;
-
-        // ── Default close date ──────────────────────────────────────
-        const closeDateInput = document.querySelector('input[name="Input.ExpectedCloseDate"]');
-        if (closeDateInput && !closeDateInput.value) {
-            const d = new Date();
-            d.setMonth(d.getMonth() + 1);
-            closeDateInput.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-        }
-
-        // ── ✅ Contact → auto-fill Company ──────────────────────────
-        const contactSelect       = document.getElementById('contactSelect');
-        const companySelect       = document.getElementById('companySelect');
-        const companyAutoFillHint = document.getElementById('companyAutoFillHint');
-
-        contactSelect.addEventListener('change', function () {
-            const selected = this.options[this.selectedIndex];
-            const companyId   = selected.dataset.companyId   || '';
-            const companyName = selected.dataset.companyName || '';
-
-            if (companyId) {
-                // Only auto-fill if company is not already manually set
-                // (i.e., user hasn't explicitly picked one)
-                const currentCompany = companySelect.value;
-
-                companySelect.value = companyId;
-                companyAutoFillHint.classList.add('visible');
-
-                // If the companyId isn't in the dropdown options, add it temporarily
-                const exists = Array.from(companySelect.options)
-                    .some(o => o.value === companyId);
-
-                if (!exists && companyName) {
-                    const opt = new Option(companyName, companyId, true, true);
-                    companySelect.add(opt);
-                }
-            } else {
-                // Contact has no company — clear auto-fill hint but keep manual value
-                companyAutoFillHint.classList.remove('visible');
+            function setProb(v) {
+                var n = parseInt(v, 10);
+                if (!Number.isFinite(n)) return;
+                if (slider) slider.value = n;
+                if (out) out.textContent = n + '%';
+                if (hidden) hidden.value = n;
             }
-        });
 
-        // Hide hint if user manually changes company after auto-fill
-        companySelect.addEventListener('change', function () {
-            companyAutoFillHint.classList.remove('visible');
-        });
-    });
+            // Seed the hidden field from whatever is checked, so the value
+            // posted matches the stage shown even if nobody touches anything.
+            var checked = document.querySelector('input[name="Input.Stage"]:checked');
+            if (checked && hidden && !hidden.value) setProb(checked.getAttribute('data-probability'));
+
+            var radios = document.querySelectorAll('input[name="Input.Stage"]');
+            for (var i = 0; i < radios.length; i++) {
+                radios[i].addEventListener('change', function () {
+                    setProb(this.getAttribute('data-probability'));
+                });
+            }
+
+            if (slider) slider.addEventListener('input', function () { setProb(this.value); });
+
+            // ── 2. contact → company ─────────────────────────────────
+            var contact = document.getElementById('pcContact');
+            var company = document.getElementById('pcCompany');
+            var hint = document.getElementById('pcCompanyHint');
+
+            if (contact && company) {
+                contact.addEventListener('change', function () {
+                    var opt = this.options[this.selectedIndex];
+                    if (!opt) return;
+
+                    var id = opt.getAttribute('data-company-id') || '';
+                    var name = opt.getAttribute('data-company-name') || '';
+
+                    if (!id) { if (hint) hint.classList.remove('on'); return; }
+
+                    var exists = false;
+                    for (var i = 0; i < company.options.length; i++) {
+                        if (company.options[i].value === id) { exists = true; break; }
+                    }
+                    // textContent, never innerHTML: a company name is the
+                    // tenant's own text and may contain anything.
+                    if (!exists && name) {
+                        var o = document.createElement('option');
+                        o.value = id;
+                        o.textContent = name;
+                        company.appendChild(o);
+                    }
+
+                    company.value = id;
+                    if (hint) hint.classList.add('on');
+                });
+
+                company.addEventListener('change', function () {
+                    if (hint) hint.classList.remove('on');
+                });
+            }
+
+            // ── 3. a close date in the past ──────────────────────────
+            var close = document.getElementById('Input_ExpectedCloseDate');
+            var dateErr = document.getElementById('pcDateErr');
+
+            function checkDate() {
+                if (!close || !dateErr || !close.value) return;
+                // Both sides are yyyy-MM-dd, so a string compare is a correct
+                // date compare with no parsing and no timezone.
+                var today = new Date();
+                var iso = today.getFullYear() + '-' +
+                          String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                          String(today.getDate()).padStart(2, '0');
+                dateErr.classList.toggle('d-none', close.value >= iso);
+            }
+            if (close) { close.addEventListener('change', checkDate); checkDate(); }
+        })();
     </script>
 }
