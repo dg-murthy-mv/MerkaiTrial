@@ -740,10 +740,20 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 ? new List<string>()
                 : reasons.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 
+        /// <summary>
+        /// (033) The last three arguments are new: the chain. The entity has
+        /// carried RuleName / CurrentStepOrder / TotalSteps since 027, but
+        /// this mapper stopped at DecisionComment, so the quote Detail panel
+        /// had no way to say "Step 2 of 3" and had to hedge with "if your
+        /// workspace's rule has more than one step…". They are optional
+        /// trailing parameters on the record, so nothing else that builds a
+        /// QuoteApprovalRequestDto needs touching.
+        /// </summary>
         public static QuoteApprovalRequestDto ToDto(QuoteApprovalRequest r) => new(
             r.Id, r.QuoteId, r.Status, r.RequestedByName, r.RequestedAtUtc, r.RequestComment,
             SplitReasons(r.Reasons), r.QuoteTotal, r.MaxLineDiscountPercent, r.Currency,
-            r.DecidedByName, r.DecidedAtUtc, r.DecisionComment);
+            r.DecidedByName, r.DecidedAtUtc, r.DecisionComment,
+            r.RuleName, r.CurrentStepOrder, Math.Max(1, r.TotalSteps));
 
         internal static bool IsDuplicateKey(DbUpdateException ex)
         {

@@ -23,6 +23,17 @@ public record SaveQuoteApprovalSettingsDto(
     decimal? MaxQuoteTotal);
 
 /// <summary>One approval request and its outcome.</summary>
+///
+/// (033) The last three carry the CHAIN. QuoteApprovalRequest has held
+/// RuleName, CurrentStepOrder and TotalSteps since 027, but ToDto never
+/// passed them on, so the quote Detail panel could not say "Step 2 of 3"
+/// and had to hedge: "if your workspace's rule has more than one step…".
+///
+/// They are OPTIONAL TRAILING parameters on purpose. Every existing
+/// positional `new QuoteApprovalRequestDto(...)` still compiles untouched,
+/// which is the same rule round 026 followed when it widened TeamDto.
+///
+/// The defaults describe a pre-027 request honestly: one step, no rule.
 public record QuoteApprovalRequestDto(
     Guid Id,
     Guid QuoteId,
@@ -36,7 +47,24 @@ public record QuoteApprovalRequestDto(
     string Currency,
     string? DecidedByName,
     DateTime? DecidedAtUtc,
-    string? DecisionComment);
+    string? DecisionComment,
+
+    /// <summary>The rule's name when the request was raised — a snapshot.</summary>
+    string? RuleName = null,
+
+    /// <summary>Which step is (or was) waiting for a decision. 1-based.</summary>
+    int CurrentStepOrder = 1,
+
+    /// <summary>How many steps the chain had when it started.</summary>
+    int TotalSteps = 1)
+{
+    /// <summary>"Step 2 of 3", or null for a single-step chain — there is
+    /// nothing to say about step 1 of 1, and saying it is noise.</summary>
+    public string? StepLabel => TotalSteps > 1 ? $"Step {CurrentStepOrder} of {TotalSteps}" : null;
+
+    /// <summary>True when approving the current step finishes the chain.</summary>
+    public bool IsFinalStep => CurrentStepOrder >= TotalSteps;
+}
 
 /// <summary>
 /// Everything the quote Detail page needs to draw the approval panel —

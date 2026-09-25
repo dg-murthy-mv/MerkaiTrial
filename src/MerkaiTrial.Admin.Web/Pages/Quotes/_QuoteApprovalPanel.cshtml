@@ -27,14 +27,18 @@
    byte-for-byte compatible on purpose, so this panel needs no change to
    work with approval chains.
 
-   ApproverNames is whoever the server says may decide the request AS
-   THINGS STAND — with a multi-step rule that is the step the quote is
-   sitting on, not the whole chain. The DTO carries no step number, so
-   this panel does not claim to show "step 2 of 3"; it names the people
-   who can act now and says plainly that a longer rule asks the next
-   approver afterwards. Putting the real step count here is a follow-up
-   (027b) and needs QuoteApprovalEngine.ToDto to pass CurrentStepOrder /
-   TotalSteps / RuleName through.
+   (033 — this is the 027b follow-up.) QuoteApprovalRequestDto now carries
+   RuleName, CurrentStepOrder and TotalSteps, so the panel states the real
+   position in the chain — "Step 2 of 3" — instead of the conditional
+   hedge it used to print ("if your workspace's rule has more than one
+   step, the next approver is asked once this one signs").
+
+   ApproverNames is still whoever may decide AS THINGS STAND, i.e. the
+   people this step names. That list is deliberately PEOPLE ONLY: the
+   panel branches on it being EMPTY to say "nobody can approve this", and
+   an earlier attempt to prefix it with "[Step 2 of 3 — …]" made that
+   honest message unreachable and rendered the label to the user as if it
+   were a person. The step belongs in its own chip, which is where it is.
 
    CHANGES vs the 017 version
      • History opens with a native <details>, not a Bootstrap collapse, so
@@ -64,6 +68,16 @@
         .qap-who .lbl { color: #94a3b8; }
         .qap-hist summary { cursor: pointer; list-style: none; font-weight: 650; font-size: .9rem; color: #3b4fd4; display: inline-flex; align-items: center; gap: .35rem; }
         .qap-hist summary::-webkit-details-marker { display: none; }
+        /* (033) The chain. */
+        .qap-step { font-size: .74rem; font-weight: 650; color: #3b4fd4; background: #eef0ff;
+                    border: 1px solid #d7dcff; border-radius: 20px; padding: .15rem .55rem;
+                    white-space: nowrap; }
+        .qap-dots { display: flex; align-items: center; gap: .3rem; margin-top: .6rem; flex-wrap: wrap; }
+        .qap-dots .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+        .qap-dots .dot.done { background: #198754; }
+        .qap-dots .dot.now  { background: #ffc107; box-shadow: 0 0 0 3px rgba(255,193,7,.28); }
+        .qap-dots .dot.todo { background: #fff; border: 1px solid #cbd5e1; }
+
         .qap-row { padding: .55rem 0; border-top: 1px solid #f1f3f5; font-size: .86rem; }
         .qap-row:first-of-type { border-top: 0; }
         /* Own rule rather than Bootstrap's .invalid-feedback, so the message
@@ -85,9 +99,23 @@
                     </div>
                     <div class="qap-meta">
                         Asked by <strong>@p.RequestedByName</strong> on @Model.FormatDateTime(p.RequestedAtUtc)
+                        @if (!string.IsNullOrWhiteSpace(p.RuleName))
+                        {
+                            <span> · rule: <strong>@p.RuleName</strong></span>
+                        }
                     </div>
                 </div>
-                <span class="badge bg-warning text-dark">Pending approval</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    @* (033) The real position in the chain. StepLabel is null for a
+                       single-step rule — "Step 1 of 1" is noise, so nothing is drawn. *@
+                    @if (p.StepLabel is not null)
+                    {
+                        <span class="qap-step">
+                            <i class="bi bi-diagram-2 me-1"></i>@p.StepLabel
+                        </span>
+                    }
+                    <span class="badge bg-warning text-dark">Pending approval</span>
+                </div>
             </div>
 
             @if (p.Reasons.Any())
@@ -110,6 +138,31 @@
                puts them, each marked "(admin)". So this line names them and
                makes no extra claim about who else could step in; asserting
                "an admin can also sign it" would be guessing at the rule. *@
+            @if (p.TotalSteps > 1)
+            {
+                @* One pip per step: filled for the steps already signed, ringed
+                   for the one waiting, hollow for the ones still to come. *@
+                <div class="qap-dots" aria-label="@p.StepLabel">
+                    @for (var i = 1; i <= p.TotalSteps; i++)
+                    {
+                        var cls = i < p.CurrentStepOrder ? "done"
+                                : i == p.CurrentStepOrder ? "now" : "todo";
+                        <span class="dot @cls" title="Step @i"></span>
+                    }
+                    <span class="qap-meta ms-1">
+                        @if (p.IsFinalStep)
+                        {
+                            <text>Last step — approving it releases the quote.</text>
+                        }
+                        else
+                        {
+                            <text>@(p.TotalSteps - p.CurrentStepOrder) more
+                            @(p.TotalSteps - p.CurrentStepOrder == 1 ? "step" : "steps") after this one.</text>
+                        }
+                    </span>
+                </div>
+            }
+
             @if (a.ApproverNames.Any())
             {
                 <div class="qap-who">
@@ -285,13 +338,11 @@
                         </button>
                         @if (a.ApproverNames.Any())
                         {
-                            @* Deliberately "goes to first", not "goes to". With a
-                               multi-step rule (round 027) these are the people the
-                               FIRST step names, and the next step is asked only
-                               after they sign; with a single-step rule they are the
-                               whole list. The panel is not told which it is — the
-                               request DTO carries no step number — so it says the
-                               one thing that is true either way. *@
+                            @* Still "goes first to". There is no request yet, so there
+                               is no chain to read a step count from — the rule is only
+                               matched when the quote is submitted. This stays
+                               conditional on purpose; the real "Step 2 of 3" appears
+                               above once the request exists. *@
                             <span class="qap-meta">
                                 Goes first to @string.Join(", ", a.ApproverNames).
                                 If your workspace's rule has more than one step, the next
@@ -352,6 +403,17 @@
                             <div class="qap-meta">
                                 Total @Model.FormatCurrency(h.QuoteTotal)
                                 · deepest discount @h.MaxLineDiscountPercent.ToString("0.##")%
+                                @* (033) Where in the chain this one ended. For a request
+                                   sent back, that is the step that sent it back — which
+                                   is the useful part of the history. *@
+                                @if (h.StepLabel is not null)
+                                {
+                                    <span> · @h.StepLabel</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(h.RuleName))
+                                {
+                                    <span> · @h.RuleName</span>
+                                }
                             </div>
                             @if (!string.IsNullOrWhiteSpace(h.DecisionComment))
                             {

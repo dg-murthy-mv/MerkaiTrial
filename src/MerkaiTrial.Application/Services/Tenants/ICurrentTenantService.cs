@@ -1,10 +1,43 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Services/Tenants/ICurrentTenantService.cs
-// CHANGES: Added plan/quota methods — reads from TenantSettings table
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (033)
+//   ★ FormatCurrency(amount, decimals) IGNORED `decimals` ON THE LEGACY
+//     PATTERN BRANCH. The method works out `places` correctly at the top
+//     and then, for a country whose NumberFormat still holds a PATTERN
+//     rather than a culture name, threw it away:
+//
+//         var places = decimals ?? country.CurrencyDecimals;   // 0
+//         ...
+//         else if (LooksLikePattern(raw))
+//             formatted = amount.ToString(raw, CultureInfo.InvariantCulture);
+//
+//     A pattern hardcodes its own decimal places — "#,##0.00" is always
+//     two — so every compact call came back with decimals anyway. That is
+//     why the Leads list showed ฿95,000.00 from FormatCurrency(x, 0), and
+//     the Pipeline board and Quotes list are affected identically: all
+//     three pass 0 for their KPI tiles and column totals.
+//
+//     The pattern's decimal run is now rewritten to `places` before it is
+//     applied. A pattern with no decimal section at all falls back to
+//     N{places} rather than having one spliced onto the end, which would
+//     turn "#,##0 kr" into "#,##0 kr.00".
+//
+//     THE REAL FIX IS DATA, and the note below already says so: migrate
+//     Countries.NumberFormat from patterns to culture names ("en-IN",
+//     "th-TH"). A pattern cannot express Indian lakh grouping at all, so
+//     any tenant still on pattern data is getting western grouping
+//     whatever this method does. There is a SELECT at the bottom of
+//     SETUP.md to find those rows.
+//
+// EARLIER: Added plan/quota methods — reads from TenantSettings table
 //          which is already seeded per tenant. No Plans table join needed.
 // =====================================================================
 
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Security.Claims;
 using System.Text.Json;
 using MerkaiTrial.Application.Configuration;
@@ -306,6 +339,31 @@ public class CurrentTenantService : ICurrentTenantService
     private static bool LooksLikePattern(string v)
         => v.IndexOf('#') >= 0 || v.IndexOf('0') >= 0;
 
+    // (033) The decimal placeholder run in a custom numeric pattern —
+    // the ".00" of "#,##0.00". Rewriting it is what lets a caller's
+    // `decimals` argument survive the legacy-pattern branch below.
+    private static readonly Regex _decimalRun =
+        new(@"\.[0#]+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// (033) Returns <paramref name="pattern"/> with its decimal section set
+    /// to <paramref name="places"/> digits. Null when the pattern has no
+    /// decimal section and one is wanted — splicing it onto the end would
+    /// corrupt a pattern with a trailing literal ("#,##0 kr" → "#,##0 kr.00"),
+    /// so the caller falls back to N{places} instead.
+    /// </summary>
+    private static string? WithDecimals(string pattern, int places)
+    {
+        var replacement = places > 0 ? "." + new string('0', places) : string.Empty;
+
+        if (_decimalRun.IsMatch(pattern))
+            return _decimalRun.Replace(pattern, replacement);
+
+        // No decimal section in the pattern. Nothing to do when none is
+        // wanted either; otherwise let the caller use N{places}.
+        return places == 0 ? pattern : null;
+    }
+
     private CultureInfo? ResolveCulture(string name)
     {
         return _cultureCache.GetOrAdd(name, n =>
@@ -343,7 +401,17 @@ public class CurrentTenantService : ICurrentTenantService
         {
             // Legacy pattern data. Western grouping only — a pattern cannot
             // express lakh grouping. Migrate the row to a culture name.
-            formatted = amount.ToString(raw, CultureInfo.InvariantCulture);
+            //
+            // ★ (033) The pattern's own decimal places used to win over the
+            // caller's. "#,##0.00" is always two, so FormatCurrency(x, 0)
+            // came back with decimals and every compact figure in the app —
+            // the Leads list, the Pipeline board, the Quotes list — showed
+            // ฿95,000.00 where it asked for ฿95,000.
+            var pattern = WithDecimals(raw, places);
+
+            formatted = pattern is not null
+                ? amount.ToString(pattern, CultureInfo.InvariantCulture)
+                : amount.ToString($"N{places}", CultureInfo.InvariantCulture);
         }
         else
         {
