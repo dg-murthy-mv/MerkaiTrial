@@ -13,12 +13,15 @@
     <Folder Include="Commands\Leads\Import\" />
     <Folder Include="Commands\Meta\" />
     <Folder Include="Commands\LeadStatuses\" />
+    <Folder Include="Commands\Notifications\" />
     <Folder Include="Commands\RecordVisibility\" />
     <Folder Include="Commands\PipelineStages\" />
     <Folder Include="Commands\Reports\" />
     <Folder Include="Commands\Plans\" />
     <Folder Include="Commands\Roles\" />
     <Folder Include="Queries\" />
+    <Folder Include="Services\Fiscal\" />
+    <Folder Include="Services\Notifications\" />
     <Folder Include="Services\Pdf\" />
     <Folder Include="Services\Tenants\" />
   </ItemGroup>

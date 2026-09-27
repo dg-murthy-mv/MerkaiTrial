@@ -19,6 +19,21 @@
 //   6. (015) TeamManagers — which teams a user manages. Filtered.
 //   7. (017) QuoteApprovalSettings + QuoteApprovalRequests — quote
 //      approval rules and history. Both filtered.
+//   8. (037) Notifications — in-app notifications. Strictly tenant-owned
+//      and filtered. AssertEveryTenantEntityIsCovered would have refused
+//      to start without this, which is exactly what that guard is for.
+//   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
+//      tenant-owned and filtered.
+//  10. (040) TenantNotificationDefaults — the workspace's starting
+//      position for each notification event, and the lock. Strictly
+//      tenant-owned and filtered.
+//
+//      READ THE NOTE ON OutboundMessages BELOW BEFORE WRITING ANY QUERY
+//      AGAINST IT FROM A BACKGROUND SERVICE. A worker has no HttpContext,
+//      so CurrentTenantId is Guid.Empty and a filtered query returns
+//      NOTHING — silently. The worker uses IgnoreQueryFilters and scopes
+//      explicitly. This is the single easiest way to ship a queue that
+//      never sends anything and logs no error at all.
 //
 // FAIL CLOSED: with no tenant resolved, CurrentTenantId is Guid.Empty and
 // filtered queries return nothing. The legitimately tenant-less queries
@@ -104,6 +119,18 @@ public class FlowDbContext : DbContext
     public DbSet<QuoteApprovalDecision> QuoteApprovalDecisions { get; set; } = null!;
 
 
+    // In-app notifications (037)
+    public DbSet<Notification> Notifications => Set<Notification>();
+
+    // Email / SMS outbox and per-user channel preferences (038)
+    public DbSet<OutboundMessage> OutboundMessages => Set<OutboundMessage>();
+    public DbSet<UserNotificationPreference> UserNotificationPreferences
+        => Set<UserNotificationPreference>();
+
+    // Workspace-level notification defaults and locks (040)
+    public DbSet<TenantNotificationDefault> TenantNotificationDefaults
+        => Set<TenantNotificationDefault>();
+
     // Quote approvals (017)
     public DbSet<QuoteApprovalSettings> QuoteApprovalSettings => Set<QuoteApprovalSettings>();
     public DbSet<QuoteApprovalRequest> QuoteApprovalRequests => Set<QuoteApprovalRequest>();
@@ -179,6 +206,33 @@ public class FlowDbContext : DbContext
         b.Entity<ApprovalStep>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<QuoteApprovalDecision>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
+
+        // In-app notifications (037). Strictly tenant-owned. Note that the
+        // filter is on TenantId only, NOT on RecipientUserId: a per-USER
+        // filter here would be wrong, because the context has no reliable
+        // notion of "the current user" at model-building time, and because
+        // one person's notification about a deal is legitimately readable by
+        // the code that raised it. Scoping to the recipient is done at every
+        // call site in the handlers, the same way Users is.
+        b.Entity<Notification>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Outbox and channel preferences (038). Both strictly tenant-owned.
+        //
+        // ⚠ OutboundMessages IS READ BY A BACKGROUND WORKER, which has no
+        // HttpContext and therefore no tenant: CurrentTenantId is Guid.Empty
+        // there, so this filter would make every claim query return zero
+        // rows and the queue would sit full for ever WITHOUT AN ERROR.
+        //
+        // The filter stays, because the log page and every in-request query
+        // need it and because the coverage assertion is right to demand it.
+        // OutboundMessageWorker calls IgnoreQueryFilters() and is the ONLY
+        // place allowed to — it never returns rows to a user, it only sends
+        // them to the address already stored on the row.
+        b.Entity<OutboundMessage>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<UserNotificationPreference>()
+                                    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<TenantNotificationDefault>()
+                                    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,
         // and LeadSourceConfiguration already declares TenantId required.

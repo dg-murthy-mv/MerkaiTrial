@@ -14,6 +14,15 @@
 //          the same answer as another tenant's lead.
 //   5. DeleteLeadHandler refuses converted leads server-side (the Index
 //      page hid the button, but a direct API call still went through).
+//
+//   6. (039) LeadAssigned notifications. Create and Update both tell the
+//      new owner, unless the new owner is the person doing it — being
+//      notified that you assigned something to yourself is what makes
+//      people mute notifications.
+//
+//      The rows are added BEFORE the existing SaveChangesAsync, never
+//      after, so the notification and the assignment commit together.
+//      INotificationDispatcher never saves; that is its defining rule.
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
@@ -23,6 +32,7 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;   // IRecordScopeService, VisibleTo
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications;   // 039
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
@@ -55,6 +65,8 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
+        private readonly INotificationDispatcher _notify;          // 039
+
         public CreateLeadHandler(
             FlowDbContext         context,
             ICurrentUserService   currentUserService,
@@ -62,7 +74,8 @@ namespace MerkaiTrial.Application.Commands.Leads
             ILeadScoringService scoring,
             ILogger<CreateLeadHandler> logger,
             IAuditService audit,
-            ILeadStatusResolver statuses)
+            ILeadStatusResolver statuses,
+            INotificationDispatcher notify)
         {
             _context            = context;
             _currentUserService = currentUserService;
@@ -70,6 +83,7 @@ namespace MerkaiTrial.Application.Commands.Leads
             _scoring = scoring;
             _statuses = statuses;
             _audit = audit;
+            _notify = notify;
             _logger             = logger;
         }
 
@@ -135,6 +149,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                 };
 
                 _context.Leads.Add(lead);
+
+                // ── 039: tell the new owner, if it is not the creator ──
+                // Added BEFORE the save so the notification and the lead
+                // commit together. The dispatcher does not save.
+                await NotifyOwnerAsync(lead, currentUserId, cancellationToken);
+
                 await _context.SaveChangesAsync(cancellationToken);
 
                 // ✅ Recalculate score immediately after creation
@@ -162,6 +182,43 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 _logger.LogError(ex, "Error creating lead");
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// 039. Adds rows; does not save. Never throws — a notification that
+        /// cannot be prepared must not stop a lead being created.
+        /// </summary>
+        private async Task NotifyOwnerAsync(Lead lead, Guid currentUserId, CancellationToken ct)
+        {
+            try
+            {
+                // A lead you created and kept is not news. The dispatcher
+                // would drop the actor anyway; returning early saves the
+                // lookup entirely for the common case.
+                if (string.IsNullOrWhiteSpace(lead.OwnerUserId)
+                    || string.Equals(lead.OwnerUserId, currentUserId.ToString(),
+                                     StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                var me = await _currentUserService.GetCurrentUserAsync();
+
+                await _notify.AddForOwnerAsync(
+                    DealNotifications.LeadAssigned(
+                        tenantId: lead.TenantId,
+                        leadId: lead.Id,
+                        leadName: lead.FullName,
+                        companyName: lead.CompanyName,
+                        estimatedValue: lead.EstimatedValue,
+                        currency: lead.Currency,
+                        actorUserId: me.UserId,
+                        actorName: me.FullName),
+                    lead.OwnerUserId, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not prepare the assignment notification for lead {LeadId}", lead.Id);
             }
         }
     }
@@ -193,6 +250,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IAuditService _audit;                       // ✅ AUDIT
         private readonly ILeadStatusResolver _statusResolver;
         private readonly IRecordScopeService _scope;
+        private readonly INotificationDispatcher _notify;            // 039
 
         public UpdateLeadHandler(
             FlowDbContext context,
@@ -202,8 +260,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             IAuditService audit,                                     // ✅ AUDIT
             ILeadStatusResolver statusResolver,
             IRecordScopeService scope,
+            INotificationDispatcher notify,                          // 039
             ILogger<UpdateLeadHandler> logger)
         {
+            _notify = notify;
             _scope = scope;
             _context = context;
             _currentUserService = currentUserService;
@@ -267,6 +327,14 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.OwnerUserId = dto.OwnerUserId;
                 lead.UpdatedAtUtc = DateTime.UtcNow;
                 lead.UpdatedBy = currentUserId.ToString();
+
+                // ── 039: the owner changed, so tell whoever now has it ──
+                // BEFORE the save, deliberately: the notification and the
+                // reassignment are one transaction. oldOwner was captured
+                // at the top of this method, for the audit — it does double
+                // duty here.
+                if (!string.Equals(oldOwner, lead.OwnerUserId, StringComparison.OrdinalIgnoreCase))
+                    await NotifyNewOwnerAsync(lead, currentUserId, cancellationToken);
 
                 await _context.SaveChangesAsync(cancellationToken);
 
@@ -393,6 +461,41 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 _logger.LogError(ex, "Error updating lead {LeadId}", dto.LeadId);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// 039. Adds rows; does not save. Never throws — a notification
+        /// failing must not stop a lead being saved.
+        /// </summary>
+        private async Task NotifyNewOwnerAsync(Lead lead, Guid currentUserId, CancellationToken ct)
+        {
+            try
+            {
+                // Unassigned, or assigned to yourself: nothing to send.
+                if (string.IsNullOrWhiteSpace(lead.OwnerUserId)
+                    || string.Equals(lead.OwnerUserId, currentUserId.ToString(),
+                                     StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                var me = await _currentUserService.GetCurrentUserAsync();
+
+                await _notify.AddForOwnerAsync(
+                    DealNotifications.LeadAssigned(
+                        tenantId: lead.TenantId,
+                        leadId: lead.Id,
+                        leadName: lead.FullName,
+                        companyName: lead.CompanyName,
+                        estimatedValue: lead.EstimatedValue,
+                        currency: lead.Currency,
+                        actorUserId: me.UserId,
+                        actorName: me.FullName),
+                    lead.OwnerUserId, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not prepare the assignment notification for lead {LeadId}", lead.Id);
             }
         }
     }

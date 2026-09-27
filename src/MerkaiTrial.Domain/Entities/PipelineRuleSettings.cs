@@ -66,6 +66,55 @@ namespace MerkaiTrial.Domain.Entities
         /// </summary>
         public bool BlockReopenWithIssuedInvoice { get; set; } = true;
 
+        // ── Quote-driven automatic moves (036) ────────────────────────
+        //
+        // These three replace the hardcoded stage names that used to sit in
+        // QuotesCommandHandler: "Proposal" with probability 40 when a quote
+        // was raised, "Negotiation" with 80 when one was accepted, and
+        // "ClosedLost" with 0 when one was rejected.
+        //
+        // Every one of those was a literal, so a workspace whose pipeline is
+        // Prospect → Demo → Commercials → Closed had its deals written into
+        // a stage KEY THAT DOES NOT EXIST in their PipelineStages: no kanban
+        // column, no probability, and IsTerminal false because the stage
+        // could not be found at all. The deal simply disappeared off the
+        // board when someone raised a quote on it.
+        //
+        // NULL means DO NOT MOVE THE DEAL. That is the default, and it is
+        // the only safe answer when a workspace has not said what it wants —
+        // a CRM that silently moves a deal to a stage nobody chose is worse
+        // than one that leaves it alone. Migration 036 fills these in for
+        // existing tenants wherever the old literal key really is one of
+        // their stages, so nothing that worked before stops working.
+        //
+        // The probability is NOT configured here. It comes from the target
+        // stage's own Probability, through StageTransitionGuard.ApplyToDeal,
+        // which is the whole point: 40 and 80 were guesses about somebody
+        // else's pipeline.
+
+        /// <summary>
+        /// Stage a deal moves to when a quote is raised on it. Null = no move.
+        /// The move never demotes: it is skipped when the deal is already at
+        /// or past this stage, and always skipped when the deal is closed.
+        /// </summary>
+        public string? QuoteSentStageKey { get; set; }
+
+        /// <summary>
+        /// Stage a deal moves to when a quote is accepted. Null = no move.
+        /// Usually a late OPEN stage — "Negotiation", "Contracting" — but a
+        /// workspace that treats acceptance as the sale can point it straight
+        /// at a Won stage, and the close date and final value are then filled
+        /// in for them.
+        /// </summary>
+        public string? QuoteAcceptedStageKey { get; set; }
+
+        /// <summary>
+        /// Stage a deal moves to when the customer rejects a quote. Null = no
+        /// move, which is the right default for anyone who sends several
+        /// quotes per deal — one rejected option is not a lost deal.
+        /// </summary>
+        public string? QuoteRejectedStageKey { get; set; }
+
         public DateTime? UpdatedAtUtc { get; set; }
         public string? UpdatedBy { get; set; }
 
@@ -84,13 +133,25 @@ namespace MerkaiTrial.Domain.Entities
         public const bool ReopenRestrictedToManagers = true;
         public const bool BlockReopenWithIssuedInvoice = true;
 
+        /// <summary>
+        /// 036: null, deliberately. A tenant with no saved row gets NO
+        /// automatic stage moves from quotes. Guessing a stage key for a
+        /// pipeline we have never seen is exactly the bug this replaced.
+        /// </summary>
+        public const string? QuoteSentStageKey = null;
+        public const string? QuoteAcceptedStageKey = null;
+        public const string? QuoteRejectedStageKey = null;
+
         public static PipelineRuleSettings For(Guid tenantId) => new()
         {
             TenantId = tenantId,
             ForwardOnly = ForwardOnly,
             ReopenRequiresReason = ReopenRequiresReason,
             ReopenRestrictedToManagers = ReopenRestrictedToManagers,
-            BlockReopenWithIssuedInvoice = BlockReopenWithIssuedInvoice
+            BlockReopenWithIssuedInvoice = BlockReopenWithIssuedInvoice,
+            QuoteSentStageKey = QuoteSentStageKey,
+            QuoteAcceptedStageKey = QuoteAcceptedStageKey,
+            QuoteRejectedStageKey = QuoteRejectedStageKey
         };
     }
 }

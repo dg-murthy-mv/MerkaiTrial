@@ -1,0 +1,373 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Notifications.IndexModel
+@{
+    ViewData["Title"] = "Notifications";
+}
+
+@*
+    037 — the notifications page.
+
+    PATTERNS FOLLOWED (learned the hard way in earlier rounds):
+      • No Bootstrap CSS/JS here. _Layout already loads both, and a second
+        JS bundle replaces window.bootstrap and orphans every component
+        instance created before it.
+      • No TempData alert block. _Layout renders those once, globally.
+      • @@ escaping inside <style>, so @@media reaches the browser as @media.
+      • NO inline onclick carrying interpolated text. A notification title
+        contains quote numbers, deal titles and people's names — an
+        apostrophe in "O'Brien" would silently break the handler. Every
+        action is a real form post, and the only JavaScript is a confirm
+        driven by data-* attributes.
+*@
+
+<style>
+    .nf-wrap { max-width: 860px; }
+
+    .nf-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+    }
+
+    .nf-title { font-size: 20px; font-weight: 600; margin: 0; }
+
+    .nf-count {
+        font-size: 13px;
+        color: #64748b;
+    }
+
+    .nf-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .nf-tabs {
+        display: inline-flex;
+        background: #f1f5f9;
+        border-radius: 8px;
+        padding: 3px;
+        gap: 2px;
+    }
+
+    .nf-tab {
+        border: none;
+        background: transparent;
+        color: #475569;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 6px 14px;
+        border-radius: 6px;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .nf-tab:hover { color: #1e293b; }
+
+    .nf-tab.active {
+        background: #fff;
+        color: #0f172a;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .12);
+    }
+
+    .nf-list {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+    }
+
+    .nf-item {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 14px 16px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .nf-item:last-child { border-bottom: none; }
+
+    /* Unread gets a tinted background AND a left bar. Colour alone is not
+       enough — this has to be readable for someone who cannot see it. */
+    .nf-item.unread {
+        background: #f8fafc;
+        box-shadow: inset 3px 0 0 #6366f1;
+    }
+
+    .nf-ico {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        flex: 0 0 34px;
+    }
+
+    .nf-body { min-width: 0; flex: 1 1 auto; }
+
+    .nf-item-title {
+        font-size: 14px;
+        color: #0f172a;
+        margin: 0 0 2px;
+        line-height: 1.35;
+    }
+
+    .nf-item.unread .nf-item-title { font-weight: 600; }
+
+    .nf-item-title a { color: inherit; text-decoration: none; }
+    .nf-item-title a:hover { text-decoration: underline; }
+
+    .nf-item-body {
+        font-size: 13px;
+        color: #475569;
+        margin: 0 0 4px;
+        line-height: 1.4;
+    }
+
+    .nf-meta {
+        font-size: 12px;
+        color: #94a3b8;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .nf-item-actions {
+        display: flex;
+        gap: 4px;
+        flex: 0 0 auto;
+    }
+
+    .nf-mini {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #64748b;
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        padding: 0;
+    }
+
+    .nf-mini:hover { background: #f8fafc; color: #0f172a; }
+
+    .nf-empty {
+        padding: 56px 20px;
+        text-align: center;
+        color: #64748b;
+    }
+
+    .nf-empty i { font-size: 34px; color: #cbd5e1; display: block; margin-bottom: 10px; }
+
+    .nf-pager {
+        display: flex;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 14px;
+    }
+
+    @@media (max-width: 575px) {
+        .nf-actions { width: 100%; }
+        .nf-item-actions { flex-direction: column; }
+    }
+</style>
+
+<div class="nf-wrap">
+
+    <div class="nf-head">
+        <h1 class="nf-title">Notifications</h1>
+
+        <span class="nf-count">
+            @if (Model.UnreadCount > 0)
+            {
+                <strong>@Model.UnreadCount unread</strong> <text>of @Model.TotalCount</text>
+            }
+            else if (Model.TotalCount > 0)
+            {
+                <text>@Model.TotalCount, all read</text>
+            }
+        </span>
+
+        <div class="nf-actions">
+            <div class="nf-tabs">
+                <a class="nf-tab @(Model.UnreadOnly ? "" : "active")"
+                   asp-page="./Index" asp-route-unreadOnly="false">All</a>
+                <a class="nf-tab @(Model.UnreadOnly ? "active" : "")"
+                   asp-page="./Index" asp-route-unreadOnly="true">Unread</a>
+            </div>
+
+            @if (Model.UnreadCount > 0)
+            {
+                <form method="post" asp-page-handler="MarkAllRead"
+                      asp-route-unreadOnly="@Model.UnreadOnly" asp-route-skip="@Model.Skip"
+                      class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-check2-all"></i> Mark all read
+                    </button>
+                </form>
+            }
+
+            @if (Model.TotalCount > Model.UnreadCount)
+            {
+                <form method="post" asp-page-handler="DismissRead"
+                      asp-route-unreadOnly="@Model.UnreadOnly"
+                      class="d-inline js-confirm"
+                      data-confirm="Clear everything you have already read? Anything still unread stays.">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-archive"></i> Clear read
+                    </button>
+                </form>
+            }
+        </div>
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>@Model.LoadError</span>
+        </div>
+    }
+
+    @if (Model.Items.Count == 0)
+    {
+        <div class="nf-list">
+            <div class="nf-empty">
+                <i class="bi bi-bell-slash"></i>
+                @if (Model.UnreadOnly)
+                {
+                    <div>Nothing unread.</div>
+                    <a class="small" asp-page="./Index" asp-route-unreadOnly="false">
+                        See everything
+                    </a>
+                }
+                else
+                {
+                    <div>No notifications yet.</div>
+                    <div class="small">
+                        You will be told here when a quote is accepted, an approval
+                        needs you, or a deal is assigned to you.
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="nf-list">
+            @foreach (var n in Model.Items)
+            {
+                <div class="nf-item @(n.IsRead ? "" : "unread")">
+
+                    <div class="nf-ico">
+                        <i class="bi @n.Icon @n.IconClass"></i>
+                    </div>
+
+                    <div class="nf-body">
+                        <p class="nf-item-title">
+                            @if (n.Url is not null)
+                            {
+                                @* Goes through ?open= so the click also marks it
+                                   read, server-side, in one hop. *@
+                                <a asp-page="./Index" asp-route-open="@n.Id">@n.Title</a>
+                            }
+                            else
+                            {
+                                @n.Title
+                            }
+                        </p>
+
+                        @if (!string.IsNullOrWhiteSpace(n.Body))
+                        {
+                            <p class="nf-item-body">@n.Body</p>
+                        }
+
+                        <div class="nf-meta">
+                            <span title="@Model.FormatDateTime(n.CreatedAtUtc)">
+                                @Model.Since(n.CreatedAtUtc)
+                            </span>
+                            @if (!string.IsNullOrWhiteSpace(n.ActorName))
+                            {
+                                <span>&middot;</span>
+                                <span>@n.ActorName</span>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="nf-item-actions">
+                        @if (!n.IsRead)
+                        {
+                            <form method="post" asp-page-handler="MarkRead" asp-route-id="@n.Id"
+                                  asp-route-unreadOnly="@Model.UnreadOnly" asp-route-skip="@Model.Skip">
+                                <button type="submit" class="nf-mini" title="Mark as read">
+                                    <i class="bi bi-check2"></i>
+                                </button>
+                            </form>
+                        }
+
+                        <form method="post" asp-page-handler="Dismiss" asp-route-id="@n.Id"
+                              asp-route-unreadOnly="@Model.UnreadOnly" asp-route-skip="@Model.Skip">
+                            <button type="submit" class="nf-mini" title="Remove from this list">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (Model.HasPrevious || Model.HasMore)
+        {
+            <div class="nf-pager">
+                @if (Model.HasPrevious)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-page="./Index"
+                       asp-route-unreadOnly="@Model.UnreadOnly"
+                       asp-route-skip="@Model.PreviousSkip">
+                        <i class="bi bi-chevron-left"></i> Newer
+                    </a>
+                }
+                else
+                {
+                    <span></span>
+                }
+
+                @if (Model.HasMore)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-page="./Index"
+                       asp-route-unreadOnly="@Model.UnreadOnly"
+                       asp-route-skip="@Model.NextSkip">
+                        Older <i class="bi bi-chevron-right"></i>
+                    </a>
+                }
+                else
+                {
+                    <span></span>
+                }
+            </div>
+        }
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // Delegated, and the message comes from a data attribute rather than
+        // being interpolated into markup. Nothing user-supplied reaches this.
+        document.addEventListener('submit', function (e) {
+            var form = e.target.closest('form.js-confirm');
+            if (!form) return;
+
+            var message = form.getAttribute('data-confirm');
+            if (message && !window.confirm(message)) {
+                e.preventDefault();
+            }
+        });
+    </script>
+}

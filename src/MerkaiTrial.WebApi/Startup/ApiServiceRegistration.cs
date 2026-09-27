@@ -36,6 +36,8 @@ using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Fiscal;
+using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Application.Services.Pdf;
 using MerkaiTrial.Application.Services.Storage;
 using MerkaiTrial.Application.Services.Tenants;
@@ -46,6 +48,7 @@ using MerkaiTrial.Infrastructure.Tenancy;
 using MerkaiTrial.WebApi.Filters;
 using MerkaiTrial.WebApi.Services;
 using MerkaiTrial.WebApi.SwaggerGen;
+using MerkaiTrial.WebApi.Workers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -158,6 +161,8 @@ public static class ApiServiceRegistration
         // Tenant configuration resolvers
         services.AddScoped<IStageResolver, StageResolver>();
         services.AddScoped<ILeadStatusResolver, LeadStatusResolver>();
+        services.AddScoped<IFiscalYearService, FiscalYearService>();   // 035 — fiscal year
+        services.AddScoped<INotificationDispatcher, NotificationDispatcher>();   // 037
 
         // Cross-cutting
         services.AddScoped<IAuditService, AuditService>();
@@ -193,6 +198,67 @@ public static class ApiServiceRegistration
         services.AddScoped<IPaymentProvider, PayMongoProvider>();
         services.AddScoped<IPaymentProvider, PromptPayProvider>();
         services.AddScoped<IPaymentProviderFactory, PaymentProviderFactory>();
+        return services;
+    }
+
+    // ── Email + the outbound worker (038) ─────────────────────────────
+
+    /// <summary>
+    /// Email sending and the background worker that drains the outbox.
+    ///
+    /// THE API KEY IS NOT IN appsettings.json. Same rule as
+    /// Jwt__SigningKey: App Service settings or Key Vault.
+    ///
+    ///     Email__ApiKey       re_xxxxxxxxxxxx   (Resend)
+    ///     Email__FromAddress  noreply@madeevision.com
+    ///     Email__FromName     Merkai CRM
+    ///     Email__AppBaseUrl   https://your-admin-web-host
+    ///
+    /// WITH NO KEY the app still starts and still queues messages — it just
+    /// registers NullEmailSender, which logs instead of sending and reports
+    /// a RETRYABLE failure so nothing is lost. Add a key later and the
+    /// backlog goes out. That is what makes it safe to run locally.
+    /// </summary>
+    public static IServiceCollection AddApiEmail(
+        this IServiceCollection services, IConfiguration config)
+    {
+        services.Configure<EmailOptions>(config.GetSection(EmailOptions.SectionName));
+        services.Configure<OutboundMessageWorkerOptions>(
+            config.GetSection(OutboundMessageWorkerOptions.SectionName));
+
+        var options = config.GetSection(EmailOptions.SectionName).Get<EmailOptions>()
+                      ?? new EmailOptions();
+
+        if (options.IsConfigured)
+        {
+            // A typed client: one HttpClient, pooled connections, and the
+            // timeout lives with the rest of the email configuration rather
+            // than in three places.
+            services.AddHttpClient<IEmailSender, ResendEmailSender>(http =>
+            {
+                http.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
+                http.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 5, 120));
+            });
+        }
+        else
+        {
+            services.AddSingleton<IEmailSender, NullEmailSender>();
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Hosted services. Registered separately from the rest so Program.cs
+    /// reads as "these are the things that run on their own".
+    ///
+    /// The worker is a SINGLETON — it cannot take FlowDbContext or any other
+    /// scoped service, and with ValidateScopes = true the app refuses to
+    /// start if it tries. It creates a scope per tick instead.
+    /// </summary>
+    public static IServiceCollection AddApiBackgroundServices(this IServiceCollection services)
+    {
+        services.AddHostedService<OutboundMessageWorker>();
         return services;
     }
 }

@@ -46,6 +46,7 @@
 
 using System.Globalization;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Services.Notifications;   // 040
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
@@ -945,15 +946,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly ICurrentUserService _currentUser;
         private readonly IAuditService _audit;
         private readonly ILogger<SubmitQuoteForApprovalHandler> _logger;
+        private readonly INotificationDispatcher _notify;          // 040
 
         public SubmitQuoteForApprovalHandler(
             FlowDbContext db, QuoteApprovalEngine engine, ICurrentUserService currentUser,
-            IAuditService audit, ILogger<SubmitQuoteForApprovalHandler> logger)
+            IAuditService audit, INotificationDispatcher notify,
+            ILogger<SubmitQuoteForApprovalHandler> logger)
         {
             _db = db;
             _engine = engine;
             _currentUser = currentUser;
             _audit = audit;
+            _notify = notify;
             _logger = logger;
         }
 
@@ -1026,6 +1030,13 @@ namespace MerkaiTrial.Application.Commands.Quotes
             quote.UpdatedAtUtc = DateTime.UtcNow;
             quote.UpdatedBy = me.FullName;
 
+            // ── 040: tell the people who have to decide ───────────────
+            // BEFORE the save, so the request and the notification commit
+            // together. This is the event that most needs to arrive: until
+            // somebody acts, the quote cannot be sent and the deal cannot
+            // move — which is why it is one of the two that default to email.
+            await NotifyApproversAsync(tenantId, quote, request, approvers, me, ct);
+
             try
             {
                 await _db.SaveChangesAsync(ct);
@@ -1056,6 +1067,59 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 "Quote {Number} submitted for approval by {User} — rule {Rule}, {Steps} step(s)",
                 quote.Number, me.FullName, verdict.RuleName, request.TotalSteps);
         }
+
+        /// <summary>
+        /// 040. Adds rows; does not save. Never throws — a notification must
+        /// not stop a quote being submitted for approval.
+        /// </summary>
+        private async Task NotifyApproversAsync(
+            Guid tenantId, Quote quote, QuoteApprovalRequest request,
+            List<QuoteApprover> approvers, CurrentUserContext me, CancellationToken ct)
+        {
+            try
+            {
+                // Nobody named on the step: an admin will have to pick it up,
+                // so they are the ones to tell. AdminsAsync already excludes
+                // the requester.
+                var recipients = approvers.Count > 0
+                    ? approvers.Select(a => a.UserId).ToList()
+                    : (await _engine.AdminsAsync(tenantId, me.UserId, ct))
+                        .Select(a => a.UserId).ToList();
+
+                if (recipients.Count == 0) return;
+
+                var step = request.TotalSteps > 1
+                    ? $" (step {request.CurrentStepOrder} of {request.TotalSteps})"
+                    : string.Empty;
+
+                // Currency CODE, not a symbol: this layer has no view of the
+                // tenant's formatting, and the amount is the thing an
+                // approver decides on.
+                var body = $"{me.FullName} is asking you to approve " +
+                           $"{quote.Currency} {quote.GrandTotal:N2}." +
+                           (string.IsNullOrWhiteSpace(request.RequestComment)
+                                ? string.Empty
+                                : $" \u201c{request.RequestComment.Trim()}\u201d");
+
+                await _notify.AddForUsersAsync(
+                    new NotificationRequest(
+                        TenantId: tenantId,
+                        EventType: NotificationEventType.QuoteApprovalRequested,
+                        Title: $"Quote {quote.Number} needs your approval{step}",
+                        Body: body,
+                        EntityType: "Quote",
+                        EntityId: quote.Id,
+                        ActorUserId: me.UserId,
+                        ActorName: me.FullName),
+                    recipients, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not prepare the approval-request notification for quote {QuoteId}",
+                    quote.Id);
+            }
+        }
     }
 
     // =================================================================
@@ -1069,15 +1133,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly ICurrentUserService _currentUser;
         private readonly IAuditService _audit;
         private readonly ILogger<DecideQuoteApprovalHandler> _logger;
+        private readonly INotificationDispatcher _notify;          // 040
 
         public DecideQuoteApprovalHandler(
             FlowDbContext db, QuoteApprovalEngine engine, ICurrentUserService currentUser,
-            IAuditService audit, ILogger<DecideQuoteApprovalHandler> logger)
+            IAuditService audit, INotificationDispatcher notify,
+            ILogger<DecideQuoteApprovalHandler> logger)
         {
             _db = db;
             _engine = engine;
             _currentUser = currentUser;
             _audit = audit;
+            _notify = notify;
             _logger = logger;
         }
 
@@ -1226,6 +1293,19 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 approve ? "approved" : "sent back for changes", me.FullName,
                 isOverride ? " (admin override)" : "");
 
+            // ── 040: tell whoever asked ───────────────────────────────
+            await NotifyRequesterAsync(
+                tenantId,
+                new Quote { Id = quoteId, Number = quote.Number, Status = quote.Status }, // create a Quote instance
+                request,
+                approve,
+                advances,
+                decidedStep,
+                nextStepName,
+                cleanComment,
+                me,
+                ct);
+
             var message = !approve
                 ? $"Sent back to {request.RequestedByName} with your comment."
                 : advances
@@ -1243,6 +1323,67 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 NextStepName: nextStepName,
                 NextApprovers: nextApprovers,
                 Message: message);
+        }
+
+        /// <summary>
+        /// 040. THE ONE PLACE THAT SAVES ITS OWN NOTIFICATION ROWS.
+        ///
+        /// Everywhere else the dispatcher's rows ride along on the caller's
+        /// existing SaveChangesAsync, so the notification and the change
+        /// commit together. This handler cannot do that: it writes through
+        /// conditional UPDATEs and loads everything AsNoTracking precisely so
+        /// nothing is left tracked for a later save to write back. By the
+        /// time we get here the decision is already committed.
+        ///
+        /// So the rows are added and saved here, deliberately and on their
+        /// own. The trade-off is honest: the decision can never be lost
+        /// because of a notification, and in the rare case the save below
+        /// fails, somebody is not told — which is logged, and is far better
+        /// than the reverse.
+        /// </summary>
+        private async Task NotifyRequesterAsync(
+            Guid tenantId, Quote quote, QuoteApprovalRequest request,
+            bool approve, bool advances, int decidedStep, string? nextStepName,
+            string? comment, CurrentUserContext me, CancellationToken ct)
+        {
+            try
+            {
+                // A step approved mid-chain is not news for the requester —
+                // it is still not their turn, and telling them three times on
+                // a three-step chain is how a useful notification becomes
+                // noise. They hear when the chain finishes, or when it comes
+                // back to them.
+                if (approve && advances) return;
+
+                var title = approve
+                    ? $"Quote {quote.Number} was approved — you can send it now"
+                    : $"Quote {quote.Number} was sent back for changes";
+
+                var body = string.IsNullOrWhiteSpace(comment)
+                    ? $"{me.FullName} " + (approve ? "approved it." : "asked for changes.")
+                    : $"{me.FullName}: \u201c{comment.Trim()}\u201d";
+
+                await _notify.AddForUsersAsync(
+                    new NotificationRequest(
+                        TenantId: tenantId,
+                        EventType: NotificationEventType.QuoteApprovalDecided,
+                        Title: title,
+                        Body: body,
+                        EntityType: "Quote",
+                        EntityId: quote.Id,
+                        ActorUserId: me.UserId,
+                        ActorName: me.FullName),
+                    new[] { request.RequestedByUserId }, ct);
+
+                // See the summary: this save is the deliberate exception.
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not notify {Requester} about the decision on quote {QuoteId}",
+                    request.RequestedByName, quote.Id);
+            }
         }
     }
 

@@ -12,8 +12,10 @@
   <ItemGroup>
     <Folder Include="Areas\Admin\Leads\" />
     <Folder Include="Filters\" />
+    <Folder Include="Pages\Notifications\" />
     <Folder Include="Pages\Settings\AuditLogs\" />
     <Folder Include="Pages\Settings\LeadStatuses\" />
+    <Folder Include="Pages\Settings\Notifications\" />
     <Folder Include="Pages\Settings\PipelineRules\" />
     <Folder Include="Pages\Settings\QuoteApprovals\" />
     <Folder Include="Pages\Settings\Visibility\" />
@@ -21,6 +23,7 @@
     <Folder Include="Pages\Tasks\" />
     <Folder Include="Pages\Settings\Users\" />
     <Folder Include="Services\Audit\" />
+    <Folder Include="Services\Notifications\" />
     <Folder Include="Services\Security\" />
     <Folder Include="Services\Pipeline\" />
     <Folder Include="Startup\" />

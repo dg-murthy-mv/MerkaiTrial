@@ -31,6 +31,70 @@
 //   ✅ Public link: works only while the quote is Sent/Viewed/Accepted/
 //      Rejected/Expired — not while it's being revised or approved.
 //
+// TENANT-CONFIGURABLE STAGE MOVES (036)
+//   The two automatic deal moves in this file used hardcoded stage keys and
+//   hardcoded probabilities:
+//
+//     quote created  -> deal.Stage = "Proposal",   Probability = 40
+//                       promoting only from { New, Qualified, Discovery,
+//                       Qualification }
+//     quote accepted -> deal.Stage = "Negotiation", Probability = 80
+//     quote rejected -> deal.Stage = "ClosedLost",  Probability = 0
+//     terminal check -> deal.Stage is "Won" or "Lost" or "ClosedWon"
+//                       or "ClosedLost"
+//
+//   Since 019/020 a tenant configures their own stages, so all of that was
+//   wrong for anyone who did. Four separate consequences, worst first:
+//
+//   1. GHOST STAGES. Writing "Proposal" into a workspace whose stages are
+//      Prospect / Demo / Commercials / Closed leaves the deal in a key that
+//      is not in PipelineStages: no kanban column, ProbabilityOf 0, and
+//      IsTerminal FALSE because the stage cannot be found. The deal vanishes
+//      from the board.
+//
+//   2. A CUSTOMER COULD WRECK AN INVOICED DEAL. The terminal check matched
+//      four literal names, so for a tenant whose winning stage is called
+//      "Contract Signed" it did not fire — and a customer clicking Reject on
+//      the public quote link moved a WON, INVOICED deal to "ClosedLost",
+//      straight past the invoice rule the rest of the app enforces.
+//
+//   3. A CLOSING FIGURE ON AN OPEN DEAL. Accepting a quote set
+//      deal.ActualValue = quote.GrandTotal while moving the deal to
+//      Negotiation, an OPEN stage. ActualValue is a closing figure; 019 fixed
+//      exactly this elsewhere, because a deal carrying one is counted as
+//      revenue while still in the pipeline.
+//
+//   4. INVISIBLE HISTORY. The DealStageHistory row written on quote creation
+//      omitted TenantId, so it was saved as Guid.Empty and then hidden by the
+//      global query filter. The stage change disappeared from the timeline.
+//
+//   All four go away by routing both moves through StageTransitionGuard, the
+//   same way DealsCommandHandlers already does. The guard resolves the stage
+//   through TenantStages, takes the probability from the stage itself, and
+//   its HistoryFor includes TenantId. The target stage now comes from
+//   PipelineRuleSettings.QuoteSentStageKey / QuoteAcceptedStageKey /
+//   QuoteRejectedStageKey, where NULL means "do not move the deal".
+//
+//   Both moves stay NON-FATAL and stay IsSystemMove. A misconfigured pipeline
+//   must not turn a saved quote into a 500, and the event that caused the move
+//   is the very thing a requirement would have asked about.
+//
+// IN-APP NOTIFICATIONS (037)
+//   UpdateQuoteStatusHandler now tells the deal's owner when a quote is
+//   sent, accepted or rejected. Three things about how:
+//
+//   • The rows are added BEFORE the existing SaveChangesAsync, never after,
+//     so the notification and the status change commit together. A
+//     notification about a status change that rolled back would be worse
+//     than none.
+//   • INotificationDispatcher never calls SaveChanges itself — that is its
+//     defining rule. It adds to this context and this handler's save
+//     commits them.
+//   • The dispatcher drops the actor from the recipients, so sending your
+//     own quote does not notify you. When the CUSTOMER accepts through the
+//     public link there is no signed-in user at all, so the owner always
+//     hears about it — which is the case that actually matters.
+//
 // RECORD VISIBILITY (016): the list and statistics follow deal visibility.
 // By-id, update, status, delete, attachments and PDF are guarded in
 // QuotesController with QuoteApprovalEngine.CanRead/CanWriteQuoteAsync —
@@ -38,6 +102,8 @@
 // uses the same status handler with no signed-in user.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -181,6 +247,88 @@ namespace MerkaiTrial.Application.Commands.Quotes
     // ─────────────────────────────────────────────────────────────────
     // CREATE QUOTE  →  auto-advance deal to Proposal
     // ─────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
+    // WHETHER AN AUTOMATIC MOVE SHOULD HAPPEN AT ALL (036)
+    //
+    // Shared by both quote-driven moves so they cannot drift apart, which is
+    // how the old pair ended up with two different terminal checks — one that
+    // listed four stage names and one that listed none.
+    //
+    // Every rule here is expressed through StageCategory and SortOrder, never
+    // through a stage name, so it holds for any pipeline a tenant configures.
+    // ─────────────────────────────────────────────────────────────────
+    internal static class QuoteStageAutomation
+    {
+        /// <summary>
+        /// True when the deal may be moved automatically to
+        /// <paramref name="targetKey"/>. When false, <paramref name="reason"/>
+        /// says why, for the log — a silent skip is impossible to support.
+        /// </summary>
+        public static bool ShouldMove(
+            TenantStages stages, string? currentKey, string targetKey, out string reason)
+        {
+            var target = stages.Find(targetKey);
+
+            // A configured key that is not one of this tenant's stages. This
+            // is the ghost-stage bug, now refused instead of written.
+            if (target is null)
+            {
+                reason = $"'{targetKey}' is not a stage in this workspace " +
+                         $"(valid: {stages.ValidKeysText})";
+                return false;
+            }
+
+            if (!target.IsActive)
+            {
+                reason = $"'{target.Name}' has been retired";
+                return false;
+            }
+
+            if (string.Equals(currentKey, targetKey, StringComparison.Ordinal))
+            {
+                reason = "the deal is already in that stage";
+                return false;
+            }
+
+            // NEVER touch a closed deal automatically.
+            //
+            // This is the rule that matters most. Leaving a closed stage is a
+            // REOPEN, and StageTransitionGuard skips its invoice rule for a
+            // system move — so without this, a customer clicking Reject on a
+            // public quote link could move a won, invoiced deal to Lost,
+            // straight past the one rule nothing is supposed to skip.
+            //
+            // Asked by CATEGORY, so it is correct for a tenant whose winning
+            // stage is called "Contract Signed". The old check listed four
+            // literal names and missed every such workspace.
+            if (stages.IsTerminal(currentKey))
+            {
+                reason = $"the deal is already closed ({stages.NameOf(currentKey)})";
+                return false;
+            }
+
+            var current = stages.Find(currentKey);
+
+            // current is null when the deal sits in a stage that has since
+            // been deleted — including one of the ghost keys the old code
+            // wrote. Moving it into a real stage is a repair, so that case
+            // deliberately falls through.
+            if (current is not null
+                && target.Category == StageCategory.Open
+                && current.SortOrder >= target.SortOrder)
+            {
+                // Never demote. SortOrder rather than a hardcoded list of
+                // "early" stage names, which is what the old promotable-stages
+                // array was trying and failing to express.
+                reason = $"'{current.Name}' is already at or past '{target.Name}'";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+    }
+
     public class CreateQuoteHandler : ICommandHandler
     {
         private readonly FlowDbContext _db;
@@ -190,13 +338,25 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly IRecordScopeService _scope;
         private readonly GetQuoteByIdHandler _getById;
 
+        // 036. Both are already registered: IStageResolver explicitly in
+        // ApiServiceRegistration, StageTransitionGuard by the Scrutor scan
+        // through ICommandHandler (DealsCommandHandlers injects it the same
+        // way). No DI changes needed, and no dependency cycle — the guard
+        // needs FlowDbContext, IStageResolver, TransitionCatalog,
+        // ICurrentUserService and QuoteApprovalEngine, and none of those
+        // reaches back into this file.
+        private readonly StageTransitionGuard _guard;
+        private readonly IStageResolver _stages;
+
         public CreateQuoteHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ILogger<CreateQuoteHandler> logger,
             IAuditService audit,
             IRecordScopeService scope,
-            GetQuoteByIdHandler getById)
+            GetQuoteByIdHandler getById,
+            StageTransitionGuard guard,
+            IStageResolver stages)
         {
             _db = db;
             _currentUserService = currentUserService;
@@ -204,6 +364,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
             _audit = audit;
             _scope = scope;
             _getById = getById;
+            _guard = guard;
+            _stages = stages;
         }
 
         public async Task<QuoteDto> Handle(CreateQuoteDto dto)
@@ -278,57 +440,82 @@ namespace MerkaiTrial.Application.Commands.Quotes
                  CancellationToken.None);
 
 
-            // ── ✅ AUTO-ADVANCE: Quote created → Deal moves to Proposal ─
-            await AdvanceDealToProposalAsync(dto.DealId, dto.TenantId, currentUser.FullName);
+            // ── Quote created → move the deal, if this tenant asked for it ─
+            await AdvanceDealOnQuoteCreatedAsync(dto.DealId, dto.TenantId, currentUser.FullName);
 
             return await _getById.Handle(dto.TenantId, quote.Id);
         }
 
-        // ── Advance deal from early stages → Proposal ─────────────────
-        private async Task AdvanceDealToProposalAsync(Guid dealId, Guid tenantId, string changedBy)
+        // ── Quote created → move the deal (036) ───────────────────────
+        //
+        // Was: deal.Stage = "Proposal", Probability = 40, promoting only from
+        // a hardcoded { New, Qualified, Discovery, Qualification }. See the
+        // header for what that did to a tenant with their own stages.
+        //
+        // Now the target comes from PipelineRuleSettings.QuoteSentStageKey,
+        // and null — the default — means do not move the deal at all.
+        private async Task AdvanceDealOnQuoteCreatedAsync(
+            Guid dealId, Guid tenantId, string changedBy)
         {
+            // Non-fatal throughout. The quote is already saved and audited;
+            // a misconfigured pipeline must not turn that into a 500.
             try
             {
-                var deal = await _db.Deals
-                    .FirstOrDefaultAsync(d => d.Id == dealId && d.TenantId == tenantId && !d.IsDeleted);
+                var (rules, _) = await _guard.GetSettingsAsync(tenantId);
 
+                if (string.IsNullOrWhiteSpace(rules.QuoteSentStageKey))
+                    return;      // this workspace has not asked for a move
+
+                var deal = await _db.Deals
+                    .FirstOrDefaultAsync(d => d.Id == dealId
+                                           && d.TenantId == tenantId
+                                           && !d.IsDeleted);
                 if (deal == null) return;
 
-                // Only promote from early/discovery stages — never demote
-                var promotableStages = new[] { "New", "Qualified", "Discovery", "Qualification" };
-                if (!promotableStages.Contains(deal.Stage, StringComparer.OrdinalIgnoreCase))
+                var stages = await _stages.GetAsync(tenantId);
+
+                if (!QuoteStageAutomation.ShouldMove(
+                        stages, deal.Stage, rules.QuoteSentStageKey!, out var why))
                 {
                     _logger.LogInformation(
-                        "Deal {DealId} already in {Stage} — no stage advance needed", dealId, deal.Stage);
+                        "Deal {DealId} not moved on quote creation: {Reason}", dealId, why);
                     return;
                 }
 
-                var fromStage = deal.Stage;
-                deal.Stage       = "Proposal";
-                deal.Probability = 40;
-                deal.UpdatedAtUtc = DateTime.UtcNow;
-                deal.UpdatedBy    = changedBy;
+                var decision = await _guard.CheckAsync(new StageMoveRequest(
+                    TenantId: tenantId,
+                    Deal: new DealStageSnapshot(
+                        deal.Id, deal.Stage, deal.ExpectedValue,
+                        deal.ExpectedCloseDateUtc, deal.OwnerUserId),
+                    ToStageKey: rules.QuoteSentStageKey!,
+                    Note: "A quote was raised on this deal.",
+                    IsSystemMove: true));
 
-                // Record history
-                _db.DealStageHistory.Add(new DealStageHistory
-                {
-                    Id           = Guid.NewGuid(),
-                    DealId       = dealId,
-                    FromStage    = fromStage,
-                    ToStage      = "Proposal",
-                    ChangedAtUtc = DateTime.UtcNow,
-                    ChangedBy    = changedBy
-                });
+                var fromStage = deal.Stage;
+
+                // Probability comes from the target stage, not from a literal
+                // 40. No actualValue: raising a quote does not close a deal,
+                // and ApplyToDeal correctly clears the closing fields on a
+                // move into an open stage.
+                StageTransitionGuard.ApplyToDeal(deal, decision, changedBy);
+
+                // HistoryFor sets TenantId. The old inline row did not, so it
+                // was written as Guid.Empty and hidden by the global query
+                // filter — the stage change never appeared on the timeline.
+                _db.DealStageHistory.Add(
+                    StageTransitionGuard.HistoryFor(tenantId, dealId, decision, changedBy));
 
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "✅ Deal {DealId} auto-advanced: {From} → Proposal (quote created)", dealId, fromStage);
+                    "Deal {DealId} moved on quote creation: {From} → {To}",
+                    dealId, fromStage, decision.To.Key);
             }
             catch (Exception ex)
             {
-                // Non-fatal — quote was already saved successfully
-                _logger.LogError(ex, "Failed to auto-advance deal {DealId} to Proposal", dealId);
+                // Non-fatal — the quote was already saved successfully.
+                _logger.LogError(ex,
+                    "Failed to move deal {DealId} after raising a quote", dealId);
             }
         }
 
@@ -421,19 +608,28 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly ILogger<UpdateQuoteStatusHandler> _logger;
         private readonly IAuditService _audit;
         private readonly QuoteApprovalEngine _approvals;
+        private readonly StageTransitionGuard _guard;      // 036
+        private readonly IStageResolver _stages;           // 036
+        private readonly INotificationDispatcher _notify;  // 037
 
         public UpdateQuoteStatusHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             ILogger<UpdateQuoteStatusHandler> logger,
             IAuditService audit,
-            QuoteApprovalEngine approvals)
+            QuoteApprovalEngine approvals,
+            StageTransitionGuard guard,
+            IStageResolver stages,
+            INotificationDispatcher notify)
         {
             _db = db;
             _currentUserService = currentUserService;
             _logger = logger;
             _audit = audit;
             _approvals = approvals;
+            _guard = guard;
+            _stages = stages;
+            _notify = notify;
         }
 
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
@@ -511,6 +707,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
             quote.UpdatedAtUtc = DateTime.UtcNow;
             quote.UpdatedBy = changedBy;
 
+            // ── 037: tell the deal's owner ────────────────────────────────
+            // Added BEFORE the save, so the notification and the status
+            // change commit in one transaction. The dispatcher does not save.
+            await AddStatusNotificationAsync(quote, newStatus, currentUser);
+
             await _db.SaveChangesAsync();
             await _audit.WriteAsync(
                 AuditAction.QuoteStatusChanged, AuditEntityType.Quote, quote.Id, tenantId,
@@ -532,32 +733,128 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 return;
             }
 
-            // ── AUTO-TRANSITION DEAL STAGE ────────────────────────────────────
-            if (newStatus == QuoteStatus.Accepted)
+            // ── AUTO-TRANSITION DEAL STAGE (036) ──────────────────────────────
+            // The target stage is the tenant's own, read from
+            // PipelineRuleSettings. Null means no automatic move, which is
+            // the default until a workspace configures one.
+            if (newStatus is QuoteStatus.Accepted or QuoteStatus.Rejected)
             {
-                _logger.LogInformation("Quote Accepted — Deal {DealId} → Negotiation", quote.DealId);
-                await TransitionDealStageAsync(
-                    quote.DealId, tenantId,
-                    toStage: "Negotiation", probability: 80, changedBy: changedBy, actualValue: quote.GrandTotal);
+                var (rules, _) = await _guard.GetSettingsAsync(tenantId);
 
-            }
-            else if (newStatus == QuoteStatus.Rejected)
-            {
-                _logger.LogInformation("Quote Rejected — Deal {DealId} → ClosedLost", quote.DealId);
-                await TransitionDealStageAsync(
-                    quote.DealId, tenantId,
-                    toStage: "ClosedLost", probability: 0, changedBy: changedBy);
-
+                if (newStatus == QuoteStatus.Accepted)
+                {
+                    // actualValue is passed, but ApplyToDeal only uses it when
+                    // the target stage actually CLOSES the deal. That is the
+                    // fix for the old code writing deal.ActualValue while
+                    // moving the deal to an open stage.
+                    await MoveDealOnQuoteDecisionAsync(
+                        quote.DealId, tenantId, rules.QuoteAcceptedStageKey, changedBy,
+                        note: $"Quote {quote.Number} was accepted.",
+                        actualValue: quote.GrandTotal);
+                }
+                else
+                {
+                    // The note becomes the deal's LostReason when the target
+                    // stage is a Lost stage — ApplyToDeal does that, and only
+                    // for Lost, so a deal that is later won does not keep a
+                    // stale reason.
+                    await MoveDealOnQuoteDecisionAsync(
+                        quote.DealId, tenantId, rules.QuoteRejectedStageKey, changedBy,
+                        note: $"Quote {quote.Number} was rejected by the customer.");
+                }
             }
         }
 
 
-        private async Task TransitionDealStageAsync(
-            Guid dealId, Guid tenantId, string toStage, int probability, string changedBy, decimal? actualValue = null)
+        // ── 037: the in-app notification for a status change ──────────
+        //
+        // Adds rows; does NOT save. The caller's SaveChangesAsync commits
+        // them alongside the status change.
+        private async Task AddStatusNotificationAsync(
+            Quote quote, QuoteStatus newStatus, CurrentUserContext? currentUser)
         {
+            // Only the three the owner cares about. Draft, Viewed, Expired and
+            // the approval statuses are noise: the approval ones get their own
+            // notification from the approvals round, and nobody needs telling
+            // that a quote is still a draft.
+            var eventType = newStatus switch
+            {
+                QuoteStatus.Sent     => NotificationEventType.QuoteSent,
+                QuoteStatus.Accepted => NotificationEventType.QuoteAccepted,
+                QuoteStatus.Rejected => NotificationEventType.QuoteRejected,
+                _                    => (NotificationEventType?)null
+            };
+
+            if (eventType is null) return;
+
             try
             {
-                var tenantIdStr = tenantId.ToString();
+                if (quote.DealId == Guid.Empty) return;
+
+                // Cheap projection rather than loading the deal: this runs on
+                // every status change, including the customer's own click.
+                var deal = await _db.Deals.AsNoTracking().IgnoreQueryFilters()
+                    .Where(d => d.Id == quote.DealId && d.TenantId == quote.TenantId)
+                    .Select(d => new { d.OwnerUserId, d.Title })
+                    .FirstOrDefaultAsync();
+
+                if (deal is null || string.IsNullOrWhiteSpace(deal.OwnerUserId))
+                    return;      // unassigned deal — nobody to tell
+
+                var title = newStatus switch
+                {
+                    QuoteStatus.Sent     => $"Quote {quote.Number} was sent to the customer",
+                    QuoteStatus.Accepted => $"Quote {quote.Number} was accepted",
+                    _                    => $"Quote {quote.Number} was rejected"
+                };
+
+                // Currency CODE, not a symbol: this handler has no view of the
+                // tenant's formatting, and "THB 95,000.00" is unambiguous
+                // where a bare number is not.
+                var body = $"{deal.Title} — {quote.Currency} {quote.GrandTotal:N2}";
+
+                await _notify.AddForOwnerAsync(
+                    new NotificationRequest(
+                        TenantId:    quote.TenantId,
+                        EventType:   eventType.Value,
+                        Title:       title,
+                        Body:        body,
+                        EntityType:  "Quote",
+                        EntityId:    quote.Id,
+
+                        // Null when the customer acted through the public
+                        // link, which is exactly when the owner must hear
+                        // about it. When a colleague did it, the dispatcher
+                        // drops them from their own notification.
+                        ActorUserId: currentUser?.UserId,
+                        ActorName:   currentUser?.FullName ?? "the customer"),
+                    deal.OwnerUserId);
+            }
+            catch (Exception ex)
+            {
+                // Never fail a status change because a notification could not
+                // be prepared. The quote is the point; the bell is not.
+                _logger.LogError(ex,
+                    "Could not prepare a notification for quote {QuoteId} → {Status}",
+                    quote.Id, newStatus);
+            }
+        }
+
+        // ── Quote accepted / rejected → move the deal (036) ───────────
+        //
+        // Was: toStage and probability passed in as literals from the caller
+        // ("Negotiation"/80, "ClosedLost"/0), with a terminal check against
+        // four hardcoded stage names. The target is now the tenant's own
+        // configured key, and everything else the guard decides.
+        private async Task MoveDealOnQuoteDecisionAsync(
+            Guid dealId, Guid tenantId, string? toStageKey,
+            string changedBy, string note, decimal? actualValue = null)
+        {
+            if (string.IsNullOrWhiteSpace(toStageKey))
+                return;      // this workspace has not asked for a move
+
+            try
+            {
                 var deal = await _db.Deals
                    .IgnoreQueryFilters()
                    .FirstOrDefaultAsync(d =>
@@ -566,63 +863,68 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 if (deal == null)
                 {
                     _logger.LogError(
-                        "TransitionDealStage: Deal {DealId} not found for tenant {TenantId}",
+                        "Quote decision: deal {DealId} not found for tenant {TenantId}",
                         dealId, tenantId);
                     return;
                 }
 
-                // No-op if already terminal
-                if (deal.Stage is "Won" or "Lost" or "ClosedWon" or "ClosedLost")
+                var stages = await _stages.GetAsync(tenantId);
+
+                if (!QuoteStageAutomation.ShouldMove(
+                        stages, deal.Stage, toStageKey!, out var why))
                 {
                     _logger.LogInformation(
-                        "Deal {DealId} already in terminal stage {Stage} — skipping",
-                        dealId, deal.Stage);
+                        "Deal {DealId} not moved on quote decision: {Reason}", dealId, why);
                     return;
                 }
 
+                var decision = await _guard.CheckAsync(new StageMoveRequest(
+                    TenantId: tenantId,
+                    Deal: new DealStageSnapshot(
+                        deal.Id, deal.Stage, deal.ExpectedValue,
+                        deal.ExpectedCloseDateUtc, deal.OwnerUserId),
+                    ToStageKey: toStageKey!,
+                    Note: note,
+
+                    // A quote accepted or rejected IS the event a requirement
+                    // would have asked about, so the process matrix is not
+                    // consulted. Safe here only because ShouldMove refuses to
+                    // touch a deal that is already closed — otherwise a system
+                    // move would be a REOPEN, and a system reopen skips the
+                    // invoice rule.
+                    IsSystemMove: true));
+
                 var fromStage = deal.Stage;
-                deal.Stage = toStage;
-                deal.Probability = probability;
-                deal.UpdatedAtUtc = DateTime.UtcNow;
-                deal.UpdatedBy = changedBy;
 
-                // ✅ Update ActualValue when quote is accepted — replaces rough estimate
-                // with confirmed quote grand total
-                if (actualValue.HasValue)
-                {
-                    deal.ActualValue = actualValue.Value;
-                    _logger.LogInformation(
-                        "Deal {DealId} ActualValue updated to {Value} from accepted quote",
-                        dealId, actualValue.Value);
-                }
+                // The probability comes from the target stage. actualValue and
+                // the close date are applied ONLY when the move closes the
+                // deal, and cleared when it does not — which is the fix for
+                // the old code stamping a closing figure onto an open deal and
+                // having it counted as revenue while still in the pipeline.
+                StageTransitionGuard.ApplyToDeal(
+                    deal, decision, changedBy, actualValue: actualValue);
 
-                _db.DealStageHistory.Add(new DealStageHistory
-                {
-                    Id = Guid.NewGuid(),
-                    DealId = dealId,
-                    TenantId = tenantId,
-                    FromStage = fromStage,
-                    ToStage = toStage,
-                    ChangedAtUtc = DateTime.UtcNow,
-                    ChangedBy = changedBy
-                });
+                _db.DealStageHistory.Add(
+                    StageTransitionGuard.HistoryFor(tenantId, dealId, decision, changedBy));
 
                 await _db.SaveChangesAsync();
 
                 _logger.LogInformation(
-                    "✅ Deal {DealId}: {From} → {To}", dealId, fromStage, toStage);
+                    "Deal {DealId}: {From} → {To} (closing: {IsClosing})",
+                    dealId, fromStage, decision.To.Key, decision.IsClosing);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "Failed to transition Deal {DealId} to {Stage}", dealId, toStage);
+                    "Failed to move deal {DealId} to {Stage} after a quote decision",
+                    dealId, toStageKey);
 
                 // Only here — when the move really failed.
                 try
                 {
                     await _audit.WriteAsync(
                         AuditAction.DealStageFailed, AuditEntityType.Deal, dealId, tenantId,
-                        new { attemptedStage = toStage, error = ex.Message },
+                        new { attemptedStage = toStageKey, error = ex.Message },
                         CancellationToken.None);
                 }
                 catch { /* the audit write must never mask the original failure */ }

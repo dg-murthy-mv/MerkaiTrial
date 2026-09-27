@@ -195,6 +195,19 @@ public class TenantProvisioningService : ITenantProvisioningService
         {
             var now = DateTime.UtcNow;
 
+            // ── 0. COUNTRY (035) ─────────────────────────────────────
+            // Loaded BEFORE the tenant row now, not at step 4. The tenant's
+            // timezone falls back to the country's, and a workspace with no
+            // timezone is a workspace whose financial year boundaries are
+            // wrong: an Indian deal closed at 00:30 on 1 April is stored as
+            // 31 March 19:00 UTC, so a fiscal comparison made in UTC files
+            // it under the PREVIOUS financial year. Read-only lookup, no
+            // side effects, safe to move.
+            var country = req.CountryId.HasValue
+                ? await _db.Countries.AsNoTracking()
+                    .FirstOrDefaultAsync(c => c.Id == req.CountryId.Value, ct)
+                : null;
+
             // ── 1. TENANT ────────────────────────────────────────────
             var tenant = new Tenant
             {
@@ -206,7 +219,15 @@ public class TenantProvisioningService : ITenantProvisioningService
                 Phone = req.Phone?.Trim(),
                 CountryId = req.CountryId,
                 DefaultCurrency = req.DefaultCurrency.Trim().ToUpperInvariant(),
-                Timezone = req.TimeZone,
+                // 035: the request wins, the country is the fallback, UTC is
+                // the last resort. Never blank — IFiscalYearService treats a
+                // blank or unrecognised zone as UTC, which is a silent
+                // half-a-day error for an Indian workspace.
+                Timezone = !string.IsNullOrWhiteSpace(req.TimeZone)
+                    ? req.TimeZone.Trim()
+                    : (!string.IsNullOrWhiteSpace(country?.Timezone)
+                        ? country!.Timezone!.Trim()
+                        : "UTC"),
                 PreferredLanguage = req.PreferredLanguage,
                 Domain = req.Domain?.Trim(),
                 Plan = plan.Name,
@@ -244,6 +265,16 @@ public class TenantProvisioningService : ITenantProvisioningService
                 MaxDeals = plan.MaxDeals,
                 StorageLimit = plan.StorageLimitBytes,
                 FeatureFlags = plan.Features,
+
+                // 035: left NULL on purpose. Null means "inherit from my
+                // country", so an Indian workspace gets April-March from
+                // Countries.FiscalYearStartMonth without the value being
+                // copied into a second place that can then drift. Do not
+                // "helpfully" seed country.FiscalYearStartMonth here — the
+                // whole point is that there is one source of truth until a
+                // tenant deliberately overrides it.
+                FiscalYearStartMonth = null,
+
                 UpdatedAtUtc = now,
                 UpdatedBy = provisionedBy,
             });
@@ -255,11 +286,8 @@ public class TenantProvisioningService : ITenantProvisioningService
                 _db.Roles.AddRange(roles);
 
             // ── 4. COUNTRY REFERENCE DATA ────────────────────────────
-            var country = req.CountryId.HasValue
-                ? await _db.Countries.AsNoTracking()
-                    .FirstOrDefaultAsync(c => c.Id == req.CountryId.Value, ct)
-                : null;
-
+            // The country itself is loaded at step 0 now, because the tenant
+            // row needs its timezone.
             SeedTaxRates(tenant.Id, country, now, provisionedBy);
             SeedLeadSourcesAndChannels(tenant.Id, country?.Code, now, provisionedBy);
             SeedPipelineStagesAndProcess(tenant.Id, now, provisionedBy);

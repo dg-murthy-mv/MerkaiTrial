@@ -18,6 +18,18 @@
 //   Jwt__SigningKey  = 64+ random chars, IDENTICAL to Admin.Web
 //   Jwt__Issuer      = merkaitrial-admin
 //   Jwt__Audience    = merkaitrial-api
+//   Email__ApiKey    = Resend API key (re_...)         ← 038
+//
+// 038 also adds a BACKGROUND WORKER to this host. Two consequences worth
+// knowing:
+//
+//   • "Always On" must be enabled on the App Service. Without it the host
+//     is unloaded when idle and the queue stops draining until the next
+//     request wakes it.
+//   • If you scale to more than one instance, both run the worker. That is
+//     handled — claiming is an atomic UPDATE ... OUTPUT with ROWLOCK and
+//     READPAST, and every send carries a provider idempotency key — but it
+//     is the reason those exist.
 // =====================================================================
 
 using MerkaiTrial.WebApi.Middleware;
@@ -50,7 +62,9 @@ builder.Services
     .AddApiPersistence(builder.Configuration)  // ITenantProvider + FlowDbContext
     .AddApiHandlers()                          // every ICommandHandler (scan)
     .AddApiDomainServices()                    // current user, resolvers, audit, PDFs, …
-    .AddTaxAndPayments();                      // per-country tax + payment providers
+    .AddTaxAndPayments()                       // per-country tax + payment providers
+    .AddApiEmail(builder.Configuration)        // 038 — Resend sender + options
+    .AddApiBackgroundServices();               // 038 — outbound message worker
 
 // ---------------- Third-party licences ----------------
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;

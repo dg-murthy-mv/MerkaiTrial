@@ -1,0 +1,596 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.Notifications.IndexModel
+@{
+    ViewData["Title"] = "Notification settings";
+}
+
+@*
+    038 — Settings → Notifications. Two tabs, one page.
+
+    THE CHECKBOX TRAP THIS PAGE AVOIDS
+      An unchecked checkbox posts NOTHING. Bind a List<T> of rows and the
+      indexes collapse the moment someone unticks a box in the middle, so
+      row 5's value silently lands on row 3. Instead every row posts a
+      HIDDEN EventTypes value, and the two checkbox arrays are matched
+      against it BY VALUE in the page model. Unticking anything is then
+      just an absent value, which is exactly what it should mean.
+
+    PATTERNS (same as every page since 028):
+      • No Bootstrap CSS/JS — _Layout loads both.
+      • No TempData alert block — _Layout renders those globally.
+      • @@ escaping inside <style>.
+      • No inline onclick carrying interpolated text; confirms are
+        delegated and read their message from data-confirm.
+*@
+
+<style>
+    .ns-wrap { max-width: 980px; }
+
+    .ns-head { margin-bottom: 16px; }
+    .ns-title { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+    .ns-sub { font-size: 13px; color: #64748b; margin: 0; }
+
+    .ns-tabs {
+        display: inline-flex;
+        background: #f1f5f9;
+        border-radius: 8px;
+        padding: 3px;
+        gap: 2px;
+        margin-bottom: 18px;
+    }
+
+    .ns-tab {
+        border: none;
+        background: transparent;
+        color: #475569;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 6px 16px;
+        border-radius: 6px;
+        text-decoration: none;
+    }
+
+    .ns-tab:hover { color: #1e293b; }
+
+    .ns-tab.active {
+        background: #fff;
+        color: #0f172a;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, .12);
+    }
+
+    .ns-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .ns-group-head {
+        padding: 10px 16px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        color: #64748b;
+    }
+
+    .ns-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .ns-row:last-child { border-bottom: none; }
+
+    .ns-row-label { flex: 1 1 auto; min-width: 0; font-size: 14px; color: #0f172a; }
+
+    .ns-row-note { font-size: 12px; color: #94a3b8; display: block; margin-top: 2px; }
+
+    .ns-toggle {
+        flex: 0 0 92px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #475569;
+    }
+
+    .ns-col-head {
+        display: flex;
+        gap: 12px;
+        padding: 8px 16px;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 12px;
+        font-weight: 600;
+        color: #64748b;
+        background: #fff;
+    }
+
+    .ns-col-head .spacer { flex: 1 1 auto; }
+    .ns-col-head .h { flex: 0 0 92px; text-align: center; }
+
+    .ns-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 16px;
+        flex-wrap: wrap;
+    }
+
+    .ns-log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .ns-log-table th {
+        text-align: left;
+        padding: 9px 12px;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .ns-log-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: top;
+    }
+    .ns-log-table tr:last-child td { border-bottom: none; }
+
+    .ns-subject { color: #0f172a; }
+    .ns-to { color: #64748b; font-size: 12px; display: block; margin-top: 2px; }
+
+    .ns-err {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        color: #b91c1c;
+        word-break: break-word;
+    }
+
+    .ns-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .ns-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+    .ns-stat { font-size: 13px; color: #64748b; }
+    .ns-stat strong { color: #0f172a; font-size: 16px; display: block; }
+
+    .ns-empty { padding: 48px 20px; text-align: center; color: #64748b; }
+    .ns-empty i { font-size: 32px; color: #cbd5e1; display: block; margin-bottom: 10px; }
+
+    .ns-pager { display: flex; justify-content: space-between; margin-top: 14px; }
+
+    @@media (max-width: 640px) {
+        .ns-toggle { flex: 0 0 68px; }
+        .ns-col-head .h { flex: 0 0 68px; }
+    }
+</style>
+
+<div class="ns-wrap">
+
+    <div class="ns-head">
+        <h1 class="ns-title">Notifications</h1>
+        <p class="ns-sub">Choose how Merkai reaches you.</p>
+    </div>
+
+    <div class="ns-tabs">
+        <a class="ns-tab @(Model.OnPreferencesTab ? "active" : "")"
+           asp-page="./Index" asp-route-tab="preferences">My preferences</a>
+
+        @if (Model.IsWorkspaceAdmin)
+        {
+            <a class="ns-tab @(Model.OnDefaultsTab ? "active" : "")"
+               asp-page="./Index" asp-route-tab="defaults">Workspace defaults</a>
+
+            <a class="ns-tab @(Model.OnLogTab ? "active" : "")"
+               asp-page="./Index" asp-route-tab="log">Email log</a>
+        }
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-triangle"></i>
+            <span>@Model.LoadError</span>
+        </div>
+    }
+
+    @* ══════════════════ TAB 1 — MY PREFERENCES ══════════════════ *@
+    @if (Model.OnPreferencesTab && Model.Preferences is not null)
+    {
+        @if (!Model.Preferences.EmailEnabled)
+        {
+            <div class="alert alert-info d-flex align-items-start gap-2">
+                <i class="bi bi-info-circle mt-1"></i>
+                <div>
+                    <strong>Email is not switched on for this environment.</strong>
+                    You can still choose your settings — anything you turn on
+                    will be queued and sent as soon as email is configured.
+                    Nothing is lost in the meantime.
+                </div>
+            </div>
+        }
+        else if (string.IsNullOrWhiteSpace(Model.Preferences.MyEmailAddress))
+        {
+            <div class="alert alert-warning d-flex align-items-start gap-2">
+                <i class="bi bi-exclamation-triangle mt-1"></i>
+                <div>
+                    <strong>Your account has no email address.</strong>
+                    Email notifications cannot reach you until one is added
+                    to your profile.
+                </div>
+            </div>
+        }
+
+        <form method="post" asp-page-handler="SavePreferences">
+
+            <div class="ns-card">
+                <div class="ns-col-head">
+                    <span class="spacer">Tell me when&hellip;</span>
+                    <span class="h">In app</span>
+                    <span class="h">Email</span>
+                </div>
+
+                @foreach (var group in Model.PreferenceGroups)
+                {
+                    <div class="ns-group-head">@group.Key</div>
+
+                    @foreach (var item in group)
+                    {
+                        <div class="ns-row">
+                            @* Always posted. This is what keeps the two
+                               checkbox arrays matchable by value. *@
+                            <input type="hidden" name="EventTypes" value="@item.EventType" />
+
+                            <div class="ns-row-label">
+                                @item.Label
+                                @if (item.IsLocked)
+                                {
+                                    <span class="ns-row-note">
+                                        <i class="bi bi-lock-fill"></i>
+                                        Set by your workspace admin
+                                    </span>
+                                }
+                                else if (item.IsDefault)
+                                {
+                                    <span class="ns-row-note">Using the default</span>
+                                }
+                            </div>
+
+                            @* A locked row is disabled AND its value is
+                               carried in a hidden field — a disabled input
+                               posts nothing, so without this a save would
+                               read as "the user turned it off". The API
+                               ignores locked events regardless; this is so
+                               the page does not misrepresent the state. *@
+                            <label class="ns-toggle">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="InAppOn" value="@item.EventType"
+                                       checked="@item.InApp"
+                                       disabled="@item.IsLocked"
+                                       aria-label="@($"In-app notification: {item.Label}")" />
+                                @if (item.IsLocked && item.InApp)
+                                {
+                                    <input type="hidden" name="InAppOn" value="@item.EventType" />
+                                }
+                            </label>
+
+                            <label class="ns-toggle">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="EmailOn" value="@item.EventType"
+                                       checked="@item.Email"
+                                       disabled="@item.IsLocked"
+                                       aria-label="@($"Email notification: {item.Label}")" />
+                                @if (item.IsLocked && item.Email)
+                                {
+                                    <input type="hidden" name="EmailOn" value="@item.EventType" />
+                                }
+                            </label>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="ns-actions">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-check2"></i> Save preferences
+                </button>
+
+                @if (!string.IsNullOrWhiteSpace(Model.Preferences.MyEmailAddress))
+                {
+                    <span class="ns-sub">
+                        Email goes to <strong>@Model.Preferences.MyEmailAddress</strong>
+                    </span>
+                }
+            </div>
+        </form>
+    }
+
+    @* ══════════════════ TAB 2 — WORKSPACE DEFAULTS ══════════════════ *@
+    @if (Model.OnDefaultsTab && Model.Defaults is not null)
+    {
+        <div class="alert alert-secondary d-flex align-items-start gap-2">
+            <i class="bi bi-info-circle mt-1"></i>
+            <div>
+                These are the <strong>starting position</strong> for everyone in
+                this workspace. People can still change their own — unless you
+                tick <strong>Required</strong>, which stops them.
+                <div class="small mt-1">
+                    Lock sparingly. Approvals are worth forcing because a missed
+                    one stops someone else working. Forcing the rest tends to make
+                    people ignore notifications altogether, which costs you the
+                    locked ones too.
+                </div>
+            </div>
+        </div>
+
+        @if (!Model.Defaults.EmailEnabled)
+        {
+            <div class="alert alert-info d-flex align-items-start gap-2">
+                <i class="bi bi-info-circle mt-1"></i>
+                <div>
+                    <strong>Email is not switched on for this environment.</strong>
+                    Anything you turn on here is queued and sent as soon as it is
+                    configured. Nothing is lost meanwhile.
+                </div>
+            </div>
+        }
+
+        <form method="post" asp-page-handler="SaveDefaults">
+            <div class="ns-card">
+                <div class="ns-col-head">
+                    <span class="spacer">Tell people when&hellip;</span>
+                    <span class="h">In app</span>
+                    <span class="h">Email</span>
+                    <span class="h">Required</span>
+                </div>
+
+                @foreach (var group in Model.DefaultGroups)
+                {
+                    <div class="ns-group-head">@group.Key</div>
+
+                    @foreach (var item in group)
+                    {
+                        <div class="ns-row">
+                            <input type="hidden" name="DefaultEventTypes" value="@item.EventType" />
+
+                            <div class="ns-row-label">
+                                @item.Label
+
+                                @* The sentence that would have prevented the
+                                   confusion this whole feature came from:
+                                   "you ticked it for yourself, not for them". *@
+                                <span class="ns-row-note">
+                                    @item.InAppRecipientCount of @Model.Defaults.ActiveUserCount in the app
+                                    &middot;
+                                    @item.EmailRecipientCount by email
+
+                                    @if (item.MissingEmailAddressCount > 0)
+                                    {
+                                        <span class="text-warning-emphasis">
+                                            &middot; @item.MissingEmailAddressCount with no email address
+                                        </span>
+                                    }
+
+                                    @if (item.OverriddenCount > 0)
+                                    {
+                                        <span>&middot; @item.OverriddenCount changed it themselves</span>
+                                    }
+                                </span>
+                            </div>
+
+                            <label class="ns-toggle">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="DefaultInAppOn" value="@item.EventType"
+                                       checked="@item.InApp"
+                                       aria-label="@($"Default in-app: {item.Label}")" />
+                            </label>
+
+                            <label class="ns-toggle">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="DefaultEmailOn" value="@item.EventType"
+                                       checked="@item.Email"
+                                       aria-label="@($"Default email: {item.Label}")" />
+                            </label>
+
+                            <label class="ns-toggle">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="DefaultLockedOn" value="@item.EventType"
+                                       checked="@item.IsLocked"
+                                       aria-label="@($"Required — people cannot turn this off: {item.Label}")" />
+                            </label>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="ns-actions">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-check2"></i> Save workspace defaults
+                </button>
+                <span class="ns-sub">
+                    Changing a default affects everyone who has not chosen for
+                    themselves. Ticking <strong>Required</strong> affects everyone.
+                </span>
+            </div>
+        </form>
+    }
+
+    @* ══════════════════ TAB 2 — EMAIL LOG ══════════════════ *@
+    @if (Model.OnLogTab && Model.Log is not null)
+    {
+        <div class="ns-stats">
+            <div class="ns-stat"><strong>@Model.Log.TotalCount</strong> total</div>
+            <div class="ns-stat"><strong>@Model.Log.PendingCount</strong> in the queue</div>
+            <div class="ns-stat"><strong>@Model.Log.DeadCount</strong> need attention</div>
+        </div>
+
+        @if (!Model.Log.EmailEnabled)
+        {
+            <div class="alert alert-info d-flex align-items-start gap-2">
+                <i class="bi bi-info-circle mt-1"></i>
+                <div>
+                    <strong>No email provider is configured here.</strong>
+                    Messages are being queued but not sent, and no attempts
+                    are being used up. Set <code>Email__ApiKey</code> and the
+                    backlog goes out on the worker's next pass.
+                </div>
+            </div>
+        }
+
+        <div class="ns-actions" style="margin: 0 0 12px;">
+            <a class="btn btn-sm @(string.IsNullOrEmpty(Model.Status) ? "btn-secondary" : "btn-outline-secondary")"
+               asp-page="./Index" asp-route-tab="log">All</a>
+
+            @foreach (var s in MerkaiTrial.Admin.Web.Pages.Settings.Notifications.IndexModel.StatusFilters)
+            {
+                <a class="btn btn-sm @(string.Equals(Model.Status, s, StringComparison.OrdinalIgnoreCase) ? "btn-secondary" : "btn-outline-secondary")"
+                   asp-page="./Index" asp-route-tab="log" asp-route-status="@s">@s</a>
+            }
+        </div>
+
+        <div class="ns-card">
+            @if (Model.Log.Items.Count == 0)
+            {
+                <div class="ns-empty">
+                    <i class="bi bi-envelope"></i>
+                    <div>Nothing here.</div>
+                    <div class="small">
+                        Emails appear once a notification that someone has asked
+                        to receive by email is raised.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <table class="ns-log-table">
+                    <thead>
+                        <tr>
+                            <th>Message</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in Model.Log.Items)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="ns-subject">@m.Subject</span>
+                                    <span class="ns-to">
+                                        @m.ToAddress
+                                        @if (m.AttemptCount > 0)
+                                        {
+                                            <text> &middot; @m.AttemptCount attempt@(m.AttemptCount == 1 ? "" : "s")</text>
+                                        }
+                                    </span>
+                                    @if (!string.IsNullOrWhiteSpace(m.LastError))
+                                    {
+                                        <span class="ns-err">@m.LastError</span>
+                                    }
+                                </td>
+
+                                <td>
+                                    <span class="ns-badge @m.StatusClass" title="@m.StatusHint">@m.Status</span>
+                                    @if (m.NextAttemptAtUtc.HasValue && m.Status == "Failed")
+                                    {
+                                        <span class="ns-to">
+                                            next @Model.FormatDateTime(m.NextAttemptAtUtc.Value)
+                                        </span>
+                                    }
+                                </td>
+
+                                <td style="white-space:nowrap;">
+                                    <span title="@Model.FormatDateTime(m.CreatedAtUtc)">
+                                        @Model.Since(m.CreatedAtUtc)
+                                    </span>
+                                    @if (m.SentAtUtc.HasValue)
+                                    {
+                                        <span class="ns-to">sent @Model.Since(m.SentAtUtc.Value)</span>
+                                    }
+                                </td>
+
+                                <td style="white-space:nowrap;">
+                                    @if (m.CanRetry)
+                                    {
+                                        <form method="post" asp-page-handler="Retry" asp-route-id="@m.Id"
+                                              asp-route-tab="log" asp-route-status="@Model.Status"
+                                              asp-route-skip="@Model.Skip" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                <i class="bi bi-arrow-clockwise"></i> Retry
+                                            </button>
+                                        </form>
+                                    }
+
+                                    @if (m.CanCancel)
+                                    {
+                                        <form method="post" asp-page-handler="Cancel" asp-route-id="@m.Id"
+                                              asp-route-tab="log" asp-route-status="@Model.Status"
+                                              asp-route-skip="@Model.Skip"
+                                              class="d-inline js-confirm"
+                                              data-confirm="Cancel this message so it is never sent?">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                                Cancel
+                                            </button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        @if (Model.HasPrevious || Model.Log.HasMore)
+        {
+            <div class="ns-pager">
+                @if (Model.HasPrevious)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-page="./Index" asp-route-tab="log" asp-route-status="@Model.Status"
+                       asp-route-skip="@Model.PreviousSkip">
+                        <i class="bi bi-chevron-left"></i> Newer
+                    </a>
+                }
+                else { <span></span> }
+
+                @if (Model.Log.HasMore)
+                {
+                    <a class="btn btn-sm btn-outline-secondary"
+                       asp-page="./Index" asp-route-tab="log" asp-route-status="@Model.Status"
+                       asp-route-skip="@Model.NextSkip">
+                        Older <i class="bi bi-chevron-right"></i>
+                    </a>
+                }
+                else { <span></span> }
+            </div>
+        }
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // Delegated; the message comes from data-confirm, never from
+        // interpolated markup.
+        document.addEventListener('submit', function (e) {
+            var form = e.target.closest('form.js-confirm');
+            if (!form) return;
+
+            var message = form.getAttribute('data-confirm');
+            if (message && !window.confirm(message)) {
+                e.preventDefault();
+            }
+        });
+    </script>
+}

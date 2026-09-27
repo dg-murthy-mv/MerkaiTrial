@@ -35,6 +35,7 @@ using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
+using MerkaiTrial.Admin.Web.Services.Notifications;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
@@ -54,6 +55,7 @@ using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Fiscal;
 using MerkaiTrial.Application.Services.Storage;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -169,6 +171,7 @@ public static class AdminWebServiceRegistration
     {
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ICurrentTenantService, CurrentTenantService>();
+        services.AddScoped<IFiscalYearService, FiscalYearService>();   // 035 — fiscal year
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ITenantUiService, TenantUiService>();
         services.AddScoped<IPermissionValidator, PermissionValidator>();
@@ -197,6 +200,8 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IQuoteApprovalService, QuoteApprovalService>();   // 017 — quote approvals
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IActivityService, ActivityService>();
+        services.AddScoped<INotificationService, NotificationService>();   // 037
+        services.AddScoped<INotificationSettingsService, NotificationSettingsService>();   // 038
 
         // Customers & catalogue
         services.AddScoped<IContactService, ContactService>();

@@ -47,6 +47,22 @@
 //   ✅ CreateDealHandler    — sets VerticalId from CreateDealDto
 //   ✅ UpdateDealHandler    — sets VerticalId from UpdateDealDto
 //
+// NOTIFICATIONS (039)
+//   DealStageChanged fires on all THREE stage paths, and DealAssigned on
+//   create and on an owner change. Every message is built by
+//   DealNotifications so the three stage paths cannot word the same event
+//   differently — which is exactly how the two terminal checks drifted
+//   apart before 036.
+//
+//   Rows are added BEFORE each handler's existing SaveChangesAsync, so a
+//   notification never survives a change that rolled back, and a change
+//   never happens silently. INotificationDispatcher never saves.
+//
+//   The dispatcher drops the actor from the recipients, so moving your own
+//   deal does not notify you. For the automatic path (quote accepted,
+//   invoice paid) there is no actor at all, so the owner always hears —
+//   which is the case that matters most.
+//
 // RECORD VISIBILITY (016) — deals follow the same Own / Team / All rule
 // as leads, on Deal.OwnerUserId.
 //   • List, by-contact, detail, summary: only visible deals. A deal
@@ -65,6 +81,7 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications;   // 039
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -158,6 +175,8 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly TransitionActionRunner _actions;      // 022
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
+        private readonly INotificationDispatcher _notify;      // 039
+        private readonly ILogger<TransitionDealStageHandler> _logger;   // 039
 
         public TransitionDealStageHandler(
             FlowDbContext db,
@@ -165,14 +184,18 @@ namespace MerkaiTrial.Application.Commands.Deals
             StageTransitionGuard guard,
             TransitionActionRunner actions,                     // 022
             IAuditService audit,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            INotificationDispatcher notify,
+            ILogger<TransitionDealStageHandler> logger)
         {
+            _logger = logger;
             _db = db;
             _scope = scope;
             _stages = stages;
             _guard = guard;
             _actions = actions;
             _audit = audit;
+            _notify = notify;
         }
 
         public async Task HandleAsync(
@@ -223,6 +246,14 @@ namespace MerkaiTrial.Application.Commands.Deals
             _db.DealStageHistory.Add(
                 StageTransitionGuard.HistoryFor(tenantGuid, dealId, decision, changedBy));
 
+            // ── 039 ───────────────────────────────────────────────────
+            // No actor: nobody pressed anything, a quote was accepted or an
+            // invoice was paid. So the owner is always told — this is the
+            // path where they are least likely to already know.
+            await NotifyStageAsync(
+                tenantGuid, deal, stages.NameOf(fromStage), decision,
+                actorUserId: null, actorName: "the system");
+
             await _db.SaveChangesAsync();
 
             await _audit.WriteAsync(
@@ -247,6 +278,32 @@ namespace MerkaiTrial.Application.Commands.Deals
 
         private static DealStageSnapshot Snapshot(Deal d) => new(
             d.Id, d.Stage, d.ExpectedValue, d.ExpectedCloseDateUtc, d.OwnerUserId);
+
+        /// <summary>039. Adds rows; does not save. Never throws.</summary>
+        private async Task NotifyStageAsync(
+            Guid tenantId, Deal deal, string? fromStageName,
+            StageMoveDecision decision, Guid? actorUserId, string? actorName)
+        {
+            try
+            {
+                await _notify.AddForOwnerAsync(
+                    DealNotifications.StageChanged(
+                        tenantId, deal.Id, deal.Title,
+                        fromStageName, decision.To.Name,
+                        decision.IsClosing, decision.IsReopen,
+                        actorUserId, actorName, decision.HistoryNote),
+                    deal.OwnerUserId);
+            }
+            catch (Exception ex)
+            {
+                // Never fail a stage move because a notification could not
+                // be prepared. The deal moving is the point — but it is
+                // logged, not swallowed: a notification silently going
+                // missing is the hardest kind of bug to notice.
+                _logger.LogError(ex,
+                    "Could not prepare the stage-change notification for deal {DealId}", deal.Id);
+            }
+        }
     }
 
     // ==================== GET DEALS LIST ====================
@@ -496,19 +553,22 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly IStageResolver _stages;
         private readonly ILogger<CreateDealHandler> _logger;
         private readonly IAuditService _audit;
+        private readonly INotificationDispatcher _notify;      // 039
 
         public CreateDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
             IStageResolver stages,
             ILogger<CreateDealHandler> logger,
-            IAuditService audit)
+            IAuditService audit,
+            INotificationDispatcher notify)
         {
             _db = db;
             _currentUserService = currentUserService;
             _stages = stages;
             _logger = logger;
             _audit = audit;
+            _notify = notify;
         }
 
         public async Task<DealDto> HandleAsync(CreateDealDto dto)
@@ -590,6 +650,28 @@ namespace MerkaiTrial.Application.Commands.Deals
                 ChangedBy = deal.CreatedBy
             });
 
+            // ── 039: assigned to someone other than the creator ───────
+            // Before the save, so the notification and the deal are one
+            // transaction.
+            if (!string.Equals(deal.OwnerUserId, currentUser.UserId.ToString(),
+                               StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await _notify.AddForOwnerAsync(
+                        DealNotifications.DealAssigned(
+                            tenantGuid, deal.Id, deal.Title, chosen.Name,
+                            deal.ExpectedValue, deal.Currency,
+                            currentUser.UserId, currentUser.FullName),
+                        deal.OwnerUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "Could not prepare the assignment notification for new deal {DealId}", deal.Id);
+                }
+            }
+
             await _db.SaveChangesAsync();
 
             await _audit.WriteAsync(
@@ -656,6 +738,8 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly StageTransitionGuard _guard;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
+        private readonly INotificationDispatcher _notify;              // 039
+        private readonly ILogger<UpdateDealHandler> _logger;           // 039
 
         public UpdateDealHandler(
             FlowDbContext db,
@@ -663,7 +747,9 @@ namespace MerkaiTrial.Application.Commands.Deals
             IStageResolver stages,
             StageTransitionGuard guard,
             IAuditService audit,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            INotificationDispatcher notify,
+            ILogger<UpdateDealHandler> logger)
         {
             _db = db;
             _scope = scope;
@@ -671,6 +757,8 @@ namespace MerkaiTrial.Application.Commands.Deals
             _stages = stages;
             _guard = guard;
             _audit = audit;
+            _notify = notify;
+            _logger = logger;
         }
 
         public async Task HandleAsync(string tenantId, Guid dealId, UpdateDealDto dto)
@@ -690,6 +778,10 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var stages = await _stages.GetAsync(tenantGuid);
+
+            // 039: captured before anything is overwritten, so the owner
+            // change can be detected the same way the stage change is.
+            var previousOwnerUserId = deal.OwnerUserId;
 
             // The ordinary fields first. A rep who fills in the value AND
             // moves the deal to Won in one save should be judged on the
@@ -759,6 +851,16 @@ namespace MerkaiTrial.Application.Commands.Deals
                         adminOverride = decision.WasOverride,
                         note = decision.HistoryNote
                     });
+
+                // 039. Inside the stage-change block, so it fires only on an
+                // actual move — and before the save at the end of the method.
+                await NotifyAsync(
+                    DealNotifications.StageChanged(
+                        tenantGuid, deal.Id, deal.Title,
+                        stages.NameOf(previousStage), decision.To.Name,
+                        decision.IsClosing, decision.IsReopen,
+                        currentUser.UserId, currentUser.FullName, decision.HistoryNote),
+                    deal.OwnerUserId, deal.Id);
             }
 
             if (!string.IsNullOrEmpty(dto.OwnerUserId))
@@ -771,6 +873,20 @@ namespace MerkaiTrial.Application.Commands.Deals
                     deal.OwnerUserId = dto.OwnerUserId;
             }
 
+            // ── 039: reassigned ───────────────────────────────────────
+            if (!string.Equals(previousOwnerUserId, deal.OwnerUserId,
+                               StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(deal.OwnerUserId, currentUser.UserId.ToString(),
+                                  StringComparison.OrdinalIgnoreCase))
+            {
+                await NotifyAsync(
+                    DealNotifications.DealAssigned(
+                        tenantGuid, deal.Id, deal.Title, stages.NameOf(deal.Stage),
+                        deal.ExpectedValue, deal.Currency,
+                        currentUser.UserId, currentUser.FullName),
+                    deal.OwnerUserId, deal.Id);
+            }
+
             deal.UpdatedAtUtc = DateTime.UtcNow;
             deal.UpdatedBy = currentUser.FullName;
 
@@ -779,6 +895,20 @@ namespace MerkaiTrial.Application.Commands.Deals
             await _audit.WriteAsync(
                 AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
                 new { title = deal.Title });
+        }
+
+        /// <summary>039. Adds rows; does not save. Never throws.</summary>
+        private async Task NotifyAsync(NotificationRequest request, string? ownerUserId, Guid dealId)
+        {
+            try
+            {
+                await _notify.AddForOwnerAsync(request, ownerUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not prepare a notification for deal {DealId}", dealId);
+            }
         }
     }
 
@@ -793,6 +923,8 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly TransitionActionRunner _actions;      // 022
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
+        private readonly INotificationDispatcher _notify;              // 039
+        private readonly ILogger<UpdateDealStageHandler> _logger;      // 039
 
         public UpdateDealStageHandler(
             FlowDbContext db,
@@ -801,7 +933,9 @@ namespace MerkaiTrial.Application.Commands.Deals
             StageTransitionGuard guard,
             TransitionActionRunner actions,                     // 022
             IAuditService audit,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            INotificationDispatcher notify,
+            ILogger<UpdateDealStageHandler> logger)
         {
             _db = db;
             _scope = scope;
@@ -810,6 +944,8 @@ namespace MerkaiTrial.Application.Commands.Deals
             _guard = guard;
             _actions = actions;
             _audit = audit;
+            _notify = notify;
+            _logger = logger;
         }
 
         /// <summary>
@@ -871,6 +1007,26 @@ namespace MerkaiTrial.Application.Commands.Deals
             // No probability override: a drag says nothing about how likely
             // the deal is, so the stage's own figure applies.
             StageTransitionGuard.ApplyToDeal(deal, decision, currentUser.FullName);
+
+            // ── 039 ───────────────────────────────────────────────────
+            // Before the save. The dispatcher drops the actor, so dragging
+            // your own deal across the board does not notify you — only a
+            // colleague moving it does.
+            try
+            {
+                await _notify.AddForOwnerAsync(
+                    DealNotifications.StageChanged(
+                        tenantGuid, deal.Id, deal.Title,
+                        stages.NameOf(previousStage), decision.To.Name,
+                        decision.IsClosing, decision.IsReopen,
+                        currentUser.UserId, currentUser.FullName, decision.HistoryNote),
+                    deal.OwnerUserId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Could not prepare the stage-change notification for deal {DealId}", dealId);
+            }
 
             await _db.SaveChangesAsync();
 

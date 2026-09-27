@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AspNetCoreHostingModel>InProcess</AspNetCoreHostingModel>
+    <UserSecretsId>62f9a81a-73d0-4d0c-9a2a-5c9215990d69</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MerkaiTrial.Infrastructure\MerkaiTrial.Infrastructure.csproj" />
@@ -27,6 +28,7 @@
   <ItemGroup>
     <Folder Include="Authorization\" />
     <Folder Include="Middleware\" />
+    <Folder Include="Workers\" />
     <Folder Include="Startup\" />
   </ItemGroup>
 </Project>

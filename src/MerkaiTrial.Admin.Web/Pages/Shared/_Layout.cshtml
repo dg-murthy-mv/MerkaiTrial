@@ -4,10 +4,9 @@
 @inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService Ui
 
 @{
-    @* routeVals / currentPage used to live here. Both were dead: every
-       active-state check goes through the CurrentPage() helper in the
-       @functions block below. Removed so there is one source of truth for
-       "which page am I on". *@
+    var routeVals = ViewContext.RouteData.Values;
+    var currentPage = (string)(routeVals.ContainsKey("page") ? routeVals["page"] : "/Index") ?? "/Index";
+
     var tenantName = Ui.GetTenantName();
     var userEmail = Ui.GetUserEmail();
 
@@ -529,6 +528,121 @@
             margin-left: auto;
         }
 
+        /* ── 037: notification bell ───────────────────────────────── */
+        .lf-notif { position: relative; }
+
+        /* The count sits on the bell. The dot is kept for the case where
+           the count is too large to read at 16px. */
+        .lf-notif-count {
+            position: absolute;
+            top: 2px;
+            right: 0;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 8px;
+            background: #dc2626;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 16px;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .lf-notif-menu {
+            width: 340px;
+            max-width: calc(100vw - 24px);
+            padding: 0;
+            border: 1px solid var(--topbar-border);
+            border-radius: 10px;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, .14);
+            overflow: hidden;
+        }
+
+        .lf-notif-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 13px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .lf-notif-head a {
+            font-size: 12px;
+            font-weight: 500;
+            color: #6366f1;
+            text-decoration: none;
+        }
+
+        .lf-notif-head a:hover { text-decoration: underline; }
+
+        #lfNotifItems { max-height: 380px; overflow-y: auto; }
+
+        .lf-notif-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f8fafc;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .lf-notif-row:last-child { border-bottom: none; }
+        .lf-notif-row:hover { background: #f8fafc; }
+
+        /* Tint AND a left bar: colour on its own is not an accessible
+           way to say "unread". */
+        .lf-notif-row.unread {
+            background: #f8fafc;
+            box-shadow: inset 3px 0 0 #6366f1;
+        }
+
+        .lf-notif-row .ico { font-size: 15px; line-height: 1.2; flex: 0 0 18px; }
+
+        .lf-notif-row .txt { min-width: 0; flex: 1 1 auto; }
+
+        .lf-notif-row .t {
+            font-size: 13px;
+            line-height: 1.35;
+            color: #0f172a;
+            margin: 0;
+        }
+
+        .lf-notif-row.unread .t { font-weight: 600; }
+
+        .lf-notif-row .m {
+            font-size: 11px;
+            color: #94a3b8;
+            margin: 2px 0 0;
+        }
+
+        .lf-notif-empty {
+            padding: 26px 14px;
+            text-align: center;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .lf-notif-foot {
+            padding: 9px 14px;
+            border-top: 1px solid #f1f5f9;
+            background: #f8fafc;
+            text-align: center;
+        }
+
+        .lf-notif-foot a {
+            font-size: 12px;
+            color: #64748b;
+            text-decoration: none;
+        }
+
+        .lf-notif-foot a:hover { color: #0f172a; text-decoration: underline; }
+
         .lf-icon-btn {
             width: 36px;
             height: 36px;
@@ -933,44 +1047,28 @@
 
                 }
 
-                @* ── Sales Pipeline ───────────────────────────────────
-                   027a: all three links used to gate on "deals". Their
-                   pages don't — Quotes/Index validates quotes.read and
-                   Invoices/Index validates invoices.read. So a role with
-                   quotes.read but not deals.read saw no Quotes link and
-                   had to know the URL, while a role with deals.read but
-                   not quotes.read saw a link that denied it on click.
-                   That is the same sidebar-disagrees-with-the-page bug
-                   round 024 fixed for the settings pages. Each link now
-                   gates on its own module, and the section shows if any
-                   of the three does. *@
-                @if (CanNav("deals") || CanNav("quotes") || CanNav("invoices"))
+                <!-- Sales Pipeline -->
+                @if (CanNav("deals"))
                 {
                     <div class="lf-nav-section">Sales Pipeline</div>
 
-                    @if (CanNav("deals"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Pipeline") ? "active" : "")"
-                           asp-page="/Pipeline/Index">
-                            <i class="bi bi-kanban"></i> Pipeline
-                        </a>
-                    }
+                    @* ✅ Pipeline — gated by Deals read *@
+                    <a class="lf-nav-item @(IsActive("/Pipeline") ? "active" : "")"
+                       asp-page="/Pipeline/Index">
+                        <i class="bi bi-kanban"></i> Pipeline
+                    </a>
 
-                    @if (CanNav("quotes"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Quotes") ? "active" : "")"
-                           asp-page="/Quotes/Index">
-                            <i class="bi bi-file-earmark-text"></i> Quotes
-                        </a>
-                    }
+                    @* ✅ Quotes — gated by Deals read *@
+                    <a class="lf-nav-item @(IsActive("/Quotes") ? "active" : "")"
+                       asp-page="/Quotes/Index">
+                        <i class="bi bi-file-earmark-text"></i> Quotes
+                    </a>
 
-                    @if (CanNav("invoices"))
-                    {
-                        <a class="lf-nav-item @(IsActive("/Invoices") ? "active" : "")"
-                           asp-page="/Invoices/Index">
-                            <i class="bi bi-receipt"></i> Invoices
-                        </a>
-                    }
+                    @* ✅ Invoices — gated by Deals read *@
+                    <a class="lf-nav-item @(IsActive("/Invoices") ? "active" : "")"
+                       asp-page="/Invoices/Index">
+                        <i class="bi bi-receipt"></i> Invoices
+                    </a>
                 }
 
                 <!-- ✅ Reports — gated by plan feature AND Reports read permission -->
@@ -1078,10 +1176,7 @@
                            asp-page="/Settings/LeadStatuses/Index">
                             <i class="bi bi-funnel"></i> Lead Statuses
                         </a>
-                        @* Trailing slash matters. IsActive is a StartsWith, so
-                           "/Settings/Pipeline" also matched "/Settings/PipelineRules"
-                           and both this and Sales Process highlighted together. *@
-                        <a class="lf-nav-item @(IsActive("/Settings/Pipeline/") ? "active" : "")"
+                        <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"
                            asp-page="/Settings/Pipeline/Index">
                             <i class="bi bi-kanban"></i> Pipeline Stages
                         </a>
@@ -1090,14 +1185,18 @@
                             <i class="bi bi-diagram-3"></i> Sales Process
                         </a>
 
-                        @* 027a: the rules page shipped in round 027 with no way
-                           to reach it but the sliders icon on the Quotes page.
-                           Gated on "settings" because that is what
-                           Pages/Settings/QuoteApprovals/Index.cshtml.cs declares
-                           as its ModuleName — nav and page agree. *@
-                        <a class="lf-nav-item @(IsActive("/Settings/QuoteApprovals") ? "active" : "")"
-                           asp-page="/Settings/QuoteApprovals/Index">
-                            <i class="bi bi-patch-check"></i> Quote Approvals
+                        @* 038a. This copy is for ADMINS — they are the ones
+                           who want the Email log tab, and this is where they
+                           look for it. Everyone else reaches the same page's
+                           preferences tab from the user menu and the bell,
+                           both of which are ungated: this whole section is
+                           hidden from a rep, and notification preferences are
+                           personal, so gating the ONLY route to them behind
+                           settings.* would hide them from exactly the people
+                           who most need to turn an email off. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/Notifications") ? "active" : "")"
+                           asp-page="/Settings/Notifications/Index">
+                            <i class="bi bi-bell"></i> Notifications
                         </a>
                     }
 
@@ -1114,18 +1213,6 @@
                         <a class="lf-nav-item @(IsActive("/Settings/Roles") ? "active" : "")"
                            asp-page="/Settings/Roles/Index">
                             <i class="bi bi-shield-lock"></i> Roles &amp; Permissions
-                        </a>
-
-                        @* 027a: Record Visibility shipped in round 026 and was
-                           never added here either — it was reachable only by
-                           typing /Settings/Visibility. It sits next to Roles &
-                           Permissions on purpose: permissions decide what people
-                           can DO, this decides WHICH records they do it to, and
-                           the two pages link to each other. Gated on "roles"
-                           because that is the ModuleName the page declares. *@
-                        <a class="lf-nav-item @(IsActive("/Settings/Visibility") ? "active" : "")"
-                           asp-page="/Settings/Visibility/Index">
-                            <i class="bi bi-eye"></i> Record Visibility
                         </a>
                     }
 
@@ -1177,10 +1264,45 @@
 
             <div class="lf-topbar-actions">
 
-                <button class="lf-icon-btn" aria-label="Notifications">
-                    <i class="bi bi-bell"></i>
-                    <span class="lf-notif-dot"></span>
-                </button>
+                @* 037: this was a dead button with a dot that was ALWAYS lit,
+                   so it told you nothing and trained everyone to ignore it.
+                   Now it is a real bell: the count comes from a poll of
+                   /Notifications?handler=Summary and the dot only appears
+                   when something is genuinely unread. *@
+                <div class="dropdown lf-notif">
+                    <button class="lf-icon-btn" type="button"
+                            id="lfNotifBell"
+                            data-bs-toggle="dropdown"
+                            data-bs-auto-close="outside"
+                            aria-expanded="false"
+                            aria-label="Notifications">
+                        <i class="bi bi-bell"></i>
+                        <span class="lf-notif-dot" id="lfNotifDot" hidden></span>
+                        <span class="lf-notif-count" id="lfNotifCount" hidden></span>
+                    </button>
+
+                    <div class="dropdown-menu dropdown-menu-end lf-notif-menu"
+                         aria-labelledby="lfNotifBell">
+
+                        <div class="lf-notif-head">
+                            <span>Notifications</span>
+                            <a asp-page="/Notifications/Index">See all</a>
+                        </div>
+
+                        <div id="lfNotifItems">
+                            <div class="lf-notif-empty">Loading&hellip;</div>
+                        </div>
+
+                        @* 038a: the most discoverable route to the settings.
+                           Someone who wants fewer notifications looks at the
+                           bell first, not at a settings menu. *@
+                        <div class="lf-notif-foot">
+                            <a asp-page="/Settings/Notifications/Index">
+                                <i class="bi bi-gear"></i> Notification settings
+                            </a>
+                        </div>
+                    </div>
+                </div>
 
                 @* 024: a copy of the sidebar's Workspace Settings section
                    used to be rendered here, inside .lf-topbar-actions —
@@ -1278,15 +1400,22 @@
                                         <i class="bi bi-shield-lock me-2"></i>Roles &amp; Permissions
                                     </a>
                                 </li>
-                                <li>
-                                    <a class="dropdown-item" asp-page="/Settings/Visibility/Index">
-                                        <i class="bi bi-eye me-2"></i>Record Visibility
-                                    </a>
-                                </li>
                             }
 
                             <li><hr class="dropdown-divider" /></li>
                         }
+
+                        @* 038a: UNGATED, on purpose, and this is the route
+                           that matters. Notification preferences are personal
+                           — a read-only user still has to be able to say
+                           "stop emailing me about approvals". It sits beside
+                           Change password because it is the same kind of
+                           thing: my account, not the workspace's. *@
+                        <li>
+                            <a class="dropdown-item" asp-page="/Settings/Notifications/Index">
+                                <i class="bi bi-bell me-2"></i>Notification settings
+                            </a>
+                        </li>
 
                         <li>
                             <a class="dropdown-item" asp-page="/Account/ChangePassword">
@@ -1436,6 +1565,140 @@
                     return nf.format(isNaN(n) ? 0 : n);
                 }
             };
+        })();
+    </script>
+
+    @*
+        037 — the notification poll.
+
+        Polling, not SignalR. A persistent connection per signed-in user
+        would need a Redis backplane the moment this runs on more than one
+        instance, and "Priya assigned you a lead" does not need to arrive
+        in under a second. This is one indexed count and a Take(6).
+
+        It backs off when the tab is hidden and stops entirely after
+        repeated failures, so a signed-out or sleeping browser does not sit
+        there hammering the endpoint or filling the console with errors.
+    *@
+    <script>
+        (function () {
+            var url = '@Url.Page("/Notifications/Index", "Summary")';
+            if (!url) return;
+
+            var POLL_MS = 45000;
+            var MAX_FAILURES = 4;
+
+            var dot = document.getElementById('lfNotifDot');
+            var count = document.getElementById('lfNotifCount');
+            var list = document.getElementById('lfNotifItems');
+            if (!dot || !count || !list) return;
+
+            var failures = 0;
+            var timer = null;
+
+            // textContent everywhere, never innerHTML with server data: a
+            // notification title carries deal titles and people's names.
+            function row(item) {
+                var a = document.createElement('a');
+                a.className = 'lf-notif-row' + (item.isRead ? '' : ' unread');
+                a.href = '@Url.Page("/Notifications/Index")' + '?open=' + encodeURIComponent(item.id);
+
+                var ico = document.createElement('i');
+                ico.className = 'ico bi ' + (item.icon || 'bi-bell') + ' ' + (item.iconClass || '');
+                a.appendChild(ico);
+
+                var txt = document.createElement('div');
+                txt.className = 'txt';
+
+                var t = document.createElement('p');
+                t.className = 't';
+                t.textContent = item.title || '';
+                txt.appendChild(t);
+
+                var m = document.createElement('p');
+                m.className = 'm';
+                m.textContent = item.actorName
+                    ? (item.ago + ' \u00b7 ' + item.actorName)
+                    : item.ago;
+                m.title = item.when || '';
+                txt.appendChild(m);
+
+                a.appendChild(txt);
+                return a;
+            }
+
+            function render(data) {
+                var n = (data && data.unreadCount) || 0;
+
+                if (n > 0) {
+                    count.hidden = false;
+                    count.textContent = n > 99 ? '99+' : String(n);
+                    dot.hidden = true;                 // the number says it better
+                } else {
+                    count.hidden = true;
+                    dot.hidden = true;
+                }
+
+                list.textContent = '';
+
+                var items = (data && data.items) || [];
+                if (!items.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'lf-notif-empty';
+                    empty.textContent = 'Nothing new.';
+                    list.appendChild(empty);
+                    return;
+                }
+
+                items.forEach(function (item) { list.appendChild(row(item)); });
+            }
+
+            function schedule() {
+                if (timer) clearTimeout(timer);
+                // Hidden tab: back off hard rather than stopping, so coming
+                // back to it still refreshes without a full reload.
+                var wait = document.hidden ? POLL_MS * 4 : POLL_MS;
+                timer = setTimeout(poll, wait);
+            }
+
+            function poll() {
+                fetch(url, {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                    cache: 'no-store'
+                })
+                .then(function (r) {
+                    // A redirect to the login page comes back as HTML, not
+                    // JSON. Treat anything unexpected as a failure rather
+                    // than trying to parse it.
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    var ct = r.headers.get('content-type') || '';
+                    if (ct.indexOf('json') < 0) throw new Error('not json');
+                    return r.json();
+                })
+                .then(function (data) {
+                    failures = 0;
+                    render(data);
+                    schedule();
+                })
+                .catch(function () {
+                    failures++;
+                    if (failures >= MAX_FAILURES) return;   // give up quietly
+                    schedule();
+                });
+            }
+
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden && failures < MAX_FAILURES) {
+                    poll();
+                }
+            });
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', poll);
+            } else {
+                poll();
+            }
         })();
     </script>
 
