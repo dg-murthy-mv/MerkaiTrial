@@ -1,10 +1,52 @@
-﻿// =====================================================================
-// UPDATED LEADS EXTENDED CONTROLLER (Remove GetStats)
+// =====================================================================
+// LEADS EXTENDED CONTROLLER
 // Location: MerkaiTrial.WebApi/Controllers/LeadsExtendedController.cs
+//
+// COMPLETE FILE — replaces the existing one.
+//
+// CHANGES (041a)
+//
+//   1. ★ EVERY ENDPOINT HERE WAS OPEN TO ANY SIGNED-IN USER. There was
+//      not one [Authorize] attribute in this file. The FallbackPolicy in
+//      Program.cs meant a caller still had to be authenticated, so this
+//      was never open to the public — but "authenticated" is not
+//      "permitted". A user with read-only access to Leads could reassign
+//      any lead they could see, add notes and activities to it, and
+//      export the whole list to Excel. DealsController gates every
+//      action (Deals.Read / Deals.Update / Deals.Delete); this file
+//      gated none.
+//
+//      Each action now carries the policy its work implies:
+//
+//        Leads.Read    getting notes, activities, reminders, the
+//                      timeline, and the Excel export
+//        Leads.Update  creating notes, activities and reminders,
+//                      deleting a note, completing a reminder, and
+//                      assigning the lead
+//
+//      Nothing here is Leads.Create or Leads.Delete: none of these
+//      endpoints create or delete a LEAD. Deleting a note is a change to
+//      a lead, not the removal of one.
+//
+//      Policy names are the plain strings, as in DealsController. The
+//      permission handler compares them case-insensitively.
+//
+//   2. catch (InvalidOperationException) on every write action, before
+//      the generic catch, returning 400 { "error": ex.Message }.
+//      DealsController has had this since 019. Without it the owner
+//      checks added in 041 come back as a 500 and the page shows
+//      "Failed to assign lead" instead of the reason — "Somchai's
+//      account is deactivated, so it cannot be given new work."
+//
+//   3. The assign action's summary now says what the three cases mean,
+//      because this endpoint is the one an integration is most likely to
+//      call: omit ownerUserId and the owner is KEPT; send "" and the
+//      lead is unassigned.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Leads;
 using MerkaiTrial.Application.DTOs;
+using Microsoft.AspNetCore.Authorization;      // 041a
 using Microsoft.AspNetCore.Mvc;
 
 namespace MerkaiTrial.WebApi.Controllers
@@ -37,7 +79,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // Export/Import
         private readonly ExportLeadsHandler _exportHandler;
-        
+
 
         public LeadsExtendedController(
             CreateLeadNoteHandler createNoteHandler,
@@ -50,7 +92,7 @@ namespace MerkaiTrial.WebApi.Controllers
             CompleteReminderHandler completeReminderHandler,
             AssignLeadHandler assignLeadHandler,
             GetLeadTimelineHandler getTimelineHandler,
-            ExportLeadsHandler exportHandler,            
+            ExportLeadsHandler exportHandler,
             ILogger<LeadsExtendedController> logger)
         {
             _createNoteHandler = createNoteHandler;
@@ -63,13 +105,14 @@ namespace MerkaiTrial.WebApi.Controllers
             _completeReminderHandler = completeReminderHandler;
             _assignLeadHandler = assignLeadHandler;
             _getTimelineHandler = getTimelineHandler;
-            _exportHandler = exportHandler;            
+            _exportHandler = exportHandler;
             _logger = logger;
         }
 
         // ==================== NOTES ====================
 
         [HttpPost("{leadId:guid}/notes")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<ActionResult<LeadNoteDto>> CreateNote(
             [FromRoute] Guid leadId,
             [FromBody] CreateLeadNoteDto dto)
@@ -86,6 +129,11 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            // 041a. The handler's refusals are written to be read.
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create note for lead {LeadId}", leadId);
@@ -94,6 +142,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("{leadId:guid}/notes")]
+        [Authorize(Policy = "Leads.Read")]                         // 041a
         public async Task<ActionResult<List<LeadNoteDto>>> GetNotes(
             [FromRoute] Guid leadId,
             [FromQuery] Guid tenantId)
@@ -111,6 +160,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpDelete("notes/{noteId:guid}")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<IActionResult> DeleteNote(
             [FromRoute] Guid noteId,
             [FromQuery] Guid tenantId)
@@ -124,6 +174,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            catch (InvalidOperationException ex)                   // 041a
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete note {NoteId}", noteId);
@@ -134,6 +188,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ==================== ACTIVITIES ====================
 
         [HttpPost("{leadId:guid}/activities")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<ActionResult<LeadActivityDto>> CreateActivity(
             [FromRoute] Guid leadId,
             [FromBody] CreateLeadActivityDto dto)
@@ -150,6 +205,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            catch (InvalidOperationException ex)                   // 041a
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create activity for lead {LeadId}", leadId);
@@ -158,6 +217,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("{leadId:guid}/activities")]
+        [Authorize(Policy = "Leads.Read")]                         // 041a
         public async Task<ActionResult<List<LeadActivityDto>>> GetActivities(
             [FromRoute] Guid leadId,
             [FromQuery] Guid tenantId)
@@ -177,6 +237,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ==================== REMINDERS ====================
 
         [HttpPost("{leadId:guid}/reminders")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<ActionResult<LeadReminderDto>> CreateReminder(
             [FromRoute] Guid leadId,
             [FromBody] CreateLeadReminderDto dto)
@@ -193,6 +254,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            catch (InvalidOperationException ex)                   // 041a
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create reminder for lead {LeadId}", leadId);
@@ -201,6 +266,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("{leadId:guid}/reminders")]
+        [Authorize(Policy = "Leads.Read")]                         // 041a
         public async Task<ActionResult<List<LeadReminderDto>>> GetReminders(
             [FromRoute] Guid leadId,
             [FromQuery] Guid tenantId)
@@ -218,6 +284,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPatch("reminders/{reminderId:guid}/complete")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<IActionResult> CompleteReminder(
             [FromRoute] Guid reminderId,
             [FromQuery] Guid tenantId)
@@ -231,6 +298,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            catch (InvalidOperationException ex)                   // 041a
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to complete reminder {ReminderId}", reminderId);
@@ -240,7 +311,24 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ==================== ASSIGNMENT ====================
 
+        /// <summary>
+        /// PATCH /api/leads/{leadId}/assign — hand a lead to someone, or to
+        /// nobody.
+        ///
+        /// 041: the three cases, which this endpoint is the most likely one
+        /// to be called from a script:
+        ///
+        ///   ownerUserId omitted or null  → the owner is KEPT, not cleared
+        ///   ownerUserId ""               → the lead is unassigned
+        ///   ownerUserId "&lt;guid&gt;"   → assigned, after the user is
+        ///                                  checked against this tenant's
+        ///                                  active users
+        ///
+        /// Assigning to a user who is deactivated, deleted, or belongs to
+        /// another workspace is a 400 with the reason, not a silent no-op.
+        /// </summary>
         [HttpPatch("{leadId:guid}/assign")]
+        [Authorize(Policy = "Leads.Update")]                       // 041a
         public async Task<IActionResult> AssignLead(
             [FromRoute] Guid leadId,
             [FromBody] AssignLeadDto dto)
@@ -257,6 +345,17 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound(new { error = ex.Message });
             }
+            // 041a. THE ONE THAT MATTERS MOST IN THIS FILE. Without it,
+            // "that user is deactivated" reached the page as a 500 and the
+            // person was told "Failed to assign lead" — which reads like
+            // our bug, not their choice.
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation(
+                    "Assign lead {LeadId} refused: {Message}", leadId, ex.Message);
+
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to assign lead {LeadId}", leadId);
@@ -267,6 +366,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ==================== TIMELINE ====================
 
         [HttpGet("{leadId:guid}/timeline")]
+        [Authorize(Policy = "Leads.Read")]                         // 041a
         public async Task<ActionResult<List<TimelineItemDto>>> GetTimeline(
             [FromRoute] Guid leadId,
             [FromQuery] Guid tenantId)
@@ -285,7 +385,11 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ==================== EXPORT ====================
 
+        // 041a. Leads.Read, not "any signed-in user". This endpoint hands
+        // back every lead the caller can see as an Excel file — the single
+        // most useful thing in the product to walk out of the door with.
         [HttpGet("export")]
+        [Authorize(Policy = "Leads.Read")]
         public async Task<IActionResult> ExportLeads(
             [FromQuery] Guid tenantId,
             [FromQuery] string? search = null,

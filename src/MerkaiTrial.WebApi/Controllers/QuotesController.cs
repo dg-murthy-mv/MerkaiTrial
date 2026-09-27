@@ -250,14 +250,34 @@ public class QuotesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// GET /api/quotes/statistics — optionally for one period.
+    ///
+    /// 043a: `from` and `toExclusive` bound the quote's ISSUE DATE, matching
+    /// the list endpoint above, so the dashboard's "12 quotes this year" and
+    /// the quotes list can never disagree about which twelve those are.
+    ///
+    /// HALF-OPEN: `toExclusive` is the first instant NOT included. Omit both
+    /// for all time, exactly as before.
+    ///
+    /// IssueDateUtc is a DATE-ONLY column since 034 — it holds the picked
+    /// calendar date at midnight with no offset — so the caller sends the
+    /// fiscal service's DateOnlyRange, NOT its timezone-shifted timestamp
+    /// range. Shifting it moves every quote issued on the first or last day
+    /// of a financial year into the wrong one.
+    /// </summary>
     [HttpGet("statistics")]
     [Authorize(Policy = "Quotes.Read")]
-    public async Task<ActionResult<QuoteStatisticsDto>> GetStatistics()
+    public async Task<ActionResult<QuoteStatisticsDto>> GetStatistics(
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? toExclusive = null)
     {
         var tenantId = _currentUserService.GetCurrentTenantId();
         try
         {
-            var statistics = await _getQuoteStatisticsHandler.Handle(tenantId);
+            var statistics = await _getQuoteStatisticsHandler.Handle(
+                tenantId, AsUtc(from), AsUtc(toExclusive));
+
             return Ok(statistics);
         }
         catch (Exception ex)
@@ -266,6 +286,23 @@ public class QuotesController : ControllerBase
             return StatusCode(500, new { error = "Failed to retrieve statistics" });
         }
     }
+
+    /// <summary>
+    /// 043a. Whatever the model binder made of the string, treat it as the
+    /// UTC instant the caller meant — "…Z" binds to Kind=Utc, a bare
+    /// timestamp to Unspecified, and some configurations to Local. Comparing
+    /// a Local instant against a UTC column shifts every boundary record by
+    /// the server's offset, invisibly. See the same helper in
+    /// LeadsController for why it is repeated rather than shared.
+    /// </summary>
+    private static DateTime? AsUtc(DateTime? value) => value is null
+        ? null
+        : value.Value.Kind switch
+        {
+            DateTimeKind.Utc   => value,
+            DateTimeKind.Local => value.Value.ToUniversalTime(),
+            _                  => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+        };
 
     // ── ✅ ATTACHMENTS ────────────────────────────────────────────────
 

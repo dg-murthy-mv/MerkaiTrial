@@ -2,7 +2,28 @@
 // PipelineRuleHandlers.cs
 // Location: MerkaiTrial.Application/Commands/PipelineStages/PipelineRuleHandlers.cs
 //
-// COMPLETE FILE — replaces the 021 version.
+// COMPLETE FILE — replaces the 022 version.
+//
+// CHANGES (042)
+//   ★ THE THREE QUOTE-DRIVEN MOVES ARE NOW SETTABLE. 036 replaced the
+//     hardcoded "Proposal" / "Negotiation" / "ClosedLost" literals in
+//     QuotesCommandHandler with QuoteSentStageKey, QuoteAcceptedStageKey
+//     and QuoteRejectedStageKey on PipelineRuleSettings — and there it
+//     stopped. Nothing in the product could write them. A tenant whose
+//     migration had no matching stage got null (no move), correctly, and
+//     then had no way to say what they actually wanted. A setting only we
+//     can change with a SQL statement is not a setting.
+//
+//     They read and write with the rest of the process now, in the same
+//     call and the same transaction as the matrix:
+//       • PipelineRulesDto carries them out.
+//       • SaveAllPipelineRulesDto carries them back.
+//       • ResolveQuoteStage decides what is storable — see the long note
+//         on that method for why an unchanged key is not re-validated and
+//         why the category checks matter.
+//     The three keys go into the audit payload too: they move deals with
+//     nobody pressing anything, which is exactly the kind of change that
+//     should be answerable six months later.
 //
 // CHANGES (022)
 //   ✅ Transitions carry their ACTIONS — what happens after a deal takes
@@ -52,7 +73,16 @@ public record StageLiteDto(
     int SortOrder,
     StageCategory Category,
     bool IsActive,
-    bool IsDefault);
+    bool IsDefault,
+    /// <summary>
+    /// 042. The stage's own forecast probability. Added because the three
+    /// quote-driven moves in this round decide what the forecast says as
+    /// well as where the card sits — "a raised quote moves the deal to
+    /// Proposal" also means "and sets it to 40%", which is not something a
+    /// stage NAME tells you. Trailing with a default, so nothing that
+    /// builds a StageLiteDto elsewhere needs changing.
+    /// </summary>
+    int Probability = 0);
 
 /// <summary>Something that happens after a step is taken.</summary>
 public record TransitionActionDto(
@@ -99,6 +129,19 @@ public record TransitionDto(
 public record PipelineRulesDto(
     /// <summary>The one rule that is not a property of any transition.</summary>
     bool BlockReopenWithIssuedInvoice,
+    /// <summary>
+    /// 042. Where a deal goes when a quote is raised, accepted or rejected.
+    /// Null means DO NOT MOVE THE DEAL, which is the default and the only
+    /// safe answer for a pipeline nobody has described to us.
+    ///
+    /// 036 put these three on PipelineRuleSettings and taught the quote
+    /// handler to use them, and that was where it stopped: there was no way
+    /// to SET them except in SQL. A setting only we can change is not a
+    /// setting, so they travel with the rest of the process from here.
+    /// </summary>
+    string? QuoteSentStageKey,
+    string? QuoteAcceptedStageKey,
+    string? QuoteRejectedStageKey,
     bool IsDefault,
     DateTime? UpdatedAtUtc,
     string? UpdatedBy,
@@ -134,6 +177,17 @@ public record SaveTransitionDto(
 /// <summary>The whole screen, saved in one call.</summary>
 public record SaveAllPipelineRulesDto(
     bool BlockReopenWithIssuedInvoice,
+    /// <summary>
+    /// 042. Null or empty means "don't move the deal". Unlike an owner id,
+    /// these two do NOT need to be told apart: there is no third case here,
+    /// because there is nothing to preserve — a stage key is either chosen
+    /// or it is not. That is why the page needs no
+    /// ConvertEmptyStringToNull annotation for these, and does need one for
+    /// the owner dropdown.
+    /// </summary>
+    string? QuoteSentStageKey,
+    string? QuoteAcceptedStageKey,
+    string? QuoteRejectedStageKey,
     List<SaveTransitionDto> Transitions);
 
 /// <summary>A button on the deal page.</summary>
@@ -192,7 +246,8 @@ public class GetPipelineRulesHandler : ICommandHandler
             .Where(s => s.TenantId == tenantId)
             .OrderBy(s => s.SortOrder)
             .Select(s => new StageLiteDto(
-                s.Id, s.Key, s.Name, s.SortOrder, s.Category, s.IsActive, s.IsDefault))
+                s.Id, s.Key, s.Name, s.SortOrder, s.Category, s.IsActive, s.IsDefault,
+                s.Probability))                                   // 042
             .ToListAsync(ct);
 
         var catalog = await _transitions.GetAsync(tenantId, ct);
@@ -243,6 +298,9 @@ public class GetPipelineRulesHandler : ICommandHandler
 
         return new PipelineRulesDto(
             settings.BlockReopenWithIssuedInvoice,
+            settings.QuoteSentStageKey,          // 042
+            settings.QuoteAcceptedStageKey,      // 042
+            settings.QuoteRejectedStageKey,      // 042
             isDefault,
             isDefault ? null : settings.UpdatedAtUtc,
             isDefault ? null : settings.UpdatedBy,
@@ -293,6 +351,23 @@ public class SavePipelineRulesHandler : ICommandHandler
         var stages = await _db.PipelineStages.AsNoTracking()
             .Where(s => s.TenantId == tenantId)
             .ToDictionaryAsync(s => s.Key, ct);
+
+        // ── 042: the three quote-driven moves ─────────────────────────
+        // Written after `stages` is loaded, because each one has to BE a
+        // stage this workspace has. Everything here happens before the
+        // single SaveChangesAsync below, so a refusal leaves the whole
+        // screen unsaved rather than half saved.
+        row.QuoteSentStageKey = ResolveQuoteStage(
+            dto.QuoteSentStageKey, row.QuoteSentStageKey, stages,
+            "When a quote is raised", QuoteMoveKind.Sent);
+
+        row.QuoteAcceptedStageKey = ResolveQuoteStage(
+            dto.QuoteAcceptedStageKey, row.QuoteAcceptedStageKey, stages,
+            "When a quote is accepted", QuoteMoveKind.Accepted);
+
+        row.QuoteRejectedStageKey = ResolveQuoteStage(
+            dto.QuoteRejectedStageKey, row.QuoteRejectedStageKey, stages,
+            "When a quote is rejected", QuoteMoveKind.Rejected);
 
         var existing = await _db.ProcessTransitions
             .Where(t => t.TenantId == tenantId)
@@ -396,6 +471,12 @@ public class SavePipelineRulesHandler : ICommandHandler
             new
             {
                 dto.BlockReopenWithIssuedInvoice,
+                // 042. These three change where deals go on their own, with
+                // nobody pressing anything, so they belong in the trail as
+                // much as the matrix does.
+                quoteSentStageKey = row.QuoteSentStageKey,
+                quoteAcceptedStageKey = row.QuoteAcceptedStageKey,
+                quoteRejectedStageKey = row.QuoteRejectedStageKey,
                 transitionsAdded = added,
                 transitionsChanged = changed,
                 actionsConfigured = actionsChanged
@@ -506,6 +587,92 @@ public class SavePipelineRulesHandler : ICommandHandler
         var t = s.Trim();
         return t.Length > max ? t[..max] : t;
     }
+
+    // ── 042: the three quote-driven moves ─────────────────────────────
+
+    private enum QuoteMoveKind { Sent, Accepted, Rejected }
+
+    /// <summary>
+    /// Turns what the form sent into a stage key worth storing.
+    ///
+    ///   empty / whitespace  → null, meaning "don't move the deal"
+    ///   the stored value    → kept, without re-checking (see below)
+    ///   anything else       → must be a stage this workspace has, and must
+    ///                         make sense for the event
+    ///
+    /// WHY AN UNCHANGED KEY IS NOT RE-CHECKED. The same reason 041 does not
+    /// re-validate an unchanged owner: if a tenant retires the stage this
+    /// points at, re-checking it would refuse every later save of the
+    /// process screen, and the only way out would be to notice the real
+    /// cause in a message about something else. An inert key does no harm —
+    /// QuoteStageAutomation refuses the move and logs why.
+    ///
+    /// THE CATEGORY CHECKS ARE NOT FUSSINESS. Pointing "quote accepted" at a
+    /// Lost stage is a mistake that CLOSES DEALS AS LOST on their happiest
+    /// day, and it closes them silently, because nobody presses anything —
+    /// the automatic move does it. ApplyToDeal fills in the close date and
+    /// the actual value on the way through, so undoing it is not a matter of
+    /// dragging the card back. This is the one place where refusing a save
+    /// is much kinder than accepting it.
+    /// </summary>
+    private static string? ResolveQuoteStage(
+        string? incoming,
+        string? current,
+        IReadOnlyDictionary<string, PipelineStage> stages,
+        string label,
+        QuoteMoveKind kind)
+    {
+        var wanted = incoming?.Trim();
+
+        // "Don't move the deal" — the default, and always allowed.
+        if (string.IsNullOrEmpty(wanted))
+            return null;
+
+        if (string.Equals(wanted, current?.Trim(), StringComparison.OrdinalIgnoreCase))
+            return current;
+
+        // Case-insensitive, and the tenant's own spelling wins. A key that
+        // differs only in case would pass the foreign key and then fail to
+        // match in TenantStages.Find, which is the worst of both.
+        var match = stages.Values
+            .FirstOrDefault(s => string.Equals(s.Key, wanted, StringComparison.OrdinalIgnoreCase));
+
+        if (match is null)
+            throw new InvalidOperationException(
+                $"\"{label}\" points at a stage this workspace does not have. " +
+                "Pick one from the list, or choose \"Don't move the deal\".");
+
+        var forbidden = kind switch
+        {
+            // Raising a quote is not closing a deal, either way.
+            QuoteMoveKind.Sent =>
+                match.Category != StageCategory.Open
+                    ? "Raising a quote does not close a deal, so this has to be an open stage."
+                    : null,
+
+            // Accepted may be Open (usual) or Won (a workspace that treats
+            // acceptance as the sale). Lost would close the deal as lost the
+            // moment the customer said yes.
+            QuoteMoveKind.Accepted =>
+                match.Category == StageCategory.Lost
+                    ? "An accepted quote can't move a deal into a lost stage."
+                    : null,
+
+            // Rejected may be Open (another quote to come) or Lost. Won
+            // would mark the deal as sold when the customer said no.
+            QuoteMoveKind.Rejected =>
+                match.Category == StageCategory.Won
+                    ? "A rejected quote can't move a deal into a won stage."
+                    : null,
+
+            _ => null
+        };
+
+        if (forbidden is not null)
+            throw new InvalidOperationException($"\"{label}\" — {forbidden}");
+
+        return match.Key;
+    }
 }
 
 /* ApplySuggestedProcessHandler was removed in 021.
@@ -577,7 +744,8 @@ public class GetAvailableTransitionsHandler : ICommandHandler
         var allStages = stages.All
             .OrderBy(s => s.SortOrder)
             .Select(s => new StageLiteDto(
-                s.Id, s.Key, s.Name, s.SortOrder, s.Category, s.IsActive, s.IsDefault))
+                s.Id, s.Key, s.Name, s.SortOrder, s.Category, s.IsActive, s.IsDefault,
+                s.Probability))                                   // 042
             .ToList();
 
         var moves = catalog.From(deal.Stage);

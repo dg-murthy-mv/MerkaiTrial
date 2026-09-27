@@ -185,18 +185,41 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         /// <summary>
-        /// Get invoice statistics
+        /// Get invoice statistics, optionally for one period.
+        ///
+        /// 043a: `from` and `toExclusive` bound the ISSUE DATE — an invoice
+        /// back-dated to 31 March belongs to that financial year however long
+        /// it sat in draft, which is exactly the question an accountant asks.
+        /// HALF-OPEN: `toExclusive` is the first instant NOT included. Omit
+        /// both for all time, as before.
+        ///
+        /// Overdue stays "overdue as of now": issued within the period and
+        /// still unpaid today. That is the number somebody can act on.
+        ///
+        /// IssueDateUtc is a DATE-ONLY column since 034, so the caller sends
+        /// the fiscal service's DateOnlyRange rather than its timezone-shifted
+        /// timestamp range. For an Indian tenant that choice is the difference
+        /// between a 31 March invoice landing in this year's GST return or
+        /// next year's.
         /// </summary>
         [HttpGet("statistics")]
         [Authorize(Policy = "Invoices.Read")]
         [ProducesResponseType(typeof(InvoiceStatisticsDto), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetStatistics(
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? toExclusive = null,
             CancellationToken cancellationToken = default)
         {
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
-                var query = new GetInvoiceStatisticsQuery { TenantId = tenantId };
+                var query = new GetInvoiceStatisticsQuery
+                {
+                    TenantId = tenantId,
+                    FromUtc = AsUtc(from),
+                    ToExclusiveUtc = AsUtc(toExclusive)
+                };
+
                 var stats = await _getStats.Handle(query, cancellationToken);
                 return Ok(stats);
             }
@@ -206,6 +229,22 @@ namespace MerkaiTrial.WebApi.Controllers
                 return StatusCode(500, new { error = "Failed to retrieve statistics" });
             }
         }
+
+        /// <summary>
+        /// 043a. Whatever the model binder made of the string, treat it as the
+        /// UTC instant the caller meant — "…Z" binds to Kind=Utc, a bare
+        /// timestamp to Unspecified, and some configurations to Local, which
+        /// would shift every boundary invoice by the server's offset. See the
+        /// same helper in LeadsController for why it is repeated, not shared.
+        /// </summary>
+        private static DateTime? AsUtc(DateTime? value) => value is null
+            ? null
+            : value.Value.Kind switch
+            {
+                DateTimeKind.Utc   => value,
+                DateTimeKind.Local => value.Value.ToUniversalTime(),
+                _                  => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            };
 
         // ==================== COMMANDS (POST, PUT, PATCH, DELETE) ====================
 

@@ -19,7 +19,15 @@
    (022) The panel gained "Then what happens" — the follow-up task or
    logged activity a step creates. Actions travel as JSON in one hidden
    field per cell rather than as a nested binding; see the page model for
-   why. *@
+   why.
+
+   (042) "When a quote moves, move the deal" — the three settings 036 added
+   to PipelineRuleSettings and gave no way to set. They are the only rules
+   on this page that fire WITHOUT anyone pressing anything, so the card
+   says so twice: in the help text, and in a live sentence that spells out
+   what the current choices will do. Each dropdown offers only the stages
+   the server will accept for that event, and each option carries the
+   forecast probability the deal will land on. *@
 
 <style>
     .rules-header {
@@ -229,6 +237,93 @@
                         </div>
                     </div>
                 }
+
+                @* ── 042: quotes that move the deal on their own ─────────
+                   036 taught the quote handler to read these three keys and
+                   left them unsettable. This is where they get set. *@
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h6 class="mb-0">
+                            <i class="bi bi-file-earmark-text me-2"></i>When a quote moves, move the deal
+                        </h6>
+                        <span class="badge @(Model.AnyQuoteMoveConfigured ? "bg-primary" : "bg-secondary")"
+                              id="quoteMoveBadge">
+                            @(Model.AnyQuoteMoveConfigured ? "On" : "Off")
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            These three happen <strong>on their own</strong>, with nobody pressing a
+                            button — so each one is set to <strong>Don't move the deal</strong> until you
+                            say otherwise. The percentage beside a stage is the forecast probability the
+                            deal will carry once it lands there.
+                        </p>
+
+                        <div class="row g-3">
+                            <div class="col-lg-4">
+                                <label class="form-label fw-semibold small" for="quoteSentStage">
+                                    <i class="bi bi-send me-1"></i>A quote is raised on the deal
+                                </label>
+                                <select class="form-select form-select-sm quote-move"
+                                        id="quoteSentStage"
+                                        asp-for="QuoteSentStageKey"
+                                        asp-items="Model.QuoteSentOptions"></select>
+                                <div class="form-text small">
+                                    Only open stages. Raising a quote is not closing a deal.
+                                </div>
+                            </div>
+
+                            <div class="col-lg-4">
+                                <label class="form-label fw-semibold small" for="quoteAcceptedStage">
+                                    <i class="bi bi-hand-thumbs-up me-1"></i>The customer accepts a quote
+                                </label>
+                                <select class="form-select form-select-sm quote-move"
+                                        id="quoteAcceptedStage"
+                                        asp-for="QuoteAcceptedStageKey"
+                                        asp-items="Model.QuoteAcceptedOptions"></select>
+                                <div class="form-text small">
+                                    An open stage, or a won one if acceptance <em>is</em> the sale — the
+                                    close date and final value are then filled in for you.
+                                </div>
+                            </div>
+
+                            <div class="col-lg-4">
+                                <label class="form-label fw-semibold small" for="quoteRejectedStage">
+                                    <i class="bi bi-hand-thumbs-down me-1"></i>The customer rejects a quote
+                                </label>
+                                <select class="form-select form-select-sm quote-move"
+                                        id="quoteRejectedStage"
+                                        asp-for="QuoteRejectedStageKey"
+                                        asp-items="Model.QuoteRejectedOptions"></select>
+                                <div class="form-text small">
+                                    Leave this alone if you send several quotes per deal — one rejected
+                                    option is not a lost deal.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-light border mt-3 mb-0 py-2 small" id="quoteMoveSummary">
+                            @* Filled in by the script below; this is the no-JS answer. *@
+                            @if (Model.AnyQuoteMoveConfigured)
+                            {
+                                <i class="bi bi-info-circle me-1"></i><span>Some quote steps move the deal on their own — the three boxes above say which.</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-info-circle me-1"></i><span>Quotes won't move deals. Stages change only when someone presses a button on the deal.</span>
+                            }
+                        </div>
+
+                        <div class="text-muted small mt-3">
+                            <strong>What still applies.</strong> An automatic move is skipped — quietly,
+                            and the quote is still sent — when it would move a deal
+                            <em>backwards</em>, when the deal is already closed, or when the stage has
+                            since been retired. It never overrides the invoice rule below. So these are
+                            a shortcut for the step someone would have taken anyway, not a way around
+                            the process.
+                        </div>
+                    </div>
+                </div>
 
                 @* ── the one rule that is not a step ───────────────────── *@
                 <div class="card shadow-sm mb-4">
@@ -948,6 +1043,72 @@
         });
 
         refreshAll();
+    });
+</script>
+
+@* ── 042: the three quote-driven moves ─────────────────────────────────
+   Its own listener block on purpose. This card has nothing to do with the
+   matrix above it: no shared state, no shared helpers, and an early
+   `return` up there (the `if (!fields) return;` guard) must not take this
+   with it. *@
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+
+        const selects = Array.from(document.querySelectorAll('select.quote-move'));
+        if (selects.length === 0) return;
+
+        const summary = document.querySelector('#quoteMoveSummary span');
+        const badge   = document.getElementById('quoteMoveBadge');
+
+        // The stage name without the " · 40%" the option text carries, so a
+        // sentence reads as a sentence.
+        function stageName(select) {
+            const opt = select.selectedOptions[0];
+            if (!opt || !select.value) return null;
+            return opt.textContent.split('·')[0].trim();
+        }
+
+        const WORDING = {
+            quoteSentStage:     'raising a quote moves the deal to',
+            quoteAcceptedStage: 'an accepted quote moves it to',
+            quoteRejectedStage: 'a rejected quote moves it to'
+        };
+
+        function refresh() {
+            const parts = [];
+
+            selects.forEach(function (s) {
+                const name = stageName(s);
+                if (name) parts.push(WORDING[s.id] + ' ' + name);
+            });
+
+            if (badge) {
+                badge.textContent = parts.length > 0 ? 'On' : 'Off';
+                badge.classList.toggle('bg-primary', parts.length > 0);
+                badge.classList.toggle('bg-secondary', parts.length === 0);
+            }
+
+            if (!summary) return;
+
+            if (parts.length === 0) {
+                summary.textContent =
+                    "Quotes won't move deals. Stages change only when someone presses a button on the deal.";
+                return;
+            }
+
+            // "On this workspace, raising a quote moves the deal to Proposal,
+            //  and an accepted quote moves it to Negotiation."
+            const sentence = parts.length === 1
+                ? parts[0]
+                : parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1];
+
+            summary.textContent = 'On this workspace, ' + sentence +
+                                  '. Press Save process to keep it.';
+        }
+
+        selects.forEach(s => s.addEventListener('change', refresh));
+
+        refresh();
     });
 </script>
 }

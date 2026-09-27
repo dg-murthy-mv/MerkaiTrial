@@ -28,7 +28,15 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
 
         Task<InvoiceDto> GetByIdAsync(Guid tenantId, Guid id);
 
-        Task<InvoiceStatisticsDto> GetStatisticsAsync(Guid tenantId);
+        /// <summary>
+        /// 043a: the two dates are optional and TRAILING, so every existing
+        /// GetStatisticsAsync(tenantId) call still compiles and still means
+        /// all time. Half-open — toExclusive is the first instant NOT
+        /// included. Pass IFiscalYearService.DateOnlyRange: these bound the
+        /// ISSUE date, which is a date-only column since 034.
+        /// </summary>
+        Task<InvoiceStatisticsDto> GetStatisticsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null);
 
         Task<InvoiceDto> CreateAsync(CreateInvoiceDto dto);
 
@@ -95,11 +103,16 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
             return await _apiService.GetAsync<InvoiceDto>(url);
         }
 
-        public async Task<InvoiceStatisticsDto> GetStatisticsAsync(Guid tenantId)
+        public async Task<InvoiceStatisticsDto> GetStatisticsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null)
         {
             try
             {
                 var url = $"api/invoices/statistics?tenantId={tenantId}";
+
+                if (fromUtc.HasValue)        url += $"&from={Utc(fromUtc.Value)}";
+                if (toExclusiveUtc.HasValue) url += $"&toExclusive={Utc(toExclusiveUtc.Value)}";
+
                 var stats = await _apiService.GetAsync<InvoiceStatisticsDto>(url);
                 return stats ?? new InvoiceStatisticsDto();
             }
@@ -108,6 +121,24 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
                 _logger.LogError(ex, "Failed to get invoice statistics for tenant {TenantId}", tenantId);
                 return new InvoiceStatisticsDto();
             }
+        }
+
+        /// <summary>
+        /// 043a. An instant on the wire, with the Z that says so. These two
+        /// are financial-year boundaries: if the API guessed the zone wrongly,
+        /// a whole day of invoices would move between years — and for an
+        /// Indian tenant, between GST returns.
+        /// </summary>
+        private static string Utc(DateTime value)
+        {
+            var utc = value.Kind switch
+            {
+                DateTimeKind.Utc   => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                _                  => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            };
+
+            return Uri.EscapeDataString(utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
         }
 
         public async Task<InvoiceDto> CreateAsync(CreateInvoiceDto dto)

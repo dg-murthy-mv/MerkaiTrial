@@ -23,6 +23,28 @@
 //      The rows are added BEFORE the existing SaveChangesAsync, never
 //      after, so the notification and the assignment commit together.
 //      INotificationDispatcher never saves; that is its defining rule.
+//
+//   7. ★ (041) THE OWNER COULD BE LOST WITHOUT ANYONE ASKING. Update read:
+//
+//          lead.OwnerUserId = dto.OwnerUserId;
+//
+//      so any caller that did not send the field — an integration, a
+//      partially-filled DTO, a form where the select was disabled —
+//      wiped the owner, and the lead vanished for every rep whose record
+//      scope is "Own". There was no validation either: a user id from
+//      ANOTHER tenant was accepted and stored.
+//
+//      Deals had the mirror-image bug (an owner could never be removed).
+//      Both now go through OwnerAssignment, which gives one answer for
+//      both modules:
+//
+//          null        field absent      → leave the owner alone
+//          ""          sent empty        → unassign
+//          a user id   sent with a value → assign, after checking the
+//                                          user is active in THIS tenant
+//
+//      Create validates the same way. Previously a supplied owner was
+//      trusted blindly there too.
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
@@ -117,6 +139,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var startStatus = statuses.Default
                     ?? throw new InvalidOperationException(
                         "This workspace has no lead statuses set up. Add them under Settings → Lead Statuses.");
+
+                // 041. No owner chosen → the creator owns it. An owner that
+                // WAS chosen is checked against this tenant's active users
+                // before it is stored; the old code trusted it blindly, so a
+                // user id from another workspace was accepted and the lead
+                // was then invisible to everyone here.
+                var ownerUserId = await OwnerAssignment.ForCreateAsync(
+                    _context, dto.TenantId, dto.OwnerUserId, currentUserId, cancellationToken);
+
                 var lead = new Lead
                 {
                     Id          = Guid.NewGuid(),
@@ -135,12 +166,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                     Channel     = Channel.Web,
                     Source      = dto.SourceId.HasValue ? "Dynamic" : "widget",
                     EstimatedValue = dto.EstimatedValue ?? 0,
-                    // No owner chosen → the creator owns it. Without this a
-                    // rep with "Own" scope would add a lead and immediately
-                    // lose sight of it.
-                    OwnerUserId = string.IsNullOrWhiteSpace(dto.OwnerUserId)
-                                    ? currentUserId.ToString()
-                                    : dto.OwnerUserId,
+                    // 041 — decided above, by OwnerAssignment.ForCreateAsync.
+                    OwnerUserId = ownerUserId,
                     Status      = startStatus.Key,
                     Score       = 0,
                     IsConverted = false,
@@ -312,6 +339,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var oldValue = lead.EstimatedValue;
                 var oldOwner = lead.OwnerUserId;
 
+                // ── 041: what does the incoming owner value MEAN? ─────────
+                // Asked BEFORE any field is written, and asked in the one
+                // place both leads and deals ask it. Throws a message meant
+                // for a person if a new owner is not active in this tenant,
+                // and it throws before the lead has been touched, so a
+                // rejected owner cannot leave half an edit applied.
+                var ownerDecision = await OwnerAssignment.ForUpdateAsync(
+                    _context, dto.TenantId, dto.OwnerUserId, lead.OwnerUserId, cancellationToken);
+
                 lead.FullName = dto.FullName;
                 lead.Email = dto.Email;
                 lead.Phone = dto.Phone;
@@ -324,16 +360,19 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.VerticalId = dto.VerticalId;
                 lead.Score = dto.Score;
                 lead.EstimatedValue = dto.EstimatedValue;
-                lead.OwnerUserId = dto.OwnerUserId;
+                lead.OwnerUserId = ownerDecision.OwnerUserId;        // 041
                 lead.UpdatedAtUtc = DateTime.UtcNow;
                 lead.UpdatedBy = currentUserId.ToString();
 
                 // ── 039: the owner changed, so tell whoever now has it ──
                 // BEFORE the save, deliberately: the notification and the
-                // reassignment are one transaction. oldOwner was captured
-                // at the top of this method, for the audit — it does double
-                // duty here.
-                if (!string.Equals(oldOwner, lead.OwnerUserId, StringComparison.OrdinalIgnoreCase))
+                // reassignment are one transaction.
+                //
+                // 041: driven by the decision rather than by comparing
+                // strings. Only an actual assignment is news — unassigning
+                // has nobody to tell, and "unchanged" must stay silent even
+                // when the caller posted the same id back.
+                if (ownerDecision.Change == OwnerChange.Assigned)
                     await NotifyNewOwnerAsync(lead, currentUserId, cancellationToken);
 
                 await _context.SaveChangesAsync(cancellationToken);
@@ -367,10 +406,21 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // ✅ AUDIT — ownership is its own event. "Who took this lead off
                 // me, and when" is a question people actually ask, and it should
                 // not be buried inside a field-diff blob.
-                if (oldOwner != lead.OwnerUserId)
+                //
+                // 041: the decision decides, so an unassignment is recorded as
+                // one (the old test `oldOwner != lead.OwnerUserId` was right
+                // here, but leaving two sources of truth in one method is how
+                // they drift apart later).
+                if (ownerDecision.Changed)
                     await _audit.WriteAsync(
                         AuditAction.LeadOwnerChanged, AuditEntityType.Lead, lead.Id, dto.TenantId,
-                        new { from = oldOwner, to = lead.OwnerUserId }, cancellationToken);
+                        new
+                        {
+                            from = oldOwner,
+                            to = lead.OwnerUserId,
+                            unassigned = ownerDecision.Change == OwnerChange.Unassigned
+                        },
+                        cancellationToken);
 
                 _logger.LogInformation("Updated lead {LeadId} by user {UserId}", dto.LeadId, currentUserId);
 

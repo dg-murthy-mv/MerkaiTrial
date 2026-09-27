@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Quotes
@@ -17,7 +17,16 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
         Task UpdateAsync(Guid tenantId, Guid quoteId, UpdateQuoteDto dto);
         Task DeleteAsync(Guid tenantId, Guid quoteId);
         Task UpdateStatusAsync(Guid tenantId, Guid quoteId, string status);
-        Task<QuoteStatisticsDto> GetStatisticsAsync(Guid tenantId);
+
+        /// <summary>
+        /// 043a: the two dates are optional and TRAILING, so every existing
+        /// GetStatisticsAsync(tenantId) call still compiles and still means
+        /// all time. Half-open — toExclusive is the first instant NOT
+        /// included. Pass IFiscalYearService.DateOnlyRange, which is what the
+        /// issue-date column holds since 034.
+        /// </summary>
+        Task<QuoteStatisticsDto> GetStatisticsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null);
 
         Task<List<AttachmentDto>> GetAttachmentsAsync(Guid tenantId, Guid quoteId);
         Task<AttachmentDto> UploadAttachmentAsync(Guid tenantId, Guid quoteId, IFormFile file);
@@ -146,11 +155,16 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
             }
         }
 
-        public async Task<QuoteStatisticsDto> GetStatisticsAsync(Guid tenantId)
+        public async Task<QuoteStatisticsDto> GetStatisticsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null)
         {
             try
             {
                 var url = $"api/quotes/statistics?tenantId={tenantId}";
+
+                if (fromUtc.HasValue)        url += $"&from={Utc(fromUtc.Value)}";
+                if (toExclusiveUtc.HasValue) url += $"&toExclusive={Utc(toExclusiveUtc.Value)}";
+
                 var stats = await _apiService.GetAsync<QuoteStatisticsDto>(url);
                 return stats ?? new QuoteStatisticsDto();
             }
@@ -159,6 +173,27 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
                 _logger.LogError(ex, "Failed to get quote statistics for tenant {TenantId}", tenantId);
                 return new QuoteStatisticsDto();
             }
+        }
+
+        /// <summary>
+        /// 043a. An instant on the wire, with the Z that says so.
+        ///
+        /// The older filters in this file send "yyyy-MM-ddTHH:mm:ss" with no
+        /// designator, which leaves the API to guess. These two are financial
+        /// year boundaries: guessed wrongly, a whole day of quotes moves from
+        /// one year's numbers to another's. The API normalises whatever it
+        /// receives, and this end says plainly what it meant.
+        /// </summary>
+        private static string Utc(DateTime value)
+        {
+            var utc = value.Kind switch
+            {
+                DateTimeKind.Utc   => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                _                  => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            };
+
+            return Uri.EscapeDataString(utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
         }
 
         public async Task<List<AttachmentDto>> GetAttachmentsAsync(Guid tenantId, Guid quoteId)

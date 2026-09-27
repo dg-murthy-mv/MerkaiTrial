@@ -81,6 +81,29 @@
 //     OnGetAsync on failure, which overwrote Input from the database and
 //     silently threw away every edit.
 //
+// CHANGES (041 — a deal could never be un-owned)
+//   ★ THE OWNER DROPDOWN HAD NO WAY TO SAY "NOBODY". The list held the
+//     sales team and nothing else, and the API ignored an empty value
+//     anyway (`if (!string.IsNullOrEmpty(dto.OwnerUserId))`), so a deal
+//     assigned by mistake stayed assigned. Leads had the mirror-image
+//     bug: there, a missing owner value WIPED the owner.
+//
+//     Both now go through OwnerAssignment on the server, and this page
+//     supplies the two pieces the UI side needs:
+//
+//       1. "— Unassigned —" at the top of the owner list, on first load
+//          and on a refused save (WithUnassignedOption, used in both
+//          places the list is built — a list built in two places is a
+//          list that gets fixed in one).
+//       2. [DisplayFormat(ConvertEmptyStringToNull = false)] on
+//          Input.OwnerUserId, so choosing it posts "" instead of null.
+//          Null means "field not sent, leave the owner alone", which is
+//          the opposite of what the person just asked for.
+//
+//     An owner who has since been deactivated no longer blocks unrelated
+//     edits: the server re-validates only a CHANGE of owner, so posting
+//     the current owner back keeps working.
+//
 // EARLIER FIXES (kept)
 //   • Currency = deal.Currency (was hardcoded "USD")
 //   • ICurrentTenantService injected for consistency
@@ -207,11 +230,45 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             [Display(Name = "Expected Close Date")]
             public DateTime ExpectedCloseDate { get; set; }
 
+            /// <summary>
+            /// 041. THE ANNOTATION IS LOAD-BEARING. MVC model binding turns an
+            /// empty posted value into null for a string property by default,
+            /// and the API now reads the three cases apart:
+            ///
+            ///     null  → the field was not sent; leave the owner alone
+            ///     ""    → sent empty; unassign
+            ///     an id → assign, after checking the user is active here
+            ///
+            /// Without ConvertEmptyStringToNull = false, picking
+            /// "— Unassigned —" would arrive as null and the save would
+            /// silently keep the existing owner. Removing the annotation
+            /// re-breaks unassigning, with no compiler error to warn you.
+            /// </summary>
             [Display(Name = "Owner")]
+            [DisplayFormat(ConvertEmptyStringToNull = false)]
             public string? OwnerUserId { get; set; }
 
             public Guid? SourceId { get; set; }
             public string? Tags { get; set; }
+        }
+
+        /// <summary>
+        /// 041. Puts "— Unassigned —" at the top of the owner list, so taking
+        /// a deal off someone is something a person can actually do on this
+        /// page. Before this round the API refused to unassign at all, so
+        /// there was nothing for the option to do.
+        /// </summary>
+        private static List<SelectListItem> WithUnassignedOption(
+            List<SelectListItem> team, string? selectedOwnerUserId)
+        {
+            team.Insert(0, new SelectListItem
+            {
+                Value    = string.Empty,
+                Text     = "— Unassigned —",
+                Selected = string.IsNullOrEmpty(selectedOwnerUserId)
+            });
+
+            return team;
         }
 
         // ==================== VIEW HELPERS ====================
@@ -306,12 +363,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 CreatedAtUtc = deal.CreatedAtUtc;
                 CreatedBy    = deal.CreatedBy;
 
-                SalesTeam = salesTeam.Select(u => new SelectListItem
-                {
-                    Value    = u.Id.ToString(),
-                    Text     = u.FullName,
-                    Selected = u.Id.ToString() == deal.OwnerUserId
-                }).ToList();
+                SalesTeam = WithUnassignedOption(          // 041
+                    salesTeam.Select(u => new SelectListItem
+                    {
+                        Value    = u.Id.ToString(),
+                        Text     = u.FullName,
+                        Selected = u.Id.ToString() == deal.OwnerUserId
+                    }).ToList(),
+                    deal.OwnerUserId);
 
                 return Page();
             }
@@ -492,12 +551,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 Stages = await stagesTask;
 
-                SalesTeam = (await salesTeamTask).Select(u => new SelectListItem
-                {
-                    Value    = u.Id.ToString(),
-                    Text     = u.FullName,
-                    Selected = u.Id.ToString() == Input.OwnerUserId
-                }).ToList();
+                SalesTeam = WithUnassignedOption(          // 041
+                    (await salesTeamTask).Select(u => new SelectListItem
+                    {
+                        Value    = u.Id.ToString(),
+                        Text     = u.FullName,
+                        Selected = u.Id.ToString() == Input.OwnerUserId
+                    }).ToList(),
+                    Input.OwnerUserId);
 
                 try
                 {

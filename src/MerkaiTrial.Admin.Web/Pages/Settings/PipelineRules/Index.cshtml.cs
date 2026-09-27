@@ -69,6 +69,7 @@ using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;          // 042: the three dropdowns
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
 {
@@ -133,6 +134,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
         // ── Posted form ────────────────────────────────────────────────
 
         [BindProperty] public bool BlockReopenWithIssuedInvoice { get; set; }
+
+        /// <summary>
+        /// 042. Where a deal goes on its own when a quote is raised,
+        /// accepted or rejected. Empty means "don't move the deal".
+        ///
+        /// No [DisplayFormat(ConvertEmptyStringToNull = false)] here, unlike
+        /// the owner dropdowns in 041 — and the difference is worth knowing.
+        /// An owner has THREE states (absent, cleared, chosen) and MVC's
+        /// default binding would collapse the first two. A stage key has
+        /// two: chosen, or not. Null and "" mean the same thing, so letting
+        /// MVC turn one into the other costs nothing.
+        /// </summary>
+        [BindProperty] public string? QuoteSentStageKey { get; set; }
+        [BindProperty] public string? QuoteAcceptedStageKey { get; set; }
+        [BindProperty] public string? QuoteRejectedStageKey { get; set; }
 
         /// <summary>
         /// One entry per from-to pair, in grid order. A list of a flat
@@ -244,6 +260,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
             {
                 var dto = new SaveAllPipelineRulesDto(
                     BlockReopenWithIssuedInvoice,
+                    QuoteSentStageKey,          // 042
+                    QuoteAcceptedStageKey,      // 042
+                    QuoteRejectedStageKey,      // 042
                     Cells.Select(c => new SaveTransitionDto(
                         c.FromStageKey,
                         c.ToStageKey,
@@ -295,6 +314,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
         private void BuildGrid()
         {
             BlockReopenWithIssuedInvoice = Rules.BlockReopenWithIssuedInvoice;
+
+            // 042. The three quote-driven moves, as stored. Null renders as
+            // the "Don't move the deal" option being selected.
+            QuoteSentStageKey     = Rules.QuoteSentStageKey;
+            QuoteAcceptedStageKey = Rules.QuoteAcceptedStageKey;
+            QuoteRejectedStageKey = Rules.QuoteRejectedStageKey;
 
             var byPair = Rules.Transitions
                 .GroupBy(t => (t.FromStageKey, t.ToStageKey))
@@ -712,6 +737,106 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
             _ => "bg-secondary"
         };
 
+        // ── 042: the three quote-driven moves ──────────────────────────
+
+        private enum QuoteMoveTarget { Sent, Accepted, Rejected }
+
+        /// <summary>
+        /// Stage options for one of the three dropdowns.
+        ///
+        /// The list offers only the stages the SERVER will accept for that
+        /// event — open stages for "a quote was raised", open or won for
+        /// "accepted", open or lost for "rejected". A dropdown that offers a
+        /// choice the save then refuses is a dropdown that teaches people not
+        /// to trust the page.
+        ///
+        /// Whatever is currently STORED is always included, even if it is
+        /// retired or would no longer be offered. Hiding the current answer
+        /// would make the page lie about what the workspace is doing — and
+        /// the server accepts an unchanged key for exactly that reason.
+        /// </summary>
+        private List<SelectListItem> QuoteStageOptions(QuoteMoveTarget target, string? selectedKey)
+        {
+            var allowed = target switch
+            {
+                QuoteMoveTarget.Sent     => new[] { StageCategory.Open },
+                QuoteMoveTarget.Accepted => new[] { StageCategory.Open, StageCategory.Won },
+                _                        => new[] { StageCategory.Open, StageCategory.Lost }
+            };
+
+            var items = new List<SelectListItem>
+            {
+                new()
+                {
+                    Value = string.Empty,
+                    Text = "Don't move the deal",
+                    Selected = string.IsNullOrEmpty(selectedKey)
+                }
+            };
+
+            foreach (var s in Rules.Stages.OrderBy(s => s.SortOrder))
+            {
+                var isStored = string.Equals(s.Key, selectedKey, StringComparison.OrdinalIgnoreCase);
+
+                if (!isStored && !allowed.Contains(s.Category)) continue;
+                if (!isStored && !s.IsActive) continue;
+
+                var suffix =
+                    !s.IsActive ? " — retired"
+                    : s.Category == StageCategory.Won ? " — won"
+                    : s.Category == StageCategory.Lost ? " — lost"
+                    : string.Empty;
+
+                items.Add(new SelectListItem
+                {
+                    Value = s.Key,
+                    // The probability rides in the option text on purpose.
+                    // Choosing where a quote sends a deal also decides what
+                    // the forecast says about it, and a stage name does not
+                    // tell you that. Cheaper than a second line of help
+                    // text, and it is read at the moment of the decision.
+                    Text = $"{s.Name}{suffix} · {s.Probability}%",
+                    Selected = isStored
+                });
+            }
+
+            return items;
+        }
+
+        public List<SelectListItem> QuoteSentOptions
+            => QuoteStageOptions(QuoteMoveTarget.Sent, QuoteSentStageKey);
+
+        public List<SelectListItem> QuoteAcceptedOptions
+            => QuoteStageOptions(QuoteMoveTarget.Accepted, QuoteAcceptedStageKey);
+
+        public List<SelectListItem> QuoteRejectedOptions
+            => QuoteStageOptions(QuoteMoveTarget.Rejected, QuoteRejectedStageKey);
+
+        /// <summary>
+        /// 042. True when at least one automatic move is configured, so the
+        /// card can say so at a glance rather than making someone open three
+        /// dropdowns to find out.
+        /// </summary>
+        public bool AnyQuoteMoveConfigured
+            => !string.IsNullOrEmpty(QuoteSentStageKey)
+            || !string.IsNullOrEmpty(QuoteAcceptedStageKey)
+            || !string.IsNullOrEmpty(QuoteRejectedStageKey);
+
+        /// <summary>
+        /// 042. The stage's own probability, shown beside a chosen stage:
+        /// choosing where a quote sends a deal also decides what the forecast
+        /// says, and that is not obvious from a stage name.
+        /// </summary>
+        public int? ProbabilityOf(string? stageKey)
+        {
+            if (string.IsNullOrEmpty(stageKey)) return null;
+
+            var stage = Rules.Stages.FirstOrDefault(
+                s => string.Equals(s.Key, stageKey, StringComparison.OrdinalIgnoreCase));
+
+            return stage?.Probability;
+        }
+
         public string ActorLabel(TransitionActor a) => a switch
         {
             TransitionActor.DealOwner => "Deal owner",
@@ -722,6 +847,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
 
         private static PipelineRulesDto Empty() => new(
             PipelineRuleDefaults.BlockReopenWithIssuedInvoice,
+            // 042. Null: no automatic moves. The same answer the defaults
+            // give, so a page that failed to load never implies a rule the
+            // workspace has not set.
+            QuoteSentStageKey: PipelineRuleDefaults.QuoteSentStageKey,
+            QuoteAcceptedStageKey: PipelineRuleDefaults.QuoteAcceptedStageKey,
+            QuoteRejectedStageKey: PipelineRuleDefaults.QuoteRejectedStageKey,
             IsDefault: true,
             UpdatedAtUtc: null,
             UpdatedBy: null,

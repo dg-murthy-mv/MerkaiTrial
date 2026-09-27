@@ -1271,7 +1271,19 @@ namespace MerkaiTrial.Application.Commands.Quotes
             _scope = scope;
         }
 
-        public async Task<QuoteStatisticsDto> Handle(Guid tenantId)
+        /// <summary>
+        /// 043. fromUtc / toExclusiveUtc are OPTIONAL and TRAILING, so the
+        /// existing `Handle(tenantId)` calls still compile and still mean all
+        /// time.
+        ///
+        /// They bound IssueDateUtc, which is a DATE-ONLY column since 034 —
+        /// so the caller passes IFiscalYearService.DateOnlyRange, not
+        /// TimestampRangeAsync. Half-open: >= from && < toExclusive.
+        /// </summary>
+        public async Task<QuoteStatisticsDto> Handle(
+            Guid tenantId,
+            DateTime? fromUtc = null,
+            DateTime? toExclusiveUtc = null)
         {
             // Previously loaded every quote row into app memory via
             // ToListAsync() and counted/summed in C# — same fix pattern as
@@ -1288,9 +1300,21 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             var dealAccess = await _scope.GetAsync(RecordModules.Deals);
 
-            var stats = await _db.Quotes
+            var scoped = _db.Quotes
                 .Where(q => q.TenantId == tenantId && !q.IsDeleted)
-                .WithVisibleDeal(_db, dealAccess)
+                .WithVisibleDeal(_db, dealAccess);
+
+            // ── 043: the period, if one was asked for ────────────────────
+            // On the issue date, matching the quote LIST filter above, so the
+            // dashboard's "12 quotes this year" and the list's own date filter
+            // can never disagree about which quotes those are.
+            if (fromUtc.HasValue)
+                scoped = scoped.Where(q => q.IssueDateUtc >= fromUtc.Value);
+
+            if (toExclusiveUtc.HasValue)
+                scoped = scoped.Where(q => q.IssueDateUtc < toExclusiveUtc.Value);
+
+            var stats = await scoped
                 .GroupBy(q => 1)
                 .Select(g => new QuoteStatisticsDto
                 {

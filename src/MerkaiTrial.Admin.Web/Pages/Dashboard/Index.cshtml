@@ -70,6 +70,41 @@
         margin-top: 2px;
     }
 
+    /* ── 043: which period a number covers ──────────────────────────────
+       Shown only while a period is selected. Two colours, one meaning
+       each: blue follows the selector, grey does not. A dashboard where
+       half the cards quietly answer a different question than the other
+       half is the thing this chip exists to prevent. */
+    .scope-chip {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: .04em;
+        text-transform: none;
+        padding: 1px 6px;
+        border-radius: 999px;
+        margin-left: 6px;
+        vertical-align: middle;
+        background: #dbeafe;
+        color: #1d4ed8;
+        white-space: nowrap;
+    }
+
+    .scope-chip.alltime {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+
+    .dash-note {
+        font-size: 12px;
+        color: #64748b;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 16px;
+    }
+
     .section-title {
         font-size: 13px;
         font-weight: 600;
@@ -258,10 +293,38 @@
             </h4>
             <p class="mb-0 opacity-75" style="font-size:13px;">
                 @Model.TenantName &nbsp;·&nbsp; @Model.CurrencyCode (@Model.CurrencySymbol) &nbsp;·&nbsp; @Model.TaxLabel applied
+                @if (Model.HasPeriod)
+                {
+                    <text>&nbsp;·&nbsp;</text>
+                    <span class="fw-600">@Model.SelectedPeriodLabel</span>
+                    @if (!string.IsNullOrEmpty(Model.FiscalYearDescription))
+                    {
+                        <text>&nbsp;(@Model.FiscalYearDescription)</text>
+                    }
+                }
             </p>
         </div>
 
         <div class="d-flex align-items-center gap-2 flex-wrap">
+
+            @* ── 043: the financial period ────────────────────────────
+               A GET form, so the chosen period lives in the URL and the
+               page can be bookmarked or sent to someone. Submits on
+               change; the button is the no-JavaScript path. *@
+            <form method="get" class="d-flex align-items-center gap-2" id="periodForm">
+                <label for="periodSelect" class="visually-hidden">Period</label>
+                <select name="period" id="periodSelect"
+                        class="form-select form-select-sm"
+                        style="min-width:190px;"
+                        asp-items="Model.PeriodOptions"
+                        title="@(string.IsNullOrEmpty(Model.FiscalYearDescription)
+                                  ? "Financial period"
+                                  : $"This workspace's financial year runs {Model.FiscalYearDescription}")">
+                </select>
+                <noscript>
+                    <button type="submit" class="btn btn-light btn-sm">Go</button>
+                </noscript>
+            </form>
 
             @* ✅ Plan badge in dashboard header *@
             <span class="badge fs-6 px-3 py-2"
@@ -340,6 +403,43 @@
 @* ── ROW 1: Pipeline KPIs ─────────────────────────────────────────── *@
 <div class="section-title"><i class="bi bi-funnel me-2"></i>Pipeline overview</div>
 
+@* ── 043: what the numbers do and don't include ──────────────────────
+   Shown only when there is something to say. Three separate facts, and
+   each one is a number somebody would otherwise have to discover by
+   adding the cards up and finding they don't reconcile. *@
+@if (!Model.StagesLoaded)
+{
+    <div class="dash-note">
+        <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+        Your pipeline stages couldn't be loaded just now, so the deal figures below
+        may be wrong. Refresh the page; if it keeps happening, open
+        <a href="/Settings/PipelineStages">Settings → Pipeline Stages</a>.
+    </div>
+}
+else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
+{
+    <div class="dash-note">
+        <i class="bi bi-info-circle me-1"></i>
+        @if (Model.UndatedDeals > 0 && Model.HasPeriod)
+        {
+            <text>
+                <strong>@Model.UndatedDeals</strong>
+                @(Model.UndatedDeals == 1 ? "deal has" : "deals have") no expected close date,
+                so they aren't counted in @Model.SelectedPeriodLabel.
+            </text>
+        }
+        @if (Model.GhostStageDeals > 0)
+        {
+            <text>
+                <strong>@Model.GhostStageDeals</strong>
+                @(Model.GhostStageDeals == 1 ? "deal sits" : "deals sit") in a stage this
+                workspace no longer has — they're counted as open until someone moves them.
+                <a href="/Pipeline/Index">Open the pipeline</a>.
+            </text>
+        }
+    </div>
+}
+
 <div class="row g-3 mb-4">
 
     <div class="col-6 col-md-3">
@@ -349,7 +449,7 @@
                     <i class="bi bi-people-fill"></i>
                 </div>
                 <div class="flex-grow-1 min-width-0">
-                    <div class="kpi-label">Total Leads</div>
+                    <div class="kpi-label">Total Leads @if (Model.HasPeriod) { <span class="scope-chip alltime">All time</span> }</div>
                     <div class="kpi-value">@Model.TotalLeads</div>
                     <div class="kpi-sub">@Model.ConversionRate conversion rate</div>
                 </div>
@@ -387,7 +487,7 @@
                     <i class="bi bi-kanban-fill"></i>
                 </div>
                 <div>
-                    <div class="kpi-label">Active Deals</div>
+                    <div class="kpi-label">Active Deals @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
                     <div class="kpi-value">@Model.ActiveDeals</div>
                     <div class="kpi-sub">@Model.FormatCurrency(Model.PipelineValue) pipeline</div>
                 </div>
@@ -407,7 +507,7 @@
                     <i class="bi bi-file-earmark-check-fill"></i>
                 </div>
                 <div>
-                    <div class="kpi-label">Quotes</div>
+                    <div class="kpi-label">Quotes @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
                     <div class="kpi-value">@Model.TotalQuotes</div>
                     <div class="kpi-sub">@Model.QuotesSent sent · @Model.QuotesAccepted accepted</div>
                 </div>
@@ -425,7 +525,7 @@
                     <i class="bi bi-receipt-cutoff"></i>
                 </div>
                 <div>
-                    <div class="kpi-label">Invoices</div>
+                    <div class="kpi-label">Invoices @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
                     <div class="kpi-value">@Model.TotalInvoices</div>
                     <div class="kpi-sub">
                         @Model.PaidInvoices paid
@@ -451,28 +551,28 @@
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #6366f1;">
-            <div class="kpi-label">Pipeline Value</div>
+            <div class="kpi-label">Pipeline Value @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
             <div class="kpi-value" style="font-size:1.4rem;color:#6366f1;">@Model.FormatCurrency(Model.PipelineValue)</div>
             <div class="kpi-sub">Active deals expected</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #16a34a;">
-            <div class="kpi-label">Closed Deal Value</div>
+            <div class="kpi-label">Closed Deal Value @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
             <div class="kpi-value" style="font-size:1.4rem;color:#16a34a;">@Model.FormatCurrency(Model.WonValue)</div>
             <div class="kpi-sub">Expected value at close · @Model.DealsWon deals</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #0ea5e9;">
-            <div class="kpi-label">Total Invoiced</div>
+            <div class="kpi-label">Total Invoiced @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
             <div class="kpi-value" style="font-size:1.4rem;color:#0ea5e9;">@Model.FormatCurrency(Model.TotalInvoiced)</div>
             <div class="kpi-sub">@Model.FormatCurrency(Model.PaidAmount) actually collected</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #f59e0b;">
-            <div class="kpi-label">Outstanding</div>
+            <div class="kpi-label">Outstanding @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
             <div class="kpi-value" style="font-size:1.4rem;color:#f59e0b;">@Model.FormatCurrency(Model.UnpaidAmount)</div>
             <div class="kpi-sub">Pending collection</div>
         </div>
@@ -514,7 +614,9 @@
                             </div>
                             <div class="text-end flex-shrink-0">
                                 <div class="deal-value">@Model.FormatCurrency(deal.ExpectedValue)</div>
-                                <span class="badge @Model.GetStageClass(deal.Stage)" style="font-size:10px;">@deal.Stage</span>
+                                @* 043: the stage's NAME, not its key. A list DTO carries
+                                   "CLOSED_WON"; the workspace calls it something else. *@
+                                <span class="badge @Model.GetStageClass(deal.Stage)" style="font-size:10px;">@Model.StageName(deal.Stage)</span>
                             </div>
                         </div>
                     }
@@ -619,3 +721,22 @@
     </div>
 
 </div>
+
+@* ── 043: the period selector ─────────────────────────────────────────
+   Submits the GET form when the choice changes, so the page reloads with
+   ?period=... in the address bar. A delegated listener rather than an
+   inline onchange, per the pattern the rest of the app uses.
+
+   The <noscript> button in the header is the fallback: with scripting off
+   the form still works, it just needs a click. *@
+@section Scripts {
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var select = document.getElementById('periodSelect');
+        var form   = document.getElementById('periodForm');
+        if (!select || !form) return;
+
+        select.addEventListener('change', function () { form.submit(); });
+    });
+</script>
+}

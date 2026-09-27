@@ -282,7 +282,27 @@ namespace MerkaiTrial.Application.Commands.Leads
     }
 
     // ==================== GET LEAD STATS ====================
-    public record GetLeadStatsQuery(Guid TenantId);
+
+    /// <summary>
+    /// 043. The two date parameters are OPTIONAL and TRAILING, so every
+    /// existing `new GetLeadStatsQuery(tenantId)` still compiles and still
+    /// means "all time". Nothing that works today changes behaviour.
+    ///
+    /// Half-open, always: >= FromUtc && < ToExclusiveUtc. The fiscal
+    /// service hands out exactly this shape (UtcRange), and it is the only
+    /// way to include the last day of a period without also catching the
+    /// first instant of the next one.
+    ///
+    /// These bound CreatedAtUtc — a TIMESTAMP — so the caller must pass the
+    /// range from IFiscalYearService.TimestampRangeAsync, which shifts by
+    /// the tenant's timezone. DateOnlyRange is for date-only columns like
+    /// IssueDateUtc and ExpectedCloseDateUtc, and mixing the two up is the
+    /// bug round 034 spent a whole migration repairing.
+    /// </summary>
+    public record GetLeadStatsQuery(
+        Guid TenantId,
+        DateTime? FromUtc = null,
+        DateTime? ToExclusiveUtc = null);
 
     public class GetLeadStatsHandler : ICommandHandler
     {
@@ -337,9 +357,25 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // The plan limit counts every lead in the workspace, whoever
                 // owns it. Kept separate so a rep's quota bar is not "3 of
                 // 2000" when the workspace is actually at 1998.
+                //
+                // 043: and it is NEVER narrowed by the period. The plan limit
+                // is about how many leads exist, not how many were added this
+                // financial year — a quota bar that empties every April would
+                // be worse than no quota bar.
                 var quotaUsed = await tenantLeads.CountAsync(cancellationToken);
 
-                var counts = await visibleLeads
+                // ── 043: the period, if one was asked for ─────────────────
+                // Applied to the COUNTS only. CreatedAtUtc is a timestamp, so
+                // the caller's range must already be timezone-shifted.
+                var periodLeads = visibleLeads;
+
+                if (query.FromUtc.HasValue)
+                    periodLeads = periodLeads.Where(l => l.CreatedAtUtc >= query.FromUtc.Value);
+
+                if (query.ToExclusiveUtc.HasValue)
+                    periodLeads = periodLeads.Where(l => l.CreatedAtUtc < query.ToExclusiveUtc.Value);
+
+                var counts = await periodLeads
                     .GroupBy(l => 1)
                     .Select(g => new
                     {
@@ -357,6 +393,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .FirstOrDefaultAsync(cancellationToken);
 
                 // Tasks and activities count only on leads the user can see.
+                //
+                // 043: deliberately visibleLeads, not periodLeads. "Overdue"
+                // and "today" are facts about RIGHT NOW — an overdue task on
+                // a lead created last year is still overdue today, and hiding
+                // it because the dashboard is showing FY25 would quietly drop
+                // the one number on this page that asks someone to act.
                 var visibleLeadIds = visibleLeads.Select(l => l.Id);
 
                 // Open lead tasks past their due date (reminders are tasks now).

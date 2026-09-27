@@ -38,6 +38,29 @@
 //
 //   4. A null lead on GET now redirects with "Lead not found." instead of
 //      falling into the generic catch via an NRE on lead.FullName.
+//
+// CHANGES (041 — the owner, on purpose rather than by accident)
+//   ★ A LEAD COULD LOSE ITS OWNER WITHOUT ANYONE CHOOSING THAT. The API's
+//     update handler read `lead.OwnerUserId = dto.OwnerUserId;`, so any
+//     caller that did not send the field unassigned the lead — and a rep
+//     whose record scope is "Own" then stopped seeing it at all. Deals had
+//     the opposite bug: an empty value was ignored, so a deal assigned by
+//     mistake could not be un-assigned. Both now share one rule, in
+//     OwnerAssignment.
+//
+//     This page supplies the three pieces the UI side needs:
+//
+//       1. "— Unassigned —" at the top of the owner list, so removing an
+//          owner is a thing a person can ask for.
+//       2. [DisplayFormat(ConvertEmptyStringToNull = false)] on
+//          Input.OwnerUserId, so choosing it posts "" rather than null.
+//          Null means "field not sent, leave the owner alone" — the exact
+//          opposite of the request.
+//       3. catch (InvalidOperationException), so a refused owner shows the
+//          server's sentence instead of "Failed to update lead."
+//
+//     An owner is only re-validated when it CHANGES, so a lead owned by
+//     someone since deactivated can still have its phone number fixed.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -136,7 +159,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             [Range(0, double.MaxValue)]
             public decimal? EstimatedValue { get; set; }
 
+            /// <summary>
+            /// 041. THE ANNOTATION IS LOAD-BEARING. MVC binding turns an empty
+            /// posted value into null for a string property by default, and the
+            /// API now reads the three cases apart:
+            ///
+            ///     null  → the field was not sent; leave the owner alone
+            ///     ""    → sent empty; unassign
+            ///     an id → assign, after checking the user is active here
+            ///
+            /// Without ConvertEmptyStringToNull = false, choosing
+            /// "— Unassigned —" would arrive as null and the lead would keep
+            /// its existing owner with no error to show for it.
+            /// </summary>
+            [Display(Name = "Owner")]
+            [DisplayFormat(ConvertEmptyStringToNull = false)]
             public string? OwnerUserId { get; set; }
+
             public Guid? VerticalId { get; set; }
         }
 
@@ -248,6 +287,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 TempData["ErrorMessage"] = "Lead not found.";
                 return RedirectToPage("./Index");
+            }
+            // 041. IApiService turns the API's 400/403 { "error": ... } into
+            // this, carrying the server's own wording. Without this catch the
+            // owner checks added in this round would have surfaced as "Failed
+            // to update lead. Please try again." — which tells the person
+            // nothing, and hides the one sentence that would have helped
+            // ("Somchai's account is deactivated, so it cannot be given new
+            // work."). The deal edit page has had this catch since 020; the
+            // lead page never did.
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation("Lead {Id} update refused: {Message}", Id, ex.Message);
+
+                ModelState.AddModelError(string.Empty, ex.Message);
+                ErrorMessage = ex.Message;
+
+                LoadTenantContext();
+                await LoadDropdownsAsync();
+                return Page();
             }
             catch (Exception ex)
             {
@@ -383,14 +441,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             try
             {
                 var salesTeam = await _leadService.GetSalesTeamAsync(tenantId);
-                SalesTeamOptions = salesTeam.Select(u => new SelectListItem
-                {
-                    Value = u.Id.ToString(),
-                    Text = u.FullName,
-                    Selected = u.Id.ToString() == Input.OwnerUserId
-                }).ToList();
+
+                SalesTeamOptions = WithUnassignedOption(          // 041
+                    salesTeam.Select(u => new SelectListItem
+                    {
+                        Value = u.Id.ToString(),
+                        Text = u.FullName,
+                        Selected = u.Id.ToString() == Input.OwnerUserId
+                    }).ToList(),
+                    Input.OwnerUserId);
             }
             catch (Exception ex) { _logger.LogWarning(ex, "Failed to load sales team"); }
+        }
+
+        /// <summary>
+        /// 041. Puts "— Unassigned —" at the top of the owner list. Taking a
+        /// lead off someone was always possible by accident — a DTO with no
+        /// owner field wiped it — and never possible on purpose. Now it is the
+        /// other way round, which is the correct way round.
+        /// </summary>
+        private static List<SelectListItem> WithUnassignedOption(
+            List<SelectListItem> team, string? selectedOwnerUserId)
+        {
+            team.Insert(0, new SelectListItem
+            {
+                Value    = string.Empty,
+                Text     = "— Unassigned —",
+                Selected = string.IsNullOrEmpty(selectedOwnerUserId)
+            });
+
+            return team;
         }
     }
 }

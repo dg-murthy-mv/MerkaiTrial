@@ -611,6 +611,14 @@ namespace MerkaiTrial.Application.Commands.Deals
             var stage = chosen.Key;
             var probability = dto.Probability ?? chosen.Probability;
 
+            // 041. `dto.OwnerUserId ?? currentUser.UserId.ToString()` let an
+            // EMPTY STRING through — `??` only catches null — and created a
+            // deal owned by "", which is neither the creator's nor anyone
+            // else's and does not read as unassigned either. It also trusted
+            // whatever id arrived, including one from another tenant.
+            var ownerUserId = await OwnerAssignment.ForCreateAsync(
+                _db, tenantGuid, dto.OwnerUserId, currentUser.UserId);
+
             var deal = new Deal
             {
                 Id = Guid.NewGuid(),
@@ -627,7 +635,7 @@ namespace MerkaiTrial.Application.Commands.Deals
                 SourceId = dto.SourceId,
                 Source = dto.Source,
                 ExpectedCloseDateUtc = dto.ExpectedCloseDateUtc,
-                OwnerUserId = dto.OwnerUserId ?? currentUser.UserId.ToString(),
+                OwnerUserId = ownerUserId,                      // 041
                 Probability = probability,
                 Tags = dto.Tags,
                 CreatedAtUtc = DateTime.UtcNow,
@@ -783,6 +791,15 @@ namespace MerkaiTrial.Application.Commands.Deals
             // change can be detected the same way the stage change is.
             var previousOwnerUserId = deal.OwnerUserId;
 
+            // ── 041: what does the incoming owner value MEAN? ─────────────
+            // Asked up front, before a single field is written, and answered
+            // by the same code the lead handler uses. If the chosen owner is
+            // not usable this throws while the deal is still untouched, so a
+            // rejected owner cannot leave half an edit applied — and, just as
+            // important, cannot leave a stage move applied either.
+            var ownerDecision = await OwnerAssignment.ForUpdateAsync(
+                _db, tenantGuid, dto.OwnerUserId, deal.OwnerUserId);
+
             // The ordinary fields first. A rep who fills in the value AND
             // moves the deal to Won in one save should be judged on the
             // value they just typed, not the one that was there before.
@@ -863,19 +880,32 @@ namespace MerkaiTrial.Application.Commands.Deals
                     deal.OwnerUserId, deal.Id);
             }
 
-            if (!string.IsNullOrEmpty(dto.OwnerUserId))
-            {
-                var userExists = await _db.Users
-                    .AnyAsync(u => u.Id.ToString() == dto.OwnerUserId
-                                && u.TenantId == tenantGuid
-                                && u.IsActive);
-                if (userExists)
-                    deal.OwnerUserId = dto.OwnerUserId;
-            }
+            // ── 041: the owner, applied AFTER the stage block ─────────────
+            // The order matters twice over, and both reasons are deliberate:
+            //
+            //   • The guard above judged the move against the owner the deal
+            //     had when the request arrived. Applying a reassignment first
+            //     would let someone grant themselves a DealOwner-only move by
+            //     assigning the deal to themselves in the same save.
+            //
+            //   • The stage-change notification above therefore goes to the
+            //     person who owned the deal while it moved. The new owner
+            //     hears about the deal in the assignment notification below,
+            //     which already names the current stage.
+            //
+            // The old code was `if (!string.IsNullOrEmpty(dto.OwnerUserId))`
+            // with a silent `if (userExists)` inside it, which meant a deal
+            // could NEVER be unassigned, and an owner that failed the check
+            // was dropped without a word: the page said "saved" and the owner
+            // was unchanged. Both are now handled by OwnerAssignment — an
+            // unusable owner raises an error the person can read, and an
+            // empty value means what it says.
+            deal.OwnerUserId = ownerDecision.OwnerUserId;
 
             // ── 039: reassigned ───────────────────────────────────────
-            if (!string.Equals(previousOwnerUserId, deal.OwnerUserId,
-                               StringComparison.OrdinalIgnoreCase)
+            // 041: only a real assignment is news. Unassigning has nobody to
+            // tell, and assigning to yourself is not worth a notification.
+            if (ownerDecision.Change == OwnerChange.Assigned
                 && !string.Equals(deal.OwnerUserId, currentUser.UserId.ToString(),
                                   StringComparison.OrdinalIgnoreCase))
             {
@@ -892,9 +922,26 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             await _db.SaveChangesAsync();
 
-            await _audit.WriteAsync(
-                AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
-                new { title = deal.Title });
+            // 041. A deal changing hands used to leave no trace: the only row
+            // written here was `{ title }`, so "who took this off me, and
+            // when" had no answer on the deal side, though it had one on the
+            // lead side (AuditAction.LeadOwnerChanged). There is no
+            // DealOwnerChanged action to use, so the change rides along in
+            // THIS row rather than in a second DealUpdated row — one save,
+            // one audit entry.
+            if (ownerDecision.Changed)
+                await _audit.WriteAsync(
+                    AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
+                    new
+                    {
+                        title = deal.Title,
+                        owner = new { from = previousOwnerUserId, to = deal.OwnerUserId },
+                        unassigned = ownerDecision.Change == OwnerChange.Unassigned
+                    });
+            else
+                await _audit.WriteAsync(
+                    AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
+                    new { title = deal.Title });
         }
 
         /// <summary>039. Adds rows; does not save. Never throws.</summary>

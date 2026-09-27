@@ -243,17 +243,33 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         /// <summary>
-        /// GET /api/leads/stats - Get lead statistics
+        /// GET /api/leads/stats — lead statistics, optionally for one period.
+        ///
+        /// 043a: `from` and `toExclusive` are optional and bound CreatedAtUtc.
+        /// HALF-OPEN — `toExclusive` is the first instant NOT included, so a
+        /// financial year ending 31 March is asked for as
+        /// `?from=2026-04-01T00:00:00Z&amp;toExclusive=2027-04-01T00:00:00Z`.
+        /// Sending 31 March as an inclusive end is the classic way to lose the
+        /// last day of the year.
+        ///
+        /// Omit both and the answer is all time, exactly as before.
+        ///
+        /// QuotaUsed is never narrowed by the period — it is the plan limit,
+        /// and so are the overdue-task and today's-activity counts, which are
+        /// facts about now rather than about the period.
         /// </summary>
         [HttpGet("stats")]
         [Authorize(Policy = "Leads.Read")]
         [ProducesResponseType(typeof(LeadStatsDto), 200)]
-        public async Task<IActionResult> GetStats(CancellationToken cancellationToken = default)
+        public async Task<IActionResult> GetStats(
+            [FromQuery] DateTime? from = null,
+            [FromQuery] DateTime? toExclusive = null,
+            CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
-                var query = new GetLeadStatsQuery(tenantId);
+                var query = new GetLeadStatsQuery(tenantId, AsUtc(from), AsUtc(toExclusive));
                 var result = await _getStatsHandler.Handle(query, cancellationToken);
 
                 return Ok(result);
@@ -264,6 +280,30 @@ namespace MerkaiTrial.WebApi.Controllers
                 return StatusCode(500, new { error = "Failed to retrieve statistics" });
             }
         }
+
+        /// <summary>
+        /// 043a. Whatever the model binder made of the string, treat it as the
+        /// UTC instant the caller meant.
+        ///
+        /// ASP.NET Core binds "…Z" to Kind=Utc, a bare "2026-04-01T00:00:00"
+        /// to Kind=Unspecified, and older configurations produced Kind=Local.
+        /// Comparing a Local instant against a UTC column silently shifts every
+        /// boundary record by the server's offset — the same family of bug as
+        /// round 034, and just as invisible. Three lines here removes the whole
+        /// question.
+        ///
+        /// Deliberately duplicated in QuotesController and InvoicesController
+        /// rather than shared: three private helpers beat a new cross-cutting
+        /// file for six lines, and each controller stays readable on its own.
+        /// </summary>
+        private static DateTime? AsUtc(DateTime? value) => value is null
+            ? null
+            : value.Value.Kind switch
+            {
+                DateTimeKind.Utc   => value,
+                DateTimeKind.Local => value.Value.ToUniversalTime(),
+                _                  => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)
+            };
 
         // ==================== COMMANDS ====================
 

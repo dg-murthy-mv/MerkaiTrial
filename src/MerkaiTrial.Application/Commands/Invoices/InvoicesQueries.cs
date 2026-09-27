@@ -284,6 +284,22 @@ namespace MerkaiTrial.Application.Queries.Invoices
     public class GetInvoiceStatisticsQuery : ICommandHandler
     {
         public Guid TenantId { get; set; }
+
+        /// <summary>
+        /// 043. Optional period, bounding IssueDateUtc. Both null — the
+        /// default, and what every existing caller sends — means all time,
+        /// so nothing that works today changes.
+        ///
+        /// IssueDateUtc is a DATE-ONLY column: after round 034 it holds the
+        /// picked calendar date at midnight with no offset. So the caller
+        /// passes IFiscalYearService.DateOnlyRange, NOT TimestampRangeAsync.
+        /// Shifting a date-only column by the tenant's timezone moves every
+        /// boundary invoice into the wrong financial year — which, for an
+        /// Indian tenant, is the difference between a March invoice landing
+        /// in this year's GST return or next year's.
+        /// </summary>
+        public DateTime? FromUtc { get; set; }
+        public DateTime? ToExclusiveUtc { get; set; }
     }
 
     public class GetInvoiceStatisticsHandler : ICommandHandler
@@ -328,10 +344,25 @@ namespace MerkaiTrial.Application.Queries.Invoices
                 // (018) "Issued" = not a draft and not void. Totals, unpaid and
                 // overdue are about issued invoices only — a draft isn't owed
                 // yet and a void invoice never will be.
-                var stats = await _context.Invoices
+                var scoped = _context.Invoices
                     .AsNoTracking()
                     .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
-                    .WithVisibleDeal(_context, dealAccess)
+                    .WithVisibleDeal(_context, dealAccess);
+
+                // ── 043: the period, if one was asked for ─────────────────
+                // On the ISSUE date, not CreatedAtUtc. An invoice back-dated
+                // to 31 March belongs to that financial year however long it
+                // sat in draft — which is exactly the case an accountant asks
+                // about. Overdue stays "overdue as of now", judged against
+                // DueDateUtc below: an invoice issued in the chosen period and
+                // still unpaid today is the useful number.
+                if (request.FromUtc.HasValue)
+                    scoped = scoped.Where(i => i.IssueDateUtc >= request.FromUtc.Value);
+
+                if (request.ToExclusiveUtc.HasValue)
+                    scoped = scoped.Where(i => i.IssueDateUtc < request.ToExclusiveUtc.Value);
+
+                var stats = await scoped
                     .GroupBy(i => 1)
                     .Select(g => new InvoiceStatisticsDto
                     {
