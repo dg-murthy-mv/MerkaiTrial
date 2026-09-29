@@ -131,6 +131,19 @@ public class FlowDbContext : DbContext
     public DbSet<TenantNotificationDefault> TenantNotificationDefaults
         => Set<TenantNotificationDefault>();
 
+    /// <summary>
+    /// 044. The eight notification events mapped to Meta-approved WhatsApp
+    /// template names.
+    ///
+    /// NO TenantId, so the coverage assertion below ignores it — correctly.
+    /// These are OUR templates on OUR WhatsApp number, for messages to the
+    /// CRM's own users. A tenant messaging their own customers from their
+    /// own WhatsApp account is phase 2 and gets its own table; see the note
+    /// in WhatsAppTemplate.cs for why that is a separate table and not a
+    /// nullable column here.
+    /// </summary>
+    public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
+
     // Quote approvals (017)
     public DbSet<QuoteApprovalSettings> QuoteApprovalSettings => Set<QuoteApprovalSettings>();
     public DbSet<QuoteApprovalRequest> QuoteApprovalRequests => Set<QuoteApprovalRequest>();

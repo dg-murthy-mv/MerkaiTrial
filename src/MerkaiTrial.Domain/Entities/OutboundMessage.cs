@@ -46,9 +46,37 @@ namespace MerkaiTrial.Domain.Entities
     {
         Email = 0,
 
-        /// <summary>Not implemented yet. The queue and the worker are
-        /// channel-agnostic; only the sender is missing.</summary>
-        Sms = 1
+        /// <summary>
+        /// Not implemented, and further away than it looks. India's TRAI DLT
+        /// rules mean each TENANT registers as a principal entity with their
+        /// own header and their own operator-approved templates — we cannot
+        /// send on their behalf under ours. Left here as a reserved number,
+        /// not as a to-do.
+        /// </summary>
+        Sms = 1,
+
+        /// <summary>
+        /// 044. WhatsApp, through Meta's Cloud API.
+        ///
+        /// HOW A WHATSAPP ROW USES THE EMAIL-SHAPED FIELDS BELOW. The queue
+        /// was built for email and its columns say so. Rather than adding
+        /// four nullable columns only one channel would ever fill, a
+        /// WhatsApp row reuses them by a fixed convention:
+        ///
+        ///   ToAddress   the recipient's E.164 number, "+919876543210"
+        ///   ToName      their display name, same as email
+        ///   Subject     the Meta TEMPLATE NAME, e.g. "lead_assigned_v1"
+        ///   BodyText    the template's variables as a JSON array, in
+        ///               order: ["Priya","Acme Ltd","₹450,000"]
+        ///   BodyHtml    the rendered message, for the log only — nobody
+        ///               sends it, but an admin looking at the log needs to
+        ///               see what the person actually received
+        ///
+        /// The convention lives here, beside the enum, so the sender and
+        /// the log page cannot drift apart about what Subject means on a
+        /// WhatsApp row.
+        /// </summary>
+        WhatsApp = 2
     }
 
     public enum OutboundStatus

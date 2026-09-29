@@ -45,6 +45,17 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>Email. Defaults to off except the approval events.</summary>
         public bool Email { get; set; }
 
+        /// <summary>
+        /// 044. WhatsApp. Defaults to OFF for every event, and that is not
+        /// timidity: every message costs real money and needs the person's
+        /// opt-in first. A channel that turns itself on would be a channel
+        /// that bills you for messages nobody asked for.
+        ///
+        /// True here is not enough on its own — the user also needs a
+        /// mobile number and an opt-in date (User.CanReceiveWhatsApp).
+        /// </summary>
+        public bool WhatsApp { get; set; }
+
         public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
         public string? UpdatedBy { get; set; }
 
@@ -77,6 +88,22 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.QuoteApprovalDecided   => true,
             _                                             => false
         };
+
+        /// <summary>
+        /// 044. WhatsApp is OFF for everything by default, with no
+        /// exceptions, and it should stay that way.
+        ///
+        /// Email costs nothing per message and arrives in a place people
+        /// already ignore politely. WhatsApp costs money per message and
+        /// arrives in the app people answer at dinner. Turning it on is a
+        /// decision someone should make on purpose — for themselves on
+        /// their own settings page, or for the workspace as a starting
+        /// position by an admin.
+        ///
+        /// A method rather than a constant so a future event type does not
+        /// quietly inherit a blanket answer without anyone deciding.
+        /// </summary>
+        public static bool WhatsAppFor(NotificationEventType _) => false;
 
         /// <summary>
         /// Every event type, in the order the settings page shows them:

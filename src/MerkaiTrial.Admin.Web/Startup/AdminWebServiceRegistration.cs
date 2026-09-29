@@ -48,6 +48,7 @@ using MerkaiTrial.Admin.Web.Services.UserManagement;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Admin.Web.Services.Verticals;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.Notifications;   // 045 — WhatsApp templates
 using MerkaiTrial.Application.Commands.Plans;
 using MerkaiTrial.Application.Commands.Quotes;
 using MerkaiTrial.Application.Commands.Tenants;
@@ -56,6 +57,7 @@ using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Fiscal;
+using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Application.Services.Storage;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -63,6 +65,7 @@ using MerkaiTrial.Infrastructure.Tenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using System.Text.Json.Serialization;
 
 namespace MerkaiTrial.Admin.Web.Startup;
@@ -89,7 +92,7 @@ public static class AdminWebServiceRegistration
         {
             o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
-
+        
         return services;
     }
 
@@ -202,6 +205,7 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<INotificationService, NotificationService>();   // 037
         services.AddScoped<INotificationSettingsService, NotificationSettingsService>();   // 038
+        services.AddScoped<IWhatsAppStatusService, WhatsAppStatusService>();   // 046
 
         // Customers & catalogue
         services.AddScoped<IContactService, ContactService>();
@@ -245,6 +249,16 @@ public static class AdminWebServiceRegistration
         services.AddScoped<ChangeTenantPlanHandler>();
         services.AddScoped<DeactivatePlanHandler>();
         services.AddScoped<GetPlanTenantsHandler>();
+
+        // WhatsApp templates (super admin, 045).
+        //
+        // Registered HERE and deliberately NOT in the WebApi: the page runs
+        // them in-process under AuthorizeFolder("/Admin", "SuperAdmin"),
+        // so there is no endpoint to secure separately. Adding them to the
+        // API would create one, with nothing guarding it.
+        services.AddScoped<GetWhatsAppTemplatesHandler>();
+        services.AddScoped<SaveWhatsAppTemplatesHandler>();
+        services.AddScoped<SendWhatsAppTestHandler>();
 
         return services;
     }

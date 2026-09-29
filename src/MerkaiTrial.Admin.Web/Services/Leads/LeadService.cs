@@ -1,6 +1,26 @@
-﻿// =====================================================================
+// =====================================================================
 // LEAD SERVICE - Updated with Channels/Sources
 // Location: MerkaiTrial.Admin.Web/Services/Leads/LeadService.cs
+//
+// 047 CHANGE: GetStatsAsync can now be given a date range, so the
+// Dashboard's lead card honours the fiscal period like the quote and
+// invoice cards have since 043a.
+//
+// Two optional TRAILING parameters, which is the same shape QuoteService
+// and InvoiceService took in 043a. Every existing GetStatsAsync(tenantId)
+// call still compiles and still means all time.
+//
+// WHICH RANGE TO PASS — this one matters:
+//
+//   LeadsController binds these to CreatedAtUtc, which is a TIMESTAMP.
+//   So the caller passes FiscalPeriodOption.Timestamps, NOT .Dates.
+//
+//   The two are not interchangeable. Timestamps is shifted by the
+//   tenant's timezone, because "1 April in Bangkok" starts at 17:00 UTC
+//   on 31 March. Dates is deliberately NOT shifted, because a column
+//   holding a date rather than a moment has no timezone to shift by.
+//   Pass Dates here and every lead created in the last seven hours of a
+//   period would land in the next one.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -29,7 +49,15 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             string? searchTerm = null,
             string? status = null,
             string? assignedTo = null);
-        Task<LeadStatsDto> GetStatsAsync(Guid tenantId);
+        /// <summary>
+        /// 047: the two dates are optional and TRAILING, so every existing
+        /// GetStatsAsync(tenantId) call still compiles and still means all
+        /// time. Half-open — toExclusiveUtc is the first instant NOT
+        /// included. Bound to CreatedAtUtc server side, so pass
+        /// IFiscalYearService's TIMESTAMP range, not the date-only one.
+        /// </summary>
+        Task<LeadStatsDto> GetStatsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null);
 
         // Lookups (NEW - for dynamic dropdowns)
         Task<List<LeadChannelDto>> GetChannelsAsync(Guid tenantId);
@@ -244,17 +272,53 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             }
         }
 
-        public async Task<LeadStatsDto> GetStatsAsync(Guid tenantId)
+        public async Task<LeadStatsDto> GetStatsAsync(
+            Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null)
         {
             try
             {
-                return await _api.GetAsync<LeadStatsDto>("/api/leads/stats");
+                var url = "/api/leads/stats";
+
+                // Built as a list so the first parameter gets "?" and the
+                // rest get "&" without a counter to get wrong.
+                var q = new List<string>();
+
+                if (fromUtc.HasValue)        q.Add($"from={Utc(fromUtc.Value)}");
+                if (toExclusiveUtc.HasValue) q.Add($"toExclusive={Utc(toExclusiveUtc.Value)}");
+
+                if (q.Count > 0) url += "?" + string.Join("&", q);
+
+                return await _api.GetAsync<LeadStatsDto>(url);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting lead stats");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 047. The same formatter QuoteService and InvoiceService use, for
+        /// the same reason.
+        ///
+        /// ToString("o") emits seven fractional digits, which some model
+        /// binders round-trip badly, and an UNSPECIFIED DateTime formatted
+        /// without the Z is read by the API as ITS local time — a seven-hour
+        /// error here in Asia/Bangkok, quietly, in the direction of showing
+        /// the wrong month's leads.
+        ///
+        /// So: force the kind, then state it in the string.
+        /// </summary>
+        private static string Utc(DateTime value)
+        {
+            var utc = value.Kind switch
+            {
+                DateTimeKind.Utc   => value,
+                DateTimeKind.Local => value.ToUniversalTime(),
+                _                  => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            };
+
+            return Uri.EscapeDataString(utc.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"));
         }
 
         // ==================== LOOKUPS (NEW) ====================

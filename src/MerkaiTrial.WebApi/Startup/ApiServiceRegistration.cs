@@ -51,6 +51,7 @@ using MerkaiTrial.WebApi.SwaggerGen;
 using MerkaiTrial.WebApi.Workers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
@@ -204,7 +205,12 @@ public static class ApiServiceRegistration
     // ── Email + the outbound worker (038) ─────────────────────────────
 
     /// <summary>
-    /// Email sending and the background worker that drains the outbox.
+    /// Outbound messaging — email, WhatsApp (045) and the worker that
+    /// drains the outbox.
+    ///
+    /// 045: still called AddApiEmail so Program.cs needs no change, but it
+    /// now registers two senders. Rename both together when you next touch
+    /// Program.cs; renaming it here alone would not compile.
     ///
     /// THE API KEY IS NOT IN appsettings.json. Same rule as
     /// Jwt__SigningKey: App Service settings or Key Vault.
@@ -223,6 +229,7 @@ public static class ApiServiceRegistration
         this IServiceCollection services, IConfiguration config)
     {
         services.Configure<EmailOptions>(config.GetSection(EmailOptions.SectionName));
+        services.Configure<WhatsAppOptions>(config.GetSection(WhatsAppOptions.SectionName));
         services.Configure<OutboundMessageWorkerOptions>(
             config.GetSection(OutboundMessageWorkerOptions.SectionName));
 
@@ -243,6 +250,51 @@ public static class ApiServiceRegistration
         else
         {
             services.AddSingleton<IEmailSender, NullEmailSender>();
+        }
+
+        // ── 045: WhatsApp, the same shape ─────────────────────────
+        //
+        // THE ACCESS TOKEN IS NOT IN appsettings.json, for the same reason
+        // as the Resend key and with sharper teeth — it can send from your
+        // verified business number to anyone:
+        //
+        //     WhatsApp__AccessToken       EAAG...   (System User, permanent)
+        //     WhatsApp__PhoneNumberId     1253492501190525
+        //     WhatsApp__BusinessAccountId 2296342614475662
+        //     WhatsApp__Enabled           true
+        //
+        // WITH NO TOKEN the app still starts and still queues — it
+        // registers NullWhatsAppSender, which logs and reports a RETRYABLE
+        // failure, so the backlog goes out once a token appears.
+        //
+        // The token is NOT set on the HttpClient's default headers: it is
+        // added per request in the sender, so rotating it in configuration
+        // does not need the pooled client recycled.
+        var whatsApp = config.GetSection(WhatsAppOptions.SectionName).Get<WhatsAppOptions>()
+                       ?? new WhatsAppOptions();
+
+        if (whatsApp.IsConfigured)
+        {
+            services.AddHttpClient<IWhatsAppSender, CloudApiWhatsAppSender>(http =>
+            {
+                http.BaseAddress = new Uri(whatsApp.ApiBaseUrl.TrimEnd('/') + "/");
+                http.Timeout = TimeSpan.FromSeconds(Math.Clamp(whatsApp.TimeoutSeconds, 5, 120));
+            });
+
+            // 046. Reads Meta's own view of our templates — approved,
+            // pending, rejected. Its OWN client rather than sharing the
+            // sender's: a slow directory read must never delay a send, and
+            // the two have different timeouts for that reason.
+            services.AddHttpClient<IWhatsAppTemplateDirectory, MetaWhatsAppTemplateDirectory>(http =>
+            {
+                http.BaseAddress = new Uri(whatsApp.ApiBaseUrl.TrimEnd('/') + "/");
+                http.Timeout = TimeSpan.FromSeconds(15);
+            });
+        }
+        else
+        {
+            services.AddSingleton<IWhatsAppSender, NullWhatsAppSender>();
+            services.AddSingleton<IWhatsAppTemplateDirectory, NullWhatsAppTemplateDirectory>();   // 046
         }
 
         return services;

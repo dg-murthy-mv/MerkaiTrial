@@ -170,8 +170,11 @@
     .ns-pager { display: flex; justify-content: space-between; margin-top: 14px; }
 
     @@media (max-width: 640px) {
-        .ns-toggle { flex: 0 0 68px; }
-        .ns-col-head .h { flex: 0 0 68px; }
+        /* 044. Four channel columns now on the defaults tab, so each one
+           gives up a little width rather than the label being squeezed
+           out of existence on a phone. */
+        .ns-toggle { flex: 0 0 54px; }
+        .ns-col-head .h { flex: 0 0 54px; font-size: 11px; }
     }
 </style>
 
@@ -233,11 +236,25 @@
 
         <form method="post" asp-page-handler="SavePreferences">
 
+            @{
+                // 044. Worked out once, read on every row.
+                var whatsAppBlocked = Model.WhatsAppBlockedReason();
+            }
+
+            @if (whatsAppBlocked is not null)
+            {
+                <div class="alert alert-light border d-flex align-items-start gap-2 py-2">
+                    <i class="bi bi-whatsapp mt-1 text-success"></i>
+                    <div class="small">@whatsAppBlocked</div>
+                </div>
+            }
+
             <div class="ns-card">
                 <div class="ns-col-head">
                     <span class="spacer">Tell me when&hellip;</span>
                     <span class="h">In app</span>
                     <span class="h">Email</span>
+                    <span class="h">WhatsApp</span>
                 </div>
 
                 @foreach (var group in Model.PreferenceGroups)
@@ -295,9 +312,96 @@
                                     <input type="hidden" name="EmailOn" value="@item.EventType" />
                                 }
                             </label>
+
+                            @* 044. Disabled for three separate reasons — no
+                               token on this environment, no mobile number, or
+                               no opt-in — and the one sentence explaining
+                               which sits above the grid. A locked row still
+                               carries its value in a hidden field, exactly as
+                               the other two do. *@
+                            <label class="ns-toggle" title="@whatsAppBlocked">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="WhatsAppOn" value="@item.EventType"
+                                       checked="@item.WhatsApp"
+                                       disabled="@(item.IsLocked || whatsAppBlocked is not null)"
+                                       aria-label="@($"WhatsApp notification: {item.Label}")" />
+                                @if ((item.IsLocked || whatsAppBlocked is not null) && item.WhatsApp)
+                                {
+                                    <input type="hidden" name="WhatsAppOn" value="@item.EventType" />
+                                }
+                            </label>
                         </div>
                     }
                 }
+            </div>
+
+            @* ── 044: where WhatsApp would reach you ──────────────── *@
+            <div class="ns-card mt-3">
+                <div class="ns-group-head">
+                    <i class="bi bi-whatsapp text-success me-1"></i>WhatsApp
+                </div>
+
+                <div class="p-3">
+                    <div class="row g-3 align-items-start">
+                        <div class="col-md-5">
+                            <label class="form-label small fw-semibold" for="mobileNumber">
+                                Your mobile number
+                            </label>
+                            <input type="tel" class="form-control form-control-sm"
+                                   id="mobileNumber" name="MobileNumber"
+                                   value="@Model.MobileNumber"
+                                   inputmode="tel" autocomplete="tel"
+                                   placeholder="@(string.IsNullOrWhiteSpace(Model.Preferences.DefaultDialCode)
+                                                   ? "+91 98765 43210"
+                                                   : $"{Model.Preferences.DefaultDialCode} 98765 43210")" />
+                            <div class="form-text small">
+                                @if (!string.IsNullOrWhiteSpace(Model.Preferences.DefaultDialCode))
+                                {
+                                    <text>
+                                        Without a country code we'll assume
+                                        <strong>@Model.Preferences.DefaultDialCode</strong>.
+                                    </text>
+                                }
+                                else
+                                {
+                                    <text>Include the country code, like +91 98765 43210.</text>
+                                }
+                                Leave it empty to remove your number.
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(Model.Preferences.MyMobileE164))
+                            {
+                                <div class="form-text small text-success-emphasis">
+                                    <i class="bi bi-check2-circle"></i>
+                                    Messages would go to
+                                    <strong>@Model.PrettyMobile(Model.Preferences.MyMobileE164)</strong>
+                                    — check the country code is right.
+                                </div>
+                            }
+                        </div>
+
+                        <div class="col-md-7">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox"
+                                       id="whatsAppOptIn" name="WhatsAppOptIn" value="true"
+                                       checked="@Model.WhatsAppOptIn" />
+                                <label class="form-check-label small" for="whatsAppOptIn">
+                                    Yes, message me on WhatsApp about the events I ticked above.
+                                </label>
+                            </div>
+
+                            <div class="form-text small">
+                                WhatsApp requires your agreement before a business can
+                                message you, and you can withdraw it here at any time by
+                                unticking this box. Removing your number withdraws it too.
+                                @if (Model.Preferences.WhatsAppEnabled)
+                                {
+                                    <text>Standard messages only — no marketing.</text>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="ns-actions">
@@ -345,12 +449,25 @@
             </div>
         }
 
+        @if (!Model.Defaults.WhatsAppEnabled)
+        {
+            <div class="alert alert-light border d-flex align-items-start gap-2 py-2">
+                <i class="bi bi-whatsapp mt-1 text-success"></i>
+                <div class="small">
+                    WhatsApp isn't set up on this environment yet, so that column is
+                    switched off. Anything already ticked is kept and starts working
+                    once it is configured.
+                </div>
+            </div>
+        }
+
         <form method="post" asp-page-handler="SaveDefaults">
             <div class="ns-card">
                 <div class="ns-col-head">
                     <span class="spacer">Tell people when&hellip;</span>
                     <span class="h">In app</span>
                     <span class="h">Email</span>
+                    <span class="h">WhatsApp</span>
                     <span class="h">Required</span>
                 </div>
 
@@ -381,6 +498,22 @@
                                         </span>
                                     }
 
+                                    @if (item.WhatsAppRecipientCount > 0)
+                                    {
+                                        <span>&middot; @item.WhatsAppRecipientCount on WhatsApp</span>
+                                    }
+
+                                    @* 044. The number an admin cannot get any
+                                       other way: people who want WhatsApp and
+                                       have no number or no opt-in, so nothing
+                                       reaches them and nothing says so. *@
+                                    @if (item.MissingMobileCount > 0)
+                                    {
+                                        <span class="text-warning-emphasis">
+                                            &middot; @item.MissingMobileCount with no mobile or opt-in
+                                        </span>
+                                    }
+
                                     @if (item.OverriddenCount > 0)
                                     {
                                         <span>&middot; @item.OverriddenCount changed it themselves</span>
@@ -400,6 +533,21 @@
                                        name="DefaultEmailOn" value="@item.EventType"
                                        checked="@item.Email"
                                        aria-label="@($"Default email: {item.Label}")" />
+                            </label>
+
+                            <label class="ns-toggle"
+                                   title="@(Model.Defaults.WhatsAppEnabled
+                                             ? "Costs money per message, and reaches people outside working hours."
+                                             : "WhatsApp isn't set up on this environment yet.")">
+                                <input class="form-check-input mt-0" type="checkbox"
+                                       name="DefaultWhatsAppOn" value="@item.EventType"
+                                       checked="@item.WhatsApp"
+                                       disabled="@(!Model.Defaults.WhatsAppEnabled)"
+                                       aria-label="@($"Default WhatsApp: {item.Label}")" />
+                                @if (!Model.Defaults.WhatsAppEnabled && item.WhatsApp)
+                                {
+                                    <input type="hidden" name="DefaultWhatsAppOn" value="@item.EventType" />
+                                }
                             </label>
 
                             <label class="ns-toggle">

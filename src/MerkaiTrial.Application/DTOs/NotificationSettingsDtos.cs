@@ -27,6 +27,10 @@ namespace MerkaiTrial.Application.DTOs
         string Group,
         bool InApp,
         bool Email,
+
+        /// <summary>044. The third channel. Off unless someone chose it.</summary>
+        bool WhatsApp,
+
         bool IsDefault,
 
         /// <summary>
@@ -48,7 +52,33 @@ namespace MerkaiTrial.Application.DTOs
         bool EmailEnabled,
 
         /// <summary>Where their email would go. Blank if they have no address.</summary>
-        string? MyEmailAddress);
+        string? MyEmailAddress,
+
+        // ── 044: WhatsApp ────────────────────────────────────────────
+
+        /// <summary>
+        /// False when no WhatsApp access token is configured on this
+        /// environment. The column still renders, explained and disabled —
+        /// a missing column would leave someone hunting for a feature they
+        /// were told exists.
+        /// </summary>
+        bool WhatsAppEnabled = false,
+
+        /// <summary>
+        /// This user's mobile in E.164, or null. What they would be
+        /// messaged on, shown back to them so a wrong country code is
+        /// visible before it matters.
+        /// </summary>
+        string? MyMobileE164 = null,
+
+        /// <summary>Whether they have agreed to receive WhatsApp messages.</summary>
+        bool WhatsAppOptedIn = false,
+
+        /// <summary>
+        /// The workspace's country dial code ("+91"), for the hint under
+        /// the box. A number typed without one is resolved against this.
+        /// </summary>
+        string? DefaultDialCode = null);
 
     // ── Workspace defaults (040, admin only) ──────────────────────────
 
@@ -63,6 +93,10 @@ namespace MerkaiTrial.Application.DTOs
         string Group,
         bool InApp,
         bool Email,
+
+        /// <summary>044. The workspace's starting position for WhatsApp.</summary>
+        bool WhatsApp,
+
         bool IsLocked,
 
         /// <summary>False when no row has been saved for this event yet.</summary>
@@ -82,18 +116,41 @@ namespace MerkaiTrial.Application.DTOs
         int MissingEmailAddressCount,
 
         /// <summary>Users who have overridden this event themselves.</summary>
-        int OverriddenCount);
+        int OverriddenCount,
+
+        /// <summary>
+        /// 044. Active users who will get this on WhatsApp as things
+        /// stand — wanting it, with a number, and opted in. All three.
+        /// </summary>
+        int WhatsAppRecipientCount = 0,
+
+        /// <summary>
+        /// 044. Users who want WhatsApp for this event but have no mobile
+        /// number or have not opted in, so nothing can reach them.
+        ///
+        /// The same reasoning as MissingEmailAddressCount, and more
+        /// necessary: an admin switching WhatsApp on for the workspace has
+        /// no way to know how many people never filled the number in, and
+        /// silence looks identical to a broken feature.
+        /// </summary>
+        int MissingMobileCount = 0);
 
     public record TenantNotificationDefaultsDto(
         List<TenantNotificationDefaultDto> Items,
         int ActiveUserCount,
-        bool EmailEnabled);
+        bool EmailEnabled,
+
+        /// <summary>044. False when this environment has no WhatsApp token.</summary>
+        bool WhatsAppEnabled = false);
 
     public record SaveTenantNotificationDefaultDto(
         string EventType,
         bool InApp,
         bool Email,
-        bool IsLocked);
+        bool IsLocked,
+
+        /// <summary>044. Trailing with a default, so an older caller still compiles.</summary>
+        bool WhatsApp = false);
 
     public record SaveTenantNotificationDefaultsDto(
         List<SaveTenantNotificationDefaultDto> Items);
@@ -102,10 +159,30 @@ namespace MerkaiTrial.Application.DTOs
     public record SaveNotificationPreferenceDto(
         string EventType,
         bool InApp,
-        bool Email);
+        bool Email,
 
+        /// <summary>044. Trailing with a default, so an older caller still compiles.</summary>
+        bool WhatsApp = false);
+
+    /// <summary>
+    /// 044: the page saves the channel grid AND this person's WhatsApp
+    /// contact details in one post, because on screen they are one form
+    /// with one Save button. Two endpoints would mean a page that can end
+    /// up half saved.
+    /// </summary>
     public record SaveNotificationPreferencesDto(
-        List<SaveNotificationPreferenceDto> Items);
+        List<SaveNotificationPreferenceDto> Items,
+
+        /// <summary>
+        /// The mobile number exactly as typed. Normalised to E.164 on the
+        /// server — never trust the browser to have done it. Blank clears
+        /// the number, and clearing the number withdraws the opt-in with
+        /// it: consent is given for a number, not in the abstract.
+        /// </summary>
+        string? MobileNumber = null,
+
+        /// <summary>Whether the "yes, message me on WhatsApp" box is ticked.</summary>
+        bool WhatsAppOptIn = false);
 
     // ── The email log (workspace admins) ──────────────────────────────
 

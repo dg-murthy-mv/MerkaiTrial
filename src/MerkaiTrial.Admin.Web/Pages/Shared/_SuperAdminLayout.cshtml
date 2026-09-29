@@ -433,6 +433,14 @@
 
             <!-- System -->
             <div class="sa-nav-section">System</div>
+
+            @* 045a. The templates behind WhatsApp notifications — ours, on
+               our number, so this is platform plumbing like Settings rather
+               than tenant reference data like Countries. *@
+            <a class="sa-nav-item @(IsActive("/Admin/WhatsAppTemplates") ? "active" : "")"
+               asp-page="/Admin/WhatsAppTemplates/Index">
+                <i class="bi bi-whatsapp"></i> WhatsApp Templates
+            </a>
             <a class="sa-nav-item @(IsActive("/Admin/Settings") ? "active" : "")"
                asp-page="/Admin/Settings">
                 <i class="bi bi-gear"></i> Settings

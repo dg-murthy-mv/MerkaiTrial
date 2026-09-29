@@ -21,6 +21,7 @@
 using MerkaiTrial.Admin.Web.Services.Notifications;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications;   // 044: PhoneNumbers
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -99,6 +100,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
         [BindProperty]
         public List<string> EmailOn { get; set; } = new();
 
+        /// <summary>044. The third channel, same by-value matching.</summary>
+        [BindProperty]
+        public List<string> WhatsAppOn { get; set; } = new();
+
+        /// <summary>
+        /// 044. The mobile number, exactly as typed. Normalised on the
+        /// server — the browser is not trusted with a value that decides
+        /// whose phone a message reaches.
+        /// </summary>
+        [BindProperty]
+        public string? MobileNumber { get; set; }
+
+        /// <summary>044. "Yes, message me on WhatsApp."</summary>
+        [BindProperty]
+        public bool WhatsAppOptIn { get; set; }
+
         // ── Email log ─────────────────────────────────────────────────
         // ── Workspace defaults (040) ──────────────────────────────────
         public TenantNotificationDefaultsDto? Defaults { get; private set; }
@@ -113,6 +130,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
         [BindProperty] public List<string> DefaultInAppOn { get; set; } = new();
         [BindProperty] public List<string> DefaultEmailOn { get; set; } = new();
         [BindProperty] public List<string> DefaultLockedOn { get; set; } = new();
+        [BindProperty] public List<string> DefaultWhatsAppOn { get; set; } = new();   // 044
 
         public IEnumerable<IGrouping<string, TenantNotificationDefaultDto>> DefaultGroups
             => (Defaults?.Items ?? new List<TenantNotificationDefaultDto>())
@@ -174,7 +192,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
                     eventType,
                     // Matched by VALUE — see the note on the arrays above.
                     InAppOn.Contains(eventType, StringComparer.Ordinal),
-                    EmailOn.Contains(eventType, StringComparer.Ordinal)))
+                    EmailOn.Contains(eventType, StringComparer.Ordinal),
+                    WhatsAppOn.Contains(eventType, StringComparer.Ordinal)))   // 044
                 .ToList();
 
             if (items.Count == 0)
@@ -185,7 +204,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
 
             try
             {
-                await _settings.SavePreferencesAsync(new SaveNotificationPreferencesDto(items));
+                // 044: the grid and the WhatsApp contact details go together,
+                // because on screen they are one form with one Save button.
+                await _settings.SavePreferencesAsync(new SaveNotificationPreferencesDto(
+                    items, MobileNumber, WhatsAppOptIn));
+
                 TempData["Success"] = "Your notification preferences have been saved.";
             }
             catch (InvalidOperationException ex)
@@ -214,7 +237,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
                     eventType,
                     DefaultInAppOn.Contains(eventType, StringComparer.Ordinal),
                     DefaultEmailOn.Contains(eventType, StringComparer.Ordinal),
-                    DefaultLockedOn.Contains(eventType, StringComparer.Ordinal)))
+                    DefaultLockedOn.Contains(eventType, StringComparer.Ordinal),
+                    DefaultWhatsAppOn.Contains(eventType, StringComparer.Ordinal)))   // 044
                 .ToList();
 
             if (items.Count == 0)
@@ -296,6 +320,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
             try
             {
                 Preferences = await _settings.GetPreferencesAsync();
+
+                // 044. Pre-fill the contact boxes from what is stored, so
+                // the form shows the person's actual state rather than an
+                // empty box beside a ticked opt-in.
+                MobileNumber  = Preferences?.MyMobileE164;
+                WhatsAppOptIn = Preferences?.WhatsAppOptedIn ?? false;
             }
             catch (Exception ex)
             {
@@ -345,6 +375,35 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
                .GroupBy(i => i.Group);
 
         /// <summary>"4 minutes ago", shared with 037's notifications page.</summary>
+        /// <summary>
+        /// 044. The stored number, spaced for reading: "+91 98765 43210".
+        /// Display only — the box itself holds the exact stored value, so
+        /// saving an untouched form cannot reformat it into something else.
+        /// </summary>
+        public string PrettyMobile(string? e164) => PhoneNumbers.Pretty(e164);
+
+        /// <summary>
+        /// 044. Why the WhatsApp column is greyed out, in one sentence, or
+        /// null when it is usable. Three different reasons, and each has a
+        /// different fix — "it isn't working" would leave the person
+        /// guessing which.
+        /// </summary>
+        public string? WhatsAppBlockedReason()
+        {
+            if (Preferences is null) return null;
+
+            if (!Preferences.WhatsAppEnabled)
+                return "WhatsApp isn't set up on this environment yet, so these can't be switched on.";
+
+            if (string.IsNullOrWhiteSpace(Preferences.MyMobileE164))
+                return "Add your mobile number below and we'll be able to message you.";
+
+            if (!Preferences.WhatsAppOptedIn)
+                return "Tick the box below to agree to WhatsApp messages, then choose your events.";
+
+            return null;
+        }
+
         public string Since(DateTime utc)
             => MerkaiTrial.Admin.Web.Pages.Notifications.IndexModel.Ago(utc);
     }

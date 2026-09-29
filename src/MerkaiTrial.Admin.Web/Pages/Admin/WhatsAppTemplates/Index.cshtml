@@ -1,0 +1,475 @@
+@page "/Admin/WhatsAppTemplates"
+@model MerkaiTrial.Admin.Web.Pages.Admin.WhatsAppTemplates.IndexModel
+@{
+    ViewData["Title"] = "WhatsApp Templates";
+}
+
+@* (045) The eight notification events mapped to Meta-approved template
+   names. Styled to match Admin/Plans — page-content, page-title,
+   stat-card, and the same TempData alerts.
+
+   The parallel-array binding is the same pattern as the notification
+   settings page: a hidden id per row, checkboxes matched by value. An
+   unchecked checkbox posts nothing, so a bound list of objects would
+   shift every row after the one you unticked. *@
+
+<div class="page-content">
+
+    <!-- ── Page Header ──────────────────────────────────────────── -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="page-title">
+                <i class="bi bi-whatsapp me-2 text-success"></i>WhatsApp Templates
+            </h1>
+            <p class="page-subtitle">
+                Meta approves each template by name and language. These are the eight
+                notification events.
+            </p>
+        </div>
+    </div>
+
+    @if (Model.Data is null)
+    {
+        <div class="empty-state">
+            <i class="bi bi-exclamation-triangle"></i>
+            <h5>Couldn't load the templates</h5>
+            <p>Try again in a moment.</p>
+        </div>
+    }
+    else
+    {
+
+    <!-- ── Status ───────────────────────────────────────────────── -->
+    <div class="row g-3 mb-4">
+        @* 046. The API's configuration, not this app's. The page used to
+           report whether ADMIN.WEB had a token — which it never has, and
+           never should, because the API is what sends. *@
+        @{
+            var apiReady   = Model.Status is { Available: true, Configured: true };
+            var apiUnknown = Model.Status is null or { Available: false };
+        }
+        <div class="col-6 col-xl-3">
+            <div class="stat-card">
+                <div class="stat-icon @(apiReady ? "bg-success" : apiUnknown ? "bg-warning" : "bg-secondary")">
+                    <i class="bi @(apiReady ? "bi-check-circle" : apiUnknown ? "bi-question-circle" : "bi-slash-circle")"></i>
+                </div>
+                <div class="stat-value">@(apiReady ? "Ready" : apiUnknown ? "Unknown" : "Off")</div>
+                <div class="stat-label">Sending (API)</div>
+            </div>
+        </div>
+        <div class="col-6 col-xl-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-primary">
+                    <i class="bi bi-toggles"></i>
+                </div>
+                <div class="stat-value">@Model.Data.ActiveCount / @Model.Data.Items.Count</div>
+                <div class="stat-label">Switched on</div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="stat-card" style="align-items:flex-start;text-align:left;">
+                <div class="small text-muted">
+                    @if (!string.IsNullOrWhiteSpace(Model.Status?.FromDisplayNumber))
+                    {
+                        <div><strong>Sending from</strong> @Model.Status!.FromDisplayNumber</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.Status?.BusinessAccountId))
+                    {
+                        <div><strong>WABA</strong> <code>@Model.Status!.BusinessAccountId</code></div>
+                    }
+                    <div class="mt-1">
+                        Approve templates in
+                        <strong>WhatsApp Manager → Message templates</strong>, then put the
+                        exact name here and switch it on.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Model.Status is null || !Model.Status.Available)
+    {
+        <div class="alert alert-warning d-flex align-items-start gap-2">
+            <i class="bi bi-question-circle mt-1"></i>
+            <div>
+                Couldn't ask the API whether WhatsApp is configured — @(Model.Status?.Error ?? "no answer")
+                Your settings below are still saved and still used; only this status is unknown.
+            </div>
+        </div>
+    }
+    else if (!Model.Status.Configured)
+    {
+        <div class="alert alert-warning d-flex align-items-start gap-2">
+            <i class="bi bi-exclamation-triangle mt-1"></i>
+            <div>
+                No WhatsApp token is configured <strong>on the API</strong>, so nothing will send
+                however these are set. Anything you switch on is kept and starts working
+                when it is configured.
+            </div>
+        </div>
+    }
+    else if (!Model.Status.DirectoryReachable)
+    {
+        <div class="alert alert-secondary d-flex align-items-start gap-2">
+            <i class="bi bi-cloud-slash mt-1"></i>
+            <div class="small">
+                Sending is configured, but Meta couldn't be asked about template approvals —
+                @Model.Status.DirectoryError
+                The switches below are yours to set; nothing is blocked.
+            </div>
+        </div>
+    }
+
+    <!-- ── Alerts ───────────────────────────────────────────────── -->
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <i class="bi bi-check-circle me-2"></i>@TempData["Success"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    <div class="alert alert-secondary d-flex align-items-start gap-2">
+        <i class="bi bi-info-circle mt-1"></i>
+        <div class="small">
+            Every template takes <strong>two variables</strong>:
+            <code>{{headline}}</code> the notification's headline,
+            <code>{{detail}}</code> its detail. So an approved body reads
+            something like
+            <em>"A lead has been assigned to you in Merkai. {{headline}} —
+            {{detail}}. Sign in to your account to view it."</em>
+            <div class="mt-2">
+                Three rules Meta enforces when you create one, each of which
+                rejects the template outright:
+                <ul class="mb-0 mt-1">
+                    <li>
+                        <strong>Named variables only.</strong> <code>{{1}}</code>
+                        and <code>{{2}}</code> are no longer accepted — the names
+                        must be exactly <code>headline</code> and
+                        <code>detail</code>, because that is what Merkai sends.
+                    </li>
+                    <li>
+                        <strong>No variable at the start or end</strong> of the
+                        body. There has to be text on both sides of them.
+                    </li>
+                    <li>
+                        <strong>Category Utility, and say what happened.</strong>
+                        Open wording like "Merkai update… open your workspace"
+                        gets classified as Marketing, which costs more and can be
+                        blocked for people who only opted into notifications.
+                        Naming the event in the fixed text — "A lead has been
+                        assigned to you" — reads as an account notice and passes.
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── The templates ────────────────────────────────────────── -->
+    <form method="post" asp-page-handler="Save">
+        @foreach (var group in Model.Groups)
+        {
+            <div class="card mb-3">
+                @* 046: "bg-white" removed. It is a Bootstrap utility carrying
+                   !important, so it beat the layout's own dark .card-header
+                   rule and painted a white bar — which then had near-white
+                   text on it. The layout styles this element already. *@
+                <div class="card-header fw-semibold">@group.Key</div>
+                <div class="card-body p-0">
+                    @foreach (var item in group)
+                    {
+                        <div class="tpl-row">
+                            <input type="hidden" name="Ids" value="@item.Id" />
+
+                            <div class="tpl-event">
+                                <div class="fw-semibold">@item.EventLabel</div>
+
+                                @* 046. Meta's own verdict, when it can be
+                                   read. This is the answer that decides
+                                   whether a send succeeds — ours only
+                                   decides whether we try. *@
+                                @{
+                                    var meta = Model.MetaFor(item);
+                                }
+                                @if (meta is not null)
+                                {
+                                    <div class="mt-1">
+                                        <span class="badge @meta.StatusClass" title="@meta.StatusHint">
+                                            @meta.Status
+                                        </span>
+                                    </div>
+                                    <div class="small text-muted mt-1">@meta.StatusHint</div>
+                                }
+                                else if (Model.Status is { DirectoryReachable: true }
+                                         && !string.IsNullOrWhiteSpace(item.TemplateName))
+                                {
+                                    <div class="small text-warning-emphasis mt-1">
+                                        <i class="bi bi-question-circle"></i>
+                                        Meta has no template by that name in
+                                        <strong>@item.LanguageCode</strong>.
+                                    </div>
+                                }
+
+                                @if (item.Problem is not null)
+                                {
+                                    <div class="small text-danger-emphasis">
+                                        <i class="bi bi-exclamation-circle"></i> @item.Problem
+                                    </div>
+                                }
+                                else if (item.IsActive)
+                                {
+                                    <div class="small text-success-emphasis">
+                                        <i class="bi bi-check2-circle"></i> Live
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="small text-muted">Off</div>
+                                }
+                            </div>
+
+                            <div class="tpl-fields">
+                                <div class="row g-2">
+                                    <div class="col-md-5">
+                                        <label class="form-label small mb-1">Template name</label>
+                                        <input type="text" class="form-control form-control-sm"
+                                               name="Names" value="@item.TemplateName"
+                                               placeholder="lead_assigned_v1"
+                                               spellcheck="false" autocapitalize="off" />
+                                    </div>
+                                    <div class="col-6 col-md-2">
+                                        <label class="form-label small mb-1">Language</label>
+                                        <input type="text" class="form-control form-control-sm"
+                                               name="Languages" value="@item.LanguageCode"
+                                               placeholder="en" spellcheck="false" />
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label small mb-1">Category</label>
+                                        <select class="form-select form-select-sm" name="Categories">
+                                            @foreach (var c in MerkaiTrial.Admin.Web.Pages.Admin.WhatsAppTemplates.IndexModel.CategoryOptions)
+                                            {
+                                                <option value="@c" selected="@(string.Equals(c, item.Category, StringComparison.OrdinalIgnoreCase))">@c</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-6 col-md-2">
+                                        <label class="form-label small mb-1">Variables</label>
+                                        <input type="number" class="form-control form-control-sm"
+                                               name="VariableCounts" value="@item.VariableCount"
+                                               min="0" max="10" />
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small mb-1">
+                                            Approved body <span class="text-muted">(for reference — Meta sends its own copy)</span>
+                                        </label>
+                                        <input type="text" class="form-control form-control-sm"
+                                               name="Previews" value="@item.BodyPreview"
+                                               placeholder="… {{headline}} — {{detail}}. Sign in to your account to view it." />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="tpl-actions">
+                                @* 046. Disabled only when Meta is reachable
+                                   AND says no. An unreachable directory is
+                                   not evidence — locking the switch because
+                                   a status call timed out would be its own
+                                   kind of broken.
+
+                                   A disabled checkbox posts nothing, so an
+                                   already-on template carries its value in a
+                                   hidden field; otherwise saving would read
+                                   as "the admin switched this off". *@
+                                @{
+                                    var blocked = Model.BlockedByMeta(item);
+                                }
+                                <div class="form-check form-switch mb-2"
+                                     title="@(blocked ? "Meta hasn't approved this template, so it can't be switched on." : null)">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="ActiveIds" value="@item.Id"
+                                           id="active-@item.Id"
+                                           checked="@item.IsActive"
+                                           disabled="@blocked" />
+                                    <label class="form-check-label small" for="active-@item.Id">On</label>
+                                </div>
+                                @if (blocked && item.IsActive)
+                                {
+                                    <input type="hidden" name="ActiveIds" value="@item.Id" />
+                                }
+
+                                @* Its own form, outside the save form — a nested
+                                   form is invalid HTML and browsers silently drop
+                                   the inner one, so the button would post the
+                                   whole grid instead of a test. *@
+                                <button type="submit" class="btn btn-sm btn-outline-success"
+                                        form="testForm-@item.Id"
+                                        title="Queues a test to your own mobile">
+                                    <i class="bi bi-send"></i> Test
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="d-flex align-items-center gap-3 mb-4">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check2 me-1"></i>Save templates
+            </button>
+            <span class="text-muted small">
+                A template can only be switched on once it has a name and the right
+                variable count.
+            </span>
+        </div>
+    </form>
+
+    @* The test forms live outside the save form, referenced by the buttons
+       above through their form= attribute. *@
+    @foreach (var item in Model.Data.Items)
+    {
+        <form method="post" asp-page-handler="Test" id="testForm-@item.Id" class="d-none">
+            <input type="hidden" name="templateId" value="@item.Id" />
+        </form>
+    }
+
+    }   @* end of: Model.Data is not null *@
+
+</div>
+
+@section Styles {
+<style>
+/* ── 045a: DARK, because the admin console is dark ──────────────────
+   _SuperAdminLayout sets --body-bg #0f1c2e and overrides .sa-main .card
+   to #0d1933. The first version of this page copied Admin/Plans's white
+   cards, which would have rendered a white block in the middle of a dark
+   console — my mistake, caught before you saw it.
+
+   These use the layout's own variables, so if the console is ever
+   re-themed this page follows rather than being re-themed separately. */
+
+.page-title  { font-size: 1.6rem; font-weight: 700; color: #f1f5f9; margin: 0; }
+.page-subtitle { color: #64748b; margin: 0; font-size: .9rem; }
+
+.stat-card {
+    background: var(--card-bg, #0d1933);
+    border: 1px solid rgba(34,211,238,.1);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: .35rem;
+    height: 100%;
+}
+.stat-icon {
+    width: 52px; height: 52px;
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; color: #fff;
+    margin-bottom: .25rem;
+}
+.stat-value { font-size: 1.5rem; font-weight: 700; color: #f1f5f9; line-height: 1; }
+.stat-label { font-size: .78rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── One template ────────────────────────────────────────────────── */
+.tpl-row {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+    align-items: flex-start;
+}
+.tpl-row:last-child { border-bottom: 0; }
+.tpl-event   { flex: 0 0 220px; color: #e2e8f0; }
+.tpl-fields  { flex: 1 1 auto; min-width: 0; }
+.tpl-actions { flex: 0 0 110px; text-align: right; }
+
+/* The layout styles .form-control and .form-select inside .sa-main, so
+   the inputs here are already dark. The small labels are not. */
+.tpl-fields .form-label { color: #64748b; }
+
+.sa-main .card-header { color: #e2e8f0; }
+
+/* Bootstrap's own alert colours are built for a light page. */
+.sa-main .alert-secondary {
+    background: rgba(148,163,184,.08);
+    border-color: rgba(148,163,184,.2);
+    color: #cbd5e1;
+}
+.sa-main .alert-warning {
+    background: rgba(245,158,11,.1);
+    border-color: rgba(245,158,11,.25);
+    color: #fcd34d;
+}
+.sa-main .alert-success {
+    background: rgba(34,197,94,.1);
+    border-color: rgba(34,197,94,.25);
+    color: #86efac;
+}
+.sa-main .alert-danger {
+    background: rgba(239,68,68,.1);
+    border-color: rgba(239,68,68,.25);
+    color: #fca5a5;
+}
+.sa-main code { color: #67e8f9; }
+
+/* ── 046: Bootstrap's -emphasis / -subtle pairs, made legible ───────
+   These classes are designed to flip with Bootstrap's own dark mode,
+   which switches on data-bs-theme="dark". _SuperAdminLayout does its
+   dark theming by hand and sets no such attribute, so the LIGHT-mode
+   values apply:
+
+       --bs-success-text-emphasis : #0a3622   (near-black green)
+       --bs-danger-text-emphasis  : #58151c   (near-black maroon)
+       --bs-warning-text-emphasis : #664d03   (near-black brown)
+
+   On a #0d1933 card those are invisible. The "Live" and problem lines
+   have been that way since 045 — caught while adding the Meta badge,
+   which would have been the third one.
+
+   Redefining the variables rather than the classes means every use of
+   them on this page is fixed at once, badges included, and the badge
+   backgrounds go dark to match the console instead of sitting there as
+   pale pastel blocks. */
+.sa-main {
+    --bs-success-text-emphasis:   #86efac;
+    --bs-danger-text-emphasis:    #fca5a5;
+    --bs-warning-text-emphasis:   #fcd34d;
+    --bs-secondary-text-emphasis: #cbd5e1;
+
+    --bs-success-bg-subtle:   rgba(34,197,94,.14);
+    --bs-danger-bg-subtle:    rgba(239,68,68,.14);
+    --bs-warning-bg-subtle:   rgba(245,158,11,.14);
+    --bs-secondary-bg-subtle: rgba(148,163,184,.14);
+}
+
+/* A disabled switch should look unavailable rather than merely off, so
+   the reason in its tooltip is worth hovering for. */
+.form-switch .form-check-input:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+.form-switch .form-check-input:disabled ~ .form-check-label {
+    color: #64748b;
+    cursor: not-allowed;
+}
+
+@@media (max-width: 900px) {
+    .tpl-row { flex-direction: column; gap: .75rem; }
+    .tpl-event, .tpl-actions { flex: 1 1 auto; text-align: left; }
+}
+
+.empty-state { text-align: center; padding: 4rem 2rem; color: #64748b; }
+.empty-state i { font-size: 3rem; display: block; margin-bottom: 1rem; }
+.empty-state h5 { color: #94a3b8; }
+</style>
+}

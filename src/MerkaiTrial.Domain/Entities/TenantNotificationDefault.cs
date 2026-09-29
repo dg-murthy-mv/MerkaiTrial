@@ -65,8 +65,30 @@ namespace MerkaiTrial.Domain.Entities
         public bool Email { get; set; }
 
         /// <summary>
-        /// When true, InApp and Email above are FORCED: a user's own row is
-        /// ignored for this event, and the API refuses to save one.
+        /// 044. The workspace's starting position for WhatsApp. Off unless
+        /// an admin turns it on.
+        ///
+        /// Worth an admin's attention more than the other two: this is the
+        /// one that costs money per message and reaches people outside
+        /// working hours. An admin switching it on for "a deal changed
+        /// stage" across forty users is a decision with a bill attached,
+        /// which is why the defaults page shows the recipient count beside
+        /// it.
+        /// </summary>
+        public bool WhatsApp { get; set; }
+
+        /// <summary>
+        /// When true, InApp, Email and WhatsApp above are FORCED: a user's
+        /// own row is ignored for this event, and the API refuses to save
+        /// one.
+        ///
+        /// 044: the lock now covers three channels rather than two. That
+        /// deserves a second thought before using it — locking WhatsApp ON
+        /// means a person cannot stop messages arriving on their personal
+        /// phone, which is a different kind of instruction from "you will
+        /// see this in the bell". Meta's opt-in requirement still applies
+        /// on top: a locked-on WhatsApp preference sends nothing to someone
+        /// who has not given their number and agreed.
         /// </summary>
         public bool IsLocked { get; set; }
 
@@ -88,7 +110,14 @@ namespace MerkaiTrial.Domain.Entities
     /// </summary>
     public static class NotificationResolution
     {
-        public readonly record struct Resolved(bool InApp, bool Email, bool IsLocked, bool IsUserChoice);
+        /// <summary>
+        /// 044: WhatsApp added as a third channel. A positional record, so
+        /// anything that destructured this with two channels will fail to
+        /// compile rather than silently dropping the new one — which is the
+        /// behaviour we want from a type that decides who gets told what.
+        /// </summary>
+        public readonly record struct Resolved(
+            bool InApp, bool Email, bool WhatsApp, bool IsLocked, bool IsUserChoice);
 
         public static Resolved For(
             NotificationEventType eventType,
@@ -100,7 +129,9 @@ namespace MerkaiTrial.Domain.Entities
             // not deleted, so unlocking restores their choice rather than
             // silently resetting everyone.
             if (tenantDefault is { IsLocked: true })
-                return new Resolved(tenantDefault.InApp, tenantDefault.Email, true, false);
+                return new Resolved(
+                    tenantDefault.InApp, tenantDefault.Email, tenantDefault.WhatsApp,
+                    true, false);
 
             var inApp = userPreference?.InApp
                      ?? tenantDefault?.InApp
@@ -110,7 +141,16 @@ namespace MerkaiTrial.Domain.Entities
                      ?? tenantDefault?.Email
                      ?? NotificationDefaults.EmailFor(eventType);
 
-            return new Resolved(inApp, email, false, userPreference is not null);
+            // 044. Same three-step fall-back as the other two. Note this
+            // answers "does this person WANT WhatsApp", not "can we send
+            // it" — the number and the opt-in are checked where the message
+            // is queued, because a missing number is a different problem
+            // with a different fix, and conflating them would hide it.
+            var whatsApp = userPreference?.WhatsApp
+                        ?? tenantDefault?.WhatsApp
+                        ?? NotificationDefaults.WhatsAppFor(eventType);
+
+            return new Resolved(inApp, email, whatsApp, false, userPreference is not null);
         }
     }
 }

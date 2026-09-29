@@ -42,13 +42,18 @@ namespace MerkaiTrial.Application.Commands.Notifications
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUser;
         private readonly EmailOptions _email;
+        private readonly WhatsAppOptions _whatsApp;          // 044
 
         public GetNotificationPreferencesHandler(
-            FlowDbContext db, ICurrentUserService currentUser, IOptions<EmailOptions> email)
+            FlowDbContext db,
+            ICurrentUserService currentUser,
+            IOptions<EmailOptions> email,
+            IOptions<WhatsAppOptions> whatsApp)              // 044
         {
             _db = db;
             _currentUser = currentUser;
             _email = email.Value;
+            _whatsApp = whatsApp.Value;
         }
 
         public async Task<NotificationPreferencesDto> Handle(CancellationToken ct = default)
@@ -67,9 +72,21 @@ namespace MerkaiTrial.Application.Commands.Notifications
                 .Where(d => d.TenantId == me.TenantId)
                 .ToDictionaryAsync(d => d.EventType, ct);
 
-            var myAddress = await _db.Users.AsNoTracking()
+            // 044: the address AND the mobile, in one trip rather than two.
+            var contact = await _db.Users.AsNoTracking()
                 .Where(u => u.Id == me.UserId && u.TenantId == me.TenantId)
-                .Select(u => u.Email)
+                .Select(u => new { u.Email, u.MobileE164, u.WhatsAppOptInAtUtc })
+                .FirstOrDefaultAsync(ct);
+
+            var myAddress = contact?.Email;
+
+            // 044. The workspace's dial code, so a number typed without one
+            // resolves against the right country. Tenant → Country; null
+            // when the workspace has no country set, and the page then asks
+            // for the full international form.
+            var dialCode = await _db.Tenants.AsNoTracking()
+                .Where(t => t.Id == me.TenantId)
+                .Select(t => t.Country != null ? t.Country.DialCode : null)
                 .FirstOrDefaultAsync(ct);
 
             // Built from the enum's display order, not from the saved rows:
@@ -89,6 +106,7 @@ namespace MerkaiTrial.Application.Commands.Notifications
                         Group: NotificationDefaults.Group(eventType),
                         InApp: resolved.InApp,
                         Email: resolved.Email,
+                        WhatsApp: resolved.WhatsApp,          // 044
 
                         // "Using the default" now covers both the built-in
                         // default and the workspace's — from the user's point
@@ -98,7 +116,14 @@ namespace MerkaiTrial.Application.Commands.Notifications
                 })
                 .ToList();
 
-            return new NotificationPreferencesDto(items, _email.IsConfigured, myAddress);
+            return new NotificationPreferencesDto(
+                items,
+                _email.IsConfigured,
+                myAddress,
+                WhatsAppEnabled: _whatsApp.IsConfigured,      // 044
+                MyMobileE164: contact?.MobileE164,
+                WhatsAppOptedIn: contact?.WhatsAppOptInAtUtc is not null,
+                DefaultDialCode: dialCode);
         }
     }
 
@@ -115,10 +140,22 @@ namespace MerkaiTrial.Application.Commands.Notifications
 
         public async Task Handle(SaveNotificationPreferencesDto dto, CancellationToken ct = default)
         {
-            if (dto?.Items is null || dto.Items.Count == 0) return;
+            // 044: no longer an early return on empty Items. The contact
+            // details below are saved by the same post, and a user clearing
+            // their number while changing nothing else must still be saved.
+            if (dto is null) return;
 
             var me = await _currentUser.GetCurrentUserAsync();
             var now = DateTime.UtcNow;
+
+            // ── 044: this person's WhatsApp contact ──────────────────
+            await SaveContactAsync(me, dto, now, ct);
+
+            if (dto.Items is null || dto.Items.Count == 0)
+            {
+                await _db.SaveChangesAsync(ct);
+                return;
+            }
 
             var existing = await _db.UserNotificationPreferences
                 .Where(p => p.TenantId == me.TenantId && p.UserId == me.UserId)
@@ -165,20 +202,85 @@ namespace MerkaiTrial.Application.Commands.Notifications
                         EventType = eventType,
                         InApp = item.InApp,
                         Email = item.Email,
+                        WhatsApp = item.WhatsApp,            // 044
                         UpdatedAtUtc = now,
                         UpdatedBy = me.FullName
                     });
                 }
-                else if (row.InApp != item.InApp || row.Email != item.Email)
+                else if (row.InApp != item.InApp
+                      || row.Email != item.Email
+                      || row.WhatsApp != item.WhatsApp)      // 044
                 {
                     row.InApp = item.InApp;
                     row.Email = item.Email;
+                    row.WhatsApp = item.WhatsApp;            // 044
                     row.UpdatedAtUtc = now;
                     row.UpdatedBy = me.FullName;
                 }
             }
 
             await _db.SaveChangesAsync(ct);
+        }
+
+        /// <summary>
+        /// 044. The mobile number and the opt-in, saved with the grid.
+        ///
+        /// Three rules, all of them deliberate:
+        ///
+        ///   • The number is normalised HERE, not in the browser. A number
+        ///     that reaches Meta in the wrong shape is not rejected loudly
+        ///     — it is accepted and delivered nowhere.
+        ///   • A number we cannot make sense of throws, with the reason
+        ///     written for the person. The page shows it above the form and
+        ///     nothing is saved, which is better than storing something
+        ///     that silently never works.
+        ///   • Clearing the number withdraws the opt-in with it. Consent is
+        ///     given for a number; keeping the consent alive after the
+        ///     number changes would mean the next number inherits a
+        ///     permission nobody gave for it.
+        /// </summary>
+        private async Task SaveContactAsync(
+            CurrentUserContext me, SaveNotificationPreferencesDto dto, DateTime now, CancellationToken ct)
+        {
+            var user = await _db.Users
+                .FirstOrDefaultAsync(u => u.Id == me.UserId && u.TenantId == me.TenantId, ct);
+
+            if (user is null) return;
+
+            var dialCode = await _db.Tenants.AsNoTracking()
+                .Where(t => t.Id == me.TenantId)
+                .Select(t => t.Country != null ? t.Country.DialCode : null)
+                .FirstOrDefaultAsync(ct);
+
+            var parsed = PhoneNumbers.ToE164(dto.MobileNumber, dialCode);
+
+            if (!parsed.Ok)
+                throw new InvalidOperationException(parsed.Reason ?? "That mobile number doesn't look right.");
+
+            var newNumber = parsed.Number;
+            var numberChanged = !string.Equals(user.MobileE164, newNumber, StringComparison.Ordinal);
+
+            user.MobileE164 = newNumber;
+
+            // Opt-in: only meaningful with a number to attach it to.
+            if (string.IsNullOrWhiteSpace(newNumber))
+            {
+                user.WhatsAppOptInAtUtc = null;
+            }
+            else if (!dto.WhatsAppOptIn)
+            {
+                user.WhatsAppOptInAtUtc = null;
+            }
+            else if (user.WhatsAppOptInAtUtc is null || numberChanged)
+            {
+                // Stamped fresh when they opt in, and re-stamped when the
+                // number changes — the date has to belong to the number it
+                // is consent for, or it answers the wrong question later.
+                user.WhatsAppOptInAtUtc = now;
+            }
+
+            user.UpdatedAtUtc = now;
+            user.UpdatedBy = me.UserId.ToString();
         }
     }
 
@@ -200,13 +302,18 @@ namespace MerkaiTrial.Application.Commands.Notifications
         private readonly FlowDbContext _db;
         private readonly ICurrentUserService _currentUser;
         private readonly EmailOptions _email;
+        private readonly WhatsAppOptions _whatsApp;          // 044
 
         public GetTenantNotificationDefaultsHandler(
-            FlowDbContext db, ICurrentUserService currentUser, IOptions<EmailOptions> email)
+            FlowDbContext db,
+            ICurrentUserService currentUser,
+            IOptions<EmailOptions> email,
+            IOptions<WhatsAppOptions> whatsApp)              // 044
         {
             _db = db;
             _currentUser = currentUser;
             _email = email.Value;
+            _whatsApp = whatsApp.Value;
         }
 
         public async Task<TenantNotificationDefaultsDto> Handle(CancellationToken ct = default)
@@ -222,7 +329,17 @@ namespace MerkaiTrial.Application.Commands.Notifications
             // load-bearing rather than decorative.
             var users = await _db.Users.AsNoTracking()
                 .Where(u => u.TenantId == me.TenantId && u.IsActive && !u.IsDeleted)
-                .Select(u => new { u.Id, HasEmail = u.Email != null && u.Email != "" })
+                .Select(u => new
+                {
+                    u.Id,
+                    HasEmail = u.Email != null && u.Email != "",
+
+                    // 044. Both halves, because either one missing means the
+                    // message cannot go — and an admin needs that as ONE
+                    // number, not as two they have to reconcile.
+                    CanWhatsApp = u.MobileE164 != null && u.MobileE164 != ""
+                                  && u.WhatsAppOptInAtUtc != null
+                })
                 .ToListAsync(ct);
 
             // Every override in the workspace, in one query rather than one
@@ -230,7 +347,7 @@ namespace MerkaiTrial.Application.Commands.Notifications
             // the absolute worst, and normally a handful.
             var overrides = await _db.UserNotificationPreferences.AsNoTracking()
                 .Where(p => p.TenantId == me.TenantId)
-                .Select(p => new { p.UserId, p.EventType, p.InApp, p.Email })
+                .Select(p => new { p.UserId, p.EventType, p.InApp, p.Email, p.WhatsApp })
                 .ToListAsync(ct);
 
             var items = new List<TenantNotificationDefaultDto>();
@@ -244,6 +361,7 @@ namespace MerkaiTrial.Application.Commands.Notifications
                     .ToDictionary(o => o.UserId);
 
                 int inAppCount = 0, emailCount = 0, missingAddress = 0;
+                int whatsAppCount = 0, missingMobile = 0;    // 044
 
                 foreach (var user in users)
                 {
@@ -254,7 +372,12 @@ namespace MerkaiTrial.Application.Commands.Notifications
                     // NotificationResolution only reads these two fields.
                     var pref = o is null
                         ? null
-                        : new UserNotificationPreference { InApp = o.InApp, Email = o.Email };
+                        : new UserNotificationPreference
+                        {
+                            InApp = o.InApp,
+                            Email = o.Email,
+                            WhatsApp = o.WhatsApp            // 044
+                        };
 
                     // THE SAME resolution the dispatcher uses. If this screen
                     // computed it differently it would report numbers that do
@@ -269,6 +392,15 @@ namespace MerkaiTrial.Application.Commands.Notifications
                         if (user.HasEmail) emailCount++;
                         else missingAddress++;
                     }
+
+                    // 044. Same shape as email, and for the same reason: the
+                    // people who want it but cannot receive it are invisible
+                    // otherwise, and their silence looks like our bug.
+                    if (resolved.WhatsApp)
+                    {
+                        if (user.CanWhatsApp) whatsAppCount++;
+                        else missingMobile++;
+                    }
                 }
 
                 items.Add(new TenantNotificationDefaultDto(
@@ -277,6 +409,7 @@ namespace MerkaiTrial.Application.Commands.Notifications
                     Group: NotificationDefaults.Group(eventType),
                     InApp: workspace?.InApp ?? NotificationDefaults.InAppFor(eventType),
                     Email: workspace?.Email ?? NotificationDefaults.EmailFor(eventType),
+                    WhatsApp: workspace?.WhatsApp ?? NotificationDefaults.WhatsAppFor(eventType),
                     IsLocked: workspace?.IsLocked ?? false,
                     IsConfigured: workspace is not null,
                     InAppRecipientCount: inAppCount,
@@ -286,10 +419,13 @@ namespace MerkaiTrial.Application.Commands.Notifications
                     // Only counts as an override where it can actually take
                     // effect. Under a lock the user's row is ignored, so
                     // reporting it as an override would be misleading.
-                    OverriddenCount: workspace is { IsLocked: true } ? 0 : byUser.Count));
+                    OverriddenCount: workspace is { IsLocked: true } ? 0 : byUser.Count,
+                    WhatsAppRecipientCount: whatsAppCount,   // 044
+                    MissingMobileCount: missingMobile));     // 044
             }
 
-            return new TenantNotificationDefaultsDto(items, users.Count, _email.IsConfigured);
+            return new TenantNotificationDefaultsDto(
+                items, users.Count, _email.IsConfigured, _whatsApp.IsConfigured);
         }
     }
 
@@ -342,6 +478,7 @@ namespace MerkaiTrial.Application.Commands.Notifications
                         EventType = eventType,
                         InApp = item.InApp,
                         Email = item.Email,
+                        WhatsApp = item.WhatsApp,            // 044
                         IsLocked = item.IsLocked,
                         UpdatedAtUtc = now,
                         UpdatedBy = me.FullName
@@ -349,10 +486,12 @@ namespace MerkaiTrial.Application.Commands.Notifications
                 }
                 else if (row.InApp != item.InApp
                       || row.Email != item.Email
+                      || row.WhatsApp != item.WhatsApp       // 044
                       || row.IsLocked != item.IsLocked)
                 {
                     row.InApp = item.InApp;
                     row.Email = item.Email;
+                    row.WhatsApp = item.WhatsApp;            // 044
                     row.IsLocked = item.IsLocked;
                     row.UpdatedAtUtc = now;
                     row.UpdatedBy = me.FullName;

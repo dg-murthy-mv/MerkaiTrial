@@ -367,13 +367,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
 
             // ── 043a: the period now reaches the API ──────────────────
             // Quotes and invoices are filtered on their ISSUE DATE, server
-            // side, using the DATE-ONLY range. Leads are not, yet — see
-            // LeadsPeriodFiltered below — so the lead card keeps its "All
-            // time" chip and is honest about it.
+            // side, using the DATE-ONLY range.
             var from = _periodDates?.FromUtc;
             var toEx = _periodDates?.ToUtcExclusive;
 
-            var leadStatsTask    = SafeAsyncIf(canLeads,    () => _leadService.GetStatsAsync(tenantId),         "LeadStats");
+            // 047: leads are filtered on CreatedAtUtc — a TIMESTAMP — so
+            // they get the timezone-shifted range, not the one above. Using
+            // `from`/`toEx` here would compile, run, and be wrong by the
+            // tenant's UTC offset at both ends.
+            var leadFrom = _periodStamps?.FromUtc;
+            var leadToEx = _periodStamps?.ToUtcExclusive;
+
+            var leadStatsTask    = SafeAsyncIf(canLeads,    () => _leadService.GetStatsAsync(tenantId, leadFrom, leadToEx), "LeadStats");
             var dealsTask        = SafeAsyncIf(canDeals,    () => _dealService.GetAllAsync(tenantId, pageSize: 500), "Deals");
             var quoteStatsTask   = SafeAsyncIf(canQuotes,   () => _quoteService.GetStatisticsAsync(tenantId, from, toEx),   "QuoteStats");
             var invoiceStatsTask = SafeAsyncIf(canInvoices, () => _invoiceService.GetStatisticsAsync(tenantId, from, toEx), "InvoiceStats");
@@ -570,6 +575,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
         /// <summary>The range the deal panels are filtered by. Null = all time.</summary>
         private UtcRange? _periodDates;
 
+        /// <summary>
+        /// 047. The same period expressed as TIMESTAMPS, for the columns that
+        /// hold a moment rather than a picked date — CreatedAtUtc, which is
+        /// what the lead statistics are filtered on.
+        ///
+        /// Kept as a second field rather than converted on the spot, because
+        /// the conversion is the tenant's timezone offset and getting it
+        /// wrong is invisible: the numbers stay plausible and are quietly off
+        /// by up to a day at each end of the period.
+        /// </summary>
+        private UtcRange? _periodStamps;
+
         private static bool HasCloseDate(DealListItem d)
             => d.ExpectedCloseDateUtc != default
             || (d.ActualCloseDateUtc.HasValue && d.ActualCloseDateUtc.Value != default);
@@ -662,6 +679,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             SelectedPeriodKey   = chosen?.Key ?? AllTimeKey;
             SelectedPeriodLabel = chosen?.Label ?? "All time";
             _periodDates        = chosen?.Dates;
+            _periodStamps       = chosen?.Timestamps;   // 047
 
             return chosen;
         }

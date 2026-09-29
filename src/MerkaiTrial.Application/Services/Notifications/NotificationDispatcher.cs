@@ -178,7 +178,11 @@ public sealed class NotificationDispatcher : INotificationDispatcher
             {
                 u.Id,
                 u.Email,
-                FullName = (u.FirstName + " " + u.LastName).Trim()
+                FullName = (u.FirstName + " " + u.LastName).Trim(),
+
+                // 045. Both halves of "can we WhatsApp this person".
+                u.MobileE164,
+                HasOptedIn = u.WhatsAppOptInAtUtc != null
             })
             .ToListAsync(ct);
 
@@ -225,6 +229,18 @@ public sealed class NotificationDispatcher : INotificationDispatcher
         // an approval that notifies five managers.
         RenderedEmail? rendered = null;
 
+        // 045. The approved WhatsApp template for this event, if there is
+        // one and it is switched on. Loaded once, outside the loop, and
+        // deliberately NOT treated as an error when missing: a workspace
+        // that has not had its templates approved yet still gets the bell
+        // and the email, and the log records why WhatsApp was skipped.
+        //
+        // WhatsAppTemplates has no TenantId — these are our templates on
+        // our number — so this is an ordinary unfiltered read.
+        var template = await _db.WhatsAppTemplates.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.EventType == request.EventType
+                                   && t.IsActive, ct);
+
         var written = 0;
 
         foreach (var user in valid)
@@ -239,6 +255,7 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 
             var wantsInApp = resolved.InApp;
             var wantsEmail = resolved.Email;
+            var wantsWhatsApp = resolved.WhatsApp;        // 045
 
             if (wantsInApp)
             {
@@ -261,6 +278,14 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 
                 written++;
             }
+
+            // ── 045: WhatsApp ────────────────────────────────────────
+            // BEFORE the email block's `continue`, deliberately. Somebody
+            // who wants WhatsApp and not email is an ordinary case, and
+            // putting this after that line would silently never message
+            // them — the kind of bug that looks like the channel is broken.
+            if (wantsWhatsApp)
+                QueueWhatsApp(request, user.Id, user.MobileE164, user.HasOptedIn, template, now);
 
             if (!wantsEmail) continue;
 
@@ -307,6 +332,99 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 
         // NO SaveChangesAsync. See the header.
         return written;
+    }
+
+    /// <summary>
+    /// 045. Queues one WhatsApp message, or explains in the log why it
+    /// could not.
+    ///
+    /// Adds a row; does NOT save — the same rule as everything else here.
+    ///
+    /// FOUR REASONS TO SKIP, each logged as itself rather than as a
+    /// failure, because none of them is one:
+    ///
+    ///   no template          this event has no approved template yet
+    ///   no number            the person never filled it in
+    ///   no opt-in            they have not agreed, and Meta requires it
+    ///   variable mismatch    the approved template expects a different
+    ///                        number of slots than we fill, which would be
+    ///                        rejected by Meta with a numeric code
+    ///
+    /// A skip is not written to the queue at all. A queued row that can
+    /// never succeed burns sixteen retries over six hours and then sits in
+    /// the log as a red line implying something broke.
+    /// </summary>
+    private void QueueWhatsApp(
+        NotificationRequest request,
+        Guid userId,
+        string? mobileE164,
+        bool hasOptedIn,
+        WhatsAppTemplate? template,
+        DateTime now)
+    {
+        if (template is null || !template.IsUsable)
+        {
+            _logger.LogInformation(
+                "WhatsApp skipped for {Event}: no approved template", request.EventType);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(mobileE164))
+        {
+            _logger.LogInformation(
+                "WhatsApp skipped for user {UserId}: no mobile number on file", userId);
+            return;
+        }
+
+        if (!hasOptedIn)
+        {
+            // Meta's rule, not ours, and the one with a regulator behind
+            // it. A preference ticked without an opt-in is not consent.
+            _logger.LogInformation(
+                "WhatsApp skipped for user {UserId}: has not opted in", userId);
+            return;
+        }
+
+        var variables = WhatsAppVariables.For(request.Title, request.Body);
+
+        if (template.VariableCount != variables.Count)
+        {
+            // Meta would answer 132000, whose text mentions neither the
+            // template nor the count. Catching it here names both.
+            _logger.LogWarning(
+                "WhatsApp skipped for {Event}: template {Template} expects {Expected} variable(s), " +
+                "we supply {Actual}. Correct VariableCount on the template screen, or re-approve the template.",
+                request.EventType, template.TemplateName, template.VariableCount, variables.Count);
+            return;
+        }
+
+        _db.OutboundMessages.Add(new OutboundMessage
+        {
+            Id              = Guid.NewGuid(),
+            TenantId        = request.TenantId,
+            Channel         = OutboundChannel.WhatsApp,
+            Status          = OutboundStatus.Pending,
+            EventType       = request.EventType,
+            RecipientUserId = userId,
+
+            // Resolved NOW, like the email address above: this message goes
+            // to the number the person had when the event happened.
+            ToAddress       = Truncate(mobileE164, 20)!,
+            ToName          = null,
+
+            // The convention from OutboundChannel.WhatsApp, applied through
+            // WhatsAppPayload so the worker reads it back the same way.
+            Subject         = Truncate(template.TemplateName, 300)!,
+            BodyText        = WhatsAppPayload.PackVariables(variables),
+            BodyHtml        = WhatsAppPayload.Render(template.BodyPreview, variables),
+
+            EntityType      = Truncate(request.EntityType, 50),
+            EntityId        = request.EntityId,
+
+            AttemptCount     = 0,
+            NextAttemptAtUtc = null,
+            CreatedAtUtc     = now
+        });
     }
 
     public Task<int> AddForOwnerAsync(

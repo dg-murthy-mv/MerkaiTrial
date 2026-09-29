@@ -164,13 +164,18 @@ public sealed class OutboundMessageWorker : BackgroundService
         using var scope = _scopes.CreateScope();       // note 1
 
         var db = scope.ServiceProvider.GetRequiredService<FlowDbContext>();
-        var sender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        var email = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        var whatsApp = scope.ServiceProvider.GetRequiredService<IWhatsAppSender>();   // 045
 
-        if (!sender.IsEnabled)
+        // 045: the queue is left alone only when NEITHER channel can send.
+        // Previously this checked email alone, which was right when email
+        // was the only channel — now it would park a fully configured
+        // WhatsApp queue because no Resend key happened to be set.
+        if (!email.IsEnabled && !whatsApp.IsEnabled)
         {
             // Nothing is claimed, so nothing is marked failed and no attempt
             // is burned. Configure a key later and the backlog goes out.
-            _logger.LogDebug("Email sender is not configured — leaving the queue alone");
+            _logger.LogDebug("No sender is configured — leaving the queue alone");
             return 0;
         }
 
@@ -191,7 +196,7 @@ public sealed class OutboundMessageWorker : BackgroundService
         {
             if (ct.IsCancellationRequested) break;
 
-            await SendOneAsync(db, sender, message, ct);
+            await SendOneAsync(db, email, whatsApp, message, ct);
             processed++;
 
             // Pace for the provider's rate limit.
@@ -213,20 +218,36 @@ public sealed class OutboundMessageWorker : BackgroundService
         return processed;
     }
 
+    /// <summary>
+    /// 045. One message, routed to the sender for its channel.
+    ///
+    /// The two senders return different result types on purpose — an email
+    /// result and a WhatsApp result carry different failure vocabularies —
+    /// so this normalises them into the three things the retry logic below
+    /// actually reads: success, provider id, and whether to try again.
+    /// </summary>
     private async Task SendOneAsync(
-        FlowDbContext db, IEmailSender sender, OutboundMessage message, CancellationToken ct)
+        FlowDbContext db,
+        IEmailSender email,
+        IWhatsAppSender whatsApp,
+        OutboundMessage message,
+        CancellationToken ct)
     {
         message.AttemptCount++;
         message.UpdatedAtUtc = DateTime.UtcNow;
 
-        var result = await sender.SendAsync(new EmailMessage(
-            IdempotencyKey: message.Id,          // see the header
-            ToAddress: message.ToAddress,
-            ToName: message.ToName,
-            Subject: message.Subject,
-            BodyHtml: message.BodyHtml,
-            BodyText: message.BodyText,
-            ReplyToAddress: message.ReplyToAddress), ct);
+        var result = message.Channel switch
+        {
+            OutboundChannel.WhatsApp => await SendWhatsAppAsync(whatsApp, message, ct),
+            OutboundChannel.Email    => await SendEmailAsync(email, message, ct),
+
+            // Sms, or a channel added later and not wired here. Permanent:
+            // retrying a channel with no sender sixteen times helps nobody,
+            // and the log line names the channel rather than shrugging.
+            _ => new SendOutcome(
+                    false, null,
+                    $"No sender is wired for the {message.Channel} channel.", false)
+        };
 
         if (result.Success)
         {
@@ -263,6 +284,67 @@ public sealed class OutboundMessageWorker : BackgroundService
             "Message {Id} to {To} failed (attempt {Attempts}), next try {Next}: {Error}",
             message.Id, message.ToAddress, message.AttemptCount,
             message.NextAttemptAtUtc, message.LastError);
+    }
+
+    /// <summary>
+    /// 045. What the retry logic needs from either sender, and nothing
+    /// else. A tiny type rather than reusing EmailSendResult, so a
+    /// WhatsApp failure never has to pretend to be an email one.
+    /// </summary>
+    private readonly record struct SendOutcome(
+        bool Success, string? ProviderMessageId, string? Error, bool Retryable);
+
+    private static async Task<SendOutcome> SendEmailAsync(
+        IEmailSender sender, OutboundMessage message, CancellationToken ct)
+    {
+        if (!sender.IsEnabled)
+            return new SendOutcome(false, null,
+                "Email is not configured on this environment — still queued.", true);
+
+        var r = await sender.SendAsync(new EmailMessage(
+            IdempotencyKey: message.Id,          // see the header
+            ToAddress: message.ToAddress,
+            ToName: message.ToName,
+            Subject: message.Subject,
+            BodyHtml: message.BodyHtml,
+            BodyText: message.BodyText,
+            ReplyToAddress: message.ReplyToAddress), ct);
+
+        return new SendOutcome(r.Success, r.ProviderMessageId, r.Error, r.Retryable);
+    }
+
+    /// <summary>
+    /// 045. Unpacks the convention documented on OutboundChannel.WhatsApp
+    /// — Subject is the template name, BodyText is the variables as JSON —
+    /// through WhatsAppPayload, which is the only place that convention is
+    /// written down in code.
+    /// </summary>
+    private static async Task<SendOutcome> SendWhatsAppAsync(
+        IWhatsAppSender sender, OutboundMessage message, CancellationToken ct)
+    {
+        if (!sender.IsEnabled)
+            return new SendOutcome(false, null,
+                "WhatsApp is not configured on this environment — still queued.", true);
+
+        var variables = WhatsAppPayload.UnpackVariables(message.BodyText);
+
+        if (variables.Count == 0)
+        {
+            // Either the row predates the convention or its JSON is broken.
+            // Sending it would deliver a message reading "{{1}}" to a real
+            // person, which is worse than not sending it.
+            return new SendOutcome(false, null,
+                "This queued message has no readable variables — it was not sent.", false);
+        }
+
+        var r = await sender.SendAsync(new WhatsAppMessage(
+            IdempotencyKey: message.Id,
+            ToE164: message.ToAddress,
+            TemplateName: message.Subject,
+            LanguageCode: "en",
+            Variables: variables), ct);
+
+        return new SendOutcome(r.Success, r.ProviderMessageId, r.Error, r.Retryable);
     }
 
     /// <summary>
