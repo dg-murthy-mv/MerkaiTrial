@@ -48,6 +48,27 @@
 
    5. THE REMOVE CONTROL WAS AN <i> WITH AN onclick. Not focusable, not
       reachable by keyboard, no accessible name. It is a <button> now.
+
+   ── 050 ──────────────────────────────────────────────────────────────
+
+   6. THE PRODUCT'S TAX RATE WAS IGNORED. Picking a product from the
+      catalogue set the line's tax to the WORKSPACE default, never the
+      product's own:
+
+          taxRate: num(DEFAULT_TAX, 0)
+
+      and the product buttons carried no tax attribute to read. So
+      Product.TaxRate was decorative: a 5% product in a 7% workspace
+      produced a 7% line, on the quote and on every invoice raised from
+      it. Nothing anywhere said so.
+
+      The rate now travels with the product, and the catalogue shows it
+      beside the price so a rate that differs from the default is visible
+      before the line is added.
+
+      An UNSET rate still inherits the workspace default; a rate set to
+      ZERO stays zero, because a tax-exempt product is a real thing and
+      must not quietly pick up the default.
    ===================================================================== *@
 
 <style>
@@ -230,7 +251,8 @@
                                     data-id="@p.Id"
                                     data-name="@(p.Name ?? string.Empty)"
                                     data-desc="@(p.Description ?? string.Empty)"
-                                    data-price="@p.ListPrice.ToString(CultureInfo.InvariantCulture)">
+                                    data-price="@p.ListPrice.ToString(CultureInfo.InvariantCulture)"
+                                    data-tax="@(p.TaxRate?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)">
                                 <div class="d-flex justify-content-between align-items-start gap-3">
                                     <div style="min-width:0;">
                                         <div class="pn">@(string.IsNullOrWhiteSpace(p.Name) ? "(unnamed product)" : p.Name)</div>
@@ -239,9 +261,28 @@
                                             <div class="pd">@p.Description</div>
                                         }
                                     </div>
-                                    <span class="badge bg-light text-dark border flex-shrink-0">
-                                        @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)
-                                    </span>
+                                    @* 050: the rate is shown as well as the price,
+                                       because it is now what the line will actually
+                                       use. A rate that silently differs from the
+                                       workspace default is exactly the thing someone
+                                       needs to see BEFORE they add the line. *@
+                                    <div class="text-end flex-shrink-0">
+                                        <span class="badge bg-light text-dark border">
+                                            @Model.CurrencyCode @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)
+                                        </span>
+                                        @if (p.TaxRate.HasValue)
+                                        {
+                                            <div class="pd mt-1">
+                                                @Model.TaxLabel @p.TaxRate.Value.ToString("0.##", CultureInfo.InvariantCulture)%
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="pd mt-1 fst-italic">
+                                                @Model.TaxLabel @Model.DefaultTaxRate.ToString("0.##", CultureInfo.InvariantCulture)% (default)
+                                            </div>
+                                        }
+                                    </div>
                                 </div>
                             </button>
                         }
@@ -708,6 +749,28 @@
                 syncFromDom();
 
                 var price = num(b.getAttribute('data-price'), 0);
+
+                // ── 050: the product's OWN tax rate ──────────────────
+                //
+                // This line used to read `taxRate: num(DEFAULT_TAX, 0)`,
+                // so the rate set on a product was never used — pick a 5%
+                // product in a 7% workspace and the line came out at 7%.
+                // Product.TaxRate was decorative, and the quote (and the
+                // invoice raised from it) were quietly wrong for anyone
+                // who had set one.
+                //
+                // EMPTY IS NOT ZERO, and the difference matters: a product
+                // with no rate set should inherit the workspace default,
+                // while a product deliberately set to 0 is tax-exempt and
+                // must STAY at 0. Testing the raw attribute for '' rather
+                // than testing the parsed number for falsiness is what
+                // keeps those apart — num('', x) and num('0', x) both look
+                // like "nothing" to a truthiness check.
+                var rawTax = b.getAttribute('data-tax');
+                var taxRate = (rawTax === null || rawTax === '')
+                    ? num(DEFAULT_TAX, 0)
+                    : num(rawTax, num(DEFAULT_TAX, 0));
+
                 rows.push({
                     key: uid++, itemId: null,
                     productId: b.getAttribute('data-id') || null,
@@ -716,7 +779,7 @@
                     quantity: 1,
                     unitPrice: price,
                     lineDiscount: 0,
-                    taxRate: num(DEFAULT_TAX, 0),
+                    taxRate: taxRate,
                     listPrice: price    // the discount maths measures against this
                 });
                 render();

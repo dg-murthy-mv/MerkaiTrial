@@ -383,16 +383,41 @@
                         <i class="bi bi-list me-2"></i>All Plans
                     </a>
                     <hr class="my-1"/>
-                    <form method="post" asp-page-handler="Deactivate"
-                          onsubmit="return confirm('Toggle plan status?')">
-                        <input type="hidden" name="id" value="@Model.Id" />
-                        <input type="hidden" name="isActive" value="@(!Model.Plan.IsActive)" />
-                        <button type="submit"
-                                class="btn w-100 @(Model.Plan.IsActive ? "btn-outline-warning" : "btn-outline-success")">
-                            <i class="bi bi-@(Model.Plan.IsActive ? "pause-circle" : "play-circle") me-2"></i>
-                            @(Model.Plan.IsActive ? "Deactivate Plan" : "Activate Plan")
-                        </button>
-                    </form>
+
+                    @* ── 049: the "Activate Plan" button was a lie ──────────
+                       This form posts to OnPostDeactivateAsync, which calls
+                       DeactivatePlanHandler and nothing else — it ignores the
+                       isActive hidden field entirely. So on an inactive plan
+                       the button read "Activate Plan", ran the DEACTIVATE
+                       handler, and reported "Plan deactivated." A button that
+                       claims to do the opposite of what it does is worse than
+                       no button.
+
+                       Activating needs a handler that does not exist yet, so
+                       rather than invent one, the control now only appears
+                       when it can actually do its job, and the inactive case
+                       says plainly where to go instead. *@
+
+                    @if (Model.Plan.IsActive)
+                    {
+                        <form method="post" asp-page-handler="Deactivate"
+                              onsubmit="return confirm('Deactivate this plan? It stays available to existing tenants.')">
+                            <input type="hidden" name="id" value="@Model.Id" />
+                            <button type="submit" class="btn w-100 btn-outline-warning">
+                                <i class="bi bi-pause-circle me-2"></i>Deactivate Plan
+                            </button>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="small text-muted">
+                            <i class="bi bi-pause-circle me-1"></i>
+                            This plan is inactive and hidden from new signups.
+                            To bring it back, open
+                            <a asp-page="./CreateEdit" asp-route-planId="@Model.Id">Edit Plan</a>
+                            and tick <strong>Active</strong>.
+                        </div>
+                    }
                 </div>
             </div>
 
@@ -449,3 +474,92 @@
         </div>
     </div>
 </div>
+
+@section Styles {
+<style>
+/* ── 049: DARK ──────────────────────────────────────────────────────
+   This page had NO style block at all, which is why it was the worst of
+   the three: with nothing of its own it fell back to Bootstrap's
+   light-page defaults for every table head, every .bg-light panel and
+   every -emphasis colour, inside a navy console.
+
+   The layout already styles .sa-main .card, .card-header and .table.
+   What follows is only the parts it cannot reach — the utility classes
+   this page applies directly, which carry !important and win. */
+
+.sa-main {
+    --bs-success-text-emphasis:   #86efac;
+    --bs-danger-text-emphasis:    #fca5a5;
+    --bs-warning-text-emphasis:   #fcd34d;
+    --bs-secondary-text-emphasis: #cbd5e1;
+}
+
+.sa-main h2 { color: #f1f5f9; }
+
+/* .table-light on a thead is a near-white !important background. */
+.sa-main .table-light,
+.sa-main .table-light > th,
+.sa-main .table-light > td {
+    background: rgba(34,211,238,.06) !important;
+    color: #94a3b8 !important;
+    border-color: rgba(255,255,255,.08) !important;
+}
+
+/* table-borderless still inherits Bootstrap's body colour. */
+.sa-main .table { color: #cbd5e1; }
+.sa-main .table td, .sa-main .table th { border-color: rgba(255,255,255,.06); }
+.sa-main .table-hover > tbody > tr:hover > * {
+    background: rgba(34,211,238,.05);
+    color: #e2e8f0;
+}
+
+/* The "Raw JSON" block and any other .bg-light panel. */
+.sa-main .bg-light {
+    background: rgba(255,255,255,.04) !important;
+    color: #cbd5e1;
+}
+.sa-main pre { color: #cbd5e1; }
+.sa-main code { color: #67e8f9; }
+
+/* The four limit tiles use a bare .border, which resolves to a light
+   grey and disappears against navy. */
+.sa-main .border { border-color: rgba(255,255,255,.1) !important; }
+
+/* badge bg-light text-dark — used for the counts in card headers. */
+.sa-main .badge.bg-light {
+    background: rgba(255,255,255,.14) !important;
+    color: #e2e8f0 !important;
+}
+
+.sa-main .alert-info {
+    background: rgba(14,165,233,.1);
+    border-color: rgba(14,165,233,.25);
+    color: #7dd3fc;
+}
+.sa-main .alert-success {
+    background: rgba(34,197,94,.1);
+    border-color: rgba(34,197,94,.25);
+    color: #86efac;
+}
+.sa-main .alert-danger {
+    background: rgba(239,68,68,.1);
+    border-color: rgba(239,68,68,.25);
+    color: #fca5a5;
+}
+
+.sa-main .btn-outline-secondary {
+    color: #94a3b8;
+    border-color: rgba(148,163,184,.35);
+}
+.sa-main .btn-outline-secondary:hover {
+    color: #0f1c2e;
+    background: #94a3b8;
+    border-color: #94a3b8;
+}
+
+/* bg-dark on a card header is invisible against the console. */
+.sa-main .card-header.bg-dark {
+    background: rgba(255,255,255,.07) !important;
+}
+</style>
+}

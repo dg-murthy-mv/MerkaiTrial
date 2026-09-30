@@ -86,6 +86,31 @@ public class IndexModel : PageModel
         return meta is null || !meta.IsApproved;
     }
 
+    /// <summary>
+    /// 049. Whether to actually DISABLE the switch — which is not the same
+    /// question as BlockedByMeta, and conflating the two was a bug.
+    ///
+    /// A disabled checkbox cannot be clicked, in either direction. So a row
+    /// that was already ON when Meta started saying no became impossible to
+    /// turn OFF: the admin could see "Meta has no template by that name",
+    /// see "Live" underneath it, and have no way to act on either. Every
+    /// notification for that event kept queueing and dying at Meta.
+    ///
+    /// The guard's job is to stop you switching something ON before it is
+    /// approved. Turning something OFF is always allowed, and is exactly
+    /// what someone looking at that warning wants to do.
+    /// </summary>
+    public bool LockSwitch(WhatsAppTemplateRow row)
+        => !row.IsActive && BlockedByMeta(row);
+
+    /// <summary>
+    /// 049. On, but Meta will refuse it. Worth saying loudly: this is the
+    /// state where messages queue and die, and nothing on the screen used
+    /// to connect those two facts.
+    /// </summary>
+    public bool LiveButBroken(WhatsAppTemplateRow row)
+        => row.IsActive && BlockedByMeta(row);
+
     public IEnumerable<IGrouping<string, WhatsAppTemplateRow>> Groups
         => (Data?.Items ?? new List<WhatsAppTemplateRow>()).GroupBy(i => i.Group);
 
