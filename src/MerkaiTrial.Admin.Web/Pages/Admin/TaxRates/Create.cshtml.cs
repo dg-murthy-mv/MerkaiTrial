@@ -1,10 +1,34 @@
-﻿// =====================================================================
+// =====================================================================
 // TAX RATES CREATE - BACKEND
 // Location: MerkaiTrial.Admin.Web/Pages/Admin/TaxRates/Create.cshtml.cs
+//
+// MOVED IN 054, from Pages/TaxRates/. That move IS the security fix.
+//
+//   AddAdminWebPages() has
+//       options.Conventions.AuthorizeFolder("/Admin", "SuperAdmin");
+//   and that convention matches on the page's FOLDER under Pages/, not on
+//   its URL. These four pages sat in Pages/TaxRates/ with a route override
+//   of @@page "/Admin/TaxRates/...", so they SERVED from an /Admin URL while
+//   living outside the folder that gate covers — and carried no
+//   [Authorize] of their own either, only a commented-out one saying
+//   "uncomment when authorization is ready".
+//
+//   There is a FallbackPolicy, so an anonymous visitor was still stopped.
+//   Any SIGNED-IN USER OF ANY TENANT was not: these pages create, edit and
+//   delete the PLATFORM-WIDE system tax rates that every tenant's quotes
+//   and invoices are priced from.
+//
+//   Sitting in Pages/Admin/ now, the folder convention covers them, which
+//   is better than an attribute per page — a page added here later cannot
+//   forget one.
+//
+//   DELETE the old Pages/TaxRates/ folder. Leaving it there leaves the
+//   ungated copy serving.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.TaxRates;
+using MerkaiTrial.Application.Common;        // 057: TaxRateStatus
 using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -16,9 +40,12 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace MerkaiTrial.Admin.Web.Pages.TaxRates
+namespace MerkaiTrial.Admin.Web.Pages.Admin.TaxRates
 {
-    // [Authorize(Roles = "Admin")] // Uncomment when authorization is ready
+    // No [Authorize] here on purpose — AuthorizeFolder("/Admin", "SuperAdmin")
+    // covers this page now that it lives in the folder. The comment that used
+    // to sit here said "uncomment when authorization is ready"; authorization
+    // had been ready for rounds, the page was just in the wrong place.
     public class CreateModel : PageModel
     {
         private readonly ITaxRateService _taxRateService;
@@ -62,6 +89,18 @@ namespace MerkaiTrial.Admin.Web.Pages.TaxRates
             public decimal Rate { get; set; }
 
             public bool IsDefault { get; set; }
+
+            // ── 057: effective dating ────────────────────────────────
+            // Dates, not date-times. A tax rate changes on a DAY, and a
+            // time-of-day field would invite somebody to set 14:30 and then
+            // wonder why a morning quote used the old rate.
+            [DataType(DataType.Date)]
+            [Display(Name = "In force from")]
+            public DateTime? EffectiveFrom { get; set; }
+
+            [DataType(DataType.Date)]
+            [Display(Name = "In force until")]
+            public DateTime? EffectiveTo { get; set; }
         }
 
         public async Task OnGetAsync()
@@ -79,15 +118,57 @@ namespace MerkaiTrial.Admin.Web.Pages.TaxRates
                     return Page();
                 }
 
+                // 057. The same validator the API and the command use, so
+                // the page says the same sentence rather than a second one.
+                var windowProblem = TaxRateStatus.ValidateWindow(Input.EffectiveFrom, Input.EffectiveTo);
+                if (windowProblem is not null)
+                {
+                    ErrorMessage = windowProblem;
+                    await LoadDropdownsAsync();
+                    return Page();
+                }
+
                 var dto = new CreateTaxRateDto
                 {
-                    TenantId = Guid.Empty,  // ✅ FIXED: Maps to NULL (system tax rate)
+                    // 056: NULL, and it genuinely means NULL now. This said
+                    // "Maps to NULL (system tax rate)" and mapped to
+                    // 00000000-0000-0000-0000-000000000000, while every query
+                    // that looked for a system rate looked for NULL. They
+                    // never met, which is why the System Rates tile read 0.
+                    //
+                    // The API refuses this unless the caller is a super
+                    // admin — which, this page being under Pages/Admin, they
+                    // are.
+                    TenantId = null,
                     CountryCode = Input.CountryCode!,
                     Name = Input.Name.Trim(),
                     TaxType = Input.TaxType!,
                     Rate = Input.Rate,
                     IsDefault = Input.IsDefault,
-                    CreatedBy = "admin"  // ✅ FIXED: TODO - Get from current user
+
+                    // 057. Midnight UTC, like every other calendar date in
+                    // this system (see the Quotes issue-date note): a date
+                    // sent through ToUniversalTime() from an Unspecified
+                    // midnight moves back a day on any server east of UTC,
+                    // which is every server this product runs on.
+                    EffectiveFrom = Input.EffectiveFrom.HasValue
+                        ? DateTime.SpecifyKind(Input.EffectiveFrom.Value.Date, DateTimeKind.Utc)
+                        : null,
+
+                    // The END of the last day, not its midnight. With
+                    // midnight, a rate "in force until 31 March" stops
+                    // applying at 00:00 on the 31st — so it is not in force
+                    // on its own last day.
+                    EffectiveTo = Input.EffectiveTo.HasValue
+                        ? DateTime.SpecifyKind(Input.EffectiveTo.Value.Date, DateTimeKind.Utc)
+                                  .AddDays(1).AddTicks(-1)
+                        : null,
+                    // 054: the signed-in super admin, not the literal "admin".
+                    // Every system tax rate ever created carries that string,
+                    // so the audit trail on a platform-wide setting cannot say
+                    // WHO changed the tax basis for every tenant. Straight off
+                    // the principal — no extra service to register.
+                    CreatedBy = CurrentUserName()
                 };
 
                 await _taxRateService.CreateAsync(dto);
@@ -110,6 +191,16 @@ namespace MerkaiTrial.Admin.Web.Pages.TaxRates
                 return Page();
             }
         }
+
+        /// <summary>
+        /// Email if the cookie carries one, otherwise the login name, and
+        /// "admin" only if the principal somehow has neither — which the
+        /// FallbackPolicy should already have made impossible.
+        /// </summary>
+        private string CurrentUserName()
+            => User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+               ?? User.Identity?.Name
+               ?? "admin";
 
         private async Task LoadDropdownsAsync()
         {

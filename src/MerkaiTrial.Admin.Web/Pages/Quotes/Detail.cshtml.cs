@@ -270,6 +270,55 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             }
         }
 
+        // ── EMAIL THE QUOTE TO THE CUSTOMER (061) ─────────────────────
+        //
+        // The FIRST email now goes out on its own, queued by
+        // UpdateQuoteStatusHandler inside the same transaction as the move
+        // to Sent. This handler is the RESEND — "they say it never
+        // arrived", "they deleted it" — and deliberately does not touch
+        // the status, because sending it again is not a new event in the
+        // quote's life.
+        public async Task<IActionResult> OnPostSendToCustomerAsync()
+        {
+            try
+            {
+                var check = await ValidatePermissionAsync(Actions.Update);
+                if (check != null) return check;
+
+                if (Id == Guid.Empty)
+                {
+                    ErrorMessage = "Invalid quote ID";
+                    return RedirectToPage("/Quotes/Index");
+                }
+
+                var tenantId = _currentUserService.GetCurrentTenantId();
+
+                // The API host has no idea what hostname this site is
+                // served on, so the link in the email would be relative
+                // without this. Same value the status call passes.
+                var baseUrl = $"{Request.Scheme}://{Request.Host}";
+
+                await _quoteService.SendToCustomerAsync(tenantId, Id, baseUrl);
+
+                SuccessMessage = "Quote emailed to the customer.";
+                return RedirectToPage(new { id = Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The API's own sentence — "Worapong Thongsuk has no email
+                // address on file. Add one to the contact, then send the
+                // quote again." Show that, not a second vaguer one.
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id = Id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to email quote {QuoteId}", Id);
+                ErrorMessage = "Could not email the quote. Please try again.";
+                return RedirectToPage(new { id = Id });
+            }
+        }
+
         // ── APPROVALS (017) ───────────────────────────────────────────
 
         public async Task<IActionResult> OnPostSubmitForApprovalAsync(string? comment)
@@ -805,5 +854,45 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
         /// <summary>Edit shows for these only — the API refuses the rest.</summary>
         public bool IsEditableStatus => Quote?.Status is "Draft" or "Revised" or "Approved";
+
+        // ── 061: can we email this quote? ─────────────────────────────
+
+        /// <summary>
+        /// The customer's address, when there is one. Null for a
+        /// phone-only contact, which is common enough to be worth saying
+        /// out loud rather than discovering after pressing a button.
+        /// </summary>
+        public string? CustomerEmail => string.IsNullOrWhiteSpace(Quote?.ContactEmail)
+            ? null
+            : Quote!.ContactEmail!.Trim();
+
+        /// <summary>
+        /// True when the Email button should do something. The API checks
+        /// all of this again — a hidden button is not a control — but a
+        /// button that cannot work should say why instead of failing.
+        /// </summary>
+        public bool CanEmailCustomer =>
+            CanUpdate
+            && Quote?.Status is "Sent" or "Viewed"
+            && CustomerEmail is not null;
+
+        /// <summary>
+        /// Why the Email button is not offered, or null when it is. Only
+        /// ever shown on a quote that is out with the customer, so the
+        /// draft case needs no sentence here.
+        /// </summary>
+        public string? EmailBlockedReason
+        {
+            get
+            {
+                if (Quote?.Status is not ("Sent" or "Viewed")) return null;
+                if (!CanUpdate) return null;
+                if (CustomerEmail is not null) return null;
+
+                return string.IsNullOrWhiteSpace(Quote?.ContactName)
+                    ? "This deal's contact has no email address, so the quote can't be emailed."
+                    : $"{Quote!.ContactName} has no email address, so the quote can't be emailed.";
+            }
+        }
     }
 }

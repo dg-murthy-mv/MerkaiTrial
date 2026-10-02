@@ -19,6 +19,7 @@
     <Folder Include="Commands\Reports\" />
     <Folder Include="Commands\Plans\" />
     <Folder Include="Commands\Roles\" />
+    <Folder Include="Common\" />
     <Folder Include="Queries\" />
     <Folder Include="Services\Fiscal\" />
     <Folder Include="Services\Notifications\" />

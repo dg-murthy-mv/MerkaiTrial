@@ -4,6 +4,21 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 053: both read paths address the invoice to the customer's COMPANY.
+// They set CompanyName from Deal.Contact.FirstName — a person's first
+// name, in the column the list headed "Company" and the detail screen
+// showed beside a building icon. The rule now lives in CustomerNaming
+// and every path uses it.
+//
+//   The LIST is a server-side EF projection, so it cannot call a C#
+//   method: it selects the four raw strings and resolves them in memory
+//   straight afterwards. Same rule, same implementation — not a second
+//   copy of the logic, which is how these drifted apart to begin with.
+//
+// 052: the line projection carries UnitOfMeasure through to
+// InvoiceLineDto, so the invoice page can print "12.5 m²" instead of a
+// bare "12.5". One line changed; everything else below is untouched.
+//
 // RECORD VISIBILITY (016) — READ SIDE ONLY, on purpose.
 //   Invoices follow their deal (directly, or through the quote they were
 //   raised from). The invoice LIST and STATISTICS now only include
@@ -22,6 +37,7 @@
 //      (never owed). Drafts are still counted in DraftInvoices.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;          // 053: CustomerNaming
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
@@ -114,7 +130,11 @@ namespace MerkaiTrial.Application.Queries.Invoices
                 if (request.ToDate.HasValue)
                     query = query.Where(i => i.IssueDateUtc <= request.ToDate.Value);
 
-                var invoices = await query
+                // 053: the Includes below do nothing for a projection this
+                // shape — EF builds the SQL from the Select, not from them —
+                // but they are left as they were rather than removed in a
+                // round about naming.
+                var rows = await query
                     .Include(i => i.Quote)
                     .Include(i => i.Deal)
                         .ThenInclude(d => d.Contact)
@@ -122,27 +142,71 @@ namespace MerkaiTrial.Application.Queries.Invoices
                         .ThenInclude(d => d.Vertical)  // ✅ For VerticalName
                     .Include(i => i.Lines)
                     .OrderByDescending(i => i.CreatedAtUtc)
-                    .Select(i => new InvoiceListItem
+                    .Select(i => new
                     {
-                        Id = i.Id,
-                        Number = i.Number,
-                        IssueDateUtc = i.IssueDateUtc,
-                        DueDateUtc = i.DueDateUtc,
-                        Currency = i.Currency,
-                        Status = i.Status.ToString(),
-                        GrandTotal = i.Subtotal + i.TaxTotal - i.DiscountTotal,
-                        Balance = i.Balance,
-                        CompanyName = i.Deal != null ? i.Deal.Contact.FirstName :
-                                     i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Contact.FirstName : "",
-                        DealTitle = i.Deal != null ? i.Deal.Title :
-                                   i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Title : null,
-                        QuoteNumber = i.Quote != null ? i.Quote.Number : null,
-                        ItemCount = i.Lines.Count(l => !l.IsDeleted),
-                        IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
-                                    i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
-                        CreatedAtUtc = i.CreatedAtUtc
+                        Item = new InvoiceListItem
+                        {
+                            Id = i.Id,
+                            Number = i.Number,
+                            IssueDateUtc = i.IssueDateUtc,
+                            DueDateUtc = i.DueDateUtc,
+                            Currency = i.Currency,
+                            Status = i.Status.ToString(),
+                            GrandTotal = i.Subtotal + i.TaxTotal - i.DiscountTotal,
+                            Balance = i.Balance,
+
+                            // CompanyName is NOT set here. It is resolved in
+                            // memory a few lines below, because SQL cannot call
+                            // CustomerNaming and writing the rule out again
+                            // here is exactly how six copies of it drifted.
+
+                            DealTitle = i.Deal != null ? i.Deal.Title :
+                                        i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Title : null,
+                            QuoteNumber = i.Quote != null ? i.Quote.Number : null,
+                            ItemCount = i.Lines.Count(l => !l.IsDeleted),
+                            IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
+                                        i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
+                            CreatedAtUtc = i.CreatedAtUtc
+                        },
+
+                        // 053. The invoice reaches its customer either
+                        // directly (DealId) or through the quote it was
+                        // raised from — the same either/or the DealTitle
+                        // above already does. Four strings, resolved in
+                        // memory by the one rule.
+                        DealCompany = i.Deal != null
+                            ? (i.Deal.Company != null ? i.Deal.Company.Name : null)
+                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Company != null
+                                ? i.Quote.Deal.Company.Name : null),
+
+                        ContactCompany = i.Deal != null
+                            ? (i.Deal.Contact != null && i.Deal.Contact.Company != null
+                                ? i.Deal.Contact.Company.Name : null)
+                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                               && i.Quote.Deal.Contact.Company != null
+                                ? i.Quote.Deal.Contact.Company.Name : null),
+
+                        FirstName = i.Deal != null
+                            ? (i.Deal.Contact != null ? i.Deal.Contact.FirstName : null)
+                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                                ? i.Quote.Deal.Contact.FirstName : null),
+
+                        LastName = i.Deal != null
+                            ? (i.Deal.Contact != null ? i.Deal.Contact.LastName : null)
+                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                                ? i.Quote.Deal.Contact.LastName : null)
                     })
                     .ToListAsync(cancellationToken);
+
+                var invoices = rows.Select(r =>
+                {
+                    // Display, not Company: the list has ONE column for this,
+                    // so a person-to-person sale with no company should show
+                    // the person rather than an empty cell.
+                    r.Item.CompanyName = CustomerNaming.Display(
+                        r.DealCompany, r.ContactCompany, r.FirstName, r.LastName);
+                    return r.Item;
+                }).ToList();
 
                 _logger.LogInformation("Found {Count} invoices", invoices.Count);
                 return invoices;
@@ -190,8 +254,17 @@ namespace MerkaiTrial.Application.Queries.Invoices
                         .ThenInclude(l => l.Product)
                     .Include(i => i.Payments.Where(p => !p.IsDeleted))
                     .Include(i => i.Quote)
+                        .ThenInclude(q => q!.Deal)
+                            .ThenInclude(d => d!.Contact)
+                                .ThenInclude(c => c!.Company)    // 053
+                    .Include(i => i.Quote)
+                        .ThenInclude(q => q!.Deal)
+                            .ThenInclude(d => d!.Company)        // 053
                     .Include(i => i.Deal)
                         .ThenInclude(d => d.Contact)
+                            .ThenInclude(c => c!.Company)        // 053
+                    .Include(i => i.Deal)
+                        .ThenInclude(d => d!.Company)            // 053
                     .Include(i => i.Deal)
                         .ThenInclude(d => d.Vertical)  // ✅ For VerticalName
                     .FirstOrDefaultAsync(cancellationToken);
@@ -222,8 +295,15 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     TotalPaid = invoice.Payments.Where(p => !p.IsDeleted && p.Status == PaymentStatusNames.Captured).Sum(p => p.Amount),
                     QuoteNumber = invoice.Quote?.Number,
                     DealTitle = invoice.Deal?.Title ?? invoice.Quote?.Deal?.Title,
-                    CompanyName = invoice.Deal?.Contact?.FirstName ?? invoice.Quote?.Deal?.Contact?.FirstName,
-                    ContactName = invoice.Deal?.Contact?.FirstName + " " + invoice.Deal?.Contact?.LastName,
+
+                    // 053. Two bugs on these two lines, not one. CompanyName
+                    // held a first name; and ContactName concatenated with a
+                    // literal " " in the middle, so with no deal it came out
+                    // as a single SPACE rather than null — the detail screen's
+                    // "is there a contact?" test was therefore always true and
+                    // it drew an icon beside an empty line.
+                    CompanyName = CustomerNaming.CompanyOf(invoice.Deal ?? invoice.Quote?.Deal),
+                    ContactName = CustomerNaming.PersonOf(invoice.Deal ?? invoice.Quote?.Deal),
                     VerticalName = invoice.Deal?.Vertical?.Name,  // ✅ Industry from deal
                     PdfUrl = invoice.PdfUrl,
                     Notes = invoice.Notes,
@@ -237,7 +317,9 @@ namespace MerkaiTrial.Application.Queries.Invoices
                         Description = l.Description,
                         UnitPrice = l.UnitPrice,
                         Quantity = l.Quantity,
+                        UnitOfMeasure = l.UnitOfMeasure,        // 052
                         LineDiscount = l.LineDiscount,
+                        DiscountPercent = l.DiscountPercent,    // 055
                         TaxRate = l.TaxRate,
                         LineTotal = (l.UnitPrice * l.Quantity) - l.LineDiscount,
                         LineTax = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,

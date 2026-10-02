@@ -163,8 +163,12 @@
                             </td>
                             <td><span class="badge bg-info">@(product.Category ?? "Uncategorized")</span></td>
                             <td><code>@(product.Sku ?? "-")</code></td>
+                            @* 051: the unit rides with the price. Without it a
+                               list of numbers says nothing about what is being
+                               sold — ₹450 per m² and ₹450 per piece are not the
+                               same product. *@
                             <td>
-                                <strong>@Model.FormatCurrency(product.ListPrice)</strong>
+                                <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
                                 @if (product.TaxRate.HasValue)
                                 {
                                     <br /><small class="text-muted">+@product.TaxRate.Value% tax</small>
@@ -254,7 +258,9 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <small class="text-muted">Price</small>
-                            <div><strong>@Model.FormatCurrency(product.ListPrice)</strong></div>
+                            <div>
+                                <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
+                            </div>
                         </div>
                         <div class="col-6">
                             <small class="text-muted">SKU</small>

@@ -39,12 +39,33 @@
 //   ✅ Line checks on create/update (quantity, price, discount, tax).
 //   ✅ Delete: drafts only.
 //
+// 055 — A LINE DISCOUNT CAN BE A PERCENTAGE
+//   Every line path runs through LineDiscounts.Resolve, the same rule the
+//   quote handler uses, and CreateInvoiceFromQuote copies the percentage
+//   across with the rest of the line — so an invoice raised from a quote
+//   says "-10%" exactly where the quote the customer accepted did. No
+//   total below changes: they all still read LineDiscount.
+//
+// 052 — DECIMAL QUANTITY AND UNIT OF MEASURE (Phase B of the catalogue)
+//   ✅ Every line path carries a DECIMAL quantity and a UnitOfMeasure.
+//   ✅ CreateInvoiceFromQuote copies the quote line's unit across. This is
+//      the path that made the two halves one round rather than two: it
+//      copies QuoteItem → CreateInvoiceLineDto field by field, so a
+//      decimal quantity on the quote and an int on the invoice would have
+//      rounded 12.5 m² down to 12 the moment the invoice was raised — the
+//      customer's invoice quietly disagreeing with the quote they accepted.
+//   ✅ Manual invoices snapshot the unit from the product when the caller
+//      did not send one (LineUnits, in QuotesCommandHandler.cs, shared so
+//      quotes and invoices cannot drift).
+//   ✅ QuoteLineChecks — the same validator, now with a decimal tuple.
+//
 // RECORD VISIBILITY (016/017) unchanged: invoices follow their deal;
 // InvoiceAccessHandler at the bottom is what InvoicesController checks.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.Commands.Quotes;
+using MerkaiTrial.Application.Common;          // 055: LineDiscounts
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -209,7 +230,27 @@ namespace MerkaiTrial.Application.Commands.Invoices
             if (dto.Lines == null || dto.Lines.Count == 0)
                 throw new InvalidOperationException("Add at least one item to the invoice.");
 
+            // 055. FIRST, before anything reads LineDiscount — a
+            // percentage replaces whatever amount came with it, so the
+            // validation, the totals and the stored row all use the same
+            // number. LineDiscounts.Resolve is the same rule the quote
+            // handler uses.
+            foreach (var l in dto.Lines)
+            {
+                var (amount, percent) = LineDiscounts.Resolve(
+                    l.Name, l.UnitPrice, l.Quantity, l.LineDiscount, l.DiscountPercent);
+                l.LineDiscount    = amount;
+                l.DiscountPercent = percent;
+            }
+
             QuoteLineChecks.Validate(dto.Lines.Select(l => (l.Name ?? "", l.UnitPrice, l.Quantity, l.LineDiscount, l.TaxRate)));
+
+            // 052: one query for the catalogue products on this invoice, so a
+            // line that arrived without a unit still stores the product's own.
+            // CreateInvoiceFromQuote sends the quote's unit explicitly, so for
+            // that path this lookup finds nothing to fill in — as it should.
+            var units = await LineUnits.LookupAsync(
+                _db, dto.TenantId, dto.Lines.Select(l => l.ProductId));
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var now = DateTime.UtcNow;
@@ -255,7 +296,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     Description = lineDto.Description,
                     UnitPrice = lineDto.UnitPrice,
                     Quantity = lineDto.Quantity,
+                    UnitOfMeasure = LineUnits.Resolve(lineDto.UnitOfMeasure, lineDto.ProductId, units),  // 052
                     LineDiscount = lineDto.LineDiscount,
+                    DiscountPercent = lineDto.DiscountPercent,     // 055 — resolved above
                     TaxRate = lineDto.TaxRate,
                     Amount = ((lineDto.UnitPrice * lineDto.Quantity) - lineDto.LineDiscount) * (1 + lineDto.TaxRate),
                     CreatedAtUtc = now,
@@ -324,7 +367,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 Description = l.Description,
                 UnitPrice = l.UnitPrice,
                 Quantity = l.Quantity,
+                UnitOfMeasure = l.UnitOfMeasure,               // 052
                 LineDiscount = l.LineDiscount,
+                DiscountPercent = l.DiscountPercent,           // 055
                 TaxRate = l.TaxRate,
                 LineTotal = (l.UnitPrice * l.Quantity) - l.LineDiscount,
                 LineTax = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,
@@ -409,7 +454,16 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     Description = item.Description,
                     UnitPrice = item.UnitPrice,
                     Quantity = item.Quantity,
+                    // 052: the quote's unit, copied like Name and UnitPrice.
+                    // An invoice raised from a quote must say the same thing
+                    // the customer accepted, down to "m²".
+                    UnitOfMeasure = item.UnitOfMeasure,
                     LineDiscount = item.LineDiscount,
+                    // 055: the percentage travels with the line. Without it
+                    // the invoice would show a flat amount where the quote
+                    // said "-10%", which is the same money described two
+                    // different ways to the same customer.
+                    DiscountPercent = item.DiscountPercent,
                     TaxRate = item.TaxRate
                 }).ToList()
             };
@@ -621,7 +675,24 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 if (request.Lines == null || request.Lines.Count == 0)
                     throw new InvalidOperationException("Add at least one item to the invoice.");
 
+                // 055. FIRST, before anything reads LineDiscount — a
+                // percentage replaces whatever amount came with it, so the
+                // validation, the totals and the stored row all use the same
+                // number. LineDiscounts.Resolve is the same rule the quote
+                // handler uses.
+                foreach (var l in request.Lines)
+                {
+                    var (amount, percent) = LineDiscounts.Resolve(
+                        l.Name, l.UnitPrice, l.Quantity, l.LineDiscount, l.DiscountPercent);
+                    l.LineDiscount    = amount;
+                    l.DiscountPercent = percent;
+                }
+
                 QuoteLineChecks.Validate(request.Lines.Select(l => (l.Name ?? "", l.UnitPrice, l.Quantity, l.LineDiscount, l.TaxRate)));
+
+                // 052 — same single lookup as create.
+                var units = await LineUnits.LookupAsync(
+                    _context, request.TenantId, request.Lines.Select(l => l.ProductId));
 
                 foreach (var existingLine in invoice.Lines.Where(l => !l.IsDeleted))
                 {
@@ -643,7 +714,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                         Description = lineDto.Description,
                         UnitPrice = lineDto.UnitPrice,
                         Quantity = lineDto.Quantity,
+                        UnitOfMeasure = LineUnits.Resolve(lineDto.UnitOfMeasure, lineDto.ProductId, units),  // 052
                         LineDiscount = lineDto.LineDiscount,
+                        DiscountPercent = lineDto.DiscountPercent,     // 055
                         TaxRate = lineDto.TaxRate,
                         Amount = lineNet * (1 + lineDto.TaxRate),
                         CreatedAtUtc = now,

@@ -24,6 +24,10 @@
 //      to start without this, which is exactly what that guard is for.
 //   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
 //      tenant-owned and filtered.
+//  11. (056) TaxRate MOVED from the strict list to the shared list —
+//      NULL now means "system rate, every tenant in that country". See
+//      the note beside it; it is the difference between that table
+//      working and being decorative.
 //  10. (040) TenantNotificationDefaults — the workspace's starting
 //      position for each notification event, and the lock. Strictly
 //      tenant-owned and filtered.
@@ -154,8 +158,67 @@ public class FlowDbContext : DbContext
         b.ApplyConfigurationsFromAssembly(typeof(FlowDbContext).Assembly);
         b.Ignore<Journey>();
 
+        ApplyDecimalPrecision(b);          // 062 — BEFORE the filters, see below
         ApplyTenantFilters(b);
         AssertEveryTenantEntityIsCovered(b);
+    }
+
+    // =================================================================
+    // DECIMAL PRECISION (062)
+    //
+    // EF Core's default for a `decimal` on SQL Server is DECIMAL(18,2),
+    // and it applies that to any property nothing has configured. It says
+    // so at startup, once per property:
+    //
+    //   [WRN] No store type was specified for the decimal property
+    //   'Quantity' on entity type 'QuoteItem'. This will cause values to
+    //   be SILENTLY TRUNCATED if they do not fit in the default precision
+    //   and scale.
+    //
+    // THE BUG THAT WARNING WAS DESCRIBING. 052 retyped Quantity to
+    // DECIMAL(18,4) in SQL and taught QuoteLineChecks to allow four
+    // decimal places. The column can hold 12.5678 and the validator lets
+    // it through — but EF sent the parameter as DECIMAL(18,2), so SQL
+    // Server rounded it to 12.57 on the way in and stored 12.5700. The
+    // whole point of 052 — 12.5 m² of flooring, 3.5 consulting days —
+    // happened to work only because those have one decimal place.
+    //
+    // Nothing reported it. No exception, no warning at write time, no
+    // difference on screen until somebody checked a figure.
+    //
+    // DiscountPercent is the mirror image: DECIMAL(5,2) in SQL, so it
+    // tops out at 999.99, while EF believed it had eighteen digits to
+    // play with. The scale matches, so nothing was truncated — but a
+    // nonsense percentage would have reached SQL Server and come back as
+    // "Arithmetic overflow error converting numeric to data type
+    // numeric", which names no column and no row.
+    //
+    // THE NUMBERS BELOW MUST MATCH THE COLUMNS, not each other:
+    //   QuoteItems.Quantity          DECIMAL(18,4)   052
+    //   InvoiceLines.Quantity        DECIMAL(18,4)   052
+    //   QuoteItems.DiscountPercent   DECIMAL(5,2)    055
+    //   InvoiceLines.DiscountPercent DECIMAL(5,2)    055
+    //
+    // If you ever ALTER one of those columns, change it here in the same
+    // round. A mismatch in either direction is silent.
+    //
+    // Called BEFORE ApplyTenantFilters only for readability — precision
+    // and filters are independent. It runs AFTER
+    // ApplyConfigurationsFromAssembly, so these win over anything an
+    // IEntityTypeConfiguration might set later; today none of them
+    // configure these four, which is why EF was warning at all.
+    // =================================================================
+    private static void ApplyDecimalPrecision(ModelBuilder b)
+    {
+        // 052 — a quantity can be 12.5 m² or 3.5 days. Four places.
+        b.Entity<QuoteItem>()  .Property(e => e.Quantity).HasPrecision(18, 4);
+        b.Entity<InvoiceLine>().Property(e => e.Quantity).HasPrecision(18, 4);
+
+        // 055 — a percentage. Five digits total, two after the point:
+        // 0.00 to 999.99. The 0–100 range itself is enforced in
+        // LineDiscounts and on the editor, not here.
+        b.Entity<QuoteItem>()  .Property(e => e.DiscountPercent).HasPrecision(5, 2);
+        b.Entity<InvoiceLine>().Property(e => e.DiscountPercent).HasPrecision(5, 2);
     }
 
     // =================================================================
@@ -201,7 +264,6 @@ public class FlowDbContext : DbContext
         b.Entity<Product>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Activity>()        .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Attachment>()      .HasQueryFilter(e => e.TenantId == CurrentTenantId);
-        b.Entity<TaxRate>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantSettings>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<PipelineStage>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
@@ -261,6 +323,23 @@ public class FlowDbContext : DbContext
         // everyone.
         b.Entity<Role>()            .HasQueryFilter(e => e.TenantId == null || e.TenantId == CurrentTenantId);
         b.Entity<CompanyVertical>() .HasQueryFilter(e => e.TenantId == null || e.TenantId == CurrentTenantId);
+
+        // TaxRates (056). MOVED HERE from the strict list above, where it
+        // had always been — and that was the bug. A system rate is exactly
+        // the shared-reference case this section exists for: the standard
+        // VAT or GST for a country, published once for every tenant that
+        // sells there. Under the strict filter no tenant could ever see one,
+        // so GetDefaultTaxRateAsync fell through to Country.DefaultTaxRate
+        // on every single call and the whole table was decoration.
+        //
+        // A SuperAdmin has no tenant, so CurrentTenantId is Guid.Empty and
+        // this resolves to "system rates only" for them — which is exactly
+        // what the /Admin/TaxRates screens should see.
+        //
+        // The write side does NOT rely on this: a filter that admits system
+        // rows would let a tenant admin edit one. TaxRateCommandHelper
+        // checks ownership explicitly on every update and delete.
+        b.Entity<TaxRate>()         .HasQueryFilter(e => e.TenantId == null || e.TenantId == CurrentTenantId);
 
         // ── Users and UserTokens: deliberately NOT filtered ───────────
         // Login resolves a user by email with no tenant context, and the

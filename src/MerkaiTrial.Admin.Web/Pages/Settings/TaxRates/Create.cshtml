@@ -1,0 +1,172 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.TaxRates.CreateModel
+@{
+    ViewData["Title"] = "Add a tax rate";
+}
+@* =====================================================================
+   Settings/TaxRates/Create.cshtml — NEW (058). Tenant shell, light.
+   ===================================================================== *@
+
+<div class="d-flex align-items-start gap-3 mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">Add a tax rate</h1>
+        <p class="text-muted mb-0">
+            A rate for your workspace. It is used in place of the standard one
+            for @Model.CountryName.
+        </p>
+    </div>
+    <div class="ms-auto">
+        <a asp-page="./Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>@Model.ErrorMessage</span>
+    </div>
+}
+
+<form method="post">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-percent me-2 text-primary"></i>Rate details
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        @* The country is not a dropdown, on purpose. A
+                           workspace has ONE country and the resolver only
+                           looks for rates matching it — a rate for anywhere
+                           else would be visibly configured and silently
+                           unused. Create.cshtml.cs has the full note. *@
+                        <div class="col-md-6">
+                            <label class="form-label">Country</label>
+                            <input type="text" class="form-control"
+                                   value="@Model.CountryName (@Model.CountryCode)" disabled />
+                            <small class="text-muted">
+                                <i class="bi bi-lock me-1"></i>Your workspace's country
+                            </small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.TaxType" class="form-label">
+                                Tax type <span class="text-danger">*</span>
+                            </label>
+                            <select asp-for="Input.TaxType" asp-items="Model.TaxTypeOptions"
+                                    class="form-select"></select>
+                            <span asp-validation-for="Input.TaxType" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Name" class="form-label">
+                                Rate name <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.Name" class="form-control"
+                                   placeholder="e.g. Standard @Model.TaxLabel" />
+                            <small class="text-muted">What you'll recognise it by in this list.</small>
+                            <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Rate" class="form-label">
+                                Rate (%) <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <input asp-for="Input.Rate" type="number" step="0.01" min="0" max="100"
+                                       class="form-control" placeholder="18" />
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <span asp-validation-for="Input.Rate" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveFrom" class="form-label">In force from</label>
+                            <input asp-for="Input.EffectiveFrom" type="date" class="form-control" />
+                            <small class="text-muted">
+                                Leave empty to apply from today. A future date
+                                <strong>schedules</strong> it.
+                            </small>
+                            <span asp-validation-for="Input.EffectiveFrom" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveTo" class="form-label">In force until</label>
+                            <input asp-for="Input.EffectiveTo" type="date" class="form-control" />
+                            <small class="text-muted">
+                                Leave empty for no end date. The rate still applies
+                                <em>on</em> this day.
+                            </small>
+                            <span asp-validation-for="Input.EffectiveTo" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input asp-for="Input.IsDefault" class="form-check-input" type="checkbox" />
+                                <label asp-for="Input.IsDefault" class="form-check-label">
+                                    Use this as the default for @Model.CountryName
+                                </label>
+                            </div>
+                            <small class="text-muted">
+                                The default is the rate a new quote line starts with. Only one
+                                of your rates can be the default at a time.
+                            </small>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="bi bi-lightning me-2 text-primary"></i>Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Add rate
+                        </button>
+                        <a asp-page="./Index" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-lightbulb me-2 text-primary"></i>Worth knowing
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0 ps-3">
+                        <li class="mb-2">
+                            Your rate is used <strong>in place of</strong> the standard one for
+                            @Model.CountryName — you don't need to match it.
+                        </li>
+                        <li class="mb-2">
+                            A quote line can still be given its own rate. This is the
+                            <strong>starting point</strong>.
+                        </li>
+                        <li class="mb-2">
+                            Quotes and invoices already sent are <strong>untouched</strong>.
+                            Each one keeps the rate it was priced with.
+                        </li>
+                        <li>
+                            To change a rate later, add a new one with a start date rather
+                            than editing this one.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

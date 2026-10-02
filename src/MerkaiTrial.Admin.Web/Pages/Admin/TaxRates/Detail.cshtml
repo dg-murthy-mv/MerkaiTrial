@@ -1,8 +1,72 @@
-@page "/Admin/TaxRates/Detail/{id}"
-@model MerkaiTrial.Admin.Web.Pages.TaxRates.DetailModel
+@page "{id:guid}"
+@using MerkaiTrial.Application.Common
+@model MerkaiTrial.Admin.Web.Pages.Admin.TaxRates.DetailModel
 @{
     ViewData["Title"] = "Tax Rate Details";
+
+    // 057. Worked out once, here, rather than four times down the page:
+    // four calls to UtcNow in one render can disagree across midnight,
+    // which is precisely when a scheduled rate change happens.
+    var state = TaxRateStatus.Of(
+        Model.TaxRate.IsActive, Model.TaxRate.EffectiveFrom, Model.TaxRate.EffectiveTo);
+
+    string Window()
+    {
+        const string fmt = "d MMM yyyy";
+        var f = Model.TaxRate.EffectiveFrom;
+        var t = Model.TaxRate.EffectiveTo;
+
+        if (f is null && t is null) return "Always in force";
+        if (f is null) return $"Until {t!.Value.ToString(fmt)}";
+        if (t is null) return $"From {f.Value.ToString(fmt)}";
+        return $"{f.Value.ToString(fmt)} – {t.Value.ToString(fmt)}";
+    }
 }
+@* =====================================================================
+   Admin/TaxRates/Detail.cshtml — MOVED IN 054 from Pages/TaxRates/.
+   Route override dropped (the folder gives the URL), namespace changed,
+   and re-themed for the dark console. Detail.cshtml.cs has the note on
+   why the move is the security fix.
+   ===================================================================== *@
+
+<style>
+/* 054 — see Index.cshtml. Bootstrap's -emphasis pairs resolve light
+   without data-bs-theme="dark", and bg-primary / bg-info / bg-secondary /
+   bg-light on a .card-header are !important utilities that beat the
+   layout's own rule. This page had all four. */
+.sa-main {
+    --bs-success-text-emphasis:   #86efac;
+    --bs-danger-text-emphasis:    #fca5a5;
+    --bs-warning-text-emphasis:   #fcd34d;
+    --bs-info-text-emphasis:      #67e8f9;
+    --bs-secondary-text-emphasis: #cbd5e1;
+
+    --bs-success-bg-subtle:   rgba(34,197,94,.14);
+    --bs-danger-bg-subtle:    rgba(239,68,68,.14);
+    --bs-warning-bg-subtle:   rgba(245,158,11,.14);
+    --bs-info-bg-subtle:      rgba(34,211,238,.14);
+    --bs-secondary-bg-subtle: rgba(148,163,184,.14);
+}
+.tr-title    { font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin: 0; }
+.tr-subtitle { color: #64748b; margin: 0; font-size: .9rem; }
+
+/* A value's label has to be readable. .sa-main .text-muted is #475569 —
+   fine for a caption, too dark for this. */
+.tr-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+            color: #94a3b8; font-weight: 600; display: block; margin-bottom: .15rem; }
+.tr-value { color: #e2e8f0; font-weight: 600; }
+.sa-main .card-header .bi { color: #22d3ee; }
+.sa-main hr { border-color: rgba(255,255,255,.08); }
+
+.sa-main .nav-tabs { border-color: rgba(34,211,238,.15); }
+.sa-main .nav-tabs .nav-link { color: #94a3b8; border-color: transparent; }
+.sa-main .nav-tabs .nav-link:hover { color: #e2e8f0; border-color: rgba(34,211,238,.2); }
+.sa-main .nav-tabs .nav-link.active {
+    color: #22d3ee; background: var(--card-bg, #0d1933);
+    border-color: rgba(34,211,238,.25) rgba(34,211,238,.25) var(--card-bg, #0d1933);
+}
+</style>
+
 
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -12,16 +76,19 @@
                 <i class="bi bi-receipt text-white" style="font-size: 2.5rem;"></i>
             </div>
             <div>
-                <h2 class="mb-1">
+                <h2 class="tr-title">
                     @Model.TaxRate.Name
                     @if (Model.TaxRate.IsDefault)
                     {
-                        <span class="badge bg-warning ms-2">Default</span>
+                        <span class="badge text-bg-warning ms-2">Default</span>
                     }
                 </h2>
-                <p class="text-muted mb-0">
+                <p class="tr-subtitle">
                     <i class="bi bi-globe me-1"></i>@Model.Country.Name (@Model.TaxRate.CountryCode)
+                    <span class="ms-2">· system rate</span>
+                    <span class="badge @TaxRateStatus.BadgeClass(state) ms-2">@TaxRateStatus.Label(state)</span>
                 </p>
+                <p class="tr-subtitle mb-0">@TaxRateStatus.Explain(state)</p>
             </div>
         </div>
         <div class="d-flex gap-2">
@@ -62,54 +129,58 @@
             <div class="row g-4">
                 <div class="col-lg-8">
                     <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-primary text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-receipt"></i> Tax Rate Information</h5>
                         </div>
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Country</label>
-                                    <div class="fw-semibold">
+                                    <label class="tr-label">Country</label>
+                                    <div class="tr-value">
                                         @Model.Country.Name (@Model.TaxRate.CountryCode)
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Tax Type</label>
-                                    <div><span class="badge bg-info fs-6">@Model.TaxRate.TaxType</span></div>
+                                    <label class="tr-label">Tax Type</label>
+                                    <div><span class="badge text-bg-info fs-6">@Model.TaxRate.TaxType</span></div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Rate Name</label>
-                                    <div class="fw-semibold">@Model.TaxRate.Name</div>
+                                    <label class="tr-label">Rate Name</label>
+                                    <div class="tr-value">@Model.TaxRate.Name</div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Tax Rate</label>
-                                    <div class="fw-semibold text-primary fs-5">@Model.TaxRate.Rate.ToString("0.##")%</div>
+                                    <label class="tr-label">Tax Rate</label>
+                                    <div class="tr-value fs-5" style="color:#22d3ee !important;">@Model.TaxRate.Rate.ToString("0.##")%</div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Default Rate</label>
+                                    <label class="tr-label">Default Rate</label>
                                     <div>
                                         @if (Model.TaxRate.IsDefault)
                                         {
-                                            <span class="badge bg-warning fs-6">Yes - Default for @Model.Country.Name</span>
+                                            <span class="badge text-bg-warning fs-6">Yes - Default for @Model.Country.Name</span>
                                         }
                                         else
                                         {
-                                            <span class="badge bg-secondary fs-6">No</span>
+                                            <span class="badge text-bg-secondary fs-6">No</span>
                                         }
                                     </div>
                                 </div>
+                                @* 057. Was a two-state Active/Inactive badge
+                                   reading IsActive alone, which called a rate
+                                   scheduled for next April "Active" and one that
+                                   expired last year "Active" too. *@
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Status</label>
+                                    <label class="tr-label">Status</label>
                                     <div>
-                                        @if (Model.TaxRate.IsActive)
-                                        {
-                                            <span class="badge bg-success fs-6">Active</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="badge bg-danger fs-6">Inactive</span>
-                                        }
+                                        <span class="badge @TaxRateStatus.BadgeClass(state) fs-6">
+                                            @TaxRateStatus.Label(state)
+                                        </span>
                                     </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="tr-label">In force</label>
+                                    <div class="tr-value">@Window()</div>
                                 </div>
                             </div>
                         </div>
@@ -118,13 +189,13 @@
 
                 <div class="col-lg-4">
                     <div class="card border-0 shadow-sm h-100">
-                        <div class="card-header bg-info text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-shield-check"></i> Rate Type</h5>
                         </div>
                         <div class="card-body">
                             <div class="text-center mb-3">
                                 <div class="mb-3">
-                                    <i class="bi bi-receipt text-primary" style="font-size: 3rem;"></i>
+                                    <i class="bi bi-receipt" style="font-size: 3rem; color:#22d3ee;"></i>
                                 </div>
                                 <h5 class="mb-2">@Model.TaxRate.TaxType</h5>
                                 <p class="text-muted small mb-0">Tax calculation type</p>
@@ -133,7 +204,7 @@
                             <hr />
 
                             <div class="mb-3">
-                                <label class="text-muted small">Default</label>
+                                <label class="tr-label">Default</label>
                                 <div>
                                     @if (Model.TaxRate.IsDefault)
                                     {
@@ -153,18 +224,13 @@
                             </div>
 
                             <div>
-                                <label class="text-muted small">Status</label>
+                                <label class="tr-label">Status</label>
                                 <div>
-                                    @if (Model.TaxRate.IsActive)
-                                    {
-                                        <i class="bi bi-check-circle-fill text-success"></i>
-                                        <span class="fw-semibold ms-2">Active</span>
-                                    }
-                                    else
-                                    {
-                                        <i class="bi bi-x-circle-fill text-danger"></i>
-                                        <span class="fw-semibold ms-2">Inactive</span>
-                                    }
+                                    <span class="badge @TaxRateStatus.BadgeClass(state)">
+                                        @TaxRateStatus.Label(state)
+                                    </span>
+                                    <div class="tr-subtitle mt-1">@TaxRateStatus.Explain(state)</div>
+                                    <div class="tr-subtitle">@Window()</div>
                                 </div>
                             </div>
                         </div>
@@ -177,26 +243,42 @@
             <div class="row g-4">
                 <div class="col-lg-8">
                     <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-primary text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-sliders"></i> Tax Rate Settings</h5>
                         </div>
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Country Code</label>
-                                    <div class="fw-semibold fs-5">@Model.TaxRate.CountryCode</div>
+                                    <label class="tr-label">Country Code</label>
+                                    <div class="tr-value fs-5">@Model.TaxRate.CountryCode</div>
                                     <small class="text-muted">Cannot be changed</small>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="text-muted small">Tax Type</label>
-                                    <div class="fw-semibold fs-5">@Model.TaxRate.TaxType</div>
+                                    <label class="tr-label">Tax Type</label>
+                                    <div class="tr-value fs-5">@Model.TaxRate.TaxType</div>
                                     <small class="text-muted">Cannot be changed</small>
                                 </div>
+                                <div class="col-md-6">
+                                    <label class="tr-label">In force from</label>
+                                    <div class="tr-value fs-5">
+                                        @(Model.TaxRate.EffectiveFrom?.ToString("d MMM yyyy") ?? "—")
+                                    </div>
+                                    <small class="text-muted">Empty = always has been</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="tr-label">In force until</label>
+                                    <div class="tr-value fs-5">
+                                        @(Model.TaxRate.EffectiveTo?.ToString("d MMM yyyy") ?? "—")
+                                    </div>
+                                    <small class="text-muted">Empty = no end date</small>
+                                </div>
+
                                 <div class="col-12">
                                     <hr />
                                     <p class="text-muted mb-0">
                                         <i class="bi bi-info-circle"></i>
-                                        Country and tax type cannot be changed after creation. You can update the rate name, percentage, and default status.
+                                        Country and tax type cannot be changed after creation. You can update
+                                        the name, the percentage, the effective dates and the default status.
                                     </p>
                                 </div>
                             </div>
@@ -206,7 +288,7 @@
 
                 <div class="col-lg-4">
                     <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-secondary text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
                         </div>
                         <div class="card-body">
@@ -222,7 +304,7 @@
                     </div>
 
                     <div class="card border-0 shadow-sm mt-3">
-                        <div class="card-header bg-light">
+                        <div class="card-header">
                             <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
                         </div>
                         <div class="card-body">
@@ -230,7 +312,11 @@
                                 <li class="mb-2">Tax rates can be <strong>edited</strong> anytime</li>
                                 <li class="mb-2"><strong>Country and type</strong> are locked after creation</li>
                                 <li class="mb-2">Only <strong>one default</strong> rate per country</li>
-                                <li>Setting as default <strong>updates</strong> previous default</li>
+                                <li class="mb-2">Setting as default <strong>updates</strong> previous default</li>
+                                <li>
+                                    To change a rate on a date, <strong>end this one and create the new
+                                    one</strong> — editing the percentage rewrites history
+                                </li>
                             </ul>
                         </div>
                     </div>

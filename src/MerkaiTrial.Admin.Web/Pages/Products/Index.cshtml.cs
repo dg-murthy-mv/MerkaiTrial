@@ -183,5 +183,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         {
             return CurrencyConfiguration.GetCurrencySymbol(currency);
         }
+
+        /// <summary>
+        /// 051. "/ m²", "/ hrs" — or EMPTY for a plain unit, because
+        /// "₹450 / unit" reads worse than "₹450" down a column of prices.
+        /// </summary>
+        public string PricedPer(string? unitOfMeasure)
+        {
+            var s = UnitsOfMeasure.ShortOf(unitOfMeasure);
+            return string.IsNullOrEmpty(s) ? string.Empty : " / " + s;
+        }
     }
 }

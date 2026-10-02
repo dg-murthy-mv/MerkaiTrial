@@ -82,6 +82,97 @@ namespace MerkaiTrial.Application.DTOs
         string TimeZone
     );
 
+    // ==================== COMPANY PROFILE (064) ====================
+    //
+    // The SELLER's own details — who the quote is from. Separate from
+    // TenantDto on purpose:
+    //
+    //   TenantDto is the SUPER ADMIN's view of a workspace: plan, status,
+    //   currency, timezone, created date. It is read and written through
+    //   /api/tenants/{id} by someone managing the platform.
+    //
+    //   CompanyProfileDto is the WORKSPACE's view of ITSELF, read and
+    //   written through /api/tenants/company-profile with NO id in the
+    //   route — the tenant comes from the token, so there is nothing to
+    //   tamper with and a workspace can only ever edit its own.
+    //
+    // Mixing them would mean one endpoint that a tenant admin may call
+    // for some fields and not others, which is the kind of rule that
+    // gets enforced in exactly one of the two places that need it.
+
+    public record CompanyProfileDto(
+        Guid TenantId,
+
+        /// <summary>What the workspace is called in the app. Read-only here —
+        /// renaming a workspace is a platform operation.</summary>
+        string Name,
+
+        string? LegalName,
+        string? AddressLine1,
+        string? AddressLine2,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string? Phone,
+        string? Website,
+        string? TaxNumber,
+        string? TaxNumberLabel,
+
+        /// <summary>Where replies to a quote email go.</summary>
+        string? ReplyToEmail,
+
+        // ── Context the page needs, all read-only ────────────────────
+        string? CountryCode,
+        string? CountryName,
+
+        /// <summary>Country.TaxLabel — the default for TaxNumberLabel when
+        /// the workspace has not set its own, and the hint on the form.</summary>
+        string? CountryTaxLabel
+    );
+
+    public record UpdateCompanyProfileCommand(
+        // NO TenantId. The API takes it from the caller's token — see the
+        // note above. A TenantId here would be a field somebody could
+        // change in a request body.
+
+        [StringLength(200, ErrorMessage = "Legal name cannot exceed 200 characters")]
+        string? LegalName,
+
+        [StringLength(200, ErrorMessage = "Address line 1 cannot exceed 200 characters")]
+        string? AddressLine1,
+
+        [StringLength(200, ErrorMessage = "Address line 2 cannot exceed 200 characters")]
+        string? AddressLine2,
+
+        [StringLength(100, ErrorMessage = "City cannot exceed 100 characters")]
+        string? City,
+
+        [StringLength(100, ErrorMessage = "State cannot exceed 100 characters")]
+        string? State,
+
+        [StringLength(20, ErrorMessage = "Postal code cannot exceed 20 characters")]
+        string? PostalCode,
+
+        [StringLength(50, ErrorMessage = "Phone cannot exceed 50 characters")]
+        string? Phone,
+
+        [StringLength(255, ErrorMessage = "Website cannot exceed 255 characters")]
+        string? Website,
+
+        [StringLength(50, ErrorMessage = "Tax number cannot exceed 50 characters")]
+        string? TaxNumber,
+
+        [StringLength(50, ErrorMessage = "Tax number label cannot exceed 50 characters")]
+        string? TaxNumberLabel,
+
+        [EmailAddress(ErrorMessage = "Invalid reply-to email format")]
+        [StringLength(320, ErrorMessage = "Reply-to email cannot exceed 320 characters")]
+        string? ReplyToEmail,
+
+        [StringLength(255)]
+        string? UpdatedBy = null
+    );
+
     public record TenantSettingsDto(
         Guid TenantId,
         int MaxUsers,

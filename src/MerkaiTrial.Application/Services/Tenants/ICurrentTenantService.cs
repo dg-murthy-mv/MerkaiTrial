@@ -32,6 +32,57 @@
 //     whatever this method does. There is a SELECT at the bottom of
 //     SETUP.md to find those rows.
 //
+// CHANGES (056) — GetDefaultTaxRateAsync
+//   This method DOES read the TaxRates table, and always fell through to
+//   Country.DefaultTaxRate anyway, for two reasons that compounded:
+//
+//     1. `t.TenantId == GetTenantId()` — the tenant's OWN rates only.
+//        There is no tenant-facing screen, so no tenant has any.
+//     2. TaxRate's query filter was strictly tenant-scoped, so even a
+//        system rate would have been invisible.
+//
+//   056 makes TenantId nullable (NULL = system) and moves the filter to
+//   the shared pattern Role and CompanyVertical already use. This method
+//   now states only what is its own to state: PREFER the tenant's rate,
+//   fall back to the system one, and fall back to the country last.
+//
+//   The per-call LogWarning is gone too. It fired on every quote page
+//   load for every tenant — which is the normal case, not a warning —
+//   and a log line that is always there is a log line nobody reads.
+//
+// CHANGES (060) — TryWarmUpAsync: the sync-over-async thread-pool risk
+//   Load() is LoadAsync().GetAwaiter().GetResult(), and ~28 members call
+//   it. There is no deadlock here — ASP.NET Core has no
+//   SynchronizationContext, so the classic sync-over-async hang cannot
+//   happen. And the _loaded cache plus the Scoped registration means it
+//   blocks ONCE per request across four queries, not 28 times.
+//
+//   What it does cost is a request thread PARKED for the duration of
+//   those four queries. The thread pool keeps threads equal to the CPU
+//   count ready and then injects more at roughly one or two per second,
+//   so under a burst — or on a slow database, where those four queries
+//   take 800ms instead of 15ms — requests start queueing before they
+//   ever begin executing, and latency climbs far more than the database
+//   latency alone explains. Tail risk, not a today problem.
+//
+//   THE FIX IS NOT TO MAKE THE 28 CALL SITES ASYNC. That would touch
+//   every caller including @Ui.GetTenantName() in _Layout.cshtml, which
+//   is a Razor view and cannot await. Instead the cache is filled
+//   ASYNCHRONOUSLY ONCE, by middleware, before anything reads it — and
+//   then every sync getter is a field read that does no I/O at all. The
+//   sync methods stop lying: they really are just property access now.
+//
+//   TryWarmUpAsync is that entry point. It NEVER THROWS, which is the
+//   whole safety property: if the warm-up cannot run — no claim, a
+//   missing tenant row, a database blip — nothing is broken, because
+//   Load() still works exactly as it does today and the request simply
+//   pays the old blocking cost. The middleware is an optimisation, never
+//   a dependency.
+//
+//   LoadAsync also takes a CancellationToken now, so an abandoned
+//   request stops querying instead of finishing work for a browser that
+//   has gone away.
+//
 // EARLIER: Added plan/quota methods — reads from TenantSettings table
 //          which is already seeded per tenant. No Plans table join needed.
 // =====================================================================
@@ -55,6 +106,25 @@ namespace MerkaiTrial.Application.Services.Tenants;
 
 public interface ICurrentTenantService
 {
+    // ── Warm-up (060) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fills the per-request cache ASYNCHRONOUSLY, so that every sync
+    /// getter below becomes a field read instead of a blocking database
+    /// call. Called once per request by the warm-up middleware, before
+    /// any page or handler runs.
+    ///
+    /// NEVER THROWS. Returns false when there was nothing to warm (an
+    /// anonymous request, no TenantId claim) or when the load failed —
+    /// in which case the sync getters behave exactly as they always
+    /// have. Nothing depends on this succeeding; it only makes the
+    /// common case cheaper.
+    ///
+    /// Cancellation is the one exception that propagates: a browser that
+    /// has gone away should stop the queries, not log a warning.
+    /// </summary>
+    Task<bool> TryWarmUpAsync(CancellationToken ct = default);
+
     // ── Identity ──────────────────────────────────────────────────────
     Guid GetTenantId();
     Guid GetUserId();
@@ -166,7 +236,8 @@ public class CurrentTenantService : ICurrentTenantService
     }
 
     // ── PRIVATE: Load tenant + country + settings once per request ────
-    private async Task<(Tenant tenant, Country country, TenantSettings? settings)> LoadAsync()
+    private async Task<(Tenant tenant, Country country, TenantSettings? settings)> LoadAsync(
+        CancellationToken ct = default)
     {
         if (_loaded && _tenant != null && _country != null)
             return (_tenant, _country, _settings);
@@ -175,7 +246,7 @@ public class CurrentTenantService : ICurrentTenantService
 
         // 1. Load tenant
         _tenant = await _db.Tenants.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == tenantId && !t.IsDeleted);
+            .FirstOrDefaultAsync(t => t.Id == tenantId && !t.IsDeleted, ct);
 
         if (_tenant == null)
         {
@@ -187,13 +258,13 @@ public class CurrentTenantService : ICurrentTenantService
         if (_tenant.CountryId.HasValue)
         {
             _country = await _db.Countries.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == _tenant.CountryId.Value && c.IsActive);
+                .FirstOrDefaultAsync(c => c.Id == _tenant.CountryId.Value && c.IsActive, ct);
         }
 
         if (_country == null && !string.IsNullOrEmpty(_tenant.DefaultCurrency))
         {
             _country = await _db.Countries.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.CurrencyCode == _tenant.DefaultCurrency && c.IsActive);
+                .FirstOrDefaultAsync(c => c.CurrencyCode == _tenant.DefaultCurrency && c.IsActive, ct);
         }
 
         if (_country == null)
@@ -217,7 +288,7 @@ public class CurrentTenantService : ICurrentTenantService
 
         // 3. ✅ Load TenantSettings (plan limits + features)
         _settings = await _db.TenantSettings.AsNoTracking()
-            .FirstOrDefaultAsync(ts => ts.TenantId == tenantId);
+            .FirstOrDefaultAsync(ts => ts.TenantId == tenantId, ct);
 
         if (_settings == null)
             _logger.LogWarning("No TenantSettings for tenant {TenantId} — quota/features unavailable", tenantId);
@@ -226,7 +297,7 @@ public class CurrentTenantService : ICurrentTenantService
         if (!string.IsNullOrEmpty(_tenant.Plan))
         {
             _plan = await _db.Plans.AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Name == _tenant.Plan && p.IsActive);
+                .FirstOrDefaultAsync(p => p.Name == _tenant.Plan && p.IsActive, ct);
 
             if (_plan == null)
                 _logger.LogWarning("Plan '{Plan}' not found for tenant {TenantId}",
@@ -243,8 +314,76 @@ public class CurrentTenantService : ICurrentTenantService
         return (_tenant, _country, _settings);
     }
 
+    // ── THE BLOCKING CALL, AND WHY IT IS STILL HERE ───────────────────
+    // Every sync getter below goes through this. It blocks the request
+    // thread while LoadAsync runs — UNLESS TryWarmUpAsync has already
+    // filled the cache, in which case LoadAsync returns at its first
+    // line, synchronously, having done no I/O. That is the whole point
+    // of 060: not to remove this call, but to make it hit a warm cache.
+    //
+    // It stays sync because Razor views call these getters
+    // (@Ui.GetTenantName() in _Layout) and a view cannot await.
     private (Tenant t, Country c, TenantSettings? s) Load()
         => LoadAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// 060: fill the cache asynchronously, once, before anything reads
+    /// it. See the interface for the contract — the important half is
+    /// that this never throws, so a failure here costs nothing beyond
+    /// the blocking behaviour the app already had.
+    /// </summary>
+    public async Task<bool> TryWarmUpAsync(CancellationToken ct = default)
+    {
+        // Already warm — a second middleware pass, or a handler calling
+        // this defensively. Same guard LoadAsync uses, so the two can
+        // never disagree about what "loaded" means.
+        if (_loaded && _tenant != null && _country != null)
+            return true;
+
+        var user = _http.HttpContext?.User;
+
+        // Anonymous: the public quote page, Login, SetPassword,
+        // ForgotPassword, Error. GetTenantId() THROWS for these, so this
+        // check is not an optimisation — it is why the middleware is
+        // safe to put in front of the whole pipeline.
+        if (user?.Identity?.IsAuthenticated != true)
+            return false;
+
+        // Authenticated but with no tenant selected — a super admin who
+        // has not picked a workspace to view. Nothing to load, and
+        // GetTenantId() would throw again.
+        if (user.FindFirst("TenantId") is null)
+            return false;
+
+        try
+        {
+            await LoadAsync(ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // The browser went away. Not a failure worth logging, and
+            // the pipeline is being torn down anyway.
+            throw;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Unparseable claim, or the tenant row is gone or deleted.
+            // Not the middleware's business to answer — the page's own
+            // authorization will, with a proper response. Swallowing it
+            // here leaves that behaviour exactly as it is today.
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // A transient database problem. The request continues and
+            // Load() will try again on first use, blocking as it always
+            // did. Degraded, not broken.
+            _logger.LogWarning(ex,
+                "Tenant context warm-up failed; falling back to lazy load");
+            return false;
+        }
+    }
 
     private static List<string> ParseFeatures(string? json)
     {
@@ -431,24 +570,48 @@ public class CurrentTenantService : ICurrentTenantService
 
     // ── TAX ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The default tax rate for this workspace, AS A PERCENTAGE (18 for
+    /// 18%) — TaxRate.Rate and Country.DefaultTaxRate both store it that
+    /// way, and Create/Edit validate 0–100.
+    ///
+    /// 056: three sources, in order.
+    ///   1. this workspace's own default rate for its country
+    ///   2. the SYSTEM default for that country (TenantId NULL)
+    ///   3. Country.DefaultTaxRate
+    ///
+    /// The query filter admits 1 and 2 and nothing else, so the only thing
+    /// stated here is the PREFERENCE between them. Effective dates are
+    /// applied to both — a rate whose window has closed is not a default,
+    /// it is history.
+    /// </summary>
     public async Task<decimal> GetDefaultTaxRateAsync(CancellationToken ct = default)
     {
-        var (_, country, _) = await LoadAsync();
+        var (_, country, _) = await LoadAsync(ct);
+
+        var now = DateTime.UtcNow;
 
         var rate = await _db.TaxRates.AsNoTracking()
-            .Where(t => t.TenantId == GetTenantId()
-                     && t.CountryCode == country.Code
+            .Where(t => t.CountryCode == country.Code
                      && t.IsDefault
                      && t.IsActive
                      && !t.IsDeleted
-                     && (t.EffectiveFrom == null || t.EffectiveFrom <= DateTime.UtcNow)
-                     && (t.EffectiveTo == null || t.EffectiveTo >= DateTime.UtcNow))
+                     && (t.EffectiveFrom == null || t.EffectiveFrom <= now)
+                     && (t.EffectiveTo == null || t.EffectiveTo >= now))
+            // The workspace's own rate first, the system rate second.
+            .OrderBy(t => t.TenantId == null ? 1 : 0)
             .Select(t => (decimal?)t.Rate)
             .FirstOrDefaultAsync(ct);
 
         if (rate.HasValue) return rate.Value;
 
-        _logger.LogWarning("No TaxRate for tenant {TenantId} — using country default", GetTenantId());
+        // Debug, not Warning. Falling back to the country is the ORDINARY
+        // case for a workspace that has not configured its own rate, and it
+        // fired on every quote page load — a warning that is always present
+        // is one nobody reads.
+        _logger.LogDebug(
+            "No TaxRate row for {Country} — using Country.DefaultTaxRate", country.Code);
+
         return country.DefaultTaxRate ?? 0m;
     }
 

@@ -67,6 +67,11 @@
                         <h5 class="mb-0"><span class="text-white fw-bold fs-5">@Model.TenantCurrencySymbol</span> Pricing</h5>
                     </div>
                     <div class="card-body">
+                        @* 051: "Priced per" and the tax classification code.
+                           The unit is what makes a price mean something — ₹450
+                           is a different product at ₹450/m² than at ₹450/unit,
+                           and until this existed a quote line's quantity was a
+                           bare number with no unit at all. *@
                         <div class="row g-3">
                             <div class="col-md-4">
                                 <label asp-for="Input.ListPrice" class="form-label">
@@ -78,6 +83,19 @@
                                 </div>
                                 <span asp-validation-for="Input.ListPrice" class="text-danger small"></span>
                             </div>
+
+                            <div class="col-md-4">
+                                <label asp-for="Input.UnitOfMeasure" class="form-label">
+                                    Priced per <span class="text-danger">*</span>
+                                </label>
+                                <select asp-for="Input.UnitOfMeasure" asp-items="Model.GetUnitOptions()"
+                                        class="form-select" id="unitOfMeasure"></select>
+                                <div class="form-text" id="unitHint">
+                                    What one of this product is. Quotes can use fractions — 12.5 m², 2.5 days.
+                                </div>
+                                <span asp-validation-for="Input.UnitOfMeasure" class="text-danger small"></span>
+                            </div>
+
                             <div class="col-md-4">
                                 @* Currency is tenant-level — not editable per product *@
                                 <label class="form-label">Currency</label>
@@ -85,10 +103,23 @@
                                 <input class="form-control bg-light" value="@Model.TenantCurrencyCode — @Model.TenantCurrencyName" readonly />
                                 <div class="form-text">Set by your tenant configuration.</div>
                             </div>
+
                             <div class="col-md-4">
                                 <label asp-for="Input.TaxRate" class="form-label">Tax Rate (%)</label>
                                 <input asp-for="Input.TaxRate" class="form-control" type="number" step="0.01" min="0" max="100" placeholder="e.g., 18.00" />
+                                @* 051: this is no longer decorative. Until round 050
+                                   the quote line always took the workspace default
+                                   and ignored whatever was set here. *@
+                                <div class="form-text">Used on quote lines for this product. Leave at 0 for tax-exempt.</div>
                                 <span asp-validation-for="Input.TaxRate" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-8">
+                                <label asp-for="Input.TaxCode" class="form-label">@Model.TaxCodeLabel</label>
+                                <input asp-for="Input.TaxCode" class="form-control" maxlength="20"
+                                       spellcheck="false" autocapitalize="characters" placeholder="Optional" />
+                                <div class="form-text">@Model.TaxCodeHint</div>
+                                <span asp-validation-for="Input.TaxCode" class="text-danger small"></span>
                             </div>
                         </div>
                     </div>
@@ -122,6 +153,10 @@
                                 Product Type <span class="text-danger">*</span>
                             </label>
                             <select asp-for="Input.Type" asp-items="Model.GetTypeOptions()" class="form-select"></select>
+                            @* 051: the three values come from ProductKinds now, not from
+                               a string array copied into this page's model and the other
+                               one's. The hint is rendered server-side for the saved kind. *@
+                            <div class="form-text">@Model.KindHint</div>
                             <span asp-validation-for="Input.Type" class="text-danger small"></span>
                         </div>
                         <div class="form-check form-switch">
@@ -138,8 +173,9 @@
                     <div class="card-body">
                         <ul class="small mb-0 ps-3">
                             <li class="mb-2">Choose the right <strong>category</strong> for easy filtering</li>
-                            <li class="mb-2">Add a unique <strong>SKU</strong> for inventory tracking</li>
-                            <li class="mb-2">Set <strong>tax rate</strong> if product is taxable</li>
+                            <li class="mb-2">Add a unique <strong>SKU</strong> so the same item is easy to find</li>
+                            <li class="mb-2">Get <strong>Priced per</strong> right — it decides what a quantity on a quote means</li>
+                            <li class="mb-2">The <strong>tax rate</strong> here is used on quote lines for this product</li>
                             <li>Mark as <strong>Active</strong> to make it available</li>
                         </ul>
                     </div>

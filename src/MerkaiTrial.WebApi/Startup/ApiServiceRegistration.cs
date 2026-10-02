@@ -23,7 +23,32 @@
 // set of namespaces these types are known to live in.
 // =====================================================================
 
-using MerkaiTrial.Admin.Web.Services.UserManagement;
+// ── 066a: THE API NO LONGER REFERENCES Admin.Web ─────────────────────
+//
+// This file used to open with:
+//
+//     using MerkaiTrial.Admin.Web.Services.UserManagement;
+//
+// and MerkaiTrial.WebApi.csproj carried a <ProjectReference> to
+// MerkaiTrial.Admin.Web to satisfy it. Both are gone. The using resolved
+// nothing — it was copied wholesale from the old Program.cs along with
+// the rest of this list (see the note below) and never used.
+//
+// WHY IT MATTERED, so nobody puts it back. Admin.Web calls the API over
+// HTTP; the API is the thing being called. A reference pointing the other
+// way means:
+//
+//   • a change to a Razor page can break the API build
+//   • the API's publish output drags the whole web app with it
+//   • nothing stops a controller reaching for a page model, and the
+//     compiler would have allowed it
+//
+// The API may depend on Domain, Application and Infrastructure. It must
+// not depend on a host. If something in Application is ever needed by
+// both, it belongs in Application — which both hosts already reference —
+// not in whichever host happened to define it first.
+// ─────────────────────────────────────────────────────────────────────
+
 using MerkaiTrial.Application;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
@@ -164,6 +189,12 @@ public static class ApiServiceRegistration
         services.AddScoped<ILeadStatusResolver, LeadStatusResolver>();
         services.AddScoped<IFiscalYearService, FiscalYearService>();   // 035 — fiscal year
         services.AddScoped<INotificationDispatcher, NotificationDispatcher>();   // 037
+
+        // 061. The quote email to the CUSTOMER. Not the dispatcher's job —
+        // that one resolves per-user notification preferences, and a
+        // customer is not a user. Registered by hand because it implements
+        // no ICommandHandler, so the Scrutor scan above does not see it.
+        services.AddScoped<IQuoteCustomerEmail, QuoteCustomerEmail>();
 
         // Cross-cutting
         services.AddScoped<IAuditService, AuditService>();

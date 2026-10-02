@@ -1172,6 +1172,17 @@
 
                     @if (CanNav("settings"))
                     {
+                        @* 064. FIRST in this section, deliberately. It is the
+                           only entry here that changes what a CUSTOMER sees,
+                           and until it is filled in every quote link in the
+                           product is anonymous — so it should be the thing a
+                           new workspace trips over, not the eighth item down
+                           a list of internal configuration. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/CompanyProfile") ? "active" : "")"
+                           asp-page="/Settings/CompanyProfile/Index">
+                            <i class="bi bi-building"></i> Company Profile
+                        </a>
+
                         <a class="lf-nav-item @(IsActive("/Settings/LeadStatuses") ? "active" : "")"
                            asp-page="/Settings/LeadStatuses/Index">
                             <i class="bi bi-funnel"></i> Lead Statuses
@@ -1183,6 +1194,21 @@
                         <a class="lf-nav-item @(IsActive("/Settings/PipelineRules") ? "active" : "")"
                            asp-page="/Settings/PipelineRules/Index">
                             <i class="bi bi-diagram-3"></i> Sales Process
+                        </a>
+
+                        @* 058. Tax Rates — the workspace's own %, and what the
+                           standard rate for its country is. Same settings.*
+                           gate as the three above it, which is the module the
+                           pages carry and the API enforces; nobody holds it
+                           until a tenant admin grants it, and admins bypass it.
+
+                           Placed in Workspace Settings rather than under Sales
+                           because it is configuration a quote READS, not part
+                           of making one — the same reason Pipeline Stages sits
+                           here and not beside Pipeline. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/TaxRates") ? "active" : "")"
+                           asp-page="/Settings/TaxRates/Index">
+                            <i class="bi bi-percent"></i> Tax Rates
                         </a>
 
                         @* 038a. This copy is for ADMINS — they are the ones

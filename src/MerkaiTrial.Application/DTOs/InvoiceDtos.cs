@@ -1,8 +1,26 @@
-﻿using System;
+// =====================================================================
+// InvoiceDtos.cs
+// Location: MerkaiTrial.Application/DTOs/InvoiceDtos.cs
+//
+// COMPLETE FILE — 052 (Phase B of the catalogue).
+//
+// InvoiceLineDto and CreateInvoiceLineDto move Quantity from int to
+// decimal and gain UnitOfMeasure, matching QuoteItemDto exactly. They
+// have to move in the same round: CreateInvoiceFromQuoteHandler copies
+// every quote item into a CreateInvoiceLineDto, so a decimal quantity on
+// the quote and an int on the invoice would round 12.5 m² down to 12 the
+// moment the invoice was raised — silently, with the money changing.
+//
+// InvoiceLineDto.QuantityDisplay ("12.5 m²") is what the views print.
+// =====================================================================
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using MerkaiTrial.Application.Common;          // 055: LineDiscounts
+using MerkaiTrial.Application.Configuration;   // 052: UnitsOfMeasure
 
 namespace MerkaiTrial.Application.DTOs
 {
@@ -141,8 +159,27 @@ namespace MerkaiTrial.Application.DTOs
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public decimal UnitPrice { get; set; }
-        public int Quantity { get; set; }
+
+        /// <summary>052: decimal, was int.</summary>
+        public decimal Quantity { get; set; }
+
+        /// <summary>052: code from UnitsOfMeasure. Copied from the quote line.</summary>
+        public string UnitOfMeasure { get; set; } = UnitsOfMeasure.Unit;
+
+        /// <summary>
+        /// 052: the quantity as it should be PRINTED — "12.5 m²", "3",
+        /// "2 days". Display only.
+        /// </summary>
+        public string QuantityDisplay => UnitsOfMeasure.Describe(Quantity, UnitOfMeasure);
+
         public decimal LineDiscount { get; set; }
+
+        /// <summary>055: set when the discount was agreed as a percentage.</summary>
+        public decimal? DiscountPercent { get; set; }
+
+        /// <summary>055: "-10%", or null when the discount was an amount.</summary>
+        public string? DiscountLabel => LineDiscounts.PercentLabel(DiscountPercent);
+
         public decimal TaxRate { get; set; }
 
         // Calculated
@@ -160,8 +197,24 @@ namespace MerkaiTrial.Application.DTOs
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public decimal UnitPrice { get; set; }
-        public int Quantity { get; set; }
+
+        /// <summary>052: decimal, was int.</summary>
+        public decimal Quantity { get; set; }
+
+        /// <summary>
+        /// 052. Blank with a ProductId set → the handler snapshots the
+        /// product's unit, so an existing API caller keeps working.
+        /// </summary>
+        public string? UnitOfMeasure { get; set; }
+
         public decimal LineDiscount { get; set; }
+
+        /// <summary>
+        /// 055. Authoritative when set: the handler recomputes LineDiscount
+        /// from it. See LineDiscounts.cs.
+        /// </summary>
+        public decimal? DiscountPercent { get; set; }
+
         public decimal TaxRate { get; set; }  // Decimal format (0.18 for 18%)
     }
 

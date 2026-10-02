@@ -1,14 +1,99 @@
 @page
-@model MerkaiTrial.Admin.Web.Pages.TaxRates.IndexModel
+@model MerkaiTrial.Admin.Web.Pages.Admin.TaxRates.IndexModel
 @{
     ViewData["Title"] = "Tax Rates Management";
 }
+@* =====================================================================
+   Admin/TaxRates/Index.cshtml — MOVED IN 054 from Pages/TaxRates/.
+   Index.cshtml.cs says why the move is the security fix. The route
+   override the old copies carried is gone: the folder gives the URL now,
+   so /Admin/TaxRates is the page path the SuperAdmin sidebar has always
+   linked to — and that link has been dead all along, because no page with
+   that path existed.
+   ===================================================================== *@
+
+<style>
+/* ── 054: DARK, because the admin console is dark ───────────────────
+   Moving these pages into Pages/Admin/ is what closes the authorization
+   hole, but it also changes their LAYOUT: Pages/Admin/_ViewStart.cshtml
+   sets Layout = "_SuperAdminLayout", whose --body-bg is #0f1c2e and
+   --card-bg #0d1933. This page was written against the light tenant
+   shell, so moved as-is every card header would have rendered as a white
+   or bright block on navy — the same defect round 049 fixed on Plans.
+
+   These use the layout's own variables where they exist, so a future
+   re-theme of the console carries this page with it. */
+
+/* Bootstrap's -subtle / -emphasis pairs are built to flip with
+   data-bs-theme="dark", which this layout does not set, so their LIGHT
+   values apply and render near-black on a navy card. Redefining the
+   variables fixes every use on the page at once. */
+.sa-main {
+    --bs-success-text-emphasis:   #86efac;
+    --bs-danger-text-emphasis:    #fca5a5;
+    --bs-warning-text-emphasis:   #fcd34d;
+    --bs-info-text-emphasis:      #67e8f9;
+    --bs-secondary-text-emphasis: #cbd5e1;
+
+    --bs-success-bg-subtle:   rgba(34,197,94,.14);
+    --bs-danger-bg-subtle:    rgba(239,68,68,.14);
+    --bs-warning-bg-subtle:   rgba(245,158,11,.14);
+    --bs-info-bg-subtle:      rgba(34,211,238,.14);
+    --bs-secondary-bg-subtle: rgba(148,163,184,.14);
+}
+
+.tr-title    { font-size: 1.6rem; font-weight: 700; color: #f1f5f9; margin: 0; }
+.tr-subtitle { color: #64748b; margin: 0; font-size: .9rem; }
+
+/* The layout styles .card-header already. A header that also carried
+   bg-primary / bg-light / bg-info / bg-secondary beat it, because those
+   are Bootstrap !important utilities — the exact trap round 049 hit. The
+   markup no longer carries them; this adds back a quiet accent instead. */
+.sa-main .card-header .bi { color: #22d3ee; }
+
+/* A field label that has to be READ. .sa-main .text-muted is #475569,
+   which is fine for a caption and too dark for a value's label. */
+.tr-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+            color: #94a3b8; font-weight: 600; }
+.tr-value { color: #e2e8f0; }
+
+.tr-stat      { display: flex; align-items: center; gap: 1rem; }
+.tr-stat-icon { width: 56px; height: 56px; border-radius: 14px; flex-shrink: 0;
+                display: flex; align-items: center; justify-content: center;
+                font-size: 1.35rem; color: #fff; }
+.tr-stat-value{ font-size: 1.75rem; font-weight: 700; color: #f1f5f9; line-height: 1; }
+.tr-stat-label{ font-size: .74rem; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+
+/* 057. The effective window, beside a rate. Deliberately quiet — it is
+   context for the status badge, not a number anybody reads first. */
+.tr-window { font-size: .78rem; color: #94a3b8; }
+
+/* An input the page shows but will not let you change. The layout's
+   .form-control rule does not cover [disabled], which Bootstrap paints
+   with its own light background. */
+.sa-main .form-control:disabled,
+.sa-main .form-select:disabled {
+    background: rgba(255,255,255,.02);
+    border-color: rgba(34,211,238,.08);
+    color: #94a3b8;
+}
+
+.sa-main .table > :not(caption) > * > * { background-color: transparent; }
+.sa-main .pagination .page-link {
+    background: transparent; border-color: rgba(34,211,238,.15); color: #94a3b8;
+}
+.sa-main .pagination .page-item.active .page-link {
+    background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.4); color: #22d3ee;
+}
+.sa-main .pagination .page-item.disabled .page-link { color: #475569; }
+</style>
+
 
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="mb-1"><i class="bi bi-receipt text-primary"></i> Tax Rates</h2>
-            <p class="text-muted mb-0">Manage tax rates and taxation rules</p>
+            <h2 class="tr-title"><i class="bi bi-receipt" style="color:#22d3ee"></i> Tax Rates</h2>
+            <p class="tr-subtitle">System rates, shared by every tenant in that country</p>
         </div>
         <div>
             <a asp-page="./Create" class="btn btn-primary">
@@ -38,16 +123,13 @@
         <div class="col-xl-3 col-md-6 col-sm-12">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
-                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #2563eb);">
-                                <i class="bi bi-receipt text-white fs-4"></i>
-                            </div>
+                    <div class="tr-stat">
+                        <div class="tr-stat-icon" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
+                            <i class="bi bi-receipt"></i>
                         </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1 small">Total Tax Rates</h6>
-                            <h3 class="mb-0">@Model.Stats.TotalRates</h3>
+                        <div>
+                            <div class="tr-stat-value">@Model.Stats.TotalRates</div>
+                            <div class="tr-stat-label">Total Tax Rates</div>
                         </div>
                     </div>
                 </div>
@@ -57,16 +139,13 @@
         <div class="col-xl-3 col-md-6 col-sm-12">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
-                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669);">
-                                <i class="bi bi-globe text-white fs-4"></i>
-                            </div>
+                    <div class="tr-stat">
+                        <div class="tr-stat-icon" style="background: linear-gradient(135deg, #10b981, #059669);">
+                            <i class="bi bi-globe"></i>
                         </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1 small">Active Countries</h6>
-                            <h3 class="mb-0">@Model.Stats.ActiveCountries</h3>
+                        <div>
+                            <div class="tr-stat-value">@Model.Stats.ActiveCountries</div>
+                            <div class="tr-stat-label">Active Countries</div>
                         </div>
                     </div>
                 </div>
@@ -76,16 +155,13 @@
         <div class="col-xl-3 col-md-6 col-sm-12">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
-                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b, #d97706);">
-                                <i class="bi bi-star-fill text-white fs-4"></i>
-                            </div>
+                    <div class="tr-stat">
+                        <div class="tr-stat-icon" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            <i class="bi bi-star-fill"></i>
                         </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1 small">Default Rates</h6>
-                            <h3 class="mb-0">@Model.Stats.DefaultRates</h3>
+                        <div>
+                            <div class="tr-stat-value">@Model.Stats.DefaultRates</div>
+                            <div class="tr-stat-label">Default Rates</div>
                         </div>
                     </div>
                 </div>
@@ -95,16 +171,13 @@
         <div class="col-xl-3 col-md-6 col-sm-12">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center" 
-                                 style="width: 60px; height: 60px; background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
-                                <i class="bi bi-shield-check text-white fs-4"></i>
-                            </div>
+                    <div class="tr-stat">
+                        <div class="tr-stat-icon" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
+                            <i class="bi bi-shield-check"></i>
                         </div>
-                        <div class="flex-grow-1 ms-3">
-                            <h6 class="text-muted mb-1 small">System Rates</h6>
-                            <h3 class="mb-0">@Model.Stats.SystemRates</h3>
+                        <div>
+                            <div class="tr-stat-value">@Model.Stats.SystemRates</div>
+                            <div class="tr-stat-label">System Rates</div>
                         </div>
                     </div>
                 </div>
@@ -152,13 +225,13 @@
 
     <!-- Desktop Table -->
     <div class="card border-0 shadow-sm d-none d-md-block">
-        <div class="card-header bg-primary text-white">
+        <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
                     <i class="bi bi-list-ul me-2"></i>Tax Rates List
-                    <span class="badge bg-white text-primary ms-2">@Model.PaginatedTaxRates.TotalCount</span>
+                    <span class="badge text-bg-info ms-2">@Model.PaginatedTaxRates.TotalCount</span>
                 </h5>
-                <span class="badge bg-light text-dark">
+                <span class="badge text-bg-secondary">
                     Page @Model.Page of @Model.PaginatedTaxRates.TotalPages
                 </span>
             </div>
@@ -166,12 +239,18 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             <th class="ps-3">Country</th>
                             <th>Name</th>
                             <th>Type</th>
                             <th>Rate</th>
+                            @* 057: the three columns that make a scheduled or
+                               retired rate distinguishable from one in force.
+                               All three looked identical before, and two of
+                               them are not what a new quote uses. *@
+                            <th>Status</th>
+                            <th>In force</th>
                             <th>Default</th>
                             <th class="text-end pe-3">Actions</th>
                         </tr>
@@ -186,12 +265,17 @@
                                     <small class="text-muted">@Model.GetCountryName(rate.CountryCode)</small>
                                 </td>
                                 <td><strong>@rate.Name</strong></td>
-                                <td><span class="badge bg-info">@rate.TaxType</span></td>
+                                <td><span class="badge text-bg-info">@rate.TaxType</span></td>
                                 <td><strong>@rate.Rate.ToString("0.##")%</strong></td>
+                                <td>
+                                    <span class="badge @Model.StateBadge(rate)"
+                                          title="@Model.StateExplain(rate)">@Model.StateLabel(rate)</span>
+                                </td>
+                                <td class="tr-window">@Model.Window(rate)</td>
                                 <td>
                                     @if (rate.IsDefault)
                                     {
-                                        <span class="badge bg-warning">Default</span>
+                                        <span class="badge text-bg-warning">Default</span>
                                     }
                                     else
                                     {
@@ -208,8 +292,14 @@
                                            class="btn btn-outline-warning" title="Edit">
                                             <i class="bi bi-pencil"></i>
                                         </a>
-                                        <button type="button" class="btn btn-outline-danger" 
-                                                onclick="confirmDelete('@rate.Id', '@rate.Name')" title="Delete">
+                                        @* 054: data- attributes, not an onclick with the
+                                           name interpolated into a JS string literal. A rate
+                                           called  Bob's VAT  closed that string and broke every
+                                           button on the page — the same defect the quote editor
+                                           had in 029. Razor HTML-encodes an attribute; it does
+                                           not escape JavaScript. *@
+                                        <button type="button" class="btn btn-outline-danger tr-del"
+                                                data-id="@rate.Id" data-name="@rate.Name" title="Delete">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
@@ -237,18 +327,29 @@
                         </div>
                         @if (rate.IsDefault)
                         {
-                            <span class="badge bg-warning">Default</span>
+                            <span class="badge text-bg-warning">Default</span>
                         }
                     </div>
 
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <small class="text-muted">Type</small>
-                            <div><span class="badge bg-info">@rate.TaxType</span></div>
+                            <div><span class="badge text-bg-info">@rate.TaxType</span></div>
                         </div>
                         <div class="col-6">
                             <small class="text-muted">Rate</small>
                             <div><strong class="text-primary">@rate.Rate.ToString("0.##")%</strong></div>
+                        </div>
+                        @* 057: the phone layout needs these as much as the
+                           table does — arguably more, since there is no row to
+                           compare against. *@
+                        <div class="col-6">
+                            <small class="text-muted">Status</small>
+                            <div><span class="badge @Model.StateBadge(rate)">@Model.StateLabel(rate)</span></div>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">In force</small>
+                            <div class="tr-window">@Model.Window(rate)</div>
                         </div>
                     </div>
 
@@ -260,8 +361,8 @@
                             <a asp-page="./Edit" asp-route-id="@rate.Id" class="btn btn-outline-warning btn-sm">
                                 <i class="bi bi-pencil me-1"></i>Edit
                             </a>
-                            <button type="button" class="btn btn-outline-danger btn-sm" 
-                                    onclick="confirmDelete('@rate.Id', '@rate.Name')">
+                            <button type="button" class="btn btn-outline-danger btn-sm tr-del"
+                                    data-id="@rate.Id" data-name="@rate.Name">
                                 <i class="bi bi-trash me-1"></i>Delete
                             </button>
                         </div>
@@ -372,12 +473,23 @@
             });
         }, 5000);
 
-        function confirmDelete(id, name) {
-            if (confirm(`Are you sure you want to delete tax rate "${name}"?\n\nThis action cannot be undone.`)) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
-                document.getElementById('deleteForm').submit();
-            }
-        }
+        // 054: one delegated listener instead of an inline onclick per row.
+        // Nothing from the database is interpolated into JavaScript; the id
+        // and the name are read back off the element that was clicked.
+        document.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('.tr-del') : null;
+            if (!btn) return;
+
+            var id   = btn.getAttribute('data-id')   || '';
+            var name = btn.getAttribute('data-name') || 'this tax rate';
+
+            if (!confirm('Delete tax rate "' + name + '"?\n\nThis is a SYSTEM rate, shared by every tenant in that country. This cannot be undone.'))
+                return;
+
+            var form = document.getElementById('deleteForm');
+            document.getElementById('deleteId').value = id;
+            form.action = '?handler=Delete&id=' + encodeURIComponent(id);
+            form.submit();
+        });
     </script>
 }

@@ -1,0 +1,181 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.TaxRates.IndexModel
+@{
+    ViewData["Title"] = "Tax Rates";
+}
+@* =====================================================================
+   Settings/TaxRates/Index.cshtml — NEW (058).
+
+   The tenant shell, not the admin console: this renders under
+   Pages/_ViewStart's "_Layout", which is light. No dark-theme block here
+   on purpose — the 049 and 054 problems came from carrying styling
+   between the two shells, and the plain Bootstrap card is correct here.
+   ===================================================================== *@
+
+<style>
+    .tr-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+    .tr-head .sp { margin-left: auto; }
+
+    /* The one number this page exists to answer: what a new quote is
+       taxed at, and where that came from. */
+    .tr-effective {
+        border: 1px solid #e2e8f0; border-left: 5px solid #6366f1;
+        border-radius: 10px; background: #fff; padding: 1rem 1.25rem;
+        display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
+    }
+    .tr-effective .n { font-size: 2rem; font-weight: 700; color: #0f172a; line-height: 1; }
+    .tr-effective .l { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+                       color: #64748b; font-weight: 650; }
+    .tr-effective .src { color: #475569; font-size: .9rem; }
+
+    .tr-window { font-size: .8rem; color: #64748b; white-space: nowrap; }
+    .tr-owner  { font-size: .72rem; font-weight: 650; }
+
+    .tr-sys-row td { background: #fbfcfd; }
+    .tr-empty { padding: 2rem 1rem; text-align: center; color: #94a3b8; }
+    .tr-empty i { font-size: 2rem; color: #d7dde3; display: block; margin-bottom: .5rem; }
+</style>
+
+<div class="tr-head">
+    <div>
+        <h1 class="lf-page-title mb-1">Tax Rates</h1>
+        <p class="text-muted mb-0">
+            What @Model.TaxLabel your quotes and invoices use in @Model.CountryName.
+        </p>
+    </div>
+    @if (Model.CanCreate)
+    {
+        <div class="sp">
+            <a asp-page="./Create" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>Add a rate
+            </a>
+        </div>
+    }
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>@Model.ErrorMessage</span>
+    </div>
+}
+
+@* The headline. Until 056 there was nowhere in the product that told a
+   workspace what rate its own quotes were being taxed at. *@
+<div class="tr-effective mb-4">
+    <div>
+        <div class="l">New quotes use</div>
+        <div class="n">@Model.EffectiveRate.ToString("0.##")%</div>
+    </div>
+    <div class="src">
+        From @Model.EffectiveRateSource.
+        <div class="text-muted" style="font-size:.82rem;">
+            Your own rate always wins over the standard one for @Model.CountryName.
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex align-items-center">
+        <i class="bi bi-percent me-2 text-primary"></i>
+        <span>Rates for @Model.CountryName (@Model.CountryCode)</span>
+        <span class="badge bg-light text-dark border ms-2">@Model.Rates.Count</span>
+    </div>
+
+    @if (Model.Rates.Count == 0)
+    {
+        <div class="tr-empty">
+            <i class="bi bi-percent"></i>
+            <div>No tax rates are set up for @Model.CountryName yet.</div>
+            <div class="small">
+                Your quotes fall back to the country default until one is.
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">Name</th>
+                        <th>Type</th>
+                        <th class="text-end">Rate</th>
+                        <th>Status</th>
+                        <th>In force</th>
+                        <th>Scope</th>
+                        <th class="text-end pe-3"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Rates)
+                    {
+                        <tr class="@(r.IsSystem ? "tr-sys-row" : "")">
+                            <td class="ps-3">
+                                <strong>@r.Name</strong>
+                                @if (r.IsDefault)
+                                {
+                                    <span class="badge text-bg-warning ms-2">Default</span>
+                                }
+                            </td>
+                            <td><span class="badge text-bg-info">@r.TaxType</span></td>
+                            <td class="text-end"><strong>@r.Rate.ToString("0.##")%</strong></td>
+                            <td>
+                                <span class="badge @Model.StateBadge(r)"
+                                      title="@Model.StateExplain(r)">@Model.StateLabel(r)</span>
+                            </td>
+                            <td class="tr-window">@Model.Window(r)</td>
+                            <td>
+                                @if (r.IsSystem)
+                                {
+                                    <span class="tr-owner text-muted">
+                                        <i class="bi bi-globe2 me-1"></i>Standard
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="tr-owner text-primary">
+                                        <i class="bi bi-building me-1"></i>Yours
+                                    </span>
+                                }
+                            </td>
+                            <td class="text-end pe-3">
+                                @if (Model.CanEditRow(r))
+                                {
+                                    <a asp-page="./Edit" asp-route-id="@r.Id"
+                                       class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-pencil"></i> Edit
+                                    </a>
+                                }
+                                else if (r.IsSystem)
+                                {
+                                    @* Not a disabled button: a control that
+                                       cannot ever be used is better absent, and
+                                       the reason belongs where the eye already
+                                       is. *@
+                                    <span class="text-muted small"
+                                          title="Standard rates are shared by every workspace in @Model.CountryName">
+                                        <i class="bi bi-lock"></i> read-only
+                                    </span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="alert alert-info mt-3 mb-0 d-flex gap-2">
+    <i class="bi bi-info-circle-fill mt-1"></i>
+    <div>
+        <strong>Changing a rate on a date.</strong>
+        Don't edit the percentage — that changes it for everything, with no record of
+        what it used to be. Add the new rate with an <em>In force from</em> date and give
+        the old one an <em>In force until</em> of the day before. The switch then happens
+        on its own, and a quote you raised last month still shows the rate that applied
+        then.
+    </div>
+</div>

@@ -347,9 +347,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     return Page();
                 }
 
-                if (items.Any(i => i.Quantity < 1))
+                // 052 — see Create.cshtml.cs. Decimal quantities are legal now.
+                if (items.Any(i => i.Quantity <= 0))
                 {
-                    ErrorMessage = "Every line needs a quantity of 1 or more.";
+                    ErrorMessage = "Every line needs a quantity above zero.";
                     await LoadFormDataAsync(tenantId);
                     return Page();
                 }
@@ -364,6 +365,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 if (items.Any(i => i.TaxRate < 0 || i.TaxRate > 100))
                 {
                     ErrorMessage = "Tax rates must be between 0 and 100%.";
+                    await LoadFormDataAsync(tenantId);
+                    return Page();
+                }
+
+                // 055 — see Create.cshtml.cs.
+                if (items.Any(i => i.DiscountPercent is < 0 or > 100))
+                {
+                    ErrorMessage = "A discount percentage must be between 0 and 100.";
                     await LoadFormDataAsync(tenantId);
                     return Page();
                 }
@@ -400,7 +409,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                         Description  = i.Description,
                         UnitPrice    = i.UnitPrice,
                         Quantity     = i.Quantity,
+                        UnitOfMeasure = i.UnitOfMeasure,   // 052
                         LineDiscount = i.LineDiscount,
+                        DiscountPercent = i.DiscountPercent,   // 055
                         TaxRate      = i.TaxRate / 100m   // % → decimal fraction
                     }).ToList()
                 };

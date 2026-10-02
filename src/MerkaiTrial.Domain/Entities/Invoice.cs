@@ -13,6 +13,20 @@
 //   ✅ TotalPaid counts CAPTURED payments only (reversed ones never).
 //   ✅ IsOverdue ignores drafts (a draft isn't owed yet).
 //   Columns are added by 018_InvoiceWorkflow.sql.
+//
+// CHANGES (052 — Phase B of the catalogue), on InvoiceLine only:
+//   ✅ Quantity is DECIMAL(18,4), not int. 12.5 m², 3.5 days, 0.75 kg.
+//   ✅ UnitOfMeasure snapshotted onto the line, so the number means
+//      something on its own instead of leaving the unit in the description.
+//   QuoteItem.cs takes the same two changes in the same round, on purpose:
+//   an invoice raised from a quote copies the quote's lines, so a quote
+//   that can say 12.5 against an invoice that rounds it to 12 would be
+//   worse than neither having it.
+//   Columns are altered / added by Sql/052_LineQuantityAndUnits.sql.
+//
+// CHANGES (055), on InvoiceLine only:
+//   ✅ DiscountPercent — see LineDiscounts.cs. Added by
+//      Sql/055_LineDiscountPercent.sql.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -99,8 +113,31 @@ namespace MerkaiTrial.Domain.Entities
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public decimal UnitPrice { get; set; }
-        public int Quantity { get; set; }
+
+        /// <summary>
+        /// 052: DECIMAL(18,4), was int. Same column, widened — no data moves.
+        /// </summary>
+        public decimal Quantity { get; set; }
+
+        /// <summary>
+        /// 052: a code from UnitsOfMeasure ("unit", "hour", "sqm"…). Copied
+        /// from the quote item when the invoice is raised from a quote, and
+        /// taken from the product (or typed) on a manual invoice. Snapshotted,
+        /// never read live through ProductId: an issued tax invoice must not
+        /// change because somebody edited the catalogue afterwards.
+        /// </summary>
+        public string UnitOfMeasure { get; set; } = "unit";
+
         public decimal LineDiscount { get; set; }
+
+        /// <summary>
+        /// 055: set when the discount was agreed as a PERCENTAGE, NULL when
+        /// typed as an amount. Copied from the quote line when the invoice is
+        /// raised from a quote, so the invoice says "-10%" exactly where the
+        /// quote the customer accepted did.
+        /// </summary>
+        public decimal? DiscountPercent { get; set; }
+
         public decimal TaxRate { get; set; }  // 0.18 for 18%
 
         // Legacy field (kept for compatibility)

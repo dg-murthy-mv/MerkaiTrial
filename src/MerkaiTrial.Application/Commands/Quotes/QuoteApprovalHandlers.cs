@@ -2,7 +2,28 @@
 // QuoteApprovalHandlers.cs
 // Location: MerkaiTrial.Application/Commands/Quotes/QuoteApprovalHandlers.cs
 //
-// COMPLETE FILE — replaces the 017/018 version.
+// COMPLETE FILE — replaces the 017/018/040 version.
+//
+// WHAT CHANGED (052a)
+//   One compile error, mine, from round 040 and carried into 052 because I
+//   rebuilt this file from the 040 copy. NotifyRequesterAsync asked for a
+//   Quote ENTITY, while DecideAsync loads only { Number, Status } as an
+//   anonymous projection — on purpose, because that handler reads
+//   AsNoTracking and writes through conditional UPDATEs. The helper takes
+//   the id and the number now; nothing else moves.
+//
+// WHAT CHANGED (052)
+//   Only the two line records, QuoteRuleLine and PricedLine: Quantity is
+//   DECIMAL, not int, following QuoteItem and InvoiceLine. Nothing about
+//   the rules themselves moves.
+//
+//   It is not cosmetic. LineDiscountPercent measures a line against
+//   UnitPrice × Quantity, so with an int here a 12.5 m² line would have
+//   been measured against 12 m² — a 4% understatement of the reference
+//   amount, which is enough to decide on the wrong side of a discount
+//   limit and let a quote go out that should have needed a signature.
+//   The one other edit is Math.Max(0, …) → Math.Max(0m, …); the int
+//   overload no longer applies.
 //
 // WHAT CHANGED (027)
 //   Before: ONE setting per workspace (a discount limit and a total
@@ -62,10 +83,16 @@ namespace MerkaiTrial.Application.Commands.Quotes
     // RULES (pure)
     // =================================================================
 
-    public sealed record QuoteRuleLine(string Name, decimal UnitPrice, int Quantity, decimal LineDiscount, decimal? ListPrice);
+    /// <summary>
+    /// 052: Quantity is DECIMAL. A quote line can be 12.5 m² or 3.5 days, and
+    /// the discount percentage these rules measure is worked out from
+    /// UnitPrice × Quantity — so an int here would have rounded the reference
+    /// amount and, with it, whether the quote needs approval at all.
+    /// </summary>
+    public sealed record QuoteRuleLine(string Name, decimal UnitPrice, decimal Quantity, decimal LineDiscount, decimal? ListPrice);
 
     /// <summary>A line as stored on a quote or invoice — list price not yet looked up.</summary>
-    public sealed record PricedLine(string Name, decimal UnitPrice, int Quantity, decimal LineDiscount, Guid? ProductId);
+    public sealed record PricedLine(string Name, decimal UnitPrice, decimal Quantity, decimal LineDiscount, Guid? ProductId);
 
     /// <summary>
     /// The verdict on one quote. The last three are 027 additions and are
@@ -84,7 +111,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
     {
         public static decimal LineDiscountPercent(QuoteRuleLine l)
         {
-            var qty = Math.Max(0, l.Quantity);
+            var qty = Math.Max(0m, l.Quantity);   // 052: 0m — Quantity is decimal now
             var reference = (l.ListPrice is > 0 ? l.ListPrice.Value : l.UnitPrice) * qty;
             if (reference <= 0) return 0;
 
@@ -1294,17 +1321,14 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 isOverride ? " (admin override)" : "");
 
             // ── 040: tell whoever asked ───────────────────────────────
+            // 052a: quoteId and quote.Number, not a Quote entity. `quote` here
+            // is the projection loaded a few lines up — { Number, Status } —
+            // because this handler deliberately reads AsNoTracking and writes
+            // through conditional UPDATEs. Passing it where a Quote was
+            // expected is the CS1503 this fixes.
             await NotifyRequesterAsync(
-                tenantId,
-                new Quote { Id = quoteId, Number = quote.Number, Status = quote.Status }, // create a Quote instance
-                request,
-                approve,
-                advances,
-                decidedStep,
-                nextStepName,
-                cleanComment,
-                me,
-                ct);
+                tenantId, quoteId, quote.Number, request, approve, advances,
+                decidedStep, nextStepName, cleanComment, me, ct);
 
             var message = !approve
                 ? $"Sent back to {request.RequestedByName} with your comment."
@@ -1341,8 +1365,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
         /// fails, somebody is not told — which is logged, and is far better
         /// than the reverse.
         /// </summary>
+        // 052a: was (Guid tenantId, Quote quote, …). It only ever needed the
+        // number and the id, and asking for a whole Quote meant DecideAsync
+        // would have had to load and track one purely to send a notification —
+        // which is exactly what this handler is written to avoid.
         private async Task NotifyRequesterAsync(
-            Guid tenantId, Quote quote, QuoteApprovalRequest request,
+            Guid tenantId, Guid quoteId, string quoteNumber, QuoteApprovalRequest request,
             bool approve, bool advances, int decidedStep, string? nextStepName,
             string? comment, CurrentUserContext me, CancellationToken ct)
         {
@@ -1356,8 +1384,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 if (approve && advances) return;
 
                 var title = approve
-                    ? $"Quote {quote.Number} was approved — you can send it now"
-                    : $"Quote {quote.Number} was sent back for changes";
+                    ? $"Quote {quoteNumber} was approved — you can send it now"
+                    : $"Quote {quoteNumber} was sent back for changes";
 
                 var body = string.IsNullOrWhiteSpace(comment)
                     ? $"{me.FullName} " + (approve ? "approved it." : "asked for changes.")
@@ -1370,7 +1398,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         Title: title,
                         Body: body,
                         EntityType: "Quote",
-                        EntityId: quote.Id,
+                        EntityId: quoteId,
                         ActorUserId: me.UserId,
                         ActorName: me.FullName),
                     new[] { request.RequestedByUserId }, ct);
@@ -1382,7 +1410,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             {
                 _logger.LogError(ex,
                     "Could not notify {Requester} about the decision on quote {QuoteId}",
-                    request.RequestedByName, quote.Id);
+                    request.RequestedByName, quoteId);
             }
         }
     }

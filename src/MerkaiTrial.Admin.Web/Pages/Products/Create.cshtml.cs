@@ -50,12 +50,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
             TenantCurrencyName   = CurrencyConfiguration.GetCurrencyName(TenantCurrencyCode);
 
+            // 051: the tax code's wording follows the tenant.
+            TaxCodeLabel = TaxCodes.LabelFor(TenantCurrencyCode);
+            TaxCodeHint  = TaxCodes.HintFor(TenantCurrencyCode);
+
             Input = new CreateProductDto
             {
                 TenantId = CurrentUserService.GetCurrentTenantId(),
                 IsActive = true,
                 Currency = TenantCurrencyCode,   // FIX: was hardcoded "USD"
-                TaxRate  = 0
+                TaxRate  = 0,
+
+                // 051. "unit" prints as nothing beside a quantity, which is
+                // the right default: most catalogues sell countable things
+                // and "3 units" reads worse than "3".
+                Type          = ProductKinds.Product,
+                UnitOfMeasure = UnitsOfMeasure.Unit
             };
 
             return Page();
@@ -68,9 +78,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
 
             if (!ModelState.IsValid)
             {
-                TenantCurrencyCode   = _tenantService.GetCurrencyCode();
-                TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
-                TenantCurrencyName   = CurrencyConfiguration.GetCurrencyName(TenantCurrencyCode);
+                ReloadTenantContext();   // 051
                 return Page();
             }
 
@@ -88,9 +96,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error creating product");
-                TenantCurrencyCode   = _tenantService.GetCurrencyCode();
-                TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
-                TenantCurrencyName   = CurrencyConfiguration.GetCurrencyName(TenantCurrencyCode);
+                ReloadTenantContext();   // 051
                 ModelState.AddModelError(string.Empty, "Failed to create product. Please try again.");
                 return Page();
             }
@@ -103,11 +109,50 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 Input.Category);
         }
 
-        public SelectList GetTypeOptions()
+        /// <summary>
+        /// 051. Everything the view needs that a POST does not carry. A page
+        /// model is a FRESH instance on every POST, so these had to be refilled
+        /// by hand in two separate places before — and the tax code labels
+        /// would have been a third.
+        /// </summary>
+        private void ReloadTenantContext()
         {
-            var types = new[] { "Product", "Service", "Subscription" };
-            return new SelectList(types);
+            TenantCurrencyCode   = _tenantService.GetCurrencyCode();
+            TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
+            TenantCurrencyName   = CurrencyConfiguration.GetCurrencyName(TenantCurrencyCode);
+            TaxCodeLabel         = TaxCodes.LabelFor(TenantCurrencyCode);
+            TaxCodeHint          = TaxCodes.HintFor(TenantCurrencyCode);
         }
+
+        /// <summary>
+        /// 051: from ProductKinds, not a local array. This method and its twin
+        /// on the other page each had their own copy of
+        /// { "Product", "Service", "Subscription" } — two places to get wrong,
+        /// and nothing checking either.
+        /// </summary>
+        public SelectList GetTypeOptions()
+            => new SelectList(ProductKinds.All, Input.Type);
+
+        /// <summary>
+        /// 051. Grouped, because twelve flat options is a scroll and
+        /// "Time" / "Area and length" is how someone thinks about it.
+        /// </summary>
+        public SelectList GetUnitOptions()
+            => new SelectList(
+                UnitsOfMeasure.All.Select(u => new { u.Code, u.Label, u.Group }),
+                "Code", "Label", Input.UnitOfMeasure, "Group");
+
+        /// <summary>
+        /// 051. One line saying what the selected kind means. Rendered
+        /// server-side rather than swapped by a script, so the three strings
+        /// live only in ProductKinds — putting a copy of them in JavaScript
+        /// would recreate the duplication this round just removed.
+        /// </summary>
+        public string KindHint => ProductKinds.Hint(Input.Type);
+
+        /// <summary>051. What to call the tax code field for this tenant.</summary>
+        public string TaxCodeLabel { get; private set; } = "Tax classification code";
+        public string TaxCodeHint  { get; private set; } = string.Empty;
         // FIX: GetCurrencyOptions() removed — currency is tenant-level, not per-product
     }
 }

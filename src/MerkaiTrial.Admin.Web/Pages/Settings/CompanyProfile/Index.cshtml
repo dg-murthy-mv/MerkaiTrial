@@ -1,0 +1,378 @@
+@page
+@using System.Linq
+@model MerkaiTrial.Admin.Web.Pages.Settings.CompanyProfile.IndexModel
+@{
+    ViewData["Title"] = "Company Profile";
+}
+@* =====================================================================
+   Settings/CompanyProfile/Index.cshtml — NEW (064).
+
+   The tenant shell, so this renders under Pages/_ViewStart's "_Layout",
+   which is light. No dark-theme block here on purpose — the 049 and 054
+   problems both came from carrying styling between the two shells.
+
+   The live preview on the right is the point of the page. Eleven empty
+   fields do not tell anybody what they are for; a block that reads
+   exactly as it will on the customer's quote does, and it updates as
+   they type.
+   ===================================================================== *@
+
+<style>
+    .cp-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+
+    .cp-preview {
+        background: #fff; border: 1px solid #e2e8f0; border-left: 5px solid #6366f1;
+        border-radius: 10px; padding: 1.1rem 1.25rem;
+    }
+    .cp-preview .lbl {
+        font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+        color: #94a3b8; font-weight: 650; display: block; margin-bottom: .6rem;
+    }
+    .cp-preview .nm   { font-weight: 700; font-size: 1.05rem; color: #0f172a; }
+    .cp-preview .ln   { font-size: .86rem; color: #475569; line-height: 1.45; }
+    .cp-preview .tax  { font-size: .82rem; color: #0f172a; margin-top: .5rem;
+                        padding-top: .5rem; border-top: 1px dashed #e2e8f0; }
+    .cp-preview .none { color: #cbd5e1; font-style: italic; font-size: .86rem; }
+
+    .cp-fixed {
+        background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+        padding: .7rem .9rem; font-size: .82rem; color: #64748b;
+    }
+    .cp-fixed strong { color: #0f172a; font-weight: 600; }
+
+    @@media (max-width: 991.98px) {
+        .cp-sticky { position: static !important; }
+    }
+</style>
+
+<div class="cp-head">
+    <div>
+        <h1 class="lf-page-title mb-1">Company Profile</h1>
+        <p class="text-muted mb-0">
+            Who your quotes and invoices are <strong>from</strong>. Your customers
+            see this; your team doesn't.
+        </p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>@Model.ErrorMessage</span>
+    </div>
+}
+
+@* The reason the page exists, said once at the top when it applies. *@
+@if (!Model.IsComplete)
+{
+    <div class="alert alert-warning d-flex gap-2 align-items-start">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div>
+            <strong>Your quotes don't say who they're from yet.</strong>
+            A customer opening a quote link sees their own company, the prices and
+            an Accept button — and nothing identifying you. Fill in at least an
+            address or a tax number below and every quote from then on will carry it.
+        </div>
+    </div>
+}
+
+<form method="post">
+    <div class="row g-4">
+
+        @* ── The form ────────────────────────────────────────────── *@
+        <div class="col-lg-7">
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="bi bi-building me-2 text-primary"></i>Registered details
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        <div class="col-12">
+                            <label asp-for="Input.LegalName" class="form-label">Registered name</label>
+                            <input asp-for="Input.LegalName" class="form-control"
+                                   placeholder="@Model.WorkspaceName" />
+                            <small class="text-muted">
+                                The legal entity, if it differs from
+                                <strong>@Model.WorkspaceName</strong> — usually with
+                                "Co., Ltd.", "Pvt Ltd" or similar on the end. Leave it
+                                empty to use the workspace name.
+                            </small>
+                            <span asp-validation-for="Input.LegalName" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <label asp-for="Input.AddressLine1" class="form-label">Address</label>
+                            <input asp-for="Input.AddressLine1" class="form-control"
+                                   placeholder="Street address" />
+                            <span asp-validation-for="Input.AddressLine1" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <input asp-for="Input.AddressLine2" class="form-control"
+                                   placeholder="Building, floor, unit (optional)" />
+                            <span asp-validation-for="Input.AddressLine2" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-5">
+                            <label asp-for="Input.City" class="form-label">City</label>
+                            <input asp-for="Input.City" class="form-control" />
+                            <span asp-validation-for="Input.City" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label asp-for="Input.State" class="form-label">State / province</label>
+                            <input asp-for="Input.State" class="form-control" />
+                            <span asp-validation-for="Input.State" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label asp-for="Input.PostalCode" class="form-label">Postal code</label>
+                            <input asp-for="Input.PostalCode" class="form-control" />
+                            <span asp-validation-for="Input.PostalCode" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="cp-fixed">
+                                <i class="bi bi-lock me-1"></i>
+                                Country: <strong>@Model.CountryName (@Model.CountryCode)</strong>
+                                — fixed. It decides your currency, date format and tax
+                                rates, so it isn't changed from here.
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="bi bi-percent me-2 text-primary"></i>Tax registration
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        <div class="col-md-5">
+                            <label asp-for="Input.TaxNumberLabel" class="form-label">Called</label>
+                            <input asp-for="Input.TaxNumberLabel" class="form-control"
+                                   placeholder="@Model.CountryTaxLabel" />
+                            <small class="text-muted">
+                                What it's called where you are — GSTIN, VAT No., TRN.
+                            </small>
+                            <span asp-validation-for="Input.TaxNumberLabel" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-7">
+                            <label asp-for="Input.TaxNumber" class="form-label">Tax number</label>
+                            <input asp-for="Input.TaxNumber" class="form-control" />
+                            <small class="text-muted">
+                                Printed on quotes and invoices. In India and Thailand a
+                                tax document is expected to carry it.
+                            </small>
+                            <span asp-validation-for="Input.TaxNumber" class="text-danger small"></span>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="bi bi-telephone me-2 text-primary"></i>How customers reach you
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Phone" class="form-label">Phone</label>
+                            <input asp-for="Input.Phone" class="form-control" />
+                            <span asp-validation-for="Input.Phone" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Website" class="form-label">Website</label>
+                            <input asp-for="Input.Website" class="form-control"
+                                   placeholder="https://" />
+                            <span asp-validation-for="Input.Website" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <label asp-for="Input.ReplyToEmail" class="form-label">Reply-to email</label>
+                            <input asp-for="Input.ReplyToEmail" class="form-control" type="email" />
+                            <small class="text-muted">
+                                Where a customer's reply to a quote email lands. Quote
+                                emails are sent from Merkai's own address so they
+                                deliver reliably — this is the address that receives
+                                the answer.
+                            </small>
+                            <span asp-validation-for="Input.ReplyToEmail" class="text-danger small"></span>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Preview + actions ───────────────────────────────────── *@
+        <div class="col-lg-5">
+            <div class="cp-sticky" style="position: sticky; top: 1rem;">
+
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-eye me-2 text-primary"></i>What the customer sees
+                    </div>
+                    <div class="card-body">
+                        @* Rendered server-side from the saved values, then kept in
+                           step by the script below as the user types. Both, so the
+                           block is right with JavaScript disabled and live with it. *@
+                        <div class="cp-preview">
+                            <span class="lbl">Quote from</span>
+                            <div class="nm" id="cpName">
+                                @(string.IsNullOrWhiteSpace(Model.Input.LegalName)
+                                    ? Model.WorkspaceName
+                                    : Model.Input.LegalName)
+                            </div>
+                            <div class="ln" id="cpAddr">@AddressBlock()</div>
+                            <div class="ln" id="cpContact">@ContactLine()</div>
+                            <div class="tax" id="cpTax" style="@(string.IsNullOrWhiteSpace(Model.Input.TaxNumber) ? "display:none;" : "")">
+                                <span id="cpTaxLabel">@(string.IsNullOrWhiteSpace(Model.Input.TaxNumberLabel) ? Model.CountryTaxLabel : Model.Input.TaxNumberLabel)</span>:
+                                <strong id="cpTaxNumber">@Model.Input.TaxNumber</strong>
+                            </div>
+                            <div class="none" id="cpEmpty" style="@(Model.IsComplete ? "display:none;" : "")">
+                                Nothing here yet — your quotes don't name you.
+                            </div>
+                        </div>
+
+                        <div class="text-muted mt-3" style="font-size:.8rem;">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Quotes already sent are unchanged. This appears on quotes
+                            and invoices from now on.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-lightning me-2 text-primary"></i>Actions
+                    </div>
+                    <div class="card-body">
+                        <div class="d-grid gap-2">
+                            @if (Model.CanUpdate)
+                            {
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-check-lg me-1"></i>Save company details
+                                </button>
+                            }
+                            else
+                            {
+                                <div class="text-muted small">
+                                    <i class="bi bi-lock me-1"></i>
+                                    You can see these details but not change them.
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</form>
+
+@functions {
+    string AddressBlock()
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(Model.Input.AddressLine1)) parts.Add(Model.Input.AddressLine1!);
+        if (!string.IsNullOrWhiteSpace(Model.Input.AddressLine2)) parts.Add(Model.Input.AddressLine2!);
+
+        var town = string.Join(" ", new[] { Model.Input.City, Model.Input.State, Model.Input.PostalCode }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (!string.IsNullOrWhiteSpace(town)) parts.Add(town);
+
+        if (!string.IsNullOrWhiteSpace(Model.CountryName)) parts.Add(Model.CountryName);
+
+        return string.Join(" · ", parts);
+    }
+
+    string ContactLine()
+        => string.Join(" · ", new[] { Model.Input.Phone, Model.Input.Website, Model.Input.ReplyToEmail }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (function () {
+            'use strict';
+
+            // Everything is written with textContent, never innerHTML — a
+            // company called "Bolt & Nut <Co>" must appear as typed and must
+            // not become markup.
+            var byId = function (id) { return document.getElementById(id); };
+
+            var f = {
+                legal:  byId('Input_LegalName'),
+                a1:     byId('Input_AddressLine1'),
+                a2:     byId('Input_AddressLine2'),
+                city:   byId('Input_City'),
+                state:  byId('Input_State'),
+                post:   byId('Input_PostalCode'),
+                phone:  byId('Input_Phone'),
+                web:    byId('Input_Website'),
+                email:  byId('Input_ReplyToEmail'),
+                taxNo:  byId('Input_TaxNumber'),
+                taxLbl: byId('Input_TaxNumberLabel')
+            };
+
+            var out = {
+                name:     byId('cpName'),
+                addr:     byId('cpAddr'),
+                contact:  byId('cpContact'),
+                tax:      byId('cpTax'),
+                taxLabel: byId('cpTaxLabel'),
+                taxNo:    byId('cpTaxNumber'),
+                empty:    byId('cpEmpty')
+            };
+
+            // Rendered into the page by Razor so the two sides cannot drift.
+            var workspaceName  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.WorkspaceName));
+            var countryName    = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.CountryName));
+            var defaultTaxLbl  = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.CountryTaxLabel));
+
+            function val(el) { return el && el.value ? el.value.trim() : ''; }
+
+            function join(sep, parts) {
+                return parts.filter(function (p) { return p; }).join(sep);
+            }
+
+            function render() {
+                out.name.textContent = val(f.legal) || workspaceName;
+
+                var town = join(' ', [val(f.city), val(f.state), val(f.post)]);
+                out.addr.textContent = join(' · ', [val(f.a1), val(f.a2), town, countryName]);
+
+                out.contact.textContent = join(' · ', [val(f.phone), val(f.web), val(f.email)]);
+
+                var taxNo = val(f.taxNo);
+                out.tax.style.display = taxNo ? '' : 'none';
+                out.taxNo.textContent = taxNo;
+                out.taxLabel.textContent = val(f.taxLbl) || defaultTaxLbl;
+
+                // Same test the server uses for IsComplete, and the same one
+                // Tenant.HasCompanyProfile uses to decide whether a document
+                // draws a seller block at all.
+                var complete = !!(val(f.a1) || taxNo);
+                out.empty.style.display = complete ? 'none' : '';
+            }
+
+            Object.keys(f).forEach(function (k) {
+                if (f[k]) f[k].addEventListener('input', render);
+            });
+
+            render();
+        })();
+    </script>
+}

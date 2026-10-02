@@ -16,6 +16,22 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
         Task<QuoteDto> CreateAsync(CreateQuoteDto dto);
         Task UpdateAsync(Guid tenantId, Guid quoteId, UpdateQuoteDto dto);
         Task DeleteAsync(Guid tenantId, Guid quoteId);
+
+        /// <summary>
+        /// 066: OBSOLETE. Marked here as well as on the implementation —
+        /// almost every call goes through IQuoteService, so a warning only
+        /// on the class would point at nothing.
+        ///
+        /// NOTE WHY THIS OVERLOAD EVER WINS. The four-argument version
+        /// below has `string? baseUrl = null`, so a three-argument call is
+        /// applicable to BOTH. C# prefers the candidate that does not need
+        /// a default value filled in — so every three-argument call
+        /// silently chose this one, which never sent BaseUrl, and the
+        /// quote was stored with a relative customer link.
+        /// </summary>
+        [Obsolete("Pass baseUrl — the 3-argument overload stores a relative " +
+                  "customer link that does not work in an email. Use " +
+                  "UpdateStatusAsync(tenantId, quoteId, status, baseUrl).")]
         Task UpdateStatusAsync(Guid tenantId, Guid quoteId, string status);
 
         /// <summary>
@@ -37,6 +53,19 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
 
         Task<QuoteDto?> GetByTokenAsync(string token);
         Task<bool> UpdateStatusByTokenAsync(string token, string newStatus);
+
+        /// <summary>
+        /// 061. Emails the quote to the customer again. The FIRST email
+        /// goes out automatically when the quote moves to Sent.
+        ///
+        /// Throws InvalidOperationException carrying the API's own sentence
+        /// when it cannot be sent — "Worapong Thongsuk has no email address
+        /// on file…" — so the page shows that rather than a generic error.
+        ///
+        /// baseUrl is this host's public address, which the API cannot know
+        /// for itself. Same value the status call already passes.
+        /// </summary>
+        Task SendToCustomerAsync(Guid tenantId, Guid quoteId, string? baseUrl = null);
     }
 
     public class QuoteService : IQuoteService
@@ -140,20 +169,34 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
             }
         }
 
-        public async Task UpdateStatusAsync(Guid tenantId, Guid quoteId, string status)
-        {
-            try
-            {
-                var url = $"api/quotes/{quoteId}/status?tenantId={tenantId}";
-                var dto = new UpdateQuoteStatusDto { Status = status };
-                await _apiService.PutAsync<object>(url, dto);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to update quote status {QuoteId}", quoteId);
-                throw;
-            }
-        }
+        /// <summary>
+        /// 066: NOW DELEGATES. It used to be a second, independent
+        /// implementation that built its own UpdateQuoteStatusDto and
+        /// never set BaseUrl.
+        ///
+        /// WHY THAT MATTERED. UpdateQuoteStatusHandler uses BaseUrl to
+        /// build the customer's public link:
+        ///
+        ///     var baseUrl = !string.IsNullOrEmpty(dto.BaseUrl) ? dto.BaseUrl : "";
+        ///     quote.PaymentLinkUrl = $"{baseUrl}/q/{token}";
+        ///
+        /// With it null the quote is stored with a RELATIVE link,
+        /// "/q/abc123…", which is useless in an email and useless in the
+        /// Copy link box. Anything that happened to call this three-
+        /// argument overload would send a quote whose link went nowhere,
+        /// and nothing would report a failure — the status change
+        /// succeeded, the token was generated, the link was simply wrong.
+        ///
+        /// [Obsolete] rather than deleted: deleting it would break any
+        /// caller I cannot see, and a build warning naming the call site is
+        /// exactly the signal wanted. The warning points at the fix.
+        /// </summary>
+        [Obsolete("Pass baseUrl — the 3-argument overload stores a relative " +
+                  "customer link that does not work in an email. Use " +
+                  "UpdateStatusAsync(tenantId, quoteId, status, baseUrl) with " +
+                  "$\"{Request.Scheme}://{Request.Host}\".")]
+        public Task UpdateStatusAsync(Guid tenantId, Guid quoteId, string status)
+            => UpdateStatusAsync(tenantId, quoteId, status, baseUrl: null);
 
         public async Task<QuoteStatisticsDto> GetStatisticsAsync(
             Guid tenantId, DateTime? fromUtc = null, DateTime? toExclusiveUtc = null)
@@ -268,7 +311,9 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Quote not found for token {Token}", token);
+                // 061: the token is NOT logged. It is the whole security of
+                // the /q/{token} URL, and a log is not a key store.
+                _logger.LogWarning(ex, "Quote not found for token {Token}", Mask(token));
                 return null;
             }
         }
@@ -284,9 +329,32 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to update quote status by token {Token}", token);
+                // 061: masked, same reason as above.
+                _logger.LogError(ex, "Failed to update quote status by token {Token}", Mask(token));
                 return false;
             }
         }
+
+        // ── 061: email the quote to the customer ─────────────────────────
+        public async Task SendToCustomerAsync(Guid tenantId, Guid quoteId, string? baseUrl = null)
+        {
+            // No try/catch that swallows. IApiService turns a 400
+            // { error = "…" } into InvalidOperationException carrying that
+            // message, and the message is the entire value here — "this
+            // contact has no email address" is what the rep needs to read.
+            // Catching it to log a generic line would throw that away.
+            await _apiService.PostVoidAsync(
+                $"api/quotes/{quoteId}/send?tenantId={tenantId}",
+                new { BaseUrl = baseUrl });
+        }
+
+        /// <summary>
+        /// 061. Last four characters of a public quote token, for the log.
+        /// Enough to find the row; useless for opening the quote.
+        /// </summary>
+        private static string Mask(string? token)
+            => string.IsNullOrWhiteSpace(token) || token.Length < 8
+                ? "****"
+                : "****" + token[^4..];
     }
 }

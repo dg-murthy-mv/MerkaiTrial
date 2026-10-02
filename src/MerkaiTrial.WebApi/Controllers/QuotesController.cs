@@ -28,6 +28,17 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MerkaiTrial.WebApi.Controllers;
 
+/// <summary>
+/// 061. Body for POST /api/quotes/{id}/send.
+///
+/// BaseUrl is how the API learns its own public web address. The API host
+/// has no idea what hostname Admin.Web is served on, so the page passes
+/// Request.Scheme + Request.Host, exactly as it already does for the
+/// status endpoint. Null is fine — the handler falls back to the
+/// configured Email:AppBaseUrl.
+/// </summary>
+public sealed record SendQuoteEmailRequest(string? BaseUrl);
+
 [ApiController]
 [Route("api/quotes")]
 public class QuotesController : ControllerBase
@@ -45,6 +56,7 @@ public class QuotesController : ControllerBase
     private readonly DeleteQuoteAttachmentHandler  _deleteAttachmentHandler;
     private readonly GenerateQuotePdfHandler _generatePdf;
     private readonly GetQuoteByTokenHandler _getByTokenHandler;
+    private readonly SendQuoteEmailHandler         _sendQuoteEmailHandler;   // 061
     private readonly QuoteApprovalEngine           _access;
     private readonly ICurrentUserService           _currentUserService;
     private readonly ILogger<QuotesController>     _logger;
@@ -62,6 +74,7 @@ public class QuotesController : ControllerBase
         DeleteQuoteAttachmentHandler  deleteAttachmentHandler,
          GenerateQuotePdfHandler      generatePdf,
             GetQuoteByTokenHandler       getByTokenHandler,
+        SendQuoteEmailHandler         sendQuoteEmailHandler,              // 061
         QuoteApprovalEngine           access,
         ICurrentUserService            currentUserService,
         ILogger<QuotesController>     logger)
@@ -77,6 +90,7 @@ public class QuotesController : ControllerBase
         _uploadAttachmentHandler   = uploadAttachmentHandler;
         _deleteAttachmentHandler   = deleteAttachmentHandler;
         _getByTokenHandler         = getByTokenHandler;
+        _sendQuoteEmailHandler     = sendQuoteEmailHandler;   // 061
         _access                    = access;
         _generatePdf = generatePdf;
         _currentUserService        = currentUserService;
@@ -393,6 +407,66 @@ public class QuotesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// 061. Emails the quote to the customer again.
+    ///
+    /// Does NOT change the status — resending is not a new event in a
+    /// quote's life. The FIRST email goes out automatically when the quote
+    /// moves to Sent, queued inside that transaction by
+    /// UpdateQuoteStatusHandler.
+    ///
+    /// A refusal that the rep can act on ("this contact has no email
+    /// address") comes back as 400 with that sentence, the same shape the
+    /// quote page already renders for every other refusal here.
+    /// </summary>
+    [HttpPost("{id:guid}/send")]
+    [Authorize(Policy = "Quotes.Update")]
+    public async Task<IActionResult> SendToCustomer(
+        [FromRoute] Guid id,
+        [FromBody] SendQuoteEmailRequest? request,
+        CancellationToken ct)
+    {
+        var tenantId = _currentUserService.GetCurrentTenantId();
+        try
+        {
+            if (!await _access.CanWriteQuoteAsync(tenantId, id, ct))
+                return NotFound(new { error = $"Quote {id} not found" });
+
+            string? sentBy = null;
+            try
+            {
+                var user = await _currentUserService.GetCurrentUserAsync();
+                sentBy = user?.FullName;
+            }
+            catch
+            {
+                // Who pressed it is for the audit row, not for the send.
+                // Never fail an email because the name could not be read.
+            }
+
+            var result = await _sendQuoteEmailHandler.HandleAsync(
+                tenantId, id, request?.BaseUrl, sentBy, ct);
+
+            if (!result.Queued)
+                return BadRequest(new { error = result.Reason ?? "The quote could not be emailed." });
+
+            return Ok(new { message = "Quote email queued" });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(new { error = $"Quote {id} not found" });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to email quote {QuoteId}", id);
+            return StatusCode(500, new { error = "Failed to email the quote" });
+        }
+    }
+
     [HttpGet("public/{token}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetByToken(string token, CancellationToken ct)
@@ -405,7 +479,11 @@ public class QuotesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get quote by token {Token}", token);
+            // 061: the token is NOT logged. It is the ENTIRE security of
+            // the /q/{token} URL — anyone with log access could paste it
+            // into a browser, open the customer's quote and accept it as
+            // them. Same rule as the phone numbers in WhatsApp sending.
+            _logger.LogError(ex, "Failed to get quote by token {Token}", Mask(token));
             return StatusCode(500);
         }
     }
@@ -432,6 +510,25 @@ public class QuotesController : ControllerBase
             if (quote.Status is not ("Sent" or "Viewed"))
                 return Ok(new { message = "Quote already decided — no change needed" });
 
+            // 061: AND the quote must not have expired.
+            //
+            // This check did not exist. The guards above cover the target
+            // status and the current status, but nothing looked at the
+            // date — so a quote that lapsed three months ago could still be
+            // accepted, at a price that is no longer on offer, by anyone
+            // who still had the link. The public page hides the buttons
+            // once a quote expires, but a hidden button is not a control
+            // and this endpoint is reachable directly.
+            if (quote.ExpiresAtUtc != default
+                && quote.ExpiresAtUtc.Year > 1900
+                && quote.ExpiresAtUtc < DateTime.UtcNow)
+            {
+                return BadRequest(new
+                {
+                    error = "This quote has expired. Please ask for an updated quote."
+                });
+            }
+
             // ✅ Delegate to existing handler — deals with deal stage transition too
             await _updateQuoteStatusHandler.Handle(
                 quote.TenantId,
@@ -454,10 +551,22 @@ public class QuotesController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to update quote status by token {Token}", token);
+            // 061: masked. See GetByToken above.
+            _logger.LogError(ex, "Failed to update quote status by token {Token}", Mask(token));
             return StatusCode(500, new { error = "Failed to update quote status" });
         }
     }
+
+    /// <summary>
+    /// 061. The last four characters of a public quote token, for the log.
+    /// Enough to match a row against a support question; useless to anyone
+    /// who wants to open the quote. A short or empty token degrades to
+    /// "****" rather than leaking a prefix of a short one.
+    /// </summary>
+    private static string Mask(string? token)
+        => string.IsNullOrWhiteSpace(token) || token.Length < 8
+            ? "****"
+            : "****" + token[^4..];
 
     [HttpGet("{id:guid}/pdf")]
     [Authorize(Policy = "Quotes.Read")]

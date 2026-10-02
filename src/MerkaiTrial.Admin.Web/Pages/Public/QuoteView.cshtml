@@ -1,16 +1,46 @@
 @page "/q/{Token}"
 @model MerkaiTrial.Admin.Web.Pages.Public.QuoteViewModel
 @{
-    Layout   = null;   // ✅ No layout — standalone public page, no sidebar/nav
+    Layout   = null;   // Standalone public page — no sidebar/nav, and no
+                       // _Layout, which injects ICurrentTenantService and
+                       // would throw for a visitor with no tenant claim.
     ViewData["Title"] = Model.Quote != null
         ? $"Quote {Model.Quote.Number}"
         : "Quote";
 }
+@* =====================================================================
+   Public/QuoteView.cshtml — REVISED (059).
+
+   The only page in the product a CUSTOMER reads. Changes this round:
+
+     - item.Quantity  ->  item.QuantityDisplay
+       052 made Quantity decimal(18,4) and every line has been printing
+       "2.0000" since. QuantityDisplay trims the zeros and carries the
+       unit of measure, so "12.5 m²" and "3" both read correctly.
+
+     - Tax column no longer rounds. (TaxRate * 100).ToString("N0")
+       printed a 12.5% line as "13%". Model.FormatTaxRate now.
+
+     - A per-line Discount column (055), shown only when some line
+       actually has one. Without it, unit price x qty did not reach the
+       line total and nothing on the page said why.
+
+     - The header falls back to the contact when there is no company
+       (053), instead of rendering a blank line.
+
+     - The expired banner was text-warning on a white card: amber on
+       white, effectively unreadable. text-warning-emphasis.
+
+     - Dropped the ?message=accepted banner. Our own redirect never sets
+       that parameter, so it was dead — and if anyone did hand-craft it,
+       it stacked a second green banner on top of the IsAccepted one.
+   ===================================================================== *@
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
     <title>@ViewData["Title"] — Merkai</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
@@ -20,7 +50,7 @@
             background: white;
             border-radius: 16px;
             box-shadow: 0 4px 24px rgba(99,102,241,0.1);
-            max-width: 860px;
+            max-width: 920px;
             margin: 2rem auto;
             overflow: hidden;
         }
@@ -32,6 +62,7 @@
         .quote-body { padding: 2rem 2.5rem; }
         .quote-number { font-size: 1.6rem; font-weight: 700; }
         .company-name { font-size: 1.1rem; opacity: 0.9; }
+        .contact-name { font-size: 0.9rem; opacity: 0.75; }
         .section-label {
             font-size: 0.7rem;
             font-weight: 700;
@@ -96,6 +127,12 @@
             padding: 0.2rem 0.75rem;
             font-size: 0.85rem;
         }
+        /* The quantity now carries a unit ("12.5 m²"), so it must not wrap
+           between the number and the unit. */
+        .qty-cell { white-space: nowrap; }
+        .discount-cell { white-space: nowrap; color: #059669; font-weight: 600; }
+        .discount-none { color: #cbd5e1; font-weight: 400; }
+
         @@media (max-width: 600px) {
             .quote-header-bar, .quote-body, .action-bar { padding: 1.25rem; }
             .action-bar { justify-content: stretch; }
@@ -125,7 +162,21 @@ else
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
                 <div>
                     <div class="quote-number mb-1">@Model.Quote.Number</div>
-                    <div class="company-name">@Model.Quote.CompanyName</div>
+
+                    @* 053: the company, or the person when the sale is
+                       genuinely person-to-person. CompanyName alone left a
+                       blank line on those quotes. *@
+                    @if (!string.IsNullOrWhiteSpace(Model.CustomerHeading))
+                    {
+                        <div class="company-name">@Model.CustomerHeading</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.CustomerSubheading))
+                    {
+                        <div class="contact-name">
+                            <i class="bi bi-person me-1"></i>@Model.CustomerSubheading
+                        </div>
+                    }
+
                     @if (!string.IsNullOrEmpty(Model.Quote.DealTitle))
                     {
                         <div class="opacity-75 small mt-1">Re: @Model.Quote.DealTitle</div>
@@ -147,7 +198,7 @@ else
         @if (Model.IsAccepted)
         {
             <div class="mx-4 mt-4">
-                <div class="status-banner bg-success bg-opacity-10 text-success border border-success border-opacity-25">
+                <div class="status-banner bg-success bg-opacity-10 text-success-emphasis border border-success border-opacity-25">
                     <i class="bi bi-check-circle-fill me-2"></i>
                     You have accepted this quote. Our team will be in touch shortly.
                 </div>
@@ -156,7 +207,7 @@ else
         else if (Model.IsRejected)
         {
             <div class="mx-4 mt-4">
-                <div class="status-banner bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25">
+                <div class="status-banner bg-danger bg-opacity-10 text-danger-emphasis border border-danger border-opacity-25">
                     <i class="bi bi-x-circle-fill me-2"></i>
                     This quote has been declined.
                 </div>
@@ -164,19 +215,12 @@ else
         }
         else if (Model.IsExpired)
         {
+            @* Was text-warning: amber text on a white card, which is
+               almost unreadable. -emphasis is the dark variant. *@
             <div class="mx-4 mt-4">
-                <div class="status-banner bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">
+                <div class="status-banner bg-warning bg-opacity-10 text-warning-emphasis border border-warning border-opacity-25">
                     <i class="bi bi-clock-history me-2"></i>
                     This quote has expired. Please contact us for an updated quote.
-                </div>
-            </div>
-        }
-        @if (Request.Query.ContainsKey("message") && Request.Query["message"] == "accepted")
-        {
-            <div class="mx-4 mt-4">
-                <div class="status-banner bg-success bg-opacity-10 text-success border border-success border-opacity-25">
-                    <i class="bi bi-check-circle-fill me-2"></i>
-                    Thank you! Your acceptance has been recorded. We will contact you soon.
                 </div>
             </div>
         }
@@ -190,18 +234,23 @@ else
                 <table class="table table-hover align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>#</th>
-                            <th>Item</th>
-                            <th class="text-center">Qty</th>
-                            <th class="text-end">Unit Price</th>
-                            <th class="text-end">Tax</th>
-                            <th class="text-end">Total</th>
+                            <th scope="col">#</th>
+                            <th scope="col">Item</th>
+                            <th scope="col" class="text-center">Qty</th>
+                            <th scope="col" class="text-end">Unit Price</th>
+                            @if (Model.HasAnyLineDiscount)
+                            {
+                                <th scope="col" class="text-end">Discount</th>
+                            }
+                            <th scope="col" class="text-end">Tax</th>
+                            <th scope="col" class="text-end">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         @for (int i = 0; i < Model.Quote.Items.Count; i++)
                         {
                             var item = Model.Quote.Items[i];
+                            var discount = Model.FormatLineDiscount(item);
                             <tr>
                                 <td class="text-muted">@(i + 1)</td>
                                 <td>
@@ -211,12 +260,21 @@ else
                                         <div class="text-muted small">@item.Description</div>
                                     }
                                 </td>
-                                <td class="text-center">@item.Quantity</td>
+                                @* 052: QuantityDisplay, not Quantity. The raw
+                                   decimal prints "2.0000" at scale 4. *@
+                                <td class="text-center qty-cell">@item.QuantityDisplay</td>
                                 <td class="text-end">
                                     @Model.FormatCurrency(item.UnitPrice)
                                 </td>
+                                @if (Model.HasAnyLineDiscount)
+                                {
+                                    <td class="text-end discount-cell @(discount == "—" ? "discount-none" : "")">
+                                        @discount
+                                    </td>
+                                }
+                                @* 059: no longer "N0" — a 12.5% line printed 13%. *@
                                 <td class="text-end text-muted">
-                                    @((item.TaxRate * 100).ToString("N0"))%
+                                    @Model.FormatTaxRate(item.TaxRate)
                                 </td>
                                 <td class="text-end fw-semibold">
                                     @Model.FormatCurrency(item.LineGrandTotal)
@@ -264,7 +322,11 @@ else
         </div>
 
         <!-- ── Action bar ───────────────────────────────────────────── -->
-        @if (!Model.IsAccepted && !Model.IsRejected && !Model.IsExpired)
+        @* Model.CanDecide is the SAME expression the POST handlers check,
+           so the button and the rule behind it cannot drift apart. The
+           handlers re-read the quote regardless — a hidden button is not
+           a control. *@
+        @if (Model.CanDecide)
         {
             <div class="action-bar">
                 <form method="post" asp-page-handler="Decline">

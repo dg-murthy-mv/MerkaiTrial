@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Products;
 using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Authorization;
@@ -196,7 +196,29 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         // GET: api/products/categories?tenantId={guid}
+        //
+        // 066: THE POLICY WAS MISSING. Every other action on this
+        // controller carries one; this was the only one relying on the
+        // class-level [Authorize], which asks for a valid token and
+        // nothing else. So a user with no Products permission at all — a
+        // viewer, someone whose role grants only Leads — could list the
+        // workspace's product categories.
+        //
+        // Smaller than it looks, because Product carries a global query
+        // filter: the handler's own WHERE and the filter are ANDed, so
+        // passing another workspace's tenantId in the query string returns
+        // nothing rather than their categories. That is the filter saving
+        // this endpoint, though, not the endpoint being right.
+        //
+        // WORTH KNOWING, NOT CHANGED HERE: every action on this controller
+        // takes tenantId from the QUERY STRING rather than the token. The
+        // query filter is what makes that safe, which means the safety
+        // depends on FlowDbContext rather than on the controller. Moving
+        // them to _currentUserService.GetCurrentTenantId() would make the
+        // controller say what it means — a worthwhile round, but it
+        // changes every caller's URL and does not belong in a one-line fix.
         [HttpGet("categories")]
+        [Authorize(Policy = Policies.ProductsRead)]
         public async Task<ActionResult<List<string>>> GetCategories([FromQuery] Guid tenantId)
         {
             try

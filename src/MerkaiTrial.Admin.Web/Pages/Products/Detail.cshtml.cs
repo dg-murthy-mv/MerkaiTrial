@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;
@@ -108,6 +108,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         {
             return CurrencyConfiguration.GetCurrencySymbol(Product.Currency);
         }
+
+        // ── 051 ──────────────────────────────────────────────────────
+
+        /// <summary>"Square metre", "Hour", "Unit / piece".</summary>
+        public string UnitLabel => UnitsOfMeasure.LabelOf(Product?.UnitOfMeasure);
+
+        /// <summary>
+        /// The suffix after a price: "/ m²". EMPTY for a plain unit, because
+        /// "₹450 / unit" reads worse than "₹450" and adds nothing.
+        /// </summary>
+        public string PricedPer
+        {
+            get
+            {
+                var s = UnitsOfMeasure.ShortOf(Product?.UnitOfMeasure);
+                return string.IsNullOrEmpty(s) ? string.Empty : "/ " + s;
+            }
+        }
+
+        /// <summary>What this tenant's tax authority calls the code.</summary>
+        public string TaxCodeLabel => TaxCodes.LabelFor(TenantCurrencyCode);
 
         public string GetCurrencyName()
         {

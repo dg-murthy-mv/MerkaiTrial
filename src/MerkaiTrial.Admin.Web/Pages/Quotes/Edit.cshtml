@@ -25,8 +25,14 @@
         name         = i.Name ?? string.Empty,
         description  = i.Description ?? string.Empty,
         quantity     = i.Quantity,
+        // 052: seeded so re-opening a quote shows the unit it was saved with,
+        // not "unit" for everything.
+        unitOfMeasure = i.UnitOfMeasure,
         unitPrice    = i.UnitPrice,
         lineDiscount = i.LineDiscount,
+        // 055: seeded so reopening a quote shows "10%" where the rep typed
+        // a percentage, not the amount it worked out to.
+        discountPercent = i.DiscountPercent,
         taxRate      = i.TaxRate * 100m
     }).ToList();
 

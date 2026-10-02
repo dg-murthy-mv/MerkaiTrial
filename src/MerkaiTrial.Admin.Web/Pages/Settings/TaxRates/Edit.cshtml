@@ -1,0 +1,180 @@
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Settings.TaxRates.EditModel
+@{
+    ViewData["Title"] = "Edit tax rate";
+}
+@* =====================================================================
+   Settings/TaxRates/Edit.cshtml — NEW (058). Tenant shell, light.
+   A system rate never reaches this page: Edit.cshtml.cs sends it back,
+   and 056 refuses the write at the API regardless.
+   ===================================================================== *@
+
+<div class="d-flex align-items-start gap-3 mb-4">
+    <div>
+        <h1 class="lf-page-title mb-1">
+            Edit tax rate
+            @* Active / Scheduled / Expired / Inactive are four different
+               answers, and a page showing only the first would hide a
+               scheduled change — which is the point of scheduling one. *@
+            <span class="badge @Model.StateBadge ms-2">@Model.StateLabel</span>
+        </h1>
+        <p class="text-muted mb-0">@Model.StateExplain</p>
+    </div>
+    <div class="ms-auto">
+        <a asp-page="./Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </a>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span>@Model.ErrorMessage</span>
+    </div>
+}
+
+<form method="post">
+    <input type="hidden" asp-for="Id" />
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-percent me-2 text-primary"></i>Rate details
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+
+                        <div class="col-md-6">
+                            <label class="form-label">Country</label>
+                            <input type="text" class="form-control"
+                                   value="@Model.CountryName (@Model.CountryCode)" disabled />
+                            <small class="text-muted">
+                                <i class="bi bi-lock me-1"></i>Can't be changed
+                            </small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Tax type</label>
+                            <input type="text" class="form-control" value="@Model.TaxType" disabled />
+                            <small class="text-muted">
+                                <i class="bi bi-lock me-1"></i>Can't be changed
+                            </small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Name" class="form-label">
+                                Rate name <span class="text-danger">*</span>
+                            </label>
+                            <input asp-for="Input.Name" class="form-control" />
+                            <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.Rate" class="form-label">
+                                Rate (%) <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <input asp-for="Input.Rate" type="number" step="0.01" min="0" max="100"
+                                       class="form-control" />
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <small class="text-warning-emphasis">
+                                Changing this changes it for everything from now on, with no record
+                                of what it was. To change a rate <em>on a date</em>, end this one and
+                                add a new one instead.
+                            </small>
+                            <span asp-validation-for="Input.Rate" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveFrom" class="form-label">In force from</label>
+                            <input asp-for="Input.EffectiveFrom" type="date" class="form-control" />
+                            <small class="text-muted">Empty = applies from today.</small>
+                            <span asp-validation-for="Input.EffectiveFrom" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label asp-for="Input.EffectiveTo" class="form-label">In force until</label>
+                            <input asp-for="Input.EffectiveTo" type="date" class="form-control" />
+                            <small class="text-muted">
+                                Empty = no end date. Still applies <em>on</em> this day.
+                            </small>
+                            <span asp-validation-for="Input.EffectiveTo" class="text-danger small"></span>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input asp-for="Input.IsDefault" class="form-check-input" type="checkbox" />
+                                <label asp-for="Input.IsDefault" class="form-check-label">
+                                    Use this as the default for @Model.CountryName
+                                </label>
+                            </div>
+                            <small class="text-muted">
+                                Only one of your rates can be the default at a time.
+                            </small>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input asp-for="Input.IsActive" class="form-check-input" type="checkbox"
+                                       role="switch" />
+                                <label asp-for="Input.IsActive" class="form-check-label">Active</label>
+                            </div>
+                            <small class="text-muted">
+                                Switch off to retire this rate without deleting it. Its dates stop
+                                mattering — it is simply not used. Everything already priced with it
+                                stays exactly as it is.
+                            </small>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="bi bi-lightning me-2 text-primary"></i>Actions
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Save changes
+                        </button>
+                        <a asp-page="./Index" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-lightbulb me-2 text-primary"></i>Worth knowing
+                </div>
+                <div class="card-body">
+                    <ul class="small mb-0 ps-3">
+                        <li class="mb-2">
+                            Quotes and invoices already raised keep the rate they were
+                            <strong>priced with</strong>. Nothing here changes them.
+                        </li>
+                        <li class="mb-2">
+                            You can't switch off the rate that is currently your
+                            <strong>default</strong> — make another one the default first.
+                        </li>
+                        <li>
+                            Country and tax type are fixed. If those are wrong, add a new
+                            rate and retire this one.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

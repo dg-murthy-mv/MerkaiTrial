@@ -1,0 +1,183 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.ErrorModel
+@{
+    // MUST be null. _ViewStart would hand this page _Layout, whose
+    // line 10 is an unguarded Ui.GetTenantName() — and GetTenantId()
+    // throws when the TenantId claim is missing. An error page that
+    // throws while rendering gives the visitor a blank 500 and loses
+    // the original exception. Everything below is self-contained for
+    // that reason: no layout, no partials, no injected services.
+    Layout = null;
+    ViewData["Title"] = "Something went wrong";
+}
+@* =====================================================================
+   Pages/Error.cshtml — NEW (060).
+
+   The page UseExceptionHandler("/Error") has been pointing at since
+   before 038, which did not exist. No exception details are shown on
+   purpose: the visitor gets a reference, Serilog gets the exception.
+
+   Styles are inline rather than from wwwroot. If the error was itself a
+   static-file or startup problem, a stylesheet reference is one more
+   thing that can fail on the page whose job is to work when nothing
+   else does.
+   ===================================================================== *@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>@ViewData["Title"] — Merkai</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: #f0f4ff;
+            color: #0f172a;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+            line-height: 1.55;
+        }
+
+        .err-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(99,102,241,.1);
+            max-width: 560px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .err-bar {
+            background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+            color: #fff;
+            padding: 2rem 2.25rem;
+        }
+
+        .err-bar h1 { margin: 0 0 .35rem; font-size: 1.45rem; font-weight: 700; }
+        .err-bar p  { margin: 0; opacity: .85; font-size: .95rem; }
+
+        .err-body { padding: 1.75rem 2.25rem 2rem; }
+        .err-body p { margin: 0 0 1rem; color: #475569; }
+
+        .err-ref {
+            background: #f8f9ff;
+            border: 1px solid #e0e7ff;
+            border-radius: 10px;
+            padding: .9rem 1.1rem;
+            margin: 0 0 1.5rem;
+        }
+
+        .err-ref .lbl {
+            font-size: .68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            color: #64748b;
+            display: block;
+            margin-bottom: .3rem;
+        }
+
+        /* break-all so a long trace id cannot widen the card on a phone */
+        .err-ref code {
+            font-family: Consolas, 'SF Mono', Menlo, monospace;
+            font-size: .82rem;
+            color: #4f46e5;
+            word-break: break-all;
+        }
+
+        .err-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+
+        .btn {
+            display: inline-block;
+            /* a <button> does not inherit the body font */
+            font-family: inherit;
+            line-height: 1.55;
+            padding: .7rem 1.5rem;
+            border-radius: 8px;
+            font-size: .95rem;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1.5px solid transparent;
+            cursor: pointer;
+        }
+
+        .btn-primary { background: #4f46e5; color: #fff; }
+        .btn-primary:hover { background: #4338ca; }
+
+        .btn-outline { background: #fff; border-color: #cbd5e1; color: #475569; }
+        .btn-outline:hover { background: #f8fafc; }
+
+        .err-foot {
+            border-top: 1px solid #eef2f7;
+            padding: 1rem 2.25rem;
+            font-size: .82rem;
+            color: #94a3b8;
+        }
+
+        @@media (max-width: 520px) {
+            .err-bar, .err-body, .err-foot { padding-left: 1.35rem; padding-right: 1.35rem; }
+            .err-actions .btn { width: 100%; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="err-card">
+        <div class="err-bar">
+            <h1>Something went wrong</h1>
+            <p>The page couldn't be loaded. Nothing you were working on has been lost.</p>
+        </div>
+
+        <div class="err-body">
+            <p>
+                This one is on us, not on you. The problem has been recorded and
+                our team can see it.
+            </p>
+
+            @* The reference is the whole point of the page: it is what ties
+               what the visitor saw to the exception in the log. No message,
+               no stack, no type name — see Error.cshtml.cs. *@
+            @if (Model.ShowRequestId)
+            {
+                <div class="err-ref">
+                    <span class="lbl">Reference</span>
+                    <code>@Model.RequestId</code>
+                </div>
+                <p>
+                    If you get in touch about this, quoting that reference lets us
+                    find exactly what happened.
+                </p>
+            }
+
+            <div class="err-actions">
+                @if (Model.IsSignedIn)
+                {
+                    <a class="btn btn-primary" href="/Dashboard">Back to dashboard</a>
+                }
+                else
+                {
+                    <a class="btn btn-primary" href="/Account/Login">Go to sign in</a>
+                }
+                @* A button, not href="javascript:..." — the javascript:
+                   scheme is the first thing a Content-Security-Policy
+                   blocks, and this control has to work on the one page
+                   that must not have broken parts. *@
+                <button type="button" class="btn btn-outline"
+                        onclick="history.back()">Go back</button>
+            </div>
+        </div>
+
+        <div class="err-foot">
+            Merkai CRM
+        </div>
+    </div>
+
+</body>
+</html>

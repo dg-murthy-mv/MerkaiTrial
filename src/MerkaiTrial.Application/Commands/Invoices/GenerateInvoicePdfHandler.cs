@@ -11,8 +11,31 @@
 //   ✅ Overdue is never printed on a draft or a void invoice.
 //   ✅ GrandTotal = Subtotal − Discount + Tax (same formula as before,
 //      written in the same order as everywhere else).
+//
+// CHANGES (052c) — three lines, two of them defects that predate 052
+//   ✅ UnitOfMeasure is carried into InvoiceLineDto. This handler builds
+//      its own InvoiceDto instead of going through InvoicesQueries, so it
+//      has to be kept in step by hand; without it the unit would sit at
+//      its default and every invoice PDF would print "12.5" with no unit.
+//   ✅ CurrencyCode is SET ON THE PDF MODEL. It never was. InvoicePdfService
+//      derives its CultureInfo from exactly that field, so with it blank
+//      every invoice PDF ever produced fell through to InvariantCulture:
+//      an Indian invoice printed 100,000.00 where the CRM, the quote PDF
+//      and the customer's accountant all say 1,00,000.00. The quote
+//      handler has always set it; this one was missed.
+//   ✅ CompanyName was invoice.Deal?.Contact?.FirstName — the contact's
+//      FIRST NAME, under a heading called "BILL TO".
+//
+// CHANGES (053)
+//   ✅ BILL TO is the customer's COMPANY now, with the contact underneath,
+//      through CustomerNaming — the same rule the invoice list, the
+//      invoice detail screen and both quote paths use. 052c put the
+//      contact's FULL name there as a stopgap; this is the real answer,
+//      and the Include chain gains Deal.Company and Deal.Contact.Company
+//      (on the invoice's own deal AND on the quote's) to feed it.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;          // 053: CustomerNaming
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Pdf;
@@ -58,8 +81,15 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 .Include(i => i.Quote)
                     .ThenInclude(q => q.Deal)
                         .ThenInclude(d => d.Contact)
+                            .ThenInclude(c => c!.Company)    // 053
+                .Include(i => i.Quote)
+                    .ThenInclude(q => q.Deal)
+                        .ThenInclude(d => d!.Company)        // 053
                 .Include(i => i.Deal)
                     .ThenInclude(d => d.Contact)
+                        .ThenInclude(c => c!.Company)        // 053
+                .Include(i => i.Deal)
+                    .ThenInclude(d => d!.Company)            // 053
                 .FirstOrDefaultAsync(ct);
 
             if (invoice == null)
@@ -79,11 +109,11 @@ namespace MerkaiTrial.Application.Commands.Invoices
             var tenantEmail = tenantContact?.FromEmail;
 
             // ── Build InvoiceDto from entity (re-use query handler logic) ─
-            var contactName = invoice.Deal?.Contact != null
-                ? $"{invoice.Deal.Contact.FirstName} {invoice.Deal.Contact.LastName}".Trim()
-                : invoice.Quote?.Deal?.Contact != null
-                    ? $"{invoice.Quote.Deal.Contact.FirstName} {invoice.Quote.Deal.Contact.LastName}".Trim()
-                    : null;
+            // 053. An invoice reaches its customer either directly (DealId)
+            // or through the quote it was raised from. Pick the deal once,
+            // here, so the company and the contact can never come from two
+            // different places.
+            var customerDeal = invoice.Deal ?? invoice.Quote?.Deal;
 
             // (018) What goes where the invoice number is printed.
             var isDraft = invoice.Status == InvoiceStatus.Draft;
@@ -111,9 +141,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 GrandTotal    = invoice.Subtotal - invoice.DiscountTotal + invoice.TaxTotal,
                 Balance       = invoice.Balance,
                 TotalPaid     = captured.Sum(p => p.Amount),
-                DealTitle     = invoice.Deal?.Title ?? invoice.Quote?.Deal?.Title,
-                CompanyName   = invoice.Deal?.Contact?.FirstName ?? invoice.Quote?.Deal?.Contact?.FirstName,
-                ContactName   = contactName,
+                DealTitle     = customerDeal?.Title,
+                // 053: BILL TO is the company; the contact is a line under it.
+                CompanyName   = CustomerNaming.CompanyOf(customerDeal),
+                ContactName   = CustomerNaming.PersonOf(customerDeal),
                 QuoteNumber   = invoice.Quote?.Number,
                 Notes         = invoice.Notes,
                 IsOverdue     = !isDraft && !isVoid
@@ -126,6 +157,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     Name           = l.Name,
                     Description    = l.Description,
                     Quantity       = l.Quantity,
+                    UnitOfMeasure  = l.UnitOfMeasure,          // 052c
                     UnitPrice      = l.UnitPrice,
                     LineDiscount   = l.LineDiscount,
                     TaxRate        = l.TaxRate,
@@ -150,6 +182,11 @@ namespace MerkaiTrial.Application.Commands.Invoices
             {
                 Invoice        = dto,
                 CurrencySymbol = _tenantService.GetCurrencySymbol(),
+                // 052c: InvoicePdfService maps this code to a CultureInfo and
+                // formats every amount on the page with it. Left unset it was
+                // null, so the switch fell to InvariantCulture and an INR
+                // invoice grouped its digits the American way.
+                CurrencyCode   = _tenantService.GetCurrencyCode(),
                 DateFormat     = _tenantService.GetDateFormat(),
                 TaxLabel       = _tenantService.GetTaxLabel(),
                 NumberFormat   = _tenantService.GetNumberFormat(),

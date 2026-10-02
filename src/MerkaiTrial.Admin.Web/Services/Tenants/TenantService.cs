@@ -28,6 +28,16 @@ namespace MerkaiTrial.Admin.Web.Services.Tenants
         Task<List<CountryDropdownDto>> GetCountriesAsync();  // ✅ NEW
         Task<List<TimezoneDto>> GetTimezonesAsync(bool commonOnly = false);  // ✅ NEW
         Task<List<string>> GetPlansAsync();  // ✅ NEW
+
+        // ── 064: the CALLER'S OWN workspace letterhead ────────────────
+        //
+        // No tenantId parameter, on purpose. The API takes it from the
+        // token and the route carries no id, so there is no way for one
+        // workspace to read or write another's profile — and no id for a
+        // page to pass wrongly. Everything above is the SUPER ADMIN's
+        // view of ANY workspace and is now guarded as such.
+        Task<CompanyProfileDto> GetCompanyProfileAsync();
+        Task UpdateCompanyProfileAsync(UpdateCompanyProfileCommand command);
     }
 
     public class TenantService : ITenantService
@@ -143,5 +153,20 @@ namespace MerkaiTrial.Admin.Web.Services.Tenants
         {
             return _api.GetAsync<List<string>>("api/tenants/plans");
         }
+
+        // ==================== 064: COMPANY PROFILE ====================
+        //
+        // No id in either URL. See the note on the interface.
+        //
+        // Neither method catches. IApiService turns a 400 { error = "…" }
+        // into InvalidOperationException carrying the API's own sentence,
+        // and that sentence is what the page should show — swallowing it
+        // to log a generic line would throw away the only useful part.
+
+        public Task<CompanyProfileDto> GetCompanyProfileAsync()
+            => _api.GetAsync<CompanyProfileDto>("api/tenants/company-profile");
+
+        public Task UpdateCompanyProfileAsync(UpdateCompanyProfileCommand command)
+            => _api.PutVoidAsync("api/tenants/company-profile", command);
     }
 }

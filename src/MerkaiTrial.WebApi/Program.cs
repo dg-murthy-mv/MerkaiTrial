@@ -77,7 +77,11 @@ await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
     .WarmUpAsync(app.Services, "WebApi");
 
 // ---------------- Pipeline — order matters ----------------
-app.UseSerilogRequestLogging();
+// 063: was app.UseSerilogRequestLogging(). Same line, same position, but
+// the public quote token is taken out of the path before it is written —
+// /api/quotes/public/****bSxl rather than the whole thing. See
+// Startup/ApiPipeline.cs.
+app.UseMaskedRequestLogging();
 app.UseCorrelationId();
 app.UseApiSwaggerInDevelopment();
 app.UseApiExceptionHandler();

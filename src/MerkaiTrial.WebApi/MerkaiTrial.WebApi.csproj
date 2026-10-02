@@ -9,8 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MerkaiTrial.Infrastructure\MerkaiTrial.Infrastructure.csproj" />
     <ProjectReference Include="..\MerkaiTrial.Domain\MerkaiTrial.Domain.csproj" />
-	 <ProjectReference Include="..\MerkaiTrial.Application\MerkaiTrial.Application.csproj" />
-	<ProjectReference Include="..\MerkaiTrial.Admin.Web\MerkaiTrial.Admin.Web.csproj" />
+	 <ProjectReference Include="..\MerkaiTrial.Application\MerkaiTrial.Application.csproj" />	
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="EPPlus" Version="8.5.0" />

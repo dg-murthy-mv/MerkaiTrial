@@ -46,6 +46,57 @@ public class Tenant
     public string? ReplyToEmail { get; set; }
     public string? Phone { get; set; }
 
+    // ── Company profile (064) ─────────────────────────────────────────
+    //
+    // WHO THE QUOTE IS FROM. Until this round the only seller-side fields
+    // were Name and Phone, so the public quote page showed the customer
+    // their own company and never named the workspace that sent it, and a
+    // Thai VAT or Indian GST document could not carry the number it is
+    // expected to carry.
+    //
+    // All nullable. A workspace that fills none of this in behaves exactly
+    // as it did before; the quote simply does not print a seller block.
+
+    /// <summary>
+    /// The registered entity — "Sathorn Prestige Interiors Co., Ltd." —
+    /// when it differs from Name, which is what the workspace is called
+    /// in the app. NULL means they are the same, which is the common
+    /// case; readers fall back to Name.
+    /// </summary>
+    public string? LegalName { get; set; }
+
+    public string? AddressLine1 { get; set; }
+    public string? AddressLine2 { get; set; }
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? PostalCode { get; set; }
+    public string? Website { get; set; }
+
+    /// <summary>
+    /// The seller's tax registration number. ONE column, not Gstin +
+    /// VatNumber + Tin + Trn: you sell into four countries and a column
+    /// per country is three empty columns for everyone plus a fourth the
+    /// day you add a market.
+    /// </summary>
+    public string? TaxNumber { get; set; }
+
+    /// <summary>
+    /// What that country calls the number above — "GSTIN", "VAT No.",
+    /// "เลขประจำตัวผู้เสียภาษี", "TRN". Seeded from Country.TaxLabel by
+    /// the 064 migration and editable afterwards, so the document prints
+    /// the right word without the schema knowing about countries.
+    /// </summary>
+    public string? TaxNumberLabel { get; set; }
+
+    /// <summary>
+    /// True when there is enough here to print a seller block. Used by
+    /// the quote page and the PDFs to decide whether to draw one at all
+    /// rather than drawing an empty box — a name alone is not an address.
+    /// </summary>
+    public bool HasCompanyProfile =>
+        !string.IsNullOrWhiteSpace(AddressLine1)
+        || !string.IsNullOrWhiteSpace(TaxNumber);
+
     // ── Public link ───────────────────────────────────────────────────
     public string? PublicLinkSecret { get; set; }
 

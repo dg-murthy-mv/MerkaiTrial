@@ -6,14 +6,64 @@
 //   correlation id → swagger (dev) → exception handler → auth → endpoints
 // =====================================================================
 
+using MerkaiTrial.Application.Common;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
+using Serilog.Events;
 
 namespace MerkaiTrial.WebApi.Startup;
 
 public static class ApiPipeline
 {
+    /// <summary>
+    /// 063. UseSerilogRequestLogging, with the public quote token taken
+    /// out of the path.
+    ///
+    /// Serilog's request-completion line prints the request path, which
+    /// is the whole point of it — and for the public quote endpoints the
+    /// path CONTAINS the token:
+    ///
+    ///   HTTP GET /api/quotes/public/9JGgqZBbZwdAXuu… responded 200 in 117ms
+    ///
+    /// That token is the entire security of the customer's link. 061
+    /// masked the places our own code logged it; 062's MinimumLevel
+    /// overrides silenced the framework loggers that printed whole URLs.
+    /// This line is the last one, and it cannot simply be silenced —
+    /// losing it would lose the only record that a customer opened their
+    /// quote.
+    ///
+    /// GetMessageTemplateProperties supplies the SAME four properties as
+    /// Serilog's default, with the path masked, so the default message
+    /// template still matches and nothing else about the line changes.
+    /// It needs Serilog.AspNetCore 6.1 or later; this solution is on
+    /// 9.0.0.
+    ///
+    /// Replaces app.UseSerilogRequestLogging() in Program.cs. Keep it in
+    /// the same position — first, before anything that can short-circuit,
+    /// so a rejected request is still logged.
+    /// </summary>
+    public static WebApplication UseMaskedRequestLogging(this WebApplication app)
+    {
+        app.UseSerilogRequestLogging(options =>
+        {
+            options.GetMessageTemplateProperties =
+                (ctx, path, elapsedMs, statusCode) => new[]
+                {
+                    new LogEventProperty("RequestMethod", new ScalarValue(ctx.Request.Method)),
+
+                    // The one line that matters. PublicLinkPaths holds the
+                    // rule for both hosts — add new public links there.
+                    new LogEventProperty("RequestPath",   new ScalarValue(PublicLinkPaths.Mask(path))),
+
+                    new LogEventProperty("StatusCode",    new ScalarValue(statusCode)),
+                    new LogEventProperty("Elapsed",       new ScalarValue(elapsedMs))
+                };
+        });
+
+        return app;
+    }
+
     /// <summary>
     /// Reuses the caller's X-Correlation-Id or makes one, echoes it on the
     /// response, and stamps every log line of the request with it.

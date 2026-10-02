@@ -4,6 +4,37 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 055 — A LINE DISCOUNT CAN BE A PERCENTAGE
+//   Both write paths run every line through LineDiscounts.Resolve, which
+//   recomputes the AMOUNT from the percentage when one was supplied. The
+//   totals below are untouched: they still read LineDiscount, which is
+//   still the only figure any subtraction uses. Both read paths carry the
+//   percentage out, so a reopened quote shows "10%" where the rep typed it.
+//
+// 053 — WHO THE QUOTE IS ADDRESSED TO
+//   All three read paths (list, by id, by public token) set CompanyName
+//   from the CONTACT'S NAME. There is a Company entity, Deal.CompanyId
+//   points at it, and DealsCommandHandlers has been joining dbo.Companies
+//   on that column all along — the quote side simply never looked. Every
+//   one of the three now goes through CustomerNaming, and QuoteDto carries
+//   the contact separately instead of borrowing the company's field.
+//
+// 052 — DECIMAL QUANTITY AND UNIT OF MEASURE (Phase B of the catalogue)
+//   ✅ QuoteLineChecks takes a DECIMAL quantity, and says so: the message
+//      was "quantity must be at least 1", which stopped being true the
+//      moment 0.5 days became a legal quantity.
+//   ✅ Two NEW checks that matter more than they look:
+//        • at most 4 decimal places — the column is DECIMAL(18,4), so a
+//          quantity of 0.00005 would be SILENTLY rounded to 0 by SQL
+//          Server and the line would price at nothing. Better a clear
+//          error than a free invoice.
+//        • an upper bound — UnitPrice × Quantity lands in DECIMAL(18,2),
+//          and a pasted quantity with fifteen digits in it overflows in
+//          the database, which surfaces as a 500 with no explanation.
+//   ✅ Create and Update snapshot UnitOfMeasure onto each line, filling it
+//      from the product when the caller left it blank (LineUnits below).
+//   ✅ Both read paths carry UnitOfMeasure into QuoteItemDto.
+//
 // QUOTE APPROVALS (017)
 //   ✅ Create: the deal must be one the user can see (404 otherwise), and
 //      Subtotal is now the GROSS amount (before line discounts) — same as
@@ -103,6 +134,8 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Common;                 // 053: CustomerNaming, 055: LineDiscounts
+using MerkaiTrial.Application.Configuration;          // 052: UnitsOfMeasure
 using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
@@ -142,6 +175,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .WithVisibleDeal(_db, dealAccess)
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Contact)
+                        .ThenInclude(c => c!.Company)     // 053
+                .Include(q => q.Deal)
+                    .ThenInclude(d => d!.Company)         // 053
                 .Include(q => q.Items.Where(i => !i.IsDeleted));
 
             if (dealId.HasValue)
@@ -165,10 +201,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 q.DealId,
                 q.Number,
                 q.Deal.Title,
-                q.Deal.Contact != null
-                    ? string.Join(" ", new[] { q.Deal.Contact.FirstName, q.Deal.Contact.LastName }
-                        .Where(x => !string.IsNullOrWhiteSpace(x)))
-                    : "Unknown",
+                // 053: the COMPANY when there is one, the person otherwise.
+                // This column is headed "Company" on the list; it held a
+                // person's name.
+                CustomerNaming.DisplayFor(q.Deal),
                 q.IssueDateUtc,
                 q.ExpiresAtUtc,
                 q.Currency,
@@ -194,6 +230,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                    .ThenInclude(d => d.Contact)
                .Include(q => q.Deal)
                    .ThenInclude(d => d.Vertical)   // ✅ For VerticalName on QuoteDto
+               .Include(q => q.Deal)
+                   .ThenInclude(d => d!.Company)   // 053
+               .Include(q => q.Deal)
+                   .ThenInclude(d => d.Contact)
+                       .ThenInclude(c => c!.Company)  // 053
                .Include(q => q.Items.Where(i => !i.IsDeleted))
                .FirstOrDefaultAsync();
 
@@ -206,9 +247,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 TenantId      = quote.TenantId,
                 DealId        = quote.DealId,
                 DealTitle     = quote.Deal.Title,
-                CompanyName   = quote.Deal.Contact != null
-                    ? $"{quote.Deal.Contact.FirstName} {quote.Deal.Contact.LastName}".Trim()
-                    : "Unknown",
+                // 053: the company, and the person in their own field.
+                CompanyName   = CustomerNaming.CompanyOf(quote.Deal) ?? string.Empty,
+                ContactName   = CustomerNaming.PersonOf(quote.Deal),
+
+                // 061. So the quote page can tell the rep BEFORE they press
+                // the button that this contact has no address, instead of
+                // failing after. Deliberately NOT set on the public-token
+                // read: the customer has no use for their own address being
+                // echoed back, and an anonymous endpoint should carry the
+                // least it can.
+                ContactEmail  = quote.Deal.Contact?.Email,
+
                 Number        = quote.Number,
                 IssueDateUtc  = quote.IssueDateUtc,
                 ExpiresAtUtc  = quote.ExpiresAtUtc,
@@ -233,7 +283,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     Description    = i.Description,
                     UnitPrice      = i.UnitPrice,
                     Quantity       = i.Quantity,
+                    UnitOfMeasure  = i.UnitOfMeasure,          // 052
                     LineDiscount   = i.LineDiscount,
+                    DiscountPercent = i.DiscountPercent,       // 055
                     TaxRate        = i.TaxRate,
                     LineTotal      = (i.UnitPrice * i.Quantity) - i.LineDiscount,
                     LineTax        = ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate,
@@ -376,7 +428,25 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Add at least one item to the quote.");
 
+            // 055. FIRST, before anything reads LineDiscount. A percentage
+            // supplied on a line replaces whatever amount came with it, so
+            // the validation below, the totals below and the row that gets
+            // stored are all working from the same number.
+            foreach (var i in dto.Items)
+            {
+                var (amount, percent) = LineDiscounts.Resolve(
+                    i.Name, i.UnitPrice, i.Quantity, i.LineDiscount, i.DiscountPercent);
+                i.LineDiscount    = amount;
+                i.DiscountPercent = percent;
+            }
+
             QuoteLineChecks.Validate(dto.Items.Select(i => (i.Name, i.UnitPrice, i.Quantity, i.LineDiscount, i.TaxRate)));
+
+            // 052: one query for every catalogue product on the quote, so a
+            // line whose caller did not send a unit still stores the
+            // product's own. Lines with no ProductId fall back to "unit".
+            var units = await LineUnits.LookupAsync(
+                _db, dto.TenantId, dto.Items.Select(i => i.ProductId));
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
@@ -424,7 +494,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     Description  = itemDto.Description,
                     UnitPrice    = itemDto.UnitPrice,
                     Quantity     = itemDto.Quantity,
+                    UnitOfMeasure = LineUnits.Resolve(itemDto.UnitOfMeasure, itemDto.ProductId, units),  // 052
                     LineDiscount = itemDto.LineDiscount,
+                    DiscountPercent = itemDto.DiscountPercent,   // 055 — resolved above
                     TaxRate      = itemDto.TaxRate,
                     CreatedAtUtc = DateTime.UtcNow,
                     CreatedBy    = currentUser.FullName,
@@ -611,6 +683,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly StageTransitionGuard _guard;      // 036
         private readonly IStageResolver _stages;           // 036
         private readonly INotificationDispatcher _notify;  // 037
+        private readonly IQuoteCustomerEmail _quoteEmail;  // 061
 
         public UpdateQuoteStatusHandler(
             FlowDbContext db,
@@ -620,7 +693,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
             QuoteApprovalEngine approvals,
             StageTransitionGuard guard,
             IStageResolver stages,
-            INotificationDispatcher notify)
+            INotificationDispatcher notify,
+            IQuoteCustomerEmail quoteEmail)                // 061
         {
             _db = db;
             _currentUserService = currentUserService;
@@ -630,6 +704,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             _guard = guard;
             _stages = stages;
             _notify = notify;
+            _quoteEmail = quoteEmail;
         }
 
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
@@ -711,6 +786,37 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // Added BEFORE the save, so the notification and the status
             // change commit in one transaction. The dispatcher does not save.
             await AddStatusNotificationAsync(quote, newStatus, currentUser);
+
+            // ── 061: ACTUALLY SEND IT TO THE CUSTOMER ─────────────────────
+            //
+            // Until this round, moving a quote to Sent generated the public
+            // link, wrote an in-app notification saying "was sent to the
+            // customer", and sent the customer nothing at all. The rep had
+            // to copy the link out of the Detail page and paste it into
+            // their own email client.
+            //
+            // Queued HERE, before SaveChangesAsync, on purpose. QueueAsync
+            // adds the OutboundMessage row and does not save, so the email
+            // and the status change commit together: the row exists if and
+            // only if the quote really did become Sent. That is the whole
+            // point of the outbox — see OutboundMessage.cs.
+            //
+            // A SKIP NEVER FAILS THE STATUS CHANGE. A contact with no email
+            // address is an ordinary data gap, and rolling back a status
+            // move the rep just made because of it would be absurd. The
+            // reason is logged, and the quote page offers "Email to
+            // customer" so they can fix the contact and send it themselves.
+            if (newStatus == QuoteStatus.Sent)
+            {
+                var skipped = await _quoteEmail.QueueAsync(quote, tenantId, changedBy);
+
+                if (skipped is not null)
+                {
+                    _logger.LogWarning(
+                        "Quote {QuoteNumber} is Sent but no email was queued: {Reason}",
+                        quote.Number, skipped);
+                }
+            }
 
             await _db.SaveChangesAsync();
             await _audit.WriteAsync(
@@ -968,7 +1074,21 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Add at least one item to the quote.");
 
+            // 055 — see CreateQuoteHandler. Resolve before anything reads
+            // LineDiscount.
+            foreach (var i in dto.Items)
+            {
+                var (amount, percent) = LineDiscounts.Resolve(
+                    i.Name, i.UnitPrice, i.Quantity, i.LineDiscount, i.DiscountPercent);
+                i.LineDiscount    = amount;
+                i.DiscountPercent = percent;
+            }
+
             QuoteLineChecks.Validate(dto.Items.Select(i => (i.Name ?? "", i.UnitPrice, i.Quantity, i.LineDiscount, i.TaxRate)));
+
+            // 052 — see CreateQuoteHandler. Same single lookup.
+            var units = await LineUnits.LookupAsync(
+                _db, tenantId, dto.Items.Select(i => i.ProductId));
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var userName = currentUser?.FullName ?? "System";
@@ -1031,7 +1151,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     existingItem.Description  = itemDto.Description ?? "";
                     existingItem.UnitPrice    = itemDto.UnitPrice;
                     existingItem.Quantity     = itemDto.Quantity;
+                    existingItem.UnitOfMeasure = LineUnits.Resolve(                 // 052
+                        itemDto.UnitOfMeasure, itemDto.ProductId, units, existingItem.UnitOfMeasure);
                     existingItem.LineDiscount = itemDto.LineDiscount;
+                    existingItem.DiscountPercent = itemDto.DiscountPercent;         // 055
                     existingItem.TaxRate      = itemDto.TaxRate;
                     existingItem.UpdatedAtUtc = now;
                     existingItem.UpdatedBy    = userName;
@@ -1048,7 +1171,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         Description  = itemDto.Description ?? "",
                         UnitPrice    = itemDto.UnitPrice,
                         Quantity     = itemDto.Quantity,
+                        UnitOfMeasure = LineUnits.Resolve(itemDto.UnitOfMeasure, itemDto.ProductId, units),  // 052
                         LineDiscount = itemDto.LineDiscount,
+                        DiscountPercent = itemDto.DiscountPercent,   // 055
                         TaxRate      = itemDto.TaxRate,
                         CreatedAtUtc = now,
                         CreatedBy    = userName,
@@ -1105,6 +1230,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .Where(q => q.PublicLinkToken == token && !q.IsDeleted)
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Contact)
+                        .ThenInclude(c => c!.Company)   // 053
+                .Include(q => q.Deal)
+                    .ThenInclude(d => d!.Company)       // 053
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Vertical)
                 .Include(q => q.Items.Where(i => !i.IsDeleted))
@@ -1144,17 +1272,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 }
             }
 
-            var contactName = quote.Deal?.Contact != null
-                ? $"{quote.Deal.Contact.FirstName} {quote.Deal.Contact.LastName}".Trim()
-                : "Unknown";
-
+            // 053. The public page is the customer's own copy of the quote,
+            // so getting this wrong is the most visible version of the bug:
+            // it addressed them by their own first and last name under a
+            // heading that says who the quote is FOR.
             return new QuoteDto
             {
                 Id = quote.Id,
                 TenantId = quote.TenantId,
                 DealId = quote.DealId,
                 DealTitle = quote.Deal?.Title ?? string.Empty,
-                CompanyName = contactName,
+                CompanyName = CustomerNaming.CompanyOf(quote.Deal) ?? string.Empty,
+                ContactName = CustomerNaming.PersonOf(quote.Deal),
                 Number = quote.Number,
                 IssueDateUtc = quote.IssueDateUtc,
                 ExpiresAtUtc = quote.ExpiresAtUtc,
@@ -1178,7 +1307,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     Description = i.Description,
                     UnitPrice = i.UnitPrice,
                     Quantity = i.Quantity,
+                    UnitOfMeasure = i.UnitOfMeasure,           // 052
                     LineDiscount = i.LineDiscount,
+                    DiscountPercent = i.DiscountPercent,       // 055
                     TaxRate = i.TaxRate,
                     LineTotal = (i.UnitPrice * i.Quantity) - i.LineDiscount,
                     LineTax = ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate,
@@ -1349,7 +1480,29 @@ namespace MerkaiTrial.Application.Commands.Quotes
     // ─────────────────────────────────────────────────────────────────
     public static class QuoteLineChecks
     {
-        public static void Validate(IEnumerable<(string Name, decimal UnitPrice, int Quantity, decimal LineDiscount, decimal TaxRate)> lines)
+        /// <summary>
+        /// The most decimal places a quantity may carry. It is not a taste
+        /// decision: the column is DECIMAL(18,4), and SQL Server rounds
+        /// anything finer on the way in without a word. 0.00004 would land as
+        /// 0.0000 and the line would price at zero.
+        /// </summary>
+        public const int QuantityDecimals = 4;
+
+        /// <summary>
+        /// A quantity above this is a paste accident, not a sale. The reason
+        /// for a limit at all: UnitPrice × Quantity is stored in
+        /// DECIMAL(18,2), so a big enough quantity overflows in the database
+        /// and the user sees a 500 with nothing to go on.
+        /// </summary>
+        public const decimal QuantityMax = 1_000_000_000m;
+
+        /// <summary>
+        /// 052: Quantity is DECIMAL now. The tuple shape is shared with the
+        /// INVOICE handlers (InvoiceCommandHandler calls this same method for
+        /// manual invoices), which is exactly why both sides had to move in
+        /// one round.
+        /// </summary>
+        public static void Validate(IEnumerable<(string Name, decimal UnitPrice, decimal Quantity, decimal LineDiscount, decimal TaxRate)> lines)
         {
             foreach (var l in lines)
             {
@@ -1358,7 +1511,13 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 if (string.IsNullOrWhiteSpace(l.Name))
                     throw new InvalidOperationException("All items must have a name.");
                 if (l.Quantity <= 0)
-                    throw new InvalidOperationException($"{name}: quantity must be at least 1.");
+                    throw new InvalidOperationException($"{name}: quantity must be more than zero.");
+                if (l.Quantity > QuantityMax)
+                    throw new InvalidOperationException(
+                        $"{name}: that quantity is too large to price. Check the figure.");
+                if (decimal.Round(l.Quantity, QuantityDecimals) != l.Quantity)
+                    throw new InvalidOperationException(
+                        $"{name}: a quantity can have at most {QuantityDecimals} decimal places.");
                 if (l.UnitPrice < 0)
                     throw new InvalidOperationException($"{name}: price can't be negative.");
                 if (l.LineDiscount < 0)
@@ -1368,6 +1527,89 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 if (l.TaxRate < 0 || l.TaxRate > 1)
                     throw new InvalidOperationException($"{name}: tax rate must be between 0% and 100%.");
             }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 052 — WHICH UNIT A LINE IS STORED WITH
+    //
+    // Shared by the quote handlers above and the INVOICE handlers
+    // (InvoiceCommandHandler already has `using
+    // MerkaiTrial.Application.Commands.Quotes;` for QuoteLineChecks), so
+    // there is one rule for both instead of two that drift.
+    //
+    // THE RULE, in order:
+    //   1. what the caller sent, if it is a unit we recognise
+    //   2. the product's own unit, for a catalogue line
+    //   3. what the line already had, when editing
+    //   4. "unit"
+    //
+    // Step 2 is what makes the browser optional. The quote editor does send
+    // a unit, but the API is public: a caller that posts a line with just a
+    // ProductId and a quantity should not end up with 12.5 "unit" of
+    // flooring because it had never heard of units.
+    //
+    // NOT read live through ProductId at display time, deliberately. A quote
+    // is a document already sent to a customer; re-labelling it because
+    // somebody changed the catalogue afterwards would rewrite history, the
+    // same reason Name and UnitPrice are snapshotted.
+    // ─────────────────────────────────────────────────────────────────
+    public static class LineUnits
+    {
+        /// <summary>
+        /// productId → its unit code, for every catalogue product on this
+        /// document. ONE query, not one per line. Returns an empty map when
+        /// there are no catalogue lines, so nothing is queried for a document
+        /// of purely custom lines.
+        /// </summary>
+        public static async Task<Dictionary<Guid, string>> LookupAsync(
+            FlowDbContext db,
+            Guid tenantId,
+            IEnumerable<Guid?> productIds,
+            CancellationToken ct = default)
+        {
+            var ids = (productIds ?? Enumerable.Empty<Guid?>())
+                .Where(id => id.HasValue && id.Value != Guid.Empty)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+
+            if (ids.Count == 0)
+                return new Dictionary<Guid, string>();
+
+            // TenantId in the predicate as well as the query filter: a
+            // ProductId is supplied by the caller, and a product belonging to
+            // another tenant must not answer for one of ours.
+            return await db.Products.AsNoTracking()
+                .Where(p => p.TenantId == tenantId && ids.Contains(p.Id))
+                .Select(p => new { p.Id, p.UnitOfMeasure })
+                .ToDictionaryAsync(x => x.Id, x => x.UnitOfMeasure ?? UnitsOfMeasure.Unit, ct);
+        }
+
+        /// <summary>
+        /// The unit to store for one line. <paramref name="existing"/> is the
+        /// unit already on the line when editing — passed so an edit that
+        /// posts nothing does not quietly reset a hand-picked unit to "unit".
+        /// </summary>
+        public static string Resolve(
+            string? supplied,
+            Guid? productId,
+            IReadOnlyDictionary<Guid, string> productUnits,
+            string? existing = null)
+        {
+            if (UnitsOfMeasure.IsKnown(supplied))
+                return UnitsOfMeasure.Normalise(supplied);
+
+            if (productId.HasValue && productId.Value != Guid.Empty &&
+                productUnits != null &&
+                productUnits.TryGetValue(productId.Value, out var fromProduct) &&
+                UnitsOfMeasure.IsKnown(fromProduct))
+                return UnitsOfMeasure.Normalise(fromProduct);
+
+            if (UnitsOfMeasure.IsKnown(existing))
+                return UnitsOfMeasure.Normalise(existing);
+
+            return UnitsOfMeasure.Unit;
         }
     }
 }

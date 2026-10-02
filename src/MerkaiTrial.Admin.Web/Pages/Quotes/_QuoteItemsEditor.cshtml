@@ -1,8 +1,25 @@
 @using System.Globalization
 @using System.Text.Json
+@using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Quotes.QuoteItemsEditorVm
 @{
     var hasCatalog = Model.Products is { Count: > 0 };
+
+    // 052. The unit dropdown is built ONCE here, server side, and the script
+    // clones it for every row. Building it in JavaScript would mean the unit
+    // list existing twice — as C# constants and as a JS array — which is the
+    // duplication ProductCatalog.cs was written to remove.
+    //
+    // Escaped with JsonSerializer, not string concatenation: a label is
+    // server data going into a script block, and "Unit / piece" is harmless
+    // only until someone adds a unit with an apostrophe in it.
+    var unitGroups = UnitsOfMeasure.Grouped()
+        .Select(g => new
+        {
+            group = g.Key,
+            units = g.Select(u => new { code = u.Code, label = u.Label }).ToList()
+        })
+        .ToList();
 }
 @* =====================================================================
    _QuoteItemsEditor.cshtml
@@ -15,6 +32,57 @@
    IT MUST BE RENDERED INSIDE THE FORM it posts with: it owns the hidden
    itemsJson field, and the host page owns the form, the dates and the
    buttons.
+
+   ── 052: DECIMAL QUANTITY, AND A UNIT PER LINE ──────────────────────
+
+   The quantity box was min="1" step="1" with a whole-number check behind
+   it, so the editor could not express most of what Merkai's customers
+   sell: 12.5 m² of flooring, 3.5 consulting days, 0.75 kg of freight.
+   What people did instead was put the real quantity in the description
+   and fudge the unit price until the line total came out right — which
+   makes the TOTAL correct and every report about WHAT was sold wrong.
+
+   Three changes:
+
+   1. The box is now step="any" min="0" and accepts decimals. The only
+      rule left is that a line must be for something (> 0), enforced here
+      AND by QuoteLineChecks on the API.
+
+   2. Every row carries a UNIT — a dropdown under the number, built from
+      UnitsOfMeasure. A line added from the catalogue arrives with the
+      product's own unit already chosen (data-unit), so in the normal case
+      nobody touches it.
+
+   3. Quantities are rounded to 4 decimal places AS THEY ARE TYPED, not
+      only on submit. The column is DECIMAL(18,4), and SQL Server rounds
+      anything finer silently — a quantity of 0.00004 would have become
+      0.0000 and the line would have priced at nothing. Now the zero shows
+      up on screen, where somebody can see it.
+
+   The unit list is serialised from UnitsOfMeasure rather than written out
+   again as a JavaScript array, so there is one definition of what a unit
+   is. A line carrying a code this build does not recognise keeps it, in
+   its own "On this line" group, instead of being quietly re-labelled the
+   moment somebody opens the quote.
+
+   ── 055: A DISCOUNT CAN BE A PERCENTAGE ─────────────────────────────
+
+   The discount box only ever took an AMOUNT. Reps do not sell that way —
+   they agree "10% off" and work out what that is on a calculator, line by
+   line, and type the answer in. Every one of those is a chance to put a
+   wrong figure on a document a customer signs.
+
+   Each line now has a small selector under the discount box: the tenant's
+   currency, or %. In % mode the box holds the percentage and the amount is
+   derived on every keystroke; in amount mode it holds the amount, as
+   before. Switching between them CONVERTS rather than resetting, so
+   flipping to % to check a figure does not wipe it.
+
+   Both are posted. The SERVER recomputes the amount from the percentage
+   and ignores the one the browser sent — see LineDiscounts.cs. That is not
+   distrust of this file; it is that the API is public, and a request
+   carrying "10%" with an amount of zero must not produce a line at full
+   price wearing a 10% badge.
 
    WHAT THIS FIXES, beyond removing the duplication
 
@@ -86,6 +154,21 @@
     .qe-table tbody tr:last-child td { border-bottom: 0; }
     .qe-table .form-control, .qe-table .form-select { font-size: .84rem; }
     .qe-table input[type="number"] { text-align: right; }
+
+    /* 052. The Qty cell holds a number and a unit now. The select is
+       deliberately quieter than the number — the quantity is what people
+       read, the unit is what makes it mean something. */
+    .qe-uom { font-size: .74rem !important; padding: .1rem .35rem; margin-top: .15rem;
+              color: #475569; background: #fbfcfd; }
+    .qe-uom:focus { color: #0f172a; background: #fff; }
+
+    /* 055. The discount mode selector. Same quiet treatment as the unit
+       selector — the number is what people read, the mode is what makes it
+       mean something. */
+    .qe-dmode { font-size: .74rem !important; padding: .1rem .35rem; margin-top: .15rem;
+                color: #475569; background: #fbfcfd; }
+    .qe-dmode:focus { color: #0f172a; background: #fff; }
+    .qe-dmode.pct { color: #0d6efd; font-weight: 650; }
     .qe-n { text-align: right; }
     .qe-row-no { color: #94a3b8; font-size: .8rem; padding-top: .8rem !important; }
     .qe-line-total { font-weight: 650; white-space: nowrap; padding-top: .8rem !important; }
@@ -157,9 +240,17 @@
                 <tr>
                     <th style="width:2rem;">#</th>
                     <th>Item</th>
-                    <th style="width:5.5rem;" class="qe-n">Qty</th>
+                    @* 052: wider, because the cell carries the unit as well now.
+                       9rem rather than something tighter for a dull reason: a
+                       closed <select> clips its own text and cannot be made to
+                       ellipsize reliably, so "Square metre" has to FIT or the
+                       chosen unit becomes unreadable. The table lives inside
+                       .table-responsive, so the extra width costs a scrollbar
+                       at worst. *@
+                    <th style="width:9rem;" class="qe-n">Qty</th>
                     <th style="width:8rem;" class="qe-n">Unit price</th>
-                    <th style="width:8rem;" class="qe-n">Discount</th>
+                    @* 055: wider — the cell carries the amount/% selector now. *@
+                    <th style="width:9rem;" class="qe-n">Discount</th>
                     <th style="width:6rem;" class="qe-n">@Model.TaxLabel %</th>
                     <th style="width:8.5rem;" class="qe-n">Line total</th>
                     <th style="width:2.5rem;"></th>
@@ -240,6 +331,10 @@
                     <div class="list-group" id="qeProdList">
                         @foreach (var p in Model.Products)
                         {
+                            @* 052: "/ m²", "/ hrs" — empty for a plain unit, because
+                               "1,200.00 / units" reads worse than "1,200.00". *@
+                            var perUnit = UnitsOfMeasure.ShortOf(p.UnitOfMeasure);
+
                             @* Everything the click needs is in data- attributes, which
                                Razor HTML-encodes. Nothing is interpolated into a JS
                                string, so a product called  Widget "Pro"  or  Bob's Kit
@@ -252,7 +347,12 @@
                                     data-name="@(p.Name ?? string.Empty)"
                                     data-desc="@(p.Description ?? string.Empty)"
                                     data-price="@p.ListPrice.ToString(CultureInfo.InvariantCulture)"
-                                    data-tax="@(p.TaxRate?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)">
+                                    data-tax="@(p.TaxRate?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
+                                    @* 052: the product's own unit, snapshotted onto the line the
+                                       moment it is added. Normalise() here rather than trusting
+                                       the column, so a row written before 051 — or one carrying a
+                                       code nobody recognises — still yields a usable unit. *@
+                                    data-unit="@UnitsOfMeasure.Normalise(p.UnitOfMeasure)">
                                 <div class="d-flex justify-content-between align-items-start gap-3">
                                     <div style="min-width:0;">
                                         <div class="pn">@(string.IsNullOrWhiteSpace(p.Name) ? "(unnamed product)" : p.Name)</div>
@@ -268,7 +368,7 @@
                                        needs to see BEFORE they add the line. *@
                                     <div class="text-end flex-shrink-0">
                                         <span class="badge bg-light text-dark border">
-                                            @Model.CurrencyCode @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)
+                                            @Model.CurrencyCode @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)@(string.IsNullOrEmpty(perUnit) ? "" : " / " + perUnit)
                                         </span>
                                         @if (p.TaxRate.HasValue)
                                         {
@@ -308,6 +408,21 @@
         var RULES       = @Html.Raw(string.IsNullOrWhiteSpace(Model.ApprovalRulesJson) ? "{\"enabled\":false}" : Model.ApprovalRulesJson);
         var LIST_PRICES = @Html.Raw(string.IsNullOrWhiteSpace(Model.ListPricesJson) ? "{}" : Model.ListPricesJson);
         var SEED        = @Html.Raw(string.IsNullOrWhiteSpace(Model.InitialItemsJson) ? "[]" : Model.InitialItemsJson);
+
+        // 052. The unit list, straight from UnitsOfMeasure — one definition,
+        // serialised, not a second copy written out in JavaScript.
+        var UNIT_GROUPS  = @Html.Raw(JsonSerializer.Serialize(unitGroups));
+        var DEFAULT_UNIT = @Html.Raw(JsonSerializer.Serialize(UnitsOfMeasure.Unit));
+        // Matches QuoteLineChecks.QuantityDecimals. The column is
+        // DECIMAL(18,4): anything finer would be rounded by SQL Server
+        // without a word, so 0.00004 would price at nothing.
+        var QTY_DP = 4;
+
+        // 055. What to call "an amount" in the discount selector. The
+        // tenant's ISO code rather than a symbol: "INR" is unambiguous at
+        // 11px, where a currency symbol beside a percent sign is not.
+        var CCY    = @Html.Raw(JsonSerializer.Serialize(string.IsNullOrWhiteSpace(Model.CurrencyCode) ? "Amount" : Model.CurrencyCode));
+        var PCT_DP = 2;   // matches LineDiscounts.PercentDecimals
         var SEED_BLANK  = @(Model.StartWithOneBlankLine ? "true" : "false");
         var FORM_ID     = '@Model.FormId';
 
@@ -339,12 +454,98 @@
             return Number.isFinite(n) ? n : (fallback || 0);
         }
 
+        // 052. A quantity, at the precision the column can actually hold.
+        // Applied when reading the box, not only on submit, so the totals on
+        // screen are the totals the server will store — typing 0.00004 shows
+        // you a zero-quantity line here instead of surprising you with one
+        // after saving.
+        function qty(v, fallback) {
+            var n = num(v, fallback);
+            var f = Math.pow(10, QTY_DP);
+            return Math.round(n * f) / f;
+        }
+
+        // 052. The unit dropdown for one row. Built from UNIT_GROUPS, so the
+        // options come from UnitsOfMeasure and nowhere else.
+        function unitSelect(k, code, lineNo) {
+            var html = '<select class="form-select form-select-sm qe-uom" id="qe-uom-' + k + '"' +
+                       ' data-key="' + k + '" data-f="unitOfMeasure"' +
+                       ' aria-label="Unit, line ' + lineNo + '">';
+
+            var chosen = String(code || DEFAULT_UNIT);
+            var matched = false;
+
+            for (var g = 0; g < UNIT_GROUPS.length; g++) {
+                html += '<optgroup label="' + esc(UNIT_GROUPS[g].group) + '">';
+                var us = UNIT_GROUPS[g].units;
+                for (var u = 0; u < us.length; u++) {
+                    var sel = (us[u].code === chosen);
+                    if (sel) matched = true;
+                    html += '<option value="' + esc(us[u].code) + '"' + (sel ? ' selected' : '') +
+                            '>' + esc(us[u].label) + '</option>';
+                }
+                html += '</optgroup>';
+            }
+
+            // A line carrying a code this build does not know about — written
+            // by an older version, or by the API — keeps it, visibly, rather
+            // than being silently re-labelled as something else the moment
+            // somebody opens the quote.
+            if (!matched) {
+                html += '<optgroup label="On this line"><option value="' + esc(chosen) +
+                        '" selected>' + esc(chosen) + '</option></optgroup>';
+            }
+
+            return html + '</select>';
+        }
+
+        // ── 055: discount mode ───────────────────────────────────────
+        function isPct(r) {
+            return r.discountPercent !== null && r.discountPercent !== undefined;
+        }
+
+        /// What the single discount box shows: the percentage in % mode,
+        /// the amount otherwise.
+        function discountInputValue(r) {
+            return isPct(r) ? r.discountPercent : num(r.lineDiscount, 0);
+        }
+
+        function discountModeSelect(k, r, lineNo) {
+            var pct = isPct(r);
+            return '<select class="form-select form-select-sm qe-dmode' + (pct ? ' pct' : '') + '"' +
+                   ' id="qe-dmode-' + k + '" data-key="' + k + '" data-f="discountMode"' +
+                   ' aria-label="Discount is an amount or a percentage, line ' + lineNo + '">' +
+                   '<option value="amt"' + (pct ? '' : ' selected') + '>' + esc(CCY) + '</option>' +
+                   '<option value="pct"' + (pct ? ' selected' : '') + '>%</option>' +
+                   '</select>';
+        }
+
+        /// Switching mode CONVERTS. Flipping to % to see what a figure is
+        /// worth, then flipping back, must not wipe what was typed — and a
+        /// reset there would be silent, because the box is repainted anyway.
+        function setDiscountMode(r, mode) {
+            if (mode === 'pct') {
+                if (isPct(r)) return;
+                var sub = lineSubtotal(r);
+                r.discountPercent = sub > 0
+                    ? Math.round(num(r.lineDiscount, 0) / sub * 100 * 100) / 100
+                    : 0;
+                if (r.discountPercent > 100) r.discountPercent = 100;
+            } else {
+                if (!isPct(r)) return;
+                r.lineDiscount = rawDiscount(r);   // freeze what the % was worth
+                r.discountPercent = null;
+            }
+        }
+
         // ── the model ────────────────────────────────────────────────
         function blank() {
             return {
                 key: uid++, itemId: null, productId: null,
                 name: '', description: '',
-                quantity: 1, unitPrice: 0, lineDiscount: 0,
+                quantity: 1, unitOfMeasure: DEFAULT_UNIT,
+                unitPrice: 0, lineDiscount: 0,
+                discountPercent: null,          // 055: null = typed as an amount
                 taxRate: num(DEFAULT_TAX, 0), listPrice: 0
             };
         }
@@ -360,8 +561,18 @@
                         name: s.name || '',
                         description: s.description || '',
                         quantity: num(s.quantity, 1),
+                        // 052. A quote written before this round has no unit
+                        // in its seed — fall back rather than render a blank
+                        // dropdown.
+                        unitOfMeasure: s.unitOfMeasure || DEFAULT_UNIT,
                         unitPrice: num(s.unitPrice, 0),
                         lineDiscount: num(s.lineDiscount, 0),
+                        // 055. null, not 0: "discounted by a round number" and
+                        // "not discounted" have to stay distinguishable.
+                        discountPercent: (s.discountPercent === null ||
+                                          s.discountPercent === undefined ||
+                                          s.discountPercent === '')
+                            ? null : num(s.discountPercent, 0),
                         // num(), NOT asPercent(). The seed is ALREADY a
                         // percentage — Edit.cshtml multiplies the DTO's fraction
                         // by 100 before serialising. Running asPercent() over it
@@ -381,9 +592,28 @@
         // grand total and the approval hint can never disagree.
         function lineSubtotal(r) { return Math.max(0, num(r.quantity, 0)) * Math.max(0, num(r.unitPrice, 0)); }
 
+        /// 055. The discount AMOUNT for a row, whichever way it was typed.
+        /// In % mode the stored amount is derived here and nowhere else, so
+        /// the line total, the Discount row, the approval hint and what gets
+        /// posted are all the same number by construction.
+        function rawDiscount(r) {
+            if (r.discountPercent === null || r.discountPercent === undefined)
+                return num(r.lineDiscount, 0);
+
+            var pct = Math.max(0, Math.min(100, num(r.discountPercent, 0)));
+            return round2(lineSubtotal(r) * pct / 100);
+        }
+
+        /// Money, to the currency's places. Matches LineDiscounts.AmountFrom
+        /// on the server — half-up, two places — so the figure shown and the
+        /// figure stored agree to the cent.
+        function round2(x) {
+            return Math.round((num(x, 0) + Number.EPSILON) * 100) / 100;
+        }
+
         /// Discount actually applied — never more than the line is worth.
         function lineDiscount(r) {
-            return Math.min(Math.max(0, num(r.lineDiscount, 0)), lineSubtotal(r));
+            return Math.min(Math.max(0, rawDiscount(r)), lineSubtotal(r));
         }
 
         function lineNet(r)   { return lineSubtotal(r) - lineDiscount(r); }
@@ -438,9 +668,18 @@
                       ' aria-label="Description, line ' + (i + 1) + '" />' +
                   '</td>' +
                   '<td data-lbl="Qty">' +
+                    // 052. step="any", not step="0.0001". With a step set, the
+                    // browser rejects any value not on the step grid with its
+                    // own bubble — and because the host page's buttons are
+                    // type="submit", that bubble suppresses the submit event,
+                    // so THIS editor's message never appears and the two
+                    // compete. Same reasoning as the discount input's missing
+                    // max=, a few lines down in recalc().
                     '<input type="number" class="form-control form-control-sm" id="qe-qty-' + k + '"' +
                       ' data-key="' + k + '" data-f="quantity" value="' + r.quantity + '"' +
-                      ' min="1" step="1" aria-label="Quantity, line ' + (i + 1) + '" />' +
+                      ' min="0" step="any" inputmode="decimal"' +
+                      ' aria-label="Quantity, line ' + (i + 1) + '" />' +
+                    unitSelect(k, r.unitOfMeasure, i + 1) +
                   '</td>' +
                   '<td data-lbl="Unit price">' +
                     '<input type="number" class="form-control form-control-sm" id="qe-price-' + k + '"' +
@@ -448,9 +687,17 @@
                       ' min="0" step="0.01" aria-label="Unit price, line ' + (i + 1) + '" />' +
                   '</td>' +
                   '<td data-lbl="Discount">' +
+                    // 055. ONE box, whose meaning follows the selector under
+                    // it. Two boxes would let a line carry both a percentage
+                    // and an unrelated amount, and the server would have to
+                    // pick one — which is exactly the ambiguity the single
+                    // stored amount avoids.
                     '<input type="number" class="form-control form-control-sm" id="qe-disc-' + k + '"' +
-                      ' data-key="' + k + '" data-f="lineDiscount" value="' + r.lineDiscount + '"' +
-                      ' min="0" step="0.01" aria-label="Discount amount, line ' + (i + 1) + '" />' +
+                      ' data-key="' + k + '" data-f="discountInput" value="' + discountInputValue(r) + '"' +
+                      ' min="0" step="0.01" inputmode="decimal"' +
+                      ' aria-label="Discount ' + (isPct(r) ? 'percentage' : 'amount') +
+                      ', line ' + (i + 1) + '" />' +
+                    discountModeSelect(k, r, i + 1) +
                     '<span class="qe-pct" id="qe-pct-' + k + '"></span>' +
                   '</td>' +
                   '<td data-lbl="Tax %">' +
@@ -497,8 +744,19 @@
 
                 var pEl = document.getElementById('qe-pct-' + r.key);
                 if (pEl) {
-                    var pct = discountPct(r);
-                    pEl.textContent = pct > 0 ? ('−' + pct.toFixed(1) + '%') : '';
+                    // 055. In % mode, show what the percentage is WORTH —
+                    // that is the number going on the customer's document,
+                    // and a rep agreeing a discount should see it before
+                    // they save, not after. In amount mode this stays what
+                    // it always was: how far below list the line has been
+                    // cut, which is what the approval rules measure.
+                    if (isPct(r)) {
+                        var amt = lineDiscount(r);
+                        pEl.textContent = amt > 0 ? ('= ' + money(amt)) : '';
+                    } else {
+                        var pct = discountPct(r);
+                        pEl.textContent = pct > 0 ? ('−' + pct.toFixed(1) + '%') : '';
+                    }
                 }
             }
 
@@ -582,15 +840,25 @@
                 var n = document.getElementById('qe-name-' + k);
                 var d = document.getElementById('qe-desc-' + k);
                 var q = document.getElementById('qe-qty-' + k);
+                var u = document.getElementById('qe-uom-' + k);
                 var p = document.getElementById('qe-price-' + k);
                 var c = document.getElementById('qe-disc-' + k);
+                var m = document.getElementById('qe-dmode-' + k);   // 055
                 var t = document.getElementById('qe-tax-' + k);
 
                 if (n) r.name         = n.value || '';
                 if (d) r.description  = d.value || '';
-                if (q) r.quantity     = num(q.value, 0);
+                if (q) r.quantity     = qty(q.value, 0);
+                if (u) r.unitOfMeasure = u.value || DEFAULT_UNIT;
                 if (p) r.unitPrice    = num(p.value, 0);
-                if (c) r.lineDiscount = num(c.value, 0);
+                // 055. Mode FIRST — it decides what the box beside it means.
+                // Reading the number first would file a percentage as an
+                // amount on any path where both changed at once.
+                if (m) setDiscountMode(r, m.value === 'pct' ? 'pct' : 'amt');
+                if (c) {
+                    if (isPct(r)) r.discountPercent = num(c.value, 0);
+                    else          r.lineDiscount    = num(c.value, 0);
+                }
                 if (t) r.taxRate      = num(t.value, 0);
             }
         }
@@ -611,9 +879,13 @@
                 mark('qe-name-' + k, noName);
                 if (noName) problems.push('Line ' + n + ' has no item name.');
 
-                var badQty = !(r.quantity >= 1) || Math.floor(r.quantity) !== r.quantity;
+                // 052. Was: at least 1, and a whole number. Both parts had to
+                // go — 0.5 days and 12.5 m² are the reason this round exists.
+                // What is left is the one rule that still holds: a line has to
+                // be for SOMETHING.
+                var badQty = !(r.quantity > 0);
                 mark('qe-qty-' + k, badQty);
-                if (badQty) problems.push('Line ' + n + ' needs a whole quantity of 1 or more.');
+                if (badQty) problems.push('Line ' + n + ' needs a quantity above zero.');
 
                 var badPrice = !(r.unitPrice > 0);
                 mark('qe-price-' + k, badPrice);
@@ -623,14 +895,27 @@
                 mark('qe-tax-' + k, badTax);
                 if (badTax) problems.push('Line ' + n + ' has a tax rate outside 0–100%.');
 
+                // 055. In % mode the rule is 0–100 and the amount cannot
+                // exceed the line by construction; in amount mode it is the
+                // rule it always was. LineDiscounts.Resolve enforces the same
+                // two on the server.
                 var sub = lineSubtotal(r);
-                var badDisc = r.lineDiscount < 0 || r.lineDiscount > sub + 0.0001;
-                mark('qe-disc-' + k, badDisc);
-                if (badDisc) {
-                    problems.push(r.lineDiscount < 0
+                var badDisc = false;
+
+                if (isPct(r)) {
+                    var p = num(r.discountPercent, 0);
+                    badDisc = p < 0 || p > 100;
+                    if (badDisc) problems.push(p < 0
+                        ? 'Line ' + n + ' has a negative discount percentage.'
+                        : 'Line ' + n + ' has a discount above 100%.');
+                } else {
+                    var amt = num(r.lineDiscount, 0);
+                    badDisc = amt < 0 || amt > sub + 0.0001;
+                    if (badDisc) problems.push(amt < 0
                         ? 'Line ' + n + ' has a negative discount.'
                         : 'Line ' + n + ' has a discount larger than the line itself (' + money(sub) + ').');
                 }
+                mark('qe-disc-' + k, badDisc);
             }
 
             if (rows.length === 0) problems.push('A quote needs at least one line.');
@@ -674,9 +959,17 @@
                         productId: r.productId || null,
                         name: (r.name || '').trim(),
                         description: (r.description || '').trim(),
-                        quantity: r.quantity,
+                        quantity: qty(r.quantity, 0),
+                        unitOfMeasure: r.unitOfMeasure || DEFAULT_UNIT,
                         unitPrice: r.unitPrice,
+                        // 055. Both go. The server recomputes the amount from
+                        // the percentage and ignores this one when a percentage
+                        // is present — LineDiscounts.Resolve. This is what the
+                        // totals on screen were built from, so the two agree.
                         lineDiscount: lineDiscount(r),   // clamped, as displayed
+                        discountPercent: isPct(r)
+                            ? Math.round(num(r.discountPercent, 0) * 100) / 100
+                            : null,
                         taxRate: r.taxRate               // percentage; the server divides by 100
                     };
                 }));
@@ -699,6 +992,26 @@
             if (f === 'name' || f === 'description') {
                 r[f] = el.value || '';
                 if (f === 'name' && el.value.trim()) el.classList.remove('is-invalid');
+            } else if (f === 'unitOfMeasure') {
+                // 052. A string, not a number. Without this branch the unit
+                // select would fall into num() below and every change would
+                // store 0 — and the line would post a unit of "0".
+                r[f] = el.value || DEFAULT_UNIT;
+            } else if (f === 'quantity') {
+                r[f] = qty(el.value, 0);
+                el.classList.remove('is-invalid');
+            } else if (f === 'discountMode') {
+                // 055. A repaint, not an assignment: the box beside this
+                // selector now means something else, so its value has to be
+                // rewritten. Only this row is touched.
+                setDiscountMode(r, el.value === 'pct' ? 'pct' : 'amt');
+                var box = document.getElementById('qe-disc-' + k);
+                if (box) box.value = discountInputValue(r);
+                el.classList.toggle('pct', isPct(r));
+            } else if (f === 'discountInput') {
+                if (isPct(r)) r.discountPercent = num(el.value, 0);
+                else          r.lineDiscount    = num(el.value, 0);
+                el.classList.remove('is-invalid');
             } else {
                 r[f] = num(el.value, 0);
                 el.classList.remove('is-invalid');
@@ -777,8 +1090,14 @@
                     name: b.getAttribute('data-name') || '',
                     description: b.getAttribute('data-desc') || '',
                     quantity: 1,
+                    // 052. The product's own unit, snapshotted now. A line
+                    // added from the catalogue should not need the unit picked
+                    // by hand — the catalogue already knows.
+                    unitOfMeasure: b.getAttribute('data-unit') || DEFAULT_UNIT,
                     unitPrice: price,
                     lineDiscount: 0,
+                    discountPercent: null,   // 055
+
                     taxRate: taxRate,
                     listPrice: price    // the discount maths measures against this
                 });

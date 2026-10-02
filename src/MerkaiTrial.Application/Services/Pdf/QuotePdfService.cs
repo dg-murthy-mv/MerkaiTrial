@@ -4,6 +4,38 @@
 // SETUP:  In WebApi/Program.cs add:
 //   builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 //   (QuestPDF.Settings.License = LicenseType.Community already set)
+//
+// COMPLETE FILE — 055. The Discount column prints the PERCENTAGE when the
+// line was agreed as one — "-10%" with the amount beneath it — because that
+// is what the customer was told on the phone, and a quote that answers back
+// with a bare figure makes them do the division to check it.
+//
+// 053. One change outside the line-items table: the
+// QUOTE TO block prints the customer's COMPANY in bold with the CONTACT
+// under it, the way InvoicePdfService's BILL TO already did. QuoteDto had
+// no ContactName field until 053, which is why the company line was being
+// used for a person's name.
+//
+// 052b. Three changes, all in the line-items table.
+//
+// 1. QUANTITY. Was item.Quantity.ToString(). Quantity is DECIMAL(18,4)
+//    since 052, so that prints "3.0000" on the document the customer
+//    keeps. QuantityDisplay gives "3", "12.5 m²", "3.5 days" — the
+//    trailing zeros trimmed and the unit attached, worked out once on
+//    the DTO so this PDF, the quote page and the invoice page cannot
+//    each trim them differently.
+//
+// 2. THE TAX COLUMN WAS ROUNDING THE RATE. "N0" on (TaxRate * 100)
+//    turns 12.5% into "13%" and 7.5% into "8%" — on a document a
+//    customer may hand to their accountant, beside a tax AMOUNT
+//    calculated from the real rate, so the two visibly disagree. It is
+//    "0.##" now: 18 stays "18", 12.5 stays "12.5". It also formats with
+//    the tenant's culture like every other number on the page, instead
+//    of whatever culture the server thread happened to have.
+//
+// 3. The Qty column was 1 relative unit, sized for "12". "12.5 m²" does
+//    not fit in it. Widened, taking the space from the Item column,
+//    which has the most to spare.
 // =====================================================================
 
 using MerkaiTrial.Application.DTOs;
@@ -123,9 +155,22 @@ namespace MerkaiTrial.Application.Services.Pdf
                                 c.Item().Text("QUOTE TO")
                                     .FontSize(8).Bold().FontColor(MutedHex);
 
+                                // 053: company first, contact underneath. When
+                                // there is no company — a person-to-person sale —
+                                // the contact takes the bold line rather than the
+                                // heading sitting above an empty space.
+                                var toCompany = model.Quote.CompanyName;
+                                var toContact = model.Quote.ContactName;
+                                var hasCompany = !string.IsNullOrWhiteSpace(toCompany);
+
                                 c.Item().PaddingTop(4)
-                                    .Text(model.Quote.CompanyName)
+                                    .Text(hasCompany ? toCompany
+                                          : (string.IsNullOrWhiteSpace(toContact) ? "—" : toContact))
                                     .Bold().FontSize(11);
+
+                                if (hasCompany && !string.IsNullOrWhiteSpace(toContact))
+                                    c.Item().Text(toContact)
+                                        .FontSize(9).FontColor(MutedHex);
 
                                 if (!string.IsNullOrEmpty(model.Quote.DealTitle))
                                     c.Item().PaddingTop(2)
@@ -190,12 +235,14 @@ namespace MerkaiTrial.Application.Services.Pdf
                         {
                             table.ColumnsDefinition(cols =>
                             {
-                                cols.RelativeColumn(4);   // Name/Description
-                                cols.RelativeColumn(1);   // Qty
-                                cols.RelativeColumn(2);   // Unit Price
-                                cols.RelativeColumn(2);   // Discount
-                                cols.RelativeColumn(1);   // Tax %
-                                cols.RelativeColumn(2);   // Total
+                                // 052b: Qty 1 -> 2, taken off Name/Description.
+                                // A quantity is "12.5 m²" now, not "12".
+                                cols.RelativeColumn(3.4f); // Name/Description
+                                cols.RelativeColumn(2);    // Qty
+                                cols.RelativeColumn(2);    // Unit Price
+                                cols.RelativeColumn(2);    // Discount
+                                cols.RelativeColumn(1.2f); // Tax %
+                                cols.RelativeColumn(2);    // Total
                             });
 
                             // Header row
@@ -210,7 +257,10 @@ namespace MerkaiTrial.Application.Services.Pdf
                             HeaderCell("Qty",       alignRight: true);
                             HeaderCell("Unit Price", alignRight: true);
                             HeaderCell("Discount",   alignRight: true);
-                            HeaderCell("Tax",        alignRight: true);
+                            // 052b: the tenant's own word for it — GST, VAT — the
+                            // same label the totals block below already uses. The
+                            // header said "Tax" while the total said "GST".
+                            HeaderCell(model.TaxLabel, alignRight: true);
                             HeaderCell("Total",      alignRight: true);
 
                             // Data rows
@@ -247,13 +297,22 @@ namespace MerkaiTrial.Application.Services.Pdf
                                                 .FontSize(8).FontColor(MutedHex);
                                     });
 
-                                DataCell(item.Quantity.ToString(), alignRight: true);
+                                // 052b — see the header. "12.5 m²", not "12.5000".
+                                DataCell(item.QuantityDisplay, alignRight: true);
                                 DataCell($"{sym}{item.UnitPrice.ToString("N2", culture)}", alignRight: true);
-                                DataCell(item.LineDiscount > 0
-                                    ? $"-{sym}{item.LineDiscount.ToString("N2", culture)}"
-                                    : "—",
+                                // 055: percentage first when there was one.
+                                var discText = item.LineDiscount <= 0
+                                    ? "—"
+                                    : item.DiscountLabel is not null
+                                        ? $"{item.DiscountLabel}\n{sym}{item.LineDiscount.ToString("N2", culture)}"
+                                        : $"-{sym}{item.LineDiscount.ToString("N2", culture)}";
+
+                                DataCell(discText,
                                     alignRight: true, color: item.LineDiscount > 0 ? "#16A34A" : MutedHex);
-                                DataCell($"{(item.TaxRate * 100):N0}%", alignRight: true, color: MutedHex);
+                                // 052b: "0.##" not "N0". N0 rounded 12.5% to "13%"
+                                // next to a tax amount worked out from the real rate.
+                                DataCell($"{(item.TaxRate * 100).ToString("0.##", culture)}%",
+                                    alignRight: true, color: MutedHex);
                                 DataCell($"{sym}{item.LineGrandTotal.ToString("N2", culture)}",
                                     alignRight: true, bold: true);
                             }

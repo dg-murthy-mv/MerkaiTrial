@@ -214,7 +214,14 @@ else
                 <span class="badge @Model.GetStatusBadgeClass(q.Status)">
                     <i class="bi @DetailModel.StatusIcon(q.Status) me-1"></i>@DetailModel.StatusLabel(q.Status)
                 </span>
-                <span class="ms-1">@q.CompanyName</span>
+                @* 053: the company, with the contact after it when we have
+                   both. This chip used to show the contact's name on its own,
+                   because CompanyName was the contact's name. *@
+                <span class="ms-1">@(string.IsNullOrWhiteSpace(q.CompanyName) ? (q.ContactName ?? "—") : q.CompanyName)</span>
+                @if (!string.IsNullOrWhiteSpace(q.CompanyName) && !string.IsNullOrWhiteSpace(q.ContactName))
+                {
+                    <span class="muted ms-1">· @q.ContactName</span>
+                }
                 @if (!string.IsNullOrWhiteSpace(q.DealTitle))
                 {
                     <span class="text-muted">· @q.DealTitle</span>
@@ -405,10 +412,33 @@ else
                                                 <div class="ds">@it.Description</div>
                                             }
                                         </td>
-                                        <td class="c">@it.Quantity</td>
+                                        @* 052: "12.5 m²" rather than a bare "12.5".
+                                           QuantityDisplay does the formatting on the DTO
+                                           so the quote page, the invoice page and the PDF
+                                           cannot each trim the decimals differently. *@
+                                        <td class="c">@it.QuantityDisplay</td>
                                         <td class="n">@Model.Money(it.UnitPrice)</td>
+                                        @* 055: when the discount was agreed as a
+                                           percentage, lead with the percentage and put the
+                                           amount under it — that is the way the customer was
+                                           told, and the way the quote should read back. *@
                                         <td class="n @(it.LineDiscount > 0 ? "" : "muted")">
-                                            @(it.LineDiscount > 0 ? "−" + Model.Money(it.LineDiscount) : "—")
+                                            @if (it.LineDiscount > 0)
+                                            {
+                                                @if (it.DiscountLabel is not null)
+                                                {
+                                                    <div>@it.DiscountLabel</div>
+                                                    <div class="ds">@Model.Money(it.LineDiscount)</div>
+                                                }
+                                                else
+                                                {
+                                                    <text>−@Model.Money(it.LineDiscount)</text>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <text>—</text>
+                                            }
                                         </td>
                                         @* TaxRate on the DTO is a FRACTION (0.18 = 18%), unlike
                                            QuoteItemData on the Create/Edit pages where it is a
@@ -472,7 +502,14 @@ else
                 <div class="bd">
                     <dl class="qd-facts">
                         <dt>Company</dt>
-                        <dd>@q.CompanyName</dd>
+                        @* 053 *@
+                        <dd>
+                            @(string.IsNullOrWhiteSpace(q.CompanyName) ? (q.ContactName ?? "—") : q.CompanyName)
+                            @if (!string.IsNullOrWhiteSpace(q.CompanyName) && !string.IsNullOrWhiteSpace(q.ContactName))
+                            {
+                                <div class="muted">@q.ContactName</div>
+                            }
+                        </dd>
 
                         <dt>Deal</dt>
                         <dd>@(string.IsNullOrWhiteSpace(q.DealTitle) ? "—" : q.DealTitle)</dd>
@@ -529,11 +566,47 @@ else
                         }
                     </h2>
                     <div class="bd">
-                        <div class="text-muted" style="font-size:.8rem;">
-                            Send by email, LINE or WhatsApp. The customer can view and accept it online.
-                        </div>
+                        @* 061. This used to read "Send by email, LINE or
+                           WhatsApp" above two buttons that did neither —
+                           the rep had to copy the link into their own mail
+                           client, because nothing in the product sent it.
+                           The email now goes automatically when the quote
+                           is marked Sent, so this says what actually
+                           happened and offers to do it again. *@
+                        @if (Model.CustomerEmail is not null)
+                        {
+                            <div class="text-muted" style="font-size:.8rem;">
+                                Emailed to <strong class="text-body">@Model.CustomerEmail</strong>
+                                when you sent it. Share the link below for LINE or WhatsApp.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted" style="font-size:.8rem;">
+                                Share this link by LINE or WhatsApp. The customer can view
+                                and accept it online.
+                            </div>
+                        }
+
                         <code id="qdLink">@q.PaymentLinkUrl</code>
+
                         <div class="d-flex gap-2 flex-wrap">
+                            @if (Model.CanEmailCustomer)
+                            {
+                                @* Confirmed before posting, because each
+                                   press really does send another email —
+                                   a fresh row means a fresh idempotency
+                                   key, which is correct for "send it
+                                   again" and worth one question. *@
+                                <form method="post" asp-page-handler="SendToCustomer"
+                                      asp-route-id="@Model.Id" class="qd-resend"
+                                      data-email="@Model.CustomerEmail">
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-envelope me-1"></i>Email again
+                                    </button>
+                                </form>
+                            }
+
                             <button type="button" class="btn btn-sm btn-outline-primary" id="qdCopy">
                                 <i class="bi bi-clipboard me-1"></i>Copy link
                             </button>
@@ -542,6 +615,21 @@ else
                                 <i class="bi bi-box-arrow-up-right me-1"></i>Preview
                             </a>
                         </div>
+
+                        @* A contact with no address is common — plenty are
+                           phone-only. Said here, with a way to fix it,
+                           rather than discovered by pressing a button that
+                           fails. *@
+                        @if (Model.EmailBlockedReason is not null)
+                        {
+                            <div class="mt-2 p-2 rounded"
+                                 style="background:#fff7ed;border:1px solid #fed7aa;font-size:.78rem;color:#9a3412;">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                @Model.EmailBlockedReason
+                                Add one to the contact and it can be emailed from here.
+                            </div>
+                        }
+
                         <div class="text-danger mt-2 d-none" id="qdCopyFail" style="font-size:.78rem;">
                             Couldn't copy automatically — select the link above and copy it by hand.
                         </div>
@@ -749,6 +837,17 @@ else
             if (form.classList.contains('qd-attdel')) {
                 var name = form.getAttribute('data-name') || 'this file';
                 if (!window.confirm('Delete ' + name + '? This cannot be undone.')) e.preventDefault();
+                return;
+            }
+
+            // 061. The address is read from a data- attribute, never
+            // interpolated into a JS string: Razor encodes an apostrophe to
+            // &#x27;, the parser decodes it before the JS is parsed, and the
+            // handler becomes a syntax error. A throwing handler does not
+            // return false, so the form would submit unconfirmed.
+            if (form.classList.contains('qd-resend')) {
+                var to = form.getAttribute('data-email') || 'the customer';
+                if (!window.confirm('Send this quote to ' + to + ' again?')) e.preventDefault();
             }
         });
     })();

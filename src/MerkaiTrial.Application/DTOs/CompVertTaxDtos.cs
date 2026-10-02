@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -166,10 +166,20 @@ namespace MerkaiTrial.Application.DTOs
     // =====================================================================
     // TAX RATE DTOs
     // =====================================================================
+    /// <summary>
+    /// 056: TenantId is NULLABLE — NULL means a SYSTEM rate shared by every
+    /// tenant in that country. See TaxRate.cs for why this was the single
+    /// thing keeping the module from working.
+    /// </summary>
     public class TaxRateDto
     {
         public Guid Id { get; set; }
-        public Guid TenantId { get; set; }
+
+        /// <summary>NULL = system rate.</summary>
+        public Guid? TenantId { get; set; }
+
+        /// <summary>056: so a screen does not have to know what NULL means.</summary>
+        public bool IsSystem => TenantId is null;
         public string CountryCode { get; set; } = string.Empty;
         public string CountryName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
@@ -189,26 +199,87 @@ namespace MerkaiTrial.Application.DTOs
         public string TaxType { get; set; } = string.Empty;
         public decimal Rate { get; set; }
         public bool IsDefault { get; set; }
+
+        /// <summary>
+        /// 057. The list could not tell a rate that is in force from one
+        /// scheduled for next April or one retired last year — all three
+        /// looked identical, and two of them are not what a new quote uses.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+        public DateTime? EffectiveFrom { get; set; }
+        public DateTime? EffectiveTo { get; set; }
+
+        /// <summary>
+        /// 056. The list showed no way to tell a system rate from a tenant's
+        /// own, which matters the moment a tenant can have both: two rows
+        /// called "Standard GST 18%" where one is editable and one is not.
+        /// </summary>
+        public Guid? TenantId { get; set; }
+        public bool IsSystem => TenantId is null;
     }
 
     public class CreateTaxRateDto
     {
-        public Guid TenantId { get; set; }
+        /// <summary>
+        /// 056. NULL (or Guid.Empty) asks for a SYSTEM rate, and the API
+        /// refuses that unless the caller is a super admin.
+        ///
+        /// For a tenant rate this field is IGNORED — the controller uses the
+        /// tenant on the caller's token. It was read straight from the body,
+        /// so any authenticated user could create a tax rate for any tenant
+        /// by typing their id into the request.
+        /// </summary>
+        public Guid? TenantId { get; set; }
         public string CountryCode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string TaxType { get; set; } = string.Empty;
         public decimal Rate { get; set; }
         public bool IsDefault { get; set; }
+
+        /// <summary>
+        /// 057. The day this rate starts applying. NULL = it always has.
+        ///
+        /// This is how a VAT change is made SAFELY: create the new rate with
+        /// EffectiveFrom set to the day it takes effect, and close the old
+        /// one with EffectiveTo the day before. Both rows stay, the switch
+        /// happens on its own, and a quote raised last month still shows the
+        /// rate that applied then. The alternative — editing the row on the
+        /// morning — leaves no record that the rate ever was anything else.
+        /// </summary>
+        public DateTime? EffectiveFrom { get; set; }
+
+        /// <summary>The last day it applies. NULL = still in force.</summary>
+        public DateTime? EffectiveTo { get; set; }
+
         public string CreatedBy { get; set; } = string.Empty;
     }
 
     public class UpdateTaxRateDto
     {
         public Guid Id { get; set; }
-        public Guid TenantId { get; set; }
+
+        /// <summary>
+        /// 056: IGNORED by the API, and kept only so existing callers still
+        /// compile. Which rate you may edit is decided by the row's own
+        /// owner versus your token, never by what you send.
+        /// </summary>
+        public Guid? TenantId { get; set; }
         public string Name { get; set; } = string.Empty;
         public decimal Rate { get; set; }
         public bool IsDefault { get; set; }
+
+        /// <summary>057. See CreateTaxRateDto — this is how a rate change is scheduled.</summary>
+        public DateTime? EffectiveFrom { get; set; }
+        public DateTime? EffectiveTo { get; set; }
+
+        /// <summary>
+        /// 057. The manual switch. Off means "retired by hand", regardless of
+        /// the dates — and nothing could set it either way before, so no rate
+        /// has ever been switched off and none could have been switched back
+        /// on if it had been.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+
         public string UpdatedBy { get; set; } = string.Empty;
     }
 }

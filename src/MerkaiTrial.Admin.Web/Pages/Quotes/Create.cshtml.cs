@@ -241,9 +241,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 // form.submit(), which skips HTML5 validation — so a quantity of
                 // 0, a negative discount and a 500% tax rate all got this far.
                 // These match the checks in Edit.cshtml.cs one for one.
-                if (items.Any(i => i.Quantity < 1))
+                // 052: was `< 1`, with the whole-number rule in the editor to
+                // match. Both had to go — 12.5 m² and 3.5 days are the point of
+                // this round. What is left is the rule that still holds.
+                if (items.Any(i => i.Quantity <= 0))
                 {
-                    ErrorMessage = "Every line needs a quantity of 1 or more.";
+                    ErrorMessage = "Every line needs a quantity above zero.";
                     return RedirectToPage(new { DealId = DealId.Value });
                 }
 
@@ -256,6 +259,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 if (items.Any(i => i.TaxRate < 0 || i.TaxRate > 100))
                 {
                     ErrorMessage = "Tax rates must be between 0 and 100%.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
+                // 055: the percentage has its own range, and the API enforces
+                // both. This is the early, friendlier copy.
+                if (items.Any(i => i.DiscountPercent is < 0 or > 100))
+                {
+                    ErrorMessage = "A discount percentage must be between 0 and 100.";
                     return RedirectToPage(new { DealId = DealId.Value });
                 }
 
@@ -323,7 +334,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                         Description  = i.Description,
                         UnitPrice    = i.UnitPrice,
                         Quantity     = i.Quantity,
+                        // 052. Sent even though the handler would fill it in
+                        // from the product: a CUSTOM line has no product to
+                        // ask, and "3.5 days of consulting" typed by hand is
+                        // exactly the case units were added for.
+                        UnitOfMeasure = i.UnitOfMeasure,
                         LineDiscount = i.LineDiscount,
+                        DiscountPercent = i.DiscountPercent,   // 055
                         TaxRate      = i.TaxRate / 100m  // % → decimal fraction
                     }).ToList()
                 };
@@ -453,10 +470,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             CurrencySymbol     = _currentTenantService.GetCurrencySymbol();
             DefaultTaxRateName = _currentTenantService.GetTaxLabel();
 
-            // GetDefaultTaxRateAsync may return decimal fraction (0.18) or percentage (18)
+            // 056. WAS: `rawRate < 1m ? rawRate * 100m : rawRate` — a guess
+            // at whether the stored number was a fraction or a percentage.
+            // It is always a PERCENTAGE: TaxRate.Rate and
+            // Country.DefaultTaxRate both store it that way, and Create/Edit
+            // validate 0–100. The guess was harmless for 18 and wrong for
+            // every rate below 1% — a genuine 0.5% rate became 50%.
+            // GetDefaultTaxRateAsync's summary now says so explicitly.
             // Normalise to percentage for the JS tax input
-            var rawRate = await _currentTenantService.GetDefaultTaxRateAsync();
-            DefaultTaxRate = rawRate < 1m ? rawRate * 100m : rawRate;
+            DefaultTaxRate = await _currentTenantService.GetDefaultTaxRateAsync();
 
             _logger.LogInformation(
                 "Tenant currency: {Code} {Symbol}, Tax: {Rate}% ({Label})",
@@ -542,6 +564,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         };
     }
 
+    /// <summary>
+    /// The shape _QuoteItemsEditor.cshtml posts as itemsJson. Declared here
+    /// and used by Edit.cshtml.cs too, so the two pages cannot disagree about
+    /// what a line is.
+    ///
+    /// 052: Quantity is DECIMAL and UnitOfMeasure is new. TaxRate stays a
+    /// PERCENTAGE here (18 for 18%) while the DTOs use a fraction (0.18) —
+    /// that asymmetry is deliberate and long-standing, and the conversion
+    /// happens once, where the DTO is built.
+    /// </summary>
     public class QuoteItemData
     {
         public Guid?   Id          { get; set; }
@@ -549,8 +581,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public string  Name        { get; set; } = string.Empty;
         public string  Description { get; set; } = string.Empty;
         public decimal UnitPrice   { get; set; }
-        public int     Quantity    { get; set; }
+
+        /// <summary>052: decimal — 12.5, 3.5, 0.75.</summary>
+        public decimal Quantity    { get; set; }
+
+        /// <summary>
+        /// 052: a code from UnitsOfMeasure. Nullable because a quote saved by
+        /// an older page, or a hand-made post, simply will not have one — the
+        /// handler then falls back to the product's unit, or "unit".
+        /// </summary>
+        public string? UnitOfMeasure { get; set; }
+
         public decimal LineDiscount { get; set; }
+
+        /// <summary>
+        /// 055: null when the discount was typed as an amount. When it is
+        /// set, the API recomputes LineDiscount from it and ignores whatever
+        /// amount came with it — LineDiscounts.Resolve.
+        /// </summary>
+        public decimal? DiscountPercent { get; set; }
+
         public decimal TaxRate     { get; set; }  // As percentage (18 for 18%)
     }
 }

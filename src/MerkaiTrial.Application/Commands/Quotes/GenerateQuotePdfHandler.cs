@@ -1,7 +1,26 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Commands/Quotes/GenerateQuotePdfHandler.cs
+//
+// 053: the QUOTE TO block is addressed to the customer's COMPANY, with
+// the contact underneath, instead of putting the contact's name where the
+// company belongs. The rule is CustomerNaming; the Include chain below
+// gains Deal.Company and Deal.Contact.Company to feed it.
+//
+// 052a: ONE LINE — UnitOfMeasure is carried into QuoteItemDto.
+//
+// This handler builds its own QuoteDto rather than going through
+// GetQuoteByIdHandler, so it has to be kept in step by hand. Without the
+// line, QuoteItemDto.UnitOfMeasure would sit at its default "unit" and
+// QuantityDisplay would print "12.5" with no unit on the PDF — the one
+// document the customer actually keeps.
+//
+// STILL OUTSTANDING, and it is not in this file: whatever implements
+// IQuotePdfService renders the line table, and if it prints
+// item.Quantity directly it will now show "3.0000". The fix is
+// item.Quantity -> item.QuantityDisplay. Send me that file.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;          // 053: CustomerNaming
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Pdf;
@@ -43,6 +62,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .Include(q => q.Items.Where(i => !i.IsDeleted))
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Contact)
+                        .ThenInclude(c => c!.Company)    // 053
+                .Include(q => q.Deal)
+                    .ThenInclude(d => d!.Company)        // 053
                 .Include(q => q.Deal)
                     .ThenInclude(d => d.Vertical)
                 .FirstOrDefaultAsync(ct);
@@ -58,17 +80,15 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .FirstOrDefaultAsync(ct);
 
             // ── Build QuoteDto from entity (mirrors GetQuoteByIdHandler) ─
-            var contactName = quote.Deal?.Contact != null
-                ? $"{quote.Deal.Contact.FirstName} {quote.Deal.Contact.LastName}".Trim()
-                : null;
-
             var dto = new QuoteDto
             {
                 Id            = quote.Id,
                 TenantId      = quote.TenantId,
                 DealId        = quote.DealId,
                 DealTitle     = quote.Deal?.Title ?? string.Empty,
-                CompanyName   = contactName ?? "Unknown",
+                // 053: the company; the person goes in ContactName below.
+                CompanyName   = CustomerNaming.CompanyOf(quote.Deal) ?? string.Empty,
+                ContactName   = CustomerNaming.PersonOf(quote.Deal),
                 Number        = quote.Number,
                 IssueDateUtc  = quote.IssueDateUtc,
                 ExpiresAtUtc  = quote.ExpiresAtUtc,
@@ -88,6 +108,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     Description    = i.Description,
                     UnitPrice      = i.UnitPrice,
                     Quantity       = i.Quantity,
+                    UnitOfMeasure  = i.UnitOfMeasure,          // 052a
                     LineDiscount   = i.LineDiscount,
                     TaxRate        = i.TaxRate,
                     LineTotal      = (i.UnitPrice * i.Quantity) - i.LineDiscount,

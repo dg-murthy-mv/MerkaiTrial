@@ -7,6 +7,9 @@
      4. Update Status buttons — gated with CanUpdate  (invoices.update)
      5. Delete button + modal confirm — CanDelete AND IsDeletableState
 
+     052. The line list prints QuantityDisplay instead of Quantity, so a
+     decimal quantity arrives with its unit and without trailing zeros.
+
    ✅ SESSION 5 FIX — WRONG MODULE:
      All five gates above previously read CanUpdate("Deals") / CanDelete("Deals").
      That is the DEALS module, not Invoices, and unlike the identical bug in
@@ -272,15 +275,29 @@
                             </div>
                             <div class="row text-muted small">
                                 <div class="col-auto">
-                                    <span class="badge bg-light text-dark">Qty: @line.Quantity</span>
+                                    @* 052: "Qty: 12.5 m²" rather than "Qty: 12.5". The
+                                       unit is snapshotted on the line, so an invoice
+                                       reads the same way months later even if the
+                                       catalogue has changed since. *@
+                                    <span class="badge bg-light text-dark">Qty: @line.QuantityDisplay</span>
                                 </div>
                                 <div class="col-auto">
                                     <strong>Unit Price:</strong> @Model.FormatCurrency(line.UnitPrice)
                                 </div>
                                 @if (line.LineDiscount > 0)
                                 {
+                                    @* 055: "-10% (-1,234.50)" when it was agreed as a
+                                       percentage; the amount alone otherwise. *@
                                     <div class="col-auto text-success">
-                                        <strong>Discount:</strong> -@Model.FormatCurrency(line.LineDiscount)
+                                        <strong>Discount:</strong>
+                                        @if (line.DiscountLabel is not null)
+                                        {
+                                            <text>@line.DiscountLabel (-@Model.FormatCurrency(line.LineDiscount))</text>
+                                        }
+                                        else
+                                        {
+                                            <text>-@Model.FormatCurrency(line.LineDiscount)</text>
+                                        }
                                     </div>
                                 }
                                 <div class="col-auto">

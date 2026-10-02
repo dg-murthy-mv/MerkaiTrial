@@ -25,6 +25,28 @@ namespace MerkaiTrial.Domain.Entities
         public const string TenantPlanChanged = "TenantPlanChanged";
         public const string TrialConverted = "TrialConverted";
 
+        /// <summary>
+        /// 066. A workspace edited its own letterhead — address, phone,
+        /// website and TAX REGISTRATION NUMBER (Settings → Company
+        /// Profile, added in 064).
+        ///
+        /// WHY THIS IS AUDITED WHEN AN ADDRESS CHANGE NORMALLY WOULD NOT
+        /// BE: the tax number is printed on every quote and invoice the
+        /// workspace sends from then on. If one goes out with the wrong
+        /// number, "when did it change and who changed it" is the only
+        /// question worth asking, and nothing else in the system records
+        /// it.
+        ///
+        /// Data: { hasAddress, taxLabel, hasTaxNumber } — whether each is
+        /// filled in, never the number itself. An audit log is widely
+        /// readable by design (see AuditLog.Data below), and a tax
+        /// registration number is the workspace's own identifier, not
+        /// something to copy into a second table that more people can see.
+        ///
+        /// 20 characters, within the 32 the Action column allows.
+        /// </summary>
+        public const string TenantProfileUpdated = "TenantProfileUpdated";
+
         public const string ContactDeleted = "ContactDeleted";
         public const string CompanyDeleted = "CompanyDeleted";
 

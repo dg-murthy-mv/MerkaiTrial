@@ -49,6 +49,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             TenantCurrencyCode   = _tenantService.GetCurrencyCode();
             TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
             TenantCurrencyName   = CurrencyConfiguration.GetCurrencyName(TenantCurrencyCode);
+
+            // 051: the tax code's wording follows the tenant.
+            TaxCodeLabel = TaxCodes.LabelFor(TenantCurrencyCode);
+            TaxCodeHint  = TaxCodes.HintFor(TenantCurrencyCode);
         }
 
         public async Task<IActionResult> OnGetAsync(Guid id)
@@ -71,9 +75,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                     Sku         = product.Sku,
                     Category    = product.Category,
                     Type        = product.Type,
+                    UnitOfMeasure = product.UnitOfMeasure,   // 051
                     ListPrice   = product.ListPrice,
                     Currency    = TenantCurrencyCode,   // FIX: always use tenant currency
                     TaxRate     = product.TaxRate,
+                    TaxCode     = product.TaxCode,           // 051
                     IsActive    = product.IsActive
                 };
 
@@ -134,11 +140,35 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 Input.Category);
         }
 
+        /// <summary>
+        /// 051: from ProductKinds, not a local array. This method and its twin
+        /// on the other page each had their own copy of
+        /// { "Product", "Service", "Subscription" } — two places to get wrong,
+        /// and nothing checking either.
+        /// </summary>
         public SelectList GetTypeOptions()
-        {
-            var types = new[] { "Product", "Service", "Subscription" };
-            return new SelectList(types);
-        }
+            => new SelectList(ProductKinds.All, Input.Type);
+
+        /// <summary>
+        /// 051. Grouped, because twelve flat options is a scroll and
+        /// "Time" / "Area and length" is how someone thinks about it.
+        /// </summary>
+        public SelectList GetUnitOptions()
+            => new SelectList(
+                UnitsOfMeasure.All.Select(u => new { u.Code, u.Label, u.Group }),
+                "Code", "Label", Input.UnitOfMeasure, "Group");
+
+        /// <summary>
+        /// 051. One line saying what the selected kind means. Rendered
+        /// server-side rather than swapped by a script, so the three strings
+        /// live only in ProductKinds — putting a copy of them in JavaScript
+        /// would recreate the duplication this round just removed.
+        /// </summary>
+        public string KindHint => ProductKinds.Hint(Input.Type);
+
+        /// <summary>051. What to call the tax code field for this tenant.</summary>
+        public string TaxCodeLabel { get; private set; } = "Tax classification code";
+        public string TaxCodeHint  { get; private set; } = string.Empty;
         // FIX: GetCurrencyOptions() removed — currency is tenant-level, not per-product
     }
 }

@@ -88,10 +88,20 @@
                             <h5 class="mb-0"><i class="bi bi-cash-stack"></i> Pricing Information</h5>
                         </div>
                         <div class="card-body">
+                            @* 051: the unit and the tax classification code. A
+                               price without its unit is ambiguous — ₹450 is a
+                               different product per m² than per piece. *@
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     <label class="text-muted small">List Price</label>
-                                    <div class="fs-4 fw-bold text-success">@Model.FormatCurrency(Model.Product.ListPrice)</div>
+                                    <div class="fs-4 fw-bold text-success">
+                                        @Model.FormatCurrency(Model.Product.ListPrice)
+                                        <span class="fs-6 fw-normal text-muted">@Model.PricedPer</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="text-muted small">Priced per</label>
+                                    <div class="fw-semibold">@Model.UnitLabel</div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="text-muted small">Currency</label>
@@ -100,6 +110,19 @@
                                 <div class="col-md-4">
                                     <label class="text-muted small">Tax Rate</label>
                                     <div class="fw-semibold">@(Model.Product.TaxRate?.ToString("N2") ?? "0")%</div>
+                                </div>
+                                <div class="col-md-8">
+                                    <label class="text-muted small">@Model.TaxCodeLabel</label>
+                                    <div class="fw-semibold">
+                                        @if (string.IsNullOrWhiteSpace(Model.Product.TaxCode))
+                                        {
+                                            <span class="text-muted">Not set</span>
+                                        }
+                                        else
+                                        {
+                                            <code>@Model.Product.TaxCode</code>
+                                        }
+                                    </div>
                                 </div>
                             </div>
                         </div>

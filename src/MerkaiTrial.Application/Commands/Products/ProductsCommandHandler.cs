@@ -9,6 +9,7 @@
 // =====================================================================
 
 using DocumentFormat.OpenXml.Presentation;
+using MerkaiTrial.Application.Configuration;   // 051: ProductKinds, UnitsOfMeasure
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -77,7 +78,9 @@ public class GetProductsHandler : ICommandHandler
                 currencyCode,    // ← from tenant, not product row
                 p.TaxRate,
                 p.IsActive,
-                p.CreatedAtUtc
+                p.CreatedAtUtc,
+                p.UnitOfMeasure,   // 051
+                p.TaxCode          // 051
             ))
             .ToListAsync(cancellationToken);
 
@@ -145,8 +148,10 @@ public class GetProductByIdHandler : ICommandHandler
                 Sku         = p.Sku,
                 Category    = p.Category,
                 Type        = p.Type,
+                UnitOfMeasure = p.UnitOfMeasure,   // 051
                 ListPrice   = p.ListPrice,
                 TaxRate     = p.TaxRate,
+                TaxCode     = p.TaxCode,           // 051
                 IsActive    = p.IsActive,
                 CreatedAtUtc = p.CreatedAtUtc,
                 CreatedBy   = p.CreatedBy
@@ -186,10 +191,15 @@ public class CreateProductHandler : ICommandHandler
             Description = dto.Description,
             Sku         = dto.Sku,
             Category    = dto.Category,
-            Type        = dto.Type,
+            // 051: normalised, never taken as typed. A posted form can
+            // carry anything; an unrecognised kind or unit would render as
+            // a blank dropdown and print as nothing on the quote line.
+            Type        = ProductKinds.Normalise(dto.Type),
+            UnitOfMeasure = UnitsOfMeasure.Normalise(dto.UnitOfMeasure),
             ListPrice   = dto.ListPrice,
             // Currency removed — no longer stored on Product
             TaxRate      = dto.TaxRate ?? 0,
+            TaxCode      = string.IsNullOrWhiteSpace(dto.TaxCode) ? null : dto.TaxCode.Trim(),
             IsActive     = dto.IsActive,
             CreatedAtUtc = DateTime.UtcNow,
             CreatedBy    = dto.CreatedBy ?? currentUser.FullName
@@ -207,9 +217,11 @@ public class CreateProductHandler : ICommandHandler
             Sku         = product.Sku,
             Category    = product.Category,
             Type        = product.Type,
+            UnitOfMeasure = product.UnitOfMeasure,   // 051
             ListPrice   = product.ListPrice,
             // Currency populated by caller via ICurrentTenantService
             TaxRate     = product.TaxRate,
+            TaxCode     = product.TaxCode,           // 051
             IsActive    = product.IsActive,
             CreatedAtUtc = product.CreatedAtUtc,
             CreatedBy   = product.CreatedBy
@@ -278,10 +290,12 @@ public class UpdateProductHandler : ICommandHandler
         product.Description = dto.Description;
         product.Sku         = dto.Sku;
         product.Category    = dto.Category;
-        product.Type        = dto.Type;
+        product.Type          = ProductKinds.Normalise(dto.Type);        // 051
+        product.UnitOfMeasure = UnitsOfMeasure.Normalise(dto.UnitOfMeasure); // 051
         product.ListPrice   = dto.ListPrice;
         // Currency removed — no longer stored on Product
         product.TaxRate      = dto.TaxRate ?? 0;
+        product.TaxCode      = string.IsNullOrWhiteSpace(dto.TaxCode) ? null : dto.TaxCode.Trim(); // 051
         product.IsActive     = dto.IsActive;
         product.UpdatedAtUtc = DateTime.UtcNow;
         product.UpdatedBy    = currentUser.FullName;

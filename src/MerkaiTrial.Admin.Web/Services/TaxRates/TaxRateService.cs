@@ -1,4 +1,32 @@
-﻿using MerkaiTrial.Admin.Web.Services.Core;
+// =====================================================================
+// TaxRateService.cs
+// Location: MerkaiTrial.Admin.Web/Services/TaxRates/TaxRateService.cs
+//
+// COMPLETE FILE — 056.
+//
+// TWO METHODS CALLED THE WRONG URL. The controller route is
+// "api/tax-rates"; these asked for "api/taxrates":
+//
+//     GetAllAsync(Guid tenantId)
+//     GetByCountryAsync(Guid tenantId, string countryCode)
+//
+// Both 404'd, both caught it, and both returned an empty list — for ever,
+// with one log line and no other symptom. They also deserialised
+// List<TaxRateDto> from an endpoint that returns a paginated envelope, so
+// even at the right URL they would have come back empty.
+//
+// They were a trap in their own right, too: TWO GetByCountryAsync
+// overloads differing only by Guid vs Guid?, returning DIFFERENT types.
+// Which one you called depended on whether the variable you happened to
+// pass was nullable. Both are gone; one method, one shape.
+//
+// AND THE tenantId PARAMETERS ARE GONE. The API resolves the workspace
+// from the token now — system rates plus this workspace's own for a
+// tenant, system rates only for a super admin. A client naming a
+// workspace could only ever have been naming somebody else's.
+// =====================================================================
+
+using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.TaxRates
@@ -8,21 +36,32 @@ namespace MerkaiTrial.Admin.Web.Services.TaxRates
     // =====================================================================
     public interface ITaxRateService
     {
+        /// <summary>
+        /// A page of rates in this caller's scope. 056: no tenantId — the
+        /// API takes the workspace from the token.
+        /// </summary>
         Task<PaginatedResult<TaxRateListItem>> GetAllAsync(
-            Guid? tenantId = null,  // ✅ CHANGED: Made nullable
             int pageNumber = 1,
             int pageSize = 10,
             string? searchTerm = null,
-            string? countryFilter = null);
+            string? countryFilter = null,
+            bool includeInactive = false);
+
         Task<TaxRateStatsDto> GetStatsAsync();
-        Task<List<TaxRateListItem>> GetByCountryAsync(Guid? tenantId, string countryCode);  // ✅ CHANGED
+
+        /// <summary>Every rate for one country, in this caller's scope.</summary>
+        Task<List<TaxRateListItem>> GetByCountryAsync(string countryCode);
+
         Task<TaxRateDto> GetByIdAsync(Guid id);
         Task<TaxRateDto> CreateAsync(CreateTaxRateDto dto);
         Task UpdateAsync(Guid id, UpdateTaxRateDto dto);
         Task DeleteAsync(Guid id);
-        Task<TaxRateDto> GetDefaultForCountryAsync(Guid? tenantId, string countryCode);  // ✅ CHANGED
-        Task<List<TaxRateDto>> GetByCountryAsync(Guid tenantId, string countryCode);
-        Task<List<TaxRateDto>> GetAllAsync(Guid tenantId);
+
+        /// <summary>
+        /// The default for a country: this workspace's own rate if it has
+        /// one, otherwise the system rate.
+        /// </summary>
+        Task<TaxRateDto> GetDefaultForCountryAsync(string countryCode);
     }
 
     // =====================================================================
@@ -40,81 +79,50 @@ namespace MerkaiTrial.Admin.Web.Services.TaxRates
         }
 
         public async Task<PaginatedResult<TaxRateListItem>> GetAllAsync(
-            Guid? tenantId = null,
             int pageNumber = 1,
             int pageSize = 10,
             string? searchTerm = null,
-            string? countryFilter = null)
+            string? countryFilter = null,
+            bool includeInactive = false)
         {
             try
             {
                 var queryParams = new List<string>
                 {
-                   
                     $"pageNumber={pageNumber}",
                     $"pageSize={pageSize}"
                 };
 
-                if (tenantId.HasValue && tenantId.Value != Guid.Empty)
-                {
-                    queryParams.Add($"tenantId={tenantId.Value}");
-                }
                 if (!string.IsNullOrWhiteSpace(searchTerm))
                     queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm)}");
 
                 if (!string.IsNullOrWhiteSpace(countryFilter))
-                    queryParams.Add($"countryCode={countryFilter}");
+                    queryParams.Add($"countryCode={Uri.EscapeDataString(countryFilter)}");
+
+                if (includeInactive)
+                    queryParams.Add("includeInactive=true");     // 057
 
                 var query = string.Join("&", queryParams);
                 return await _api.GetAsync<PaginatedResult<TaxRateListItem>>($"/api/tax-rates?{query}");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting paginated tax rates for tenant {TenantId}", tenantId);
+                _logger.LogError(ex, "Error getting paginated tax rates");
                 throw;
             }
         }
-        public async Task<List<TaxRateDto>> GetAllAsync(Guid tenantId)
-        {
-            try
-            {
-                var url = $"api/taxrates?tenantId={tenantId}";
-                var rates = await _api.GetAsync<List<TaxRateDto>>(url);
-                return rates ?? new List<TaxRateDto>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get tax rates for tenant {TenantId}", tenantId);
-                return new List<TaxRateDto>();
-            }
-        }
-        public async Task<List<TaxRateDto>> GetByCountryAsync(Guid tenantId, string countryCode)
-        {
-            try
-            {
-                var url = $"api/taxrates?tenantId={tenantId}&countryCode={countryCode}";
-                var rates = await _api.GetAsync<List<TaxRateDto>>(url);
-                return rates ?? new List<TaxRateDto>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to get tax rates for country {CountryCode}", countryCode);
-                return new List<TaxRateDto>();
-            }
-        }
 
-        public async Task<List<TaxRateListItem>> GetByCountryAsync(Guid? tenantId, string countryCode)
+        // 056: the two "api/taxrates" methods that lived here are GONE —
+        // wrong URL, wrong response shape, and a swallowed 404 that made them
+        // look like "no rates configured" for ever. This is the one that
+        // worked, with the dead tenantId parameter removed.
+        public async Task<List<TaxRateListItem>> GetByCountryAsync(string countryCode)
         {
             try
             {
-                var url = $"/api/tax-rates?countryCode={countryCode}&pageSize=1000";
-                if (tenantId.HasValue && tenantId.Value != Guid.Empty)
-                {
-                    url += $"&tenantId={tenantId.Value}";
-                }
-
+                var url = $"/api/tax-rates?countryCode={Uri.EscapeDataString(countryCode)}&pageSize=1000";
                 var result = await _api.GetAsync<PaginatedResult<TaxRateListItem>>(url);
-                return result.Items;
+                return result?.Items ?? new List<TaxRateListItem>();
             }
             catch (Exception ex)
             {
@@ -122,6 +130,7 @@ namespace MerkaiTrial.Admin.Web.Services.TaxRates
                 throw;
             }
         }
+
         public async Task<TaxRateStatsDto> GetStatsAsync()
         {
             try
@@ -134,6 +143,7 @@ namespace MerkaiTrial.Admin.Web.Services.TaxRates
                 throw;
             }
         }
+
         public async Task<TaxRateDto> GetByIdAsync(Guid id)
         {
             try
@@ -201,16 +211,13 @@ namespace MerkaiTrial.Admin.Web.Services.TaxRates
             }
         }
 
-        public async Task<TaxRateDto> GetDefaultForCountryAsync(Guid? tenantId, string countryCode)
+        public async Task<TaxRateDto> GetDefaultForCountryAsync(string countryCode)
         {
             try
             {
-                var url = $"/api/tax-rates/country/{countryCode}/default";
-                if (tenantId.HasValue && tenantId.Value != Guid.Empty)
-                {
-                    url += $"?tenantId={tenantId.Value}";
-                }
-
+                // 056: no tenantId. The API prefers this workspace's own rate
+                // over the system one, resolved from the token.
+                var url = $"/api/tax-rates/country/{Uri.EscapeDataString(countryCode)}/default";
                 return await _api.GetAsync<TaxRateDto>(url);
             }
             catch (HttpRequestException ex) when (ex.Message.Contains("404"))

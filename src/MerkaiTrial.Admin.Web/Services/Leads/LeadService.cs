@@ -545,7 +545,22 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                     queryParams.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
 
                 var query = string.Join("&", queryParams);
-                return await _api.GetAsync<byte[]>($"/api/leads/export?{query}");
+
+                // 066: WAS GetAsync<byte[]>.
+                //
+                // GetAsync<T> reads the response and runs it through
+                // System.Text.Json. The export endpoint returns an Excel
+                // file — raw bytes, Content-Type
+                // application/vnd.openxmlformats-…, not JSON — so the
+                // deserializer was being handed a ZIP archive and asked to
+                // parse it as a document. The first byte of every .xlsx is
+                // 'P' (from "PK"), which is not a valid JSON token, so it
+                // threw before a single row reached the user.
+                //
+                // GetBytesAsync returns the body untouched, which is what
+                // IApiService added it for and what DownloadPdfAsync in
+                // QuoteService has always used.
+                return await _api.GetBytesAsync($"/api/leads/export?{query}");
             }
             catch (Exception ex)
             {

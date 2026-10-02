@@ -1,14 +1,88 @@
-@page "/Admin/TaxRates/Edit/{id}"
-@model MerkaiTrial.Admin.Web.Pages.TaxRates.EditModel
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.TaxRates.EditModel
 @{
     ViewData["Title"] = "Edit Tax Rate";
 }
+@* =====================================================================
+   Admin/TaxRates/Edit.cshtml — MOVED IN 054 from Pages/TaxRates/.
+   The @@page route override is gone: the folder gives the URL now, and
+   living under Pages/Admin is what puts the page behind
+   AuthorizeFolder("/Admin", "SuperAdmin"). Edit.cshtml.cs has the detail.
+   Re-themed for the dark console at the same time, because
+   Pages/Admin/_ViewStart.cshtml selects _SuperAdminLayout.
+   ===================================================================== *@
+
+<style>
+/* 054 — see Index.cshtml for the full note. Same two problems: Bootstrap's
+   -emphasis pairs resolve to their LIGHT values without
+   data-bs-theme="dark", and bg-primary / bg-light on a .card-header are
+   !important utilities that beat the layout's own rule. */
+.sa-main {
+    --bs-success-text-emphasis:   #86efac;
+    --bs-danger-text-emphasis:    #fca5a5;
+    --bs-warning-text-emphasis:   #fcd34d;
+    --bs-info-text-emphasis:      #67e8f9;
+    --bs-secondary-text-emphasis: #cbd5e1;
+
+    --bs-success-bg-subtle:   rgba(34,197,94,.14);
+    --bs-danger-bg-subtle:    rgba(239,68,68,.14);
+    --bs-warning-bg-subtle:   rgba(245,158,11,.14);
+    --bs-info-bg-subtle:      rgba(34,211,238,.14);
+    --bs-secondary-bg-subtle: rgba(148,163,184,.14);
+}
+.tr-title    { font-size: 1.6rem; font-weight: 700; color: #f1f5f9; margin: 0; }
+.tr-subtitle { color: #64748b; margin: 0; font-size: .9rem; }
+.tr-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+            color: #94a3b8; font-weight: 600; }
+.tr-value { color: #e2e8f0; }
+.sa-main .card-header .bi { color: #22d3ee; }
+
+/* Bootstrap paints a disabled input with its own light background; the
+   layout's .form-control rule does not cover [disabled]. Both Edit fields
+   that are locked after creation land here. */
+.sa-main .form-control:disabled,
+.sa-main .form-select:disabled {
+    background: rgba(255,255,255,.02);
+    border-color: rgba(34,211,238,.08);
+    color: #94a3b8;
+}
+.sa-main .nav-tabs { border-color: rgba(34,211,238,.15); }
+.sa-main .nav-tabs .nav-link { color: #94a3b8; border-color: transparent; }
+.sa-main .nav-tabs .nav-link:hover { color: #e2e8f0; border-color: rgba(34,211,238,.2); }
+.sa-main .nav-tabs .nav-link.active {
+    color: #22d3ee; background: var(--card-bg, #0d1933);
+    border-color: rgba(34,211,238,.25) rgba(34,211,238,.25) var(--card-bg, #0d1933);
+}
+.sa-main hr { border-color: rgba(255,255,255,.08); }
+
+/* 057. A native date input paints its own white box and its calendar
+   glyph is black — both invisible on a navy card. */
+.sa-main input[type="date"] {
+    color-scheme: dark;
+}
+.sa-main input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(.65);
+    cursor: pointer;
+}
+.tr-window { font-size: .78rem; color: #94a3b8; }
+</style>
+
 
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="mb-1"><i class="bi bi-pencil text-warning"></i> Edit Tax Rate</h2>
-            <p class="text-muted mb-0">@Model.Input.Name</p>
+            <h2 class="tr-title">
+                <i class="bi bi-pencil" style="color:#fbbf24"></i> Edit Tax Rate
+                @* 057: where this rate stands TODAY. Active / Scheduled /
+                   Expired / Inactive are four different answers, and a page
+                   that showed only the first would hide a scheduled change —
+                   which is the whole point of scheduling one. *@
+                <span class="badge @Model.StateBadge ms-2">@Model.StateLabel</span>
+            </h2>
+            <p class="tr-subtitle">
+                @Model.Input.Name — a system rate, shared by every tenant in @Model.CountryName
+            </p>
+            <p class="tr-window mb-0">@Model.StateExplain</p>
         </div>
         <div>
             <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
@@ -31,7 +105,7 @@
         <div class="row g-4">
             <div class="col-lg-8">
                 <div class="card border-0 shadow-sm mb-4">
-                    <div class="card-header bg-primary text-white">
+                    <div class="card-header">
                         <h5 class="mb-0"><i class="bi bi-info-circle"></i> Tax Rate Information</h5>
                     </div>
                     <div class="card-body">
@@ -71,6 +145,23 @@
                                 <span asp-validation-for="Input.Rate" class="text-danger small"></span>
                             </div>
 
+                            @* 057 — see Create.cshtml. *@
+                            <div class="col-md-6">
+                                <label asp-for="Input.EffectiveFrom" class="form-label">In force from</label>
+                                <input asp-for="Input.EffectiveFrom" type="date" class="form-control" />
+                                <small class="text-muted">Empty = applies from today.</small>
+                                <span asp-validation-for="Input.EffectiveFrom" class="text-danger small"></span>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label asp-for="Input.EffectiveTo" class="form-label">In force until</label>
+                                <input asp-for="Input.EffectiveTo" type="date" class="form-control" />
+                                <small class="text-muted">
+                                    Empty = no end date. The rate still applies <em>on</em> this day.
+                                </small>
+                                <span asp-validation-for="Input.EffectiveTo" class="text-danger small"></span>
+                            </div>
+
                             <div class="col-12">
                                 <div class="form-check">
                                     <input asp-for="Input.IsDefault" class="form-check-input" type="checkbox" />
@@ -82,6 +173,25 @@
                                     If enabled, this will become the default tax rate for @Model.CountryName
                                 </small>
                             </div>
+
+                            @* 057. The manual retire switch. Nothing could set
+                               it before — so no rate has ever been switched off,
+                               and if one somehow had been, the list filtered it
+                               out and no page could switch it back on. *@
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    <input asp-for="Input.IsActive" class="form-check-input" type="checkbox"
+                                           role="switch" />
+                                    <label asp-for="Input.IsActive" class="form-check-label">
+                                        Active
+                                    </label>
+                                </div>
+                                <small class="text-muted">
+                                    Switch off to retire this rate without deleting it. Its dates stop
+                                    mattering — it is simply not used. The record, and every document
+                                    already priced with it, stay exactly as they are.
+                                </small>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -91,15 +201,15 @@
                 <div class="card border-0 shadow-sm mb-3">
                     <div class="card-body text-center">
                         <div class="mb-3">
-                            <i class="bi bi-receipt text-primary" style="font-size: 3rem;"></i>
+                            <i class="bi bi-receipt" style="font-size: 3rem; color:#22d3ee;"></i>
                         </div>
                         <h5>@Model.TaxType</h5>
-                        <p class="text-muted small mb-0">for @Model.CountryName</p>
+                        <p class="tr-subtitle small mb-0">for @Model.CountryName</p>
                     </div>
                 </div>
 
                 <div class="card border-0 shadow-sm mb-3">
-                    <div class="card-header bg-light">
+                    <div class="card-header">
                         <h5 class="mb-0"><i class="bi bi-lightning"></i> Actions</h5>
                     </div>
                     <div class="card-body">
@@ -115,7 +225,7 @@
                 </div>
 
                 <div class="card border-0 shadow-sm">
-                    <div class="card-header bg-light">
+                    <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
                     </div>
                     <div class="card-body">
@@ -123,7 +233,12 @@
                             <li class="mb-2"><strong>Country and type</strong> cannot be changed</li>
                             <li class="mb-2">You can update the <strong>name and rate</strong></li>
                             <li class="mb-2">Setting as default <strong>updates</strong> previous default</li>
-                            <li>Changes apply <strong>immediately</strong></li>
+                            <li class="mb-2">
+                                Editing the <strong>rate</strong> changes it for everyone, with no record
+                                of what it was. To change a rate on a date, end this one and create the
+                                new one instead.
+                            </li>
+                            <li>Other changes apply <strong>immediately</strong></li>
                         </ul>
                     </div>
                 </div>
