@@ -31,9 +31,18 @@
    ===================================================================== *@
 
 @page
+@using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel
 @{
     ViewData["Title"] = $"Invoice {Model.DisplayNumber}";
+
+    // 067. The tax classification label, from the INVOICE's own currency —
+    // "HSN / SAC" on an invoice priced in INR, "Tax code" elsewhere. Not
+    // the workspace currency: an invoice is a filed document and should
+    // describe itself the way it was raised. TaxCodes is the one place the
+    // wording lives, so this page, the quote pages, the product form and
+    // both PDFs cannot drift.
+    var taxCodeLabel = TaxCodes.ColumnHeaderFor(Model.Invoice?.Currency);
 }
 
 <!-- Page Header -->
@@ -303,6 +312,19 @@
                                 <div class="col-auto">
                                     <strong>Tax:</strong> @((line.TaxRate * 100).ToString("N2"))% (@Model.FormatCurrency(line.LineTax))
                                 </div>
+                                @* 067. Only when the line carries one. On an
+                                   Indian GST invoice this is the figure a tax
+                                   officer looks for, so it sits with the rest
+                                   of the line's facts rather than hidden on
+                                   the PDF alone. Monospaced inline: it is a
+                                   reference number read digit by digit. *@
+                                @if (line.HasTaxCode)
+                                {
+                                    <div class="col-auto">
+                                        <strong>@taxCodeLabel:</strong>
+                                        <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;">@line.TaxCode</span>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }

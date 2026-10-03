@@ -5,7 +5,18 @@
 //   builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 //   (QuestPDF.Settings.License = LicenseType.Community already set)
 //
-// COMPLETE FILE — 055. The Discount column prints the PERCENTAGE when the
+// COMPLETE FILE — 067. The line-items table gains a TAX CLASSIFICATION
+// column — "HSN / SAC" on an Indian quote, "Tax code" elsewhere — and it
+// is rendered ONLY when at least one line on the quote carries a code. A
+// document with no codes anywhere prints exactly as it did before, with
+// the Item column keeping its full width.
+//
+// Why conditional rather than always: three of Merkai's four markets ask
+// for nothing here, and a permanently empty column on a customer-facing
+// document is worse than no column — it reads as something the sender
+// forgot to fill in.
+//
+// 055. The Discount column prints the PERCENTAGE when the
 // line was agreed as one — "-10%" with the amount beneath it — because that
 // is what the customer was told on the phone, and a quote that answers back
 // with a bare figure makes them do the division to check it.
@@ -38,11 +49,14 @@
 //    which has the most to spare.
 // =====================================================================
 
+using MerkaiTrial.Application.Configuration;   // 067: TaxCodes
 using MerkaiTrial.Application.DTOs;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using System.Collections.Generic;              // 067
 using System.Globalization;
+using System.Linq;                             // 067
 
 namespace MerkaiTrial.Application.Services.Pdf
 {
@@ -55,7 +69,25 @@ namespace MerkaiTrial.Application.Services.Pdf
     public class QuotePdfService : IQuotePdfService
     {
         // ── Currency → CultureInfo (same mapping as InvoicePdfService) ─
-        private static CultureInfo GetCultureForCurrency(string? currencyCode) => currencyCode switch
+        // ── 069 ──────────────────────────────────────────────────────
+        //
+        // FOUR CURRENCIES WERE MISSING. CurrencyConfiguration offers
+        // eleven; this switch knew seven, and SGD, MYR, AUD and CAD fell
+        // to InvariantCulture — which groups as 1,234.56 rather than
+        // wrongly, so nothing looked broken. It simply ignored the
+        // reader's locale on a document going to a customer.
+        //
+        // It mattered more from 069 on. A quote's currency comes from its
+        // DEAL, and a product can now be priced in any of the eleven, so
+        // a quote in SGD is reachable in a way it was not before.
+        //
+        // Case-insensitive now, for the same reason the lookups in
+        // CurrencyConfiguration became case-insensitive this round: the
+        // code arrives from Quotes.Currency, an nvarchar an import can
+        // put anything into, rather than from seeded reference data.
+        // "inr" used to fall through to InvariantCulture silently.
+        private static CultureInfo GetCultureForCurrency(string? currencyCode) =>
+            (currencyCode ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "INR" => new CultureInfo("en-IN"),
             "PHP" => new CultureInfo("en-PH"),
@@ -64,6 +96,10 @@ namespace MerkaiTrial.Application.Services.Pdf
             "USD" => new CultureInfo("en-US"),
             "EUR" => new CultureInfo("en-IE"),
             "GBP" => new CultureInfo("en-GB"),
+            "SGD" => new CultureInfo("en-SG"),   // 069
+            "MYR" => new CultureInfo("ms-MY"),   // 069
+            "AUD" => new CultureInfo("en-AU"),   // 069
+            "CAD" => new CultureInfo("en-CA"),   // 069
             _     => CultureInfo.InvariantCulture
         };
 
@@ -79,6 +115,21 @@ namespace MerkaiTrial.Application.Services.Pdf
             var culture = GetCultureForCurrency(model.CurrencyCode);
             var sym     = model.CurrencySymbol;
 
+            // ── 067: the tax-classification column ────────────────────
+            //
+            // Rendered ONLY when at least one line on this quote carries a
+            // code. A Thai or Philippine quote gets the document it got
+            // before this round, with no empty column and no narrower Item
+            // column paying for it.
+            //
+            // The header comes from the CURRENCY, so an Indian quote says
+            // "HSN / SAC" — the same words the product form uses — and
+            // everywhere else says "Tax code". TaxCodes is the one place
+            // that mapping lives.
+            var lines       = model.Quote.Items ?? new List<QuoteItemDto>();
+            var showTaxCode = TaxCodes.AnyPresent(lines.Select(i => i.TaxCode));
+            var taxCodeHead = TaxCodes.ColumnHeaderFor(model.CurrencyCode);
+
             return Document.Create(container =>
             {
                 container.Page(page =>
@@ -92,24 +143,32 @@ namespace MerkaiTrial.Application.Services.Pdf
                         // ── HEADER ──────────────────────────────────────────────
                         col.Item().Row(row =>
                         {
-                            // Left: tenant name + contact
+                            // Left: the SELLER's letterhead.
+                            //
+                            // 065: was name, email, phone, country. The
+                            // layout rules live on TenantPdfInfo (defined
+                            // in InvoicePdfService.cs) so this block and
+                            // the invoice's are assembled by exactly the
+                            // same code and cannot drift apart.
                             row.RelativeItem().Column(c =>
                             {
                                 c.Item()
-                                    .Text(model.Tenant.Name)
+                                    .Text(model.Tenant.DisplayName)
                                     .FontSize(20).Bold()
                                     .FontColor(AccentHex);
 
-                                if (!string.IsNullOrEmpty(model.Tenant.Email))
-                                    c.Item().Text(model.Tenant.Email)
-                                        .FontSize(9).FontColor(MutedHex);
+                                foreach (var line in model.Tenant.AddressLines())
+                                    c.Item().Text(line).FontSize(9).FontColor(MutedHex);
 
-                                if (!string.IsNullOrEmpty(model.Tenant.Phone))
-                                    c.Item().Text(model.Tenant.Phone)
-                                        .FontSize(9).FontColor(MutedHex);
+                                var contact = model.Tenant.ContactLine();
+                                if (contact is not null)
+                                    c.Item().PaddingTop(2)
+                                        .Text(contact).FontSize(9).FontColor(MutedHex);
 
-                                c.Item().Text(model.Tenant.Country)
-                                    .FontSize(9).FontColor(MutedHex);
+                                var tax = model.Tenant.TaxLine();
+                                if (tax is not null)
+                                    c.Item().PaddingTop(3)
+                                        .Text(tax).FontSize(9).Bold().FontColor("#374151");
                             });
 
                             // Right: QUOTE label + number + status
@@ -237,7 +296,15 @@ namespace MerkaiTrial.Application.Services.Pdf
                             {
                                 // 052b: Qty 1 -> 2, taken off Name/Description.
                                 // A quantity is "12.5 m²" now, not "12".
-                                cols.RelativeColumn(3.4f); // Name/Description
+                                //
+                                // 067: when there are codes to print, the
+                                // Item column gives up 1.3 of its 3.4 for
+                                // them — it still has the most to spare, and
+                                // the description wraps where the numeric
+                                // columns cannot.
+                                cols.RelativeColumn(showTaxCode ? 2.1f : 3.4f); // Name/Description
+                                if (showTaxCode)
+                                    cols.RelativeColumn(1.3f);                 // 067: HSN / SAC
                                 cols.RelativeColumn(2);    // Qty
                                 cols.RelativeColumn(2);    // Unit Price
                                 cols.RelativeColumn(2);    // Discount
@@ -254,6 +321,7 @@ namespace MerkaiTrial.Application.Services.Pdf
                                     .Text(text).FontSize(8.5f).Bold().FontColor("#FFFFFF");
 
                             HeaderCell("Item");
+                            if (showTaxCode) HeaderCell(taxCodeHead);   // 067
                             HeaderCell("Qty",       alignRight: true);
                             HeaderCell("Unit Price", alignRight: true);
                             HeaderCell("Discount",   alignRight: true);
@@ -265,7 +333,7 @@ namespace MerkaiTrial.Application.Services.Pdf
 
                             // Data rows
                             var isOdd = false;
-                            foreach (var item in model.Quote.Items)
+                            foreach (var item in lines)
                             {
                                 isOdd = !isOdd;
                                 var rowBg = isOdd ? "#FFFFFF" : "#F9FAFB";
@@ -296,6 +364,16 @@ namespace MerkaiTrial.Application.Services.Pdf
                                             c.Item().Text(item.Description)
                                                 .FontSize(8).FontColor(MutedHex);
                                     });
+
+                                // 067. A line with no code prints an em dash
+                                // rather than a blank, so a reader can tell
+                                // "nothing was classified here" from "the
+                                // column didn't print". Left-aligned to sit
+                                // under the heading; a code is a reference,
+                                // not a number.
+                                if (showTaxCode)
+                                    DataCell(item.HasTaxCode ? item.TaxCode! : "—",
+                                        color: item.HasTaxCode ? "#374151" : MutedHex);
 
                                 // 052b — see the header. "12.5 m²", not "12.5000".
                                 DataCell(item.QuantityDisplay, alignRight: true);

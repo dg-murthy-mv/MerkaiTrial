@@ -4,6 +4,23 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 067 — TAX CLASSIFICATION ON THE LINE
+//   ✅ Create and Update snapshot TaxCode onto each line, filling it from
+//      the product when the caller sent nothing (LineTaxCodes, at the
+//      bottom of this file, beside LineUnits).
+//   ✅ Both read paths carry TaxCode into QuoteItemDto.
+//   The reasoning is in QuoteItem.cs. The short version: Products.TaxCode
+//   has existed since 051 and had nowhere to go, and a GST invoice has to
+//   print the HSN / SAC code against every line.
+//
+// ALSO IN THIS FILE, AND WORTH CHECKING YOU HAVE IT — 065
+//   GetQuoteByTokenHandler projects a QuoteSellerDto so the PUBLIC quote
+//   page can print your company's name, address and tax number. The copy
+//   of this file that was in the solution on 2 October did not have that
+//   block, so /q/{token} was rendering with a blank letterhead while the
+//   PDF had one. It is in the file you are holding. Nothing to do beyond
+//   replacing the file.
+//
 // 055 — A LINE DISCOUNT CAN BE A PERCENTAGE
 //   Both write paths run every line through LineDiscounts.Resolve, which
 //   recomputes the AMOUNT from the percentage when one was supplied. The
@@ -287,6 +304,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     LineDiscount   = i.LineDiscount,
                     DiscountPercent = i.DiscountPercent,       // 055
                     TaxRate        = i.TaxRate,
+                    TaxCode        = i.TaxCode,                // 067
                     LineTotal      = (i.UnitPrice * i.Quantity) - i.LineDiscount,
                     LineTax        = ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate,
                     LineGrandTotal = ((i.UnitPrice * i.Quantity) - i.LineDiscount) +
@@ -448,6 +466,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
             var units = await LineUnits.LookupAsync(
                 _db, dto.TenantId, dto.Items.Select(i => i.ProductId));
 
+            // 067: the same shape for the tax classification code. See
+            // LineTaxCodes at the bottom of this file for why it is a second
+            // lookup rather than a column added to the one above.
+            var taxCodes = await LineTaxCodes.LookupAsync(
+                _db, dto.TenantId, dto.Items.Select(i => i.ProductId));
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
             // ── Generate quote number ──────────────────────────────────
@@ -498,6 +522,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     LineDiscount = itemDto.LineDiscount,
                     DiscountPercent = itemDto.DiscountPercent,   // 055 — resolved above
                     TaxRate      = itemDto.TaxRate,
+                    TaxCode      = LineTaxCodes.Resolve(itemDto.TaxCode, itemDto.ProductId, taxCodes),  // 067
                     CreatedAtUtc = DateTime.UtcNow,
                     CreatedBy    = currentUser.FullName,
                     IsDeleted    = false
@@ -1090,6 +1115,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
             var units = await LineUnits.LookupAsync(
                 _db, tenantId, dto.Items.Select(i => i.ProductId));
 
+            // 067 — likewise.
+            var taxCodes = await LineTaxCodes.LookupAsync(
+                _db, tenantId, dto.Items.Select(i => i.ProductId));
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var userName = currentUser?.FullName ?? "System";
 
@@ -1156,6 +1185,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     existingItem.LineDiscount = itemDto.LineDiscount;
                     existingItem.DiscountPercent = itemDto.DiscountPercent;         // 055
                     existingItem.TaxRate      = itemDto.TaxRate;
+                    existingItem.TaxCode      = LineTaxCodes.Resolve(                // 067
+                        itemDto.TaxCode, itemDto.ProductId, taxCodes, existingItem.TaxCode);
                     existingItem.UpdatedAtUtc = now;
                     existingItem.UpdatedBy    = userName;
                 }
@@ -1175,6 +1206,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         LineDiscount = itemDto.LineDiscount,
                         DiscountPercent = itemDto.DiscountPercent,   // 055
                         TaxRate      = itemDto.TaxRate,
+                        TaxCode      = LineTaxCodes.Resolve(itemDto.TaxCode, itemDto.ProductId, taxCodes),  // 067
                         CreatedAtUtc = now,
                         CreatedBy    = userName,
                         UpdatedAtUtc = now,
@@ -1272,12 +1304,59 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 }
             }
 
+            // ── 065: WHO THE QUOTE IS FROM ───────────────────────────────
+            //
+            // The public page is [AllowAnonymous] with no tenant claim, so
+            // ICurrentTenantService cannot resolve anything there. The
+            // seller's details have to be resolved HERE, where the tenant
+            // is known from the quote row itself, and travel on the DTO.
+            //
+            // Tenants carries no TenantId column — it IS the tenant — and
+            // Countries is global reference data, so neither needs
+            // IgnoreQueryFilters. The quote above did, which is why that
+            // read is written the way it is.
+            //
+            // One query, projected to exactly what gets printed: no ids,
+            // no plan, no trial dates, and not FromEmail — that is the
+            // address the system sends from, often a no-reply, and a quote
+            // is a document somebody is meant to answer.
+            var seller = await _db.Tenants.AsNoTracking()
+                .Where(t => t.Id == quote.TenantId)
+                .Select(t => new QuoteSellerDto
+                {
+                    Name           = t.Name,
+                    LegalName      = t.LegalName,
+                    AddressLine1   = t.AddressLine1,
+                    AddressLine2   = t.AddressLine2,
+                    City           = t.City,
+                    State          = t.State,
+                    PostalCode     = t.PostalCode,
+                    CountryName    = t.Country != null ? t.Country.Name : null,
+                    Phone          = t.Phone,
+                    Email          = t.ReplyToEmail,
+                    Website        = t.Website,
+                    TaxNumber      = t.TaxNumber,
+                    TaxNumberLabel = t.TaxNumberLabel,
+
+                    // The country's word for the tax, for the column header
+                    // and the totals row. "Tax" is the fallback for a
+                    // workspace whose country has no label set; it is what
+                    // the page printed for everybody before this round.
+                    TaxLabel = t.Country != null && t.Country.TaxLabel != null
+                                 ? t.Country.TaxLabel
+                                 : "Tax"
+                })
+                .FirstOrDefaultAsync(ct);
+
             // 053. The public page is the customer's own copy of the quote,
             // so getting this wrong is the most visible version of the bug:
             // it addressed them by their own first and last name under a
             // heading that says who the quote is FOR.
             return new QuoteDto
             {
+                // 065
+                Seller = seller,
+
                 Id = quote.Id,
                 TenantId = quote.TenantId,
                 DealId = quote.DealId,
@@ -1311,6 +1390,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     LineDiscount = i.LineDiscount,
                     DiscountPercent = i.DiscountPercent,       // 055
                     TaxRate = i.TaxRate,
+                    TaxCode = i.TaxCode,                       // 067
                     LineTotal = (i.UnitPrice * i.Quantity) - i.LineDiscount,
                     LineTax = ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate,
                     LineGrandTotal = ((i.UnitPrice * i.Quantity) - i.LineDiscount) +
@@ -1610,6 +1690,128 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 return UnitsOfMeasure.Normalise(existing);
 
             return UnitsOfMeasure.Unit;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 067 — THE TAX CLASSIFICATION CODE FOR ONE LINE
+    //
+    // The twin of LineUnits above, and shared by the quote handlers and
+    // the invoice handlers for the same reason: a quote line and the
+    // invoice line raised from it must resolve this the same way, and two
+    // copies of the rule would be two copies to keep in step.
+    //
+    // WHY A SECOND LOOKUP INSTEAD OF ONE MORE COLUMN ON LineUnits
+    //   Because LineUnits.LookupAsync returns Dictionary<Guid, string> and
+    //   is called from four places across two files. Widening it to a
+    //   tuple or a small record to carry a second value would change every
+    //   one of those call sites to gain nothing a reader can see. Two
+    //   lookups on a document save — bounded by the number of DISTINCT
+    //   products on one quote, which is single digits — is not a cost
+    //   worth that. If a document ever carries hundreds of lines, merging
+    //   these two is the obvious change and the one place to make it.
+    //
+    // NOT read live through ProductId at display time, deliberately, and
+    // more firmly than the unit: this value goes on a tax invoice. If
+    // somebody corrects a product's HSN code next March, a join would
+    // reprint last year's filed invoice with the new code, and what the
+    // system shows would no longer match what was filed.
+    // ─────────────────────────────────────────────────────────────────
+    public static class LineTaxCodes
+    {
+        /// <summary>
+        /// productId → its tax code, for every catalogue product on this
+        /// document. ONE query, not one per line. Products whose code is
+        /// null or blank are LEFT OUT of the map rather than mapped to
+        /// null — so Resolve's TryGetValue answers "this product has no
+        /// code" and "I did not look this product up" identically, which
+        /// is what the caller wants.
+        /// </summary>
+        public static async Task<Dictionary<Guid, string>> LookupAsync(
+            FlowDbContext db,
+            Guid tenantId,
+            IEnumerable<Guid?> productIds,
+            CancellationToken ct = default)
+        {
+            var ids = (productIds ?? Enumerable.Empty<Guid?>())
+                .Where(id => id.HasValue && id.Value != Guid.Empty)
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToList();
+
+            if (ids.Count == 0)
+                return new Dictionary<Guid, string>();
+
+            // TenantId in the predicate as well as the query filter, same
+            // as LineUnits: a ProductId is supplied by the caller, and a
+            // product belonging to another tenant must not answer for one
+            // of ours.
+            var rows = await db.Products.AsNoTracking()
+                .Where(p => p.TenantId == tenantId && ids.Contains(p.Id) && p.TaxCode != null)
+                .Select(p => new { p.Id, p.TaxCode })
+                .ToListAsync(ct);
+
+            var map = new Dictionary<Guid, string>();
+            foreach (var r in rows)
+            {
+                var code = TaxCodes.Normalise(r.TaxCode);
+                if (code != null) map[r.Id] = code;
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// The code to store on one line.
+        ///
+        /// NULL AND "" ARE DIFFERENT HERE, and this is the one place in the
+        /// codebase where they are:
+        ///
+        ///   • supplied is NULL — the caller said nothing about the tax
+        ///     code. An API client written before 067, or a page that does
+        ///     not show the field. INHERIT: the product's code, then
+        ///     whatever the line already had.
+        ///
+        ///   • supplied is "" or whitespace — the caller sent the field and
+        ///     it was EMPTY. Somebody cleared the box. Store null and do
+        ///     not helpfully put the product's code back, which is what
+        ///     treating the two the same would do — and the rep would have
+        ///     no way at all to remove a code.
+        ///
+        ///   • supplied has a value — use it. A rep typing a code on a
+        ///     custom line, or correcting the catalogue's on this document
+        ///     without editing the catalogue.
+        ///
+        /// <paramref name="existing"/> is the code already on the line when
+        /// editing, and is only ever consulted in the NULL case — the same
+        /// trap LineUnits.Resolve avoids with the same parameter. On a new
+        /// line there is nothing existing and the answer is simply null.
+        ///
+        /// Null is a legitimate result and the normal one outside the
+        /// markets that ask for a code.
+        /// </summary>
+        public static string? Resolve(
+            string? supplied,
+            Guid? productId,
+            IReadOnlyDictionary<Guid, string> productTaxCodes,
+            string? existing = null)
+        {
+            // Sent, with something in it.
+            var typed = TaxCodes.Normalise(supplied);
+            if (typed != null) return typed;
+
+            // Sent, and empty. Deliberately cleared — stop here.
+            if (supplied != null) return null;
+
+            // Not sent at all. Inherit.
+            if (productId.HasValue && productId.Value != Guid.Empty &&
+                productTaxCodes != null &&
+                productTaxCodes.TryGetValue(productId.Value, out var fromProduct))
+            {
+                var code = TaxCodes.Normalise(fromProduct);
+                if (code != null) return code;
+            }
+
+            return TaxCodes.Normalise(existing);
         }
     }
 }

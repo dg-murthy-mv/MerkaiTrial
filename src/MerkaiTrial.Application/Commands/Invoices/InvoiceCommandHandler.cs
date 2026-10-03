@@ -39,6 +39,20 @@
 //   ✅ Line checks on create/update (quantity, price, discount, tax).
 //   ✅ Delete: drafts only.
 //
+// 067 — TAX CLASSIFICATION ON THE LINE
+//   ✅ Every line path carries TaxCode — the HSN / SAC code in India, the
+//      local equivalent elsewhere, null where none applies.
+//   ✅ CreateInvoiceFromQuote copies the QUOTE LINE's code across, and
+//      passes "" rather than null when the quote line had none, so the
+//      product is never consulted on this path. An invoice is the document
+//      the tax authority sees: it has to carry the classification the
+//      customer accepted, not whatever the catalogue says on the day the
+//      invoice is raised.
+//   ✅ Manual invoices snapshot the code from the product when the caller
+//      sent nothing (LineTaxCodes, in QuotesCommandHandler.cs beside
+//      LineUnits, shared so quotes and invoices cannot drift).
+//   ✅ The read projection carries it out to InvoiceLineDto.
+//
 // 055 — A LINE DISCOUNT CAN BE A PERCENTAGE
 //   Every line path runs through LineDiscounts.Resolve, the same rule the
 //   quote handler uses, and CreateInvoiceFromQuote copies the percentage
@@ -252,6 +266,14 @@ namespace MerkaiTrial.Application.Commands.Invoices
             var units = await LineUnits.LookupAsync(
                 _db, dto.TenantId, dto.Lines.Select(l => l.ProductId));
 
+            // 067: the same shape for the tax classification code, and the
+            // same note applies — CreateInvoiceFromQuote sends the quote
+            // line's code explicitly, so for that path this lookup fills in
+            // nothing. That is the point: the invoice must say what the
+            // customer accepted, not what the catalogue says today.
+            var taxCodes = await LineTaxCodes.LookupAsync(
+                _db, dto.TenantId, dto.Lines.Select(l => l.ProductId));
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var now = DateTime.UtcNow;
 
@@ -300,6 +322,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     LineDiscount = lineDto.LineDiscount,
                     DiscountPercent = lineDto.DiscountPercent,     // 055 — resolved above
                     TaxRate = lineDto.TaxRate,
+                    TaxCode = LineTaxCodes.Resolve(lineDto.TaxCode, lineDto.ProductId, taxCodes),  // 067
                     Amount = ((lineDto.UnitPrice * lineDto.Quantity) - lineDto.LineDiscount) * (1 + lineDto.TaxRate),
                     CreatedAtUtc = now,
                     CreatedBy = invoice.CreatedBy,
@@ -371,6 +394,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 LineDiscount = l.LineDiscount,
                 DiscountPercent = l.DiscountPercent,           // 055
                 TaxRate = l.TaxRate,
+                TaxCode = l.TaxCode,                           // 067
                 LineTotal = (l.UnitPrice * l.Quantity) - l.LineDiscount,
                 LineTax = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,
                 LineGrandTotal = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * (1 + l.TaxRate)
@@ -464,7 +488,22 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     // said "-10%", which is the same money described two
                     // different ways to the same customer.
                     DiscountPercent = item.DiscountPercent,
-                    TaxRate = item.TaxRate
+                    TaxRate = item.TaxRate,
+                    // 067: the HSN / SAC code travels with the line too, and
+                    // this is the copy that matters most. The invoice is the
+                    // document the tax authority sees; it must carry the
+                    // classification the customer accepted on the quote, not
+                    // whatever the catalogue happens to say on the day the
+                    // invoice is raised.
+                    //
+                    // ?? "" rather than passing the quote's null straight
+                    // through: null tells CreateInvoiceHandler "nothing was
+                    // said about the code, go and ask the product", and that
+                    // is exactly what must NOT happen here. A quote line
+                    // deliberately carrying no code has to produce an invoice
+                    // line carrying no code — see LineTaxCodes.Resolve, where
+                    // null and "" mean two different things on purpose.
+                    TaxCode = item.TaxCode ?? ""
                 }).ToList()
             };
 
@@ -694,6 +733,16 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 var units = await LineUnits.LookupAsync(
                     _context, request.TenantId, request.Lines.Select(l => l.ProductId));
 
+                // 067 — likewise. Note that this path REPLACES every line
+                // rather than editing them in place (see the soft-delete
+                // loop just below), so there is no "existing" code to fall
+                // back to: whatever the caller sends is what the invoice
+                // ends up with, and a caller that sends null gets the
+                // product's code. That is the same behaviour the unit has
+                // had here since 052.
+                var taxCodes = await LineTaxCodes.LookupAsync(
+                    _context, request.TenantId, request.Lines.Select(l => l.ProductId));
+
                 foreach (var existingLine in invoice.Lines.Where(l => !l.IsDeleted))
                 {
                     existingLine.IsDeleted = true;
@@ -718,6 +767,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                         LineDiscount = lineDto.LineDiscount,
                         DiscountPercent = lineDto.DiscountPercent,     // 055
                         TaxRate = lineDto.TaxRate,
+                        TaxCode = LineTaxCodes.Resolve(lineDto.TaxCode, lineDto.ProductId, taxCodes),  // 067
                         Amount = lineNet * (1 + lineDto.TaxRate),
                         CreatedAtUtc = now,
                         CreatedBy = request.UpdatedBy,

@@ -1211,6 +1211,23 @@
                             <i class="bi bi-percent"></i> Tax Rates
                         </a>
 
+                        @* 068. Product Categories — the groups a workspace
+                           files its catalogue under, which were eight
+                           hardcoded C# constants until this round.
+
+                           Beside Tax Rates for the same reason Tax Rates is
+                           here rather than under Sales: it is configuration
+                           the product catalogue READS, not part of adding a
+                           product. Somebody adding a product picks a
+                           category; somebody DECIDING what the categories
+                           are is configuring the workspace, and that is a
+                           different job and a different permission —
+                           settings.*, not products.*. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/ProductCategories") ? "active" : "")"
+                           asp-page="/Settings/ProductCategories/Index">
+                            <i class="bi bi-tags"></i> Product Categories
+                        </a>
+
                         @* 038a. This copy is for ADMINS — they are the ones
                            who want the Email log tab, and this is where they
                            look for it. Everyone else reaches the same page's

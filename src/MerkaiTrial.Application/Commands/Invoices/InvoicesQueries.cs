@@ -15,6 +15,12 @@
 //   straight afterwards. Same rule, same implementation — not a second
 //   copy of the logic, which is how these drifted apart to begin with.
 //
+// 067: the line projection carries TaxCode through to InvoiceLineDto, so
+// the invoice page and the invoice PDF can print the HSN / SAC code
+// against each line. One line changed. The LIST projection is deliberately
+// untouched — a tax code is a per-line detail and has no meaning on a row
+// that shows one invoice total.
+//
 // 052: the line projection carries UnitOfMeasure through to
 // InvoiceLineDto, so the invoice page can print "12.5 m²" instead of a
 // bare "12.5". One line changed; everything else below is untouched.
@@ -321,6 +327,7 @@ namespace MerkaiTrial.Application.Queries.Invoices
                         LineDiscount = l.LineDiscount,
                         DiscountPercent = l.DiscountPercent,    // 055
                         TaxRate = l.TaxRate,
+                        TaxCode = l.TaxCode,                    // 067
                         LineTotal = (l.UnitPrice * l.Quantity) - l.LineDiscount,
                         LineTax = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,
                         LineGrandTotal = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * (1 + l.TaxRate),

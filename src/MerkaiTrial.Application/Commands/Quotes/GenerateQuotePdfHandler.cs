@@ -72,11 +72,30 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found for tenant {tenantId}");
 
-            // ── Load tenant contact info ───────────────────────────────
-            var tenantContact = await _db.Tenants
+            // ── Load the seller's letterhead ───────────────────────────
+            // 065: was { Phone, FromEmail }. The company profile columns
+            // 064 added are what let this document name the seller and
+            // carry a tax registration number. ReplyToEmail first — a
+            // customer replying to a quote should reach the people who
+            // sent it, not the no-reply address the system sends from.
+            var tenantInfo = await _db.Tenants
                 .AsNoTracking()
                 .Where(t => t.Id == tenantId && !t.IsDeleted)
-                .Select(t => new { t.Phone, t.FromEmail })
+                .Select(t => new
+                {
+                    t.Phone,
+                    t.FromEmail,
+                    t.ReplyToEmail,
+                    t.LegalName,
+                    t.AddressLine1,
+                    t.AddressLine2,
+                    t.City,
+                    t.State,
+                    t.PostalCode,
+                    t.Website,
+                    t.TaxNumber,
+                    t.TaxNumberLabel
+                })
                 .FirstOrDefaultAsync(ct);
 
             // ── Build QuoteDto from entity (mirrors GetQuoteByIdHandler) ─
@@ -109,8 +128,35 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     UnitPrice      = i.UnitPrice,
                     Quantity       = i.Quantity,
                     UnitOfMeasure  = i.UnitOfMeasure,          // 052a
+
                     LineDiscount   = i.LineDiscount,
+
+                    // 065 — A DEFECT FROM 055, FOUND HERE RATHER THAN
+                    // REPORTED. 055 added DiscountPercent so a line agreed
+                    // as "-10%" reads back as a percentage. QuotePdfService
+                    // prints item.DiscountLabel, which is computed from
+                    // DiscountPercent — and this handler builds its own DTO
+                    // and never set it. So DiscountLabel was always null and
+                    // the PDF has been printing the AMOUNT on every line,
+                    // including the ones the customer was told a percentage
+                    // for. The quote page showed "-10%" and the PDF beside
+                    // it showed "-฿590.00".
+                    //
+                    // This is the hazard the header warns about: the handler
+                    // mirrors GetQuoteByIdHandler by hand, so every field
+                    // added there has to be added here too, and 055 added
+                    // one and stopped.
+                    DiscountPercent = i.DiscountPercent,       // 065
+
                     TaxRate        = i.TaxRate,
+
+                    // 067. THE SAME HAZARD, THE THIRD TIME. The PDF decides
+                    // whether to print the HSN / SAC column by asking
+                    // whether any line has a code — so forgetting this one
+                    // line would not throw, would not look broken, and
+                    // would simply print every Indian quote without the
+                    // classification column while the quote page showed it.
+                    TaxCode        = i.TaxCode,                // 067
                     LineTotal      = (i.UnitPrice * i.Quantity) - i.LineDiscount,
                     LineTax        = ((i.UnitPrice * i.Quantity) - i.LineDiscount) * i.TaxRate,
                     LineGrandTotal = ((i.UnitPrice * i.Quantity) - i.LineDiscount) +
@@ -127,12 +173,33 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 DateFormat     = _tenantService.GetDateFormat(),
                 TaxLabel       = _tenantService.GetTaxLabel(),
                 NumberFormat   = _tenantService.GetNumberFormat(),
+                // 065: the full letterhead. Everything below Country is
+                // new — see TenantPdfInfo, where the layout rules live so
+                // this PDF, the invoice PDF and the public quote page
+                // assemble the block identically.
                 Tenant = new TenantPdfInfo
                 {
                     Name    = _tenantService.GetTenantName(),
-                    Phone   = tenantContact?.Phone,
-                    Email   = tenantContact?.FromEmail,
-                    Country = _tenantService.GetCountryName()
+                    Country = _tenantService.GetCountryName(),
+
+                    Phone   = tenantInfo?.Phone,
+
+                    // ReplyToEmail before FromEmail: FromEmail is the
+                    // sending identity (often noreply@), and a quote is a
+                    // document somebody is meant to answer.
+                    Email   = !string.IsNullOrWhiteSpace(tenantInfo?.ReplyToEmail)
+                                ? tenantInfo!.ReplyToEmail
+                                : tenantInfo?.FromEmail,
+
+                    LegalName      = tenantInfo?.LegalName,
+                    AddressLine1   = tenantInfo?.AddressLine1,
+                    AddressLine2   = tenantInfo?.AddressLine2,
+                    City           = tenantInfo?.City,
+                    State          = tenantInfo?.State,
+                    PostalCode     = tenantInfo?.PostalCode,
+                    Website        = tenantInfo?.Website,
+                    TaxNumber      = tenantInfo?.TaxNumber,
+                    TaxNumberLabel = tenantInfo?.TaxNumberLabel
                 }
             };
 

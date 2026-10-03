@@ -45,6 +45,7 @@
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Quotes;
+using MerkaiTrial.Application.Configuration;   // 067: TaxCodes
 using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -121,6 +122,43 @@ namespace MerkaiTrial.Admin.Web.Pages.Public
                 return string.IsNullOrWhiteSpace(person) ? null : person;
             }
         }
+
+        // ── 065: who the quote is FROM ────────────────────────────────
+        //
+        // This page had no way to name the seller. A customer opened a
+        // ฿25,246.65 quote, saw their own company, the prices and an
+        // Accept button, and nothing identifying who sent it — no name, no
+        // address, no number to call. The only sender-ish text on the page
+        // was "Powered by Merkai CRM", which is the product's name, not
+        // the workspace's.
+        //
+        // It cannot be resolved here: the page is [AllowAnonymous] and a
+        // plain PageModel, so ICurrentTenantService would throw. It
+        // travels on the DTO, filled in by GetQuoteByTokenHandler where
+        // the tenant is known. Null on an older cached response, so every
+        // use below is guarded.
+
+        public QuoteSellerDto? Seller => Quote?.Seller;
+
+        /// <summary>
+        /// True when there is enough to draw a letterhead. A name alone is
+        /// not one, and an empty bordered box looks more broken than no box
+        /// — the same test Tenant.HasCompanyProfile and the Company Profile
+        /// page's live preview use.
+        /// </summary>
+        public bool ShowSeller => Seller?.HasDetails == true;
+
+        /// <summary>
+        /// The country's word for the tax — "VAT" in Thailand, "GST" in
+        /// India — for the line column and the totals row. Both said the
+        /// generic "Tax" before this round, on a document an Indian
+        /// customer may hand to their accountant.
+        ///
+        /// Falls back to "Tax" rather than to the tenant service, which
+        /// this page cannot call.
+        /// </summary>
+        public string TaxLabel =>
+            string.IsNullOrWhiteSpace(Seller?.TaxLabel) ? "Tax" : Seller!.TaxLabel;
 
         public string CurrencySymbol => Quote?.Currency switch
         {
@@ -205,6 +243,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Public
         public bool HasAnyLineDiscount =>
             Quote is not null &&
             Quote.Items.Any(i => i.LineDiscount > 0 || i.DiscountPercent.HasValue);
+
+        /// <summary>
+        /// 067: true when any line carries a tax classification code, which
+        /// is the only condition under which the column is drawn — exactly
+        /// the rule the Discount column above has followed since 059, and
+        /// exactly the rule both PDFs use. Three of Merkai's four markets
+        /// ask for no code, and an empty column on the one page a CUSTOMER
+        /// reads looks like something the sender forgot to fill in.
+        /// </summary>
+        public bool HasAnyLineTaxCode =>
+            Quote is not null && TaxCodes.AnyPresent(Quote.Items.Select(i => i.TaxCode));
+
+        /// <summary>
+        /// 067: the column heading — "HSN / SAC" on a quote priced in INR,
+        /// "Tax code" elsewhere. Driven by the QUOTE's currency, because
+        /// this page has no tenant context at all (it is [AllowAnonymous]),
+        /// and the quote is the only thing it knows.
+        /// </summary>
+        public string TaxCodeLabel => TaxCodes.ColumnHeaderFor(Quote?.Currency);
 
         /// <summary>
         /// 059: the last four characters, for the log. Never the token.

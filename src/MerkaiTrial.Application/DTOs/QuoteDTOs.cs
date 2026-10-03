@@ -19,11 +19,27 @@
 // QuoteItemDto also carries QuantityDisplay — "12.5 m²", "3", "2 days" —
 // worked out once on the server rather than in four different views. Use
 // it wherever a quantity is PRINTED; use Quantity for arithmetic.
+//
+// 067 — TAX CLASSIFICATION ON THE LINE
+//
+// All three line shapes gain TaxCode, exactly as 052 gave them
+// UnitOfMeasure and for the same reason: the product has carried a tax
+// code since 051 and the line it ends up on had no field to put it in, so
+// a GST invoice could not print the HSN / SAC code it is legally required
+// to show against every line.
+//
+// Nullable everywhere, and NULL is the normal state in the markets that
+// ask for nothing. On the two WRITE shapes, leaving it null with a
+// ProductId set makes the handler snapshot the product's own code — the
+// same arrangement UnitOfMeasure has, so a caller that has never heard of
+// tax codes still stores the right one.
 // =====================================================================
 
 using MerkaiTrial.Application.Common;                 // 055: LineDiscounts
 using MerkaiTrial.Application.Configuration;          // 052: UnitsOfMeasure
 using MerkaiTrial.Application.Services.Pdf;
+using System.Collections.Generic;                     // 065: QuoteSellerDto
+using System.Linq;                                    // 065: QuoteSellerDto
 
 namespace MerkaiTrial.Application.DTOs
 {
@@ -88,7 +104,125 @@ namespace MerkaiTrial.Application.DTOs
         public string? CreatedBy { get; set; }
         // ✅ From linked Deal — carried through for display
         public string? VerticalName { get; set; }
+
+        /// <summary>
+        /// 065: WHO THE QUOTE IS FROM.
+        ///
+        /// The public quote page is [AllowAnonymous] and a plain PageModel
+        /// — ICurrentTenantService cannot resolve anything there, because
+        /// the customer has no tenant claim. So the seller's details have
+        /// to travel ON the quote, resolved server-side where the tenant
+        /// IS known.
+        ///
+        /// Set by GetQuoteByTokenHandler. Null on the other read paths,
+        /// which do not need it: the internal pages already have the
+        /// workspace in their own context.
+        /// </summary>
+        public QuoteSellerDto? Seller { get; set; }
+
         public List<QuoteItemDto> Items { get; set; } = new();
+    }
+
+    /// <summary>
+    /// 065: the seller's letterhead, for the page a CUSTOMER opens.
+    ///
+    /// Deliberately a flat snapshot rather than a reference to the tenant:
+    /// this is serialised over HTTP to an anonymous page, so it carries
+    /// exactly what gets printed and nothing else — no ids, no plan, no
+    /// email the workspace sends FROM.
+    ///
+    /// Mirrors TenantPdfInfo, including the three layout helpers, so the
+    /// web page and the PDF assemble the block the same way. Two documents
+    /// of the same quote disagreeing about where a comma goes is the sort
+    /// of thing a customer notices and nobody else does.
+    /// </summary>
+    public class QuoteSellerDto
+    {
+        /// <summary>What the workspace is called in the app.</summary>
+        public string Name { get; set; } = string.Empty;
+
+        /// <summary>The registered entity, when it differs from Name.</summary>
+        public string? LegalName { get; set; }
+
+        public string? AddressLine1 { get; set; }
+        public string? AddressLine2 { get; set; }
+        public string? City { get; set; }
+        public string? State { get; set; }
+        public string? PostalCode { get; set; }
+        public string? CountryName { get; set; }
+
+        public string? Phone { get; set; }
+
+        /// <summary>Where a reply should go — ReplyToEmail, not FromEmail.</summary>
+        public string? Email { get; set; }
+
+        public string? Website { get; set; }
+
+        public string? TaxNumber { get; set; }
+        public string? TaxNumberLabel { get; set; }
+
+        /// <summary>
+        /// The country's word for the tax itself — "VAT", "GST". Used for
+        /// the Tax column header and the totals row, which until 065 said
+        /// the generic "Tax" on a document where India expects "GST".
+        /// Distinct from TaxNumberLabel, which names the NUMBER.
+        /// </summary>
+        public string TaxLabel { get; set; } = "Tax";
+
+        /// <summary>
+        /// True when there is enough to be worth drawing a block. A name
+        /// alone is not a letterhead, and an empty bordered box looks more
+        /// broken than no box at all. Same test as
+        /// Tenant.HasCompanyProfile and the Company Profile page's preview.
+        /// </summary>
+        public bool HasDetails =>
+            !string.IsNullOrWhiteSpace(AddressLine1)
+            || !string.IsNullOrWhiteSpace(TaxNumber);
+
+        public string DisplayName =>
+            string.IsNullOrWhiteSpace(LegalName) ? Name : LegalName!;
+
+        /// <summary>The address, one printable line per element.</summary>
+        public IReadOnlyList<string> AddressLines()
+        {
+            var lines = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(AddressLine1)) lines.Add(AddressLine1!.Trim());
+            if (!string.IsNullOrWhiteSpace(AddressLine2)) lines.Add(AddressLine2!.Trim());
+
+            var town = string.Join(" ", new[] { City, State, PostalCode }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim()));
+
+            if (town.Length > 0) lines.Add(town);
+
+            if (!string.IsNullOrWhiteSpace(CountryName)) lines.Add(CountryName!.Trim());
+
+            return lines;
+        }
+
+        /// <summary>Phone · email · website, or null when there is none.</summary>
+        public string? ContactLine()
+        {
+            var parts = new[] { Phone, Email, Website }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim())
+                .ToArray();
+
+            return parts.Length == 0 ? null : string.Join("  ·  ", parts);
+        }
+
+        /// <summary>"VAT No.: 0105558012345", or null.</summary>
+        public string? TaxLine()
+        {
+            if (string.IsNullOrWhiteSpace(TaxNumber)) return null;
+
+            var label = string.IsNullOrWhiteSpace(TaxNumberLabel)
+                ? "Tax No."
+                : TaxNumberLabel!.Trim();
+
+            return $"{label}: {TaxNumber!.Trim()}";
+        }
     }
 
     public record QuoteListItem(
@@ -141,6 +275,21 @@ namespace MerkaiTrial.Application.DTOs
         public string? DiscountLabel => LineDiscounts.PercentLabel(DiscountPercent);
 
         public decimal TaxRate { get; set; }        // Decimal fraction: 0.18 for 18%
+
+        /// <summary>
+        /// 067: the tax classification this line was quoted under — HSN /
+        /// SAC in India, the local equivalent elsewhere, NULL where none
+        /// applies. Snapshotted onto the line, not joined to the product.
+        /// </summary>
+        public string? TaxCode { get; set; }
+
+        /// <summary>
+        /// 067: true when this line has a code to print. Saves every view
+        /// from writing its own IsNullOrWhiteSpace check, and keeps "no
+        /// code" meaning one thing across six screens.
+        /// </summary>
+        public bool HasTaxCode => !string.IsNullOrWhiteSpace(TaxCode);
+
         public decimal LineTotal { get; set; }
         public decimal LineTax { get; set; }
         public decimal LineGrandTotal { get; set; }
@@ -180,6 +329,13 @@ namespace MerkaiTrial.Application.DTOs
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate { get; set; }   // Decimal fraction: 0.18 for 18%
+
+        /// <summary>
+        /// 067. Left blank with a ProductId set, the handler snapshots the
+        /// product's own code — same arrangement as UnitOfMeasure above.
+        /// Trimmed, and blank stored as NULL (TaxCodes.Normalise).
+        /// </summary>
+        public string? TaxCode { get; set; }
     }
 
     public class UpdateQuoteDto
@@ -213,6 +369,14 @@ namespace MerkaiTrial.Application.DTOs
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate { get; set; }   // Decimal fraction: 0.18 for 18%
+
+        /// <summary>
+        /// 067. Blank + ProductId → snapshotted from the product. On an
+        /// EDIT the handler keeps whatever the line already had rather than
+        /// clearing it, so a page that posts nothing never silently wipes a
+        /// code somebody typed by hand.
+        /// </summary>
+        public string? TaxCode { get; set; }
     }
 
     public class UpdateQuoteStatusDto

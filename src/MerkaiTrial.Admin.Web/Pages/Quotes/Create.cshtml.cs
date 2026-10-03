@@ -53,6 +53,7 @@ using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;   // 067: TaxCodes
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -276,6 +277,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     return RedirectToPage(new { DealId = DealId.Value });
                 }
 
+                // 067: the column is NVARCHAR(20). TaxCodes.Normalise would
+                // quietly SHORTEN anything longer, which is the right thing
+                // for an API caller and the wrong thing for somebody sitting
+                // in front of the form — they would save, reopen, and find a
+                // code that is not the one they typed. Say so instead. The
+                // input carries maxlength=, so this only fires on a paste
+                // that bypassed it or a hand-made post.
+                if (items.Any(i => (i.TaxCode ?? string.Empty).Trim().Length > TaxCodes.MaxLength))
+                {
+                    // Deliberately NOT using TaxCodes.ColumnHeaderFor here:
+                    // the currency is resolved further down this method, and
+                    // reading the page's Currency property on a POST would
+                    // depend on whether the model binder happened to round-
+                    // trip it. A plain "tax code" is right in every market.
+                    ErrorMessage = $"A tax code can be at most {TaxCodes.MaxLength} characters.";
+                    return RedirectToPage(new { DealId = DealId.Value });
+                }
+
                 // ✅ (029) A quote that expires before it is issued was accepted
                 // by both the page and the API.
                 if (ExpiryDate.Date < IssueDate.Date)
@@ -341,7 +360,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                         UnitOfMeasure = i.UnitOfMeasure,
                         LineDiscount = i.LineDiscount,
                         DiscountPercent = i.DiscountPercent,   // 055
-                        TaxRate      = i.TaxRate / 100m  // % → decimal fraction
+                        TaxRate      = i.TaxRate / 100m,  // % → decimal fraction
+                        // 067. Sent for the same reason the unit is: a CUSTOM
+                        // line has no product to ask, and on an Indian
+                        // invoice it still needs a code.
+                        //
+                        // ?? "" rather than passing null: the editor always
+                        // posts this field, so an empty value means the rep
+                        // left it empty — and null would tell the handler to
+                        // go and fetch the product's code instead, which
+                        // would quietly undo clearing the box.
+                        TaxCode      = i.TaxCode ?? string.Empty
                     }).ToList()
                 };
 
@@ -602,5 +631,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate     { get; set; }  // As percentage (18 for 18%)
+
+        /// <summary>
+        /// 067: the tax classification code for this line — HSN / SAC in
+        /// India, the local equivalent elsewhere.
+        ///
+        /// The editor ALWAYS posts this field, empty string included, and
+        /// that matters: LineTaxCodes.Resolve reads "" as "this line has no
+        /// classification" and null as "nothing was said, ask the product".
+        /// Both pages forward it as `?? string.Empty` so clearing the box
+        /// actually clears the code instead of being helpfully refilled from
+        /// the catalogue.
+        /// </summary>
+        public string? TaxCode { get; set; }
     }
 }

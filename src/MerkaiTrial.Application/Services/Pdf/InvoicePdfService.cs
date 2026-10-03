@@ -7,7 +7,19 @@
 //   QuestPDF.Settings.License = LicenseType.Community;  // free for < $1M revenue
 //   builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
 //
-// COMPLETE FILE — 055. THE LINE TABLE HAD NO DISCOUNT COLUMN AT ALL.
+// COMPLETE FILE — 067. THE LINE TABLE GAINS A TAX CLASSIFICATION COLUMN,
+// and on an Indian invoice that is not a nicety: a GST invoice has to
+// carry the HSN or SAC code against every line. Products have carried the
+// code since 051 and it stopped at the product — the line it ended up on
+// had no field for it, so the document that legally needs it could not
+// print it.
+//
+// The column appears ONLY when at least one printed line on the invoice
+// has a code. Three of Merkai's four markets ask for nothing here, and a
+// permanently empty column on a document a customer files with their
+// accountant reads as something the sender forgot to fill in.
+//
+// 055. THE LINE TABLE HAD NO DISCOUNT COLUMN AT ALL.
 //
 // The totals block showed a "Discount:" line for the whole invoice, so the
 // money added up — but a customer looking at a line could not see that it
@@ -42,11 +54,14 @@
 //    now.
 // =====================================================================
 
+using MerkaiTrial.Application.Configuration;   // 067: TaxCodes
 using MerkaiTrial.Application.DTOs;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using System.Collections.Generic;              // 067
 using System.Globalization;
+using System.Linq;                             // 067
 
 namespace MerkaiTrial.Application.Services.Pdf
 {
@@ -71,12 +86,117 @@ namespace MerkaiTrial.Application.Services.Pdf
         public string NumberFormat { get; set; } = "N2";
     }
 
+    /// <summary>
+    /// The SELLER's letterhead — who the document is FROM.
+    ///
+    /// 065: everything below Country is new. Until 064 a workspace had
+    /// nowhere to record an address or a tax number, so this carried a
+    /// name, a phone number and a country and the PDF letterhead was four
+    /// lines deep. A Thai VAT or Indian GST document is expected to carry
+    /// the seller's registered number, and could not.
+    ///
+    /// THE THREE HELPERS AT THE BOTTOM ARE THE POINT. Both PDF services
+    /// and the public quote page lay this block out, and if each one
+    /// decided for itself when to print a comma, the three would drift —
+    /// which is how "LeadFlow CRM" survived in one footer and not the
+    /// other. The rule for assembling an address lives here, once.
+    /// </summary>
     public class TenantPdfInfo
     {
         public string Name    { get; set; } = string.Empty;
         public string? Phone  { get; set; }
         public string? Email  { get; set; }
         public string Country { get; set; } = string.Empty;
+
+        // ── 064 company profile ───────────────────────────────────────
+
+        /// <summary>The registered entity, when it differs from Name.</summary>
+        public string? LegalName    { get; set; }
+
+        public string? AddressLine1 { get; set; }
+        public string? AddressLine2 { get; set; }
+        public string? City         { get; set; }
+        public string? State        { get; set; }
+        public string? PostalCode   { get; set; }
+        public string? Website      { get; set; }
+
+        /// <summary>The seller's tax registration number.</summary>
+        public string? TaxNumber    { get; set; }
+
+        /// <summary>What that country calls it — "GSTIN", "VAT No.", "TRN".</summary>
+        public string? TaxNumberLabel { get; set; }
+
+        // ── Layout rules, in one place ────────────────────────────────
+
+        /// <summary>
+        /// The name on the letterhead: the registered entity when there is
+        /// one, otherwise what the workspace is called in the app.
+        /// </summary>
+        public string DisplayName =>
+            string.IsNullOrWhiteSpace(LegalName) ? Name : LegalName!;
+
+        /// <summary>
+        /// The address, one printable line per element, already stripped of
+        /// the parts that are not filled in. Country is always last and
+        /// always present; everything above it may be absent.
+        ///
+        /// Returned as lines rather than one comma-joined string because a
+        /// letterhead reads as a block, and because QuestPDF wants one
+        /// Text item per line anyway.
+        /// </summary>
+        public IReadOnlyList<string> AddressLines()
+        {
+            var lines = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(AddressLine1)) lines.Add(AddressLine1!.Trim());
+            if (!string.IsNullOrWhiteSpace(AddressLine2)) lines.Add(AddressLine2!.Trim());
+
+            // City, State and PostalCode share a line — three separate
+            // lines for "Bangkok", "Bangkok", "10120" is a tall thin
+            // letterhead that says very little.
+            var town = string.Join(" ", new[] { City, State, PostalCode }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim()));
+
+            if (town.Length > 0) lines.Add(town);
+
+            if (!string.IsNullOrWhiteSpace(Country)) lines.Add(Country.Trim());
+
+            return lines;
+        }
+
+        /// <summary>
+        /// "+66 2 123 4567 · sales@example.com · example.com", or null when
+        /// none of the three is filled in.
+        /// </summary>
+        public string? ContactLine()
+        {
+            var parts = new[] { Phone, Email, Website }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!.Trim())
+                .ToArray();
+
+            return parts.Length == 0 ? null : string.Join("  ·  ", parts);
+        }
+
+        /// <summary>
+        /// "VAT No.: 0105558012345", or null when there is no number.
+        ///
+        /// A number with no label would print bare, so the label falls back
+        /// to a generic word rather than leaving the reader to guess what
+        /// the digits are. 064's save path applies the same fallback, so in
+        /// practice this one rarely fires.
+        /// </summary>
+        public string? TaxLine()
+        {
+            if (string.IsNullOrWhiteSpace(TaxNumber)) return null;
+
+            var label = string.IsNullOrWhiteSpace(TaxNumberLabel)
+                ? "Tax No."
+                : TaxNumberLabel!.Trim();
+
+            return $"{label}: {TaxNumber!.Trim()}";
+        }
     }
 
     // ── QuestPDF implementation ───────────────────────────────────────
@@ -85,7 +205,25 @@ namespace MerkaiTrial.Application.Services.Pdf
         // ✅ Map currency code → CultureInfo for number formatting
         // Countries.NumberFormat stores "#,##0.00" patterns (Excel-style), not culture names
         // We derive culture from currency code instead
-        private static CultureInfo GetCultureForCurrency(string? currencyCode) => currencyCode switch
+        // ── 069 ──────────────────────────────────────────────────────
+        //
+        // FOUR CURRENCIES WERE MISSING. CurrencyConfiguration offers
+        // eleven; this switch knew seven, and SGD, MYR, AUD and CAD fell
+        // to InvariantCulture — which groups as 1,234.56 rather than
+        // wrongly, so nothing looked broken. It simply ignored the
+        // reader's locale on a document going to a customer.
+        //
+        // It mattered more from 069 on. A quote's currency comes from its
+        // DEAL, and a product can now be priced in any of the eleven, so
+        // a quote in SGD is reachable in a way it was not before.
+        //
+        // Case-insensitive now, for the same reason the lookups in
+        // CurrencyConfiguration became case-insensitive this round: the
+        // code arrives from Quotes.Currency, an nvarchar an import can
+        // put anything into, rather than from seeded reference data.
+        // "inr" used to fall through to InvariantCulture silently.
+        private static CultureInfo GetCultureForCurrency(string? currencyCode) =>
+            (currencyCode ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "INR" => new CultureInfo("en-IN"),
             "PHP" => new CultureInfo("en-PH"),
@@ -94,6 +232,10 @@ namespace MerkaiTrial.Application.Services.Pdf
             "USD" => new CultureInfo("en-US"),
             "EUR" => new CultureInfo("en-IE"),
             "GBP" => new CultureInfo("en-GB"),
+            "SGD" => new CultureInfo("en-SG"),   // 069
+            "MYR" => new CultureInfo("ms-MY"),   // 069
+            "AUD" => new CultureInfo("en-AU"),   // 069
+            "CAD" => new CultureInfo("en-CA"),   // 069
             _     => CultureInfo.InvariantCulture
         };
 
@@ -109,6 +251,28 @@ namespace MerkaiTrial.Application.Services.Pdf
             // ✅ Resolve culture once — never use model.NumberFormat directly
             var culture = GetCultureForCurrency(model.CurrencyCode);
 
+            // ── 067: the tax-classification column ────────────────────
+            //
+            // The lines are filtered and hoisted out of the table builder
+            // for one reason: the column DEFINITION has to know whether
+            // the column exists before any row is drawn, and that answer
+            // has to come from the same set of lines the rows come from.
+            // Deciding it from model.Invoice.Lines while the rows came
+            // from the filtered list would, for a credit line carrying the
+            // only code on the invoice, add a column of nothing but dashes.
+            //
+            // Rendered only when at least one PRINTED line has a code, so
+            // a Thai or Philippine invoice is byte-for-byte what it was
+            // before this round. The header comes from the currency —
+            // "HSN / SAC" in India, "Tax code" elsewhere — and TaxCodes is
+            // the one place that mapping lives.
+            var lineItems = (model.Invoice.Lines ?? new List<InvoiceLineDto>())
+                .Where(l => l.LineGrandTotal >= 0)
+                .ToList();
+
+            var showTaxCode = TaxCodes.AnyPresent(lineItems.Select(l => l.TaxCode));
+            var taxCodeHead = TaxCodes.ColumnHeaderFor(model.CurrencyCode);
+
             return Document.Create(container =>
             {
                 container.Page(page =>
@@ -122,24 +286,36 @@ namespace MerkaiTrial.Application.Services.Pdf
                         // ── HEADER ─────────────────────────────────────────────
                         col.Item().Row(row =>
                         {
-                            // Left: tenant name + contact
+                            // Left: the SELLER's letterhead.
+                            //
+                            // 065: was name, email, phone, country — four
+                            // lines with no address and no tax number, so
+                            // this invoice could not be the tax document
+                            // it claims to be in India or Thailand. The
+                            // layout rules live on TenantPdfInfo so this
+                            // block and QuotePdfService's cannot drift.
                             row.RelativeItem().Column(c =>
                             {
                                 c.Item()
-                                    .Text(model.Tenant.Name)
+                                    .Text(model.Tenant.DisplayName)
                                     .FontSize(20).Bold()
                                     .FontColor(AccentHex);
 
-                                if (!string.IsNullOrEmpty(model.Tenant.Email))
-                                    c.Item().Text(model.Tenant.Email)
-                                        .FontSize(9).FontColor(MutedHex);
+                                foreach (var line in model.Tenant.AddressLines())
+                                    c.Item().Text(line).FontSize(9).FontColor(MutedHex);
 
-                                if (!string.IsNullOrEmpty(model.Tenant.Phone))
-                                    c.Item().Text(model.Tenant.Phone)
-                                        .FontSize(9).FontColor(MutedHex);
+                                var contact = model.Tenant.ContactLine();
+                                if (contact is not null)
+                                    c.Item().PaddingTop(2)
+                                        .Text(contact).FontSize(9).FontColor(MutedHex);
 
-                                c.Item().Text(model.Tenant.Country)
-                                    .FontSize(9).FontColor(MutedHex);
+                                // Darker and spaced off the rest: on a tax
+                                // invoice this is the line somebody is
+                                // actually looking for.
+                                var tax = model.Tenant.TaxLine();
+                                if (tax is not null)
+                                    c.Item().PaddingTop(3)
+                                        .Text(tax).FontSize(9).Bold().FontColor("#374151");
                             });
 
                             // Right: INVOICE label + number
@@ -253,7 +429,16 @@ namespace MerkaiTrial.Application.Services.Pdf
                                 // A quantity is "12.5 m²" now, not "12".
                                 // 055: Description 3.3 -> 2.2 to make room for
                                 // Discount, which this table never had.
-                                cols.RelativeColumn(2.2f);// Description
+                                // 067: Description 2.2 -> 1.4 when there are
+                                // codes to print. Taken from Description for
+                                // the same reason 055 took from it: it is the
+                                // only column here that WRAPS, so it loses
+                                // height rather than content, while every
+                                // other column is a fixed-width number that
+                                // would start clipping.
+                                cols.RelativeColumn(showTaxCode ? 1.4f : 2.2f);// Description
+                                if (showTaxCode)
+                                    cols.ConstantColumn(66);  // 067: HSN / SAC
                                 cols.ConstantColumn(64);  // Qty
                                 cols.ConstantColumn(80);  // Unit Price
                                 cols.ConstantColumn(72);  // Discount   (055)
@@ -275,14 +460,17 @@ namespace MerkaiTrial.Application.Services.Pdf
                             HeaderCell("#");
                             HeaderCell("Item");
                             HeaderCell("Description");
+                            if (showTaxCode) HeaderCell(taxCodeHead);   // 067
                             HeaderCell("Qty", true);
                             HeaderCell("Unit Price", true);
                             HeaderCell("Discount", true);          // 055
                             HeaderCell($"{model.TaxLabel} %", true);
                             HeaderCell("Total", true);
 
-                            // Data rows
-                            var lineItems = model.Invoice.Lines.Where(l => l.LineGrandTotal >= 0).ToList();
+                            // Data rows — lineItems is built at the top of
+                            // Generate, so the column definition above and
+                            // these rows cannot disagree about which lines
+                            // the invoice has. (067)
                             for (int i = 0; i < lineItems.Count; i++)
                             {
                                 var line   = lineItems[i];
@@ -307,6 +495,15 @@ namespace MerkaiTrial.Application.Services.Pdf
                                 DataCell((i + 1).ToString(), color: MutedHex);
                                 DataCell(line.Name ?? "—", bold: true);
                                 DataCell(line.Description ?? "—", color: MutedHex);
+
+                                // 067. An em dash where a line has no code,
+                                // so a reader can tell "not classified" from
+                                // "the column didn't print". Left-aligned: a
+                                // code is a reference, not a number.
+                                if (showTaxCode)
+                                    DataCell(line.HasTaxCode ? line.TaxCode! : "—",
+                                        color: line.HasTaxCode ? "#374151" : MutedHex);
+
                                 // 052b: "12.5 m²", not "12.5000".
                                 DataCell(line.QuantityDisplay, alignRight: true);
                                 DataCell($"{sym}{line.UnitPrice.ToString("N2", culture)}", alignRight: true);

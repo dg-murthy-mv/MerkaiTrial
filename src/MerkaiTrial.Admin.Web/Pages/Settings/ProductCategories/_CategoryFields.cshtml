@@ -1,0 +1,147 @@
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories.IndexModel
+@* =====================================================================
+   Settings/ProductCategories/_CategoryFields.cshtml — NEW (068).
+
+   The four fields, rendered by BOTH the add form and the edit form.
+
+   WHY A PARTIAL AND NOT TWO COPIES
+
+   Because round 029 already paid for this lesson on the quote line
+   editor: Create.cshtml and Edit.cshtml each carried their own copy of
+   the same editor, the two drifted, and one of them ended up with an
+   XSS hole and a null-reference crash the other did not have. Four
+   fields is small enough to copy and exactly big enough to drift.
+
+   It reads nothing except Model.Input, Model.Icons and Model.Swatches,
+   so the add form and the edit form cannot diverge in what they accept.
+
+   The id= attributes are left to the tag helpers (asp-for generates
+   Input_Name, Input_Icon and so on). The RADIO inputs need unique ids
+   of their own because each has a <label for="...">, and those are
+   built from the value — which is a CSS class or a hex colour, both
+   safe in an id.
+   ===================================================================== *@
+
+<div class="row g-3">
+
+    @* ── NAME ────────────────────────────────────────────────────── *@
+    <div class="col-md-7">
+        <label asp-for="Input.Name" class="form-label">Name</label>
+        <input asp-for="Input.Name" class="form-control"
+               maxlength="@Model.NameMaxLength" autocomplete="off"
+               placeholder="e.g. Course material" />
+        <small class="text-muted">
+            This is the word that appears on the product, in the category filter
+            and in the catalogue picker inside a quote.
+        </small>
+        <span asp-validation-for="Input.Name" class="text-danger small d-block"></span>
+    </div>
+
+    @* ── ACTIVE ──────────────────────────────────────────────────── *@
+    <div class="col-md-5">
+        <label class="form-label d-block">Availability</label>
+        <div class="form-check form-switch mt-1">
+            <input asp-for="Input.IsActive" class="form-check-input" role="switch"
+                   style="width:2.5em; height:1.3em; cursor:pointer;" />
+            <label asp-for="Input.IsActive" class="form-check-label">
+                Offer this for new products
+            </label>
+        </div>
+        <small class="text-muted">
+            Switch it off to retire a category. Products already using it keep it.
+        </small>
+    </div>
+
+    @* ── ICON ────────────────────────────────────────────────────── *@
+    <div class="col-md-7">
+        <label class="form-label">Icon</label>
+        <div class="pc-icons" role="radiogroup" aria-label="Category icon">
+            @foreach (var icon in Model.Icons)
+            {
+                var id = "pcIcon_" + icon.Replace("-", "_");
+                <input type="radio" asp-for="Input.Icon" value="@icon" id="@id" />
+                <label for="@id" title="@icon"><i class="@icon"></i></label>
+            }
+        </div>
+        <small class="text-muted">
+            Picked from a list rather than typed — a class name with a typo in it
+            renders as nothing at all, and an invisible category is hard to notice.
+        </small>
+        <span asp-validation-for="Input.Icon" class="text-danger small d-block"></span>
+    </div>
+
+    @* ── COLOUR ──────────────────────────────────────────────────── *@
+    <div class="col-md-5">
+        <label class="form-label">Colour</label>
+
+        <div class="pc-colors mb-2" role="radiogroup" aria-label="Category colour">
+            @foreach (var swatch in Model.Swatches)
+            {
+                var id = "pcColor_" + swatch.TrimStart('#');
+                <input type="radio" name="SwatchPick" value="@swatch" id="@id"
+                       checked="@(string.Equals(Model.Input.Color, swatch, StringComparison.OrdinalIgnoreCase))"
+                       data-pc-swatch="@swatch" />
+                <label for="@id" style="background-color: @swatch;" title="@swatch"></label>
+            }
+        </div>
+
+        @* The real field. The swatches above write into it, and it stays
+           editable so somebody matching a brand palette can type a hex
+           the swatch row does not offer. name="SwatchPick" on the radios
+           keeps them OUT of the posted model — only this input is bound,
+           so there is one source of truth for the saved value. *@
+        <div class="input-group input-group-sm">
+            <span class="input-group-text p-1">
+                <span id="pcColorPreview"
+                      style="display:inline-block; width:1.4rem; height:1.4rem; border-radius:5px;
+                             background-color:@Model.Input.Color; box-shadow:0 0 0 1px #d7dde3;"></span>
+            </span>
+            <input asp-for="Input.Color" class="form-control" id="pcColorValue"
+                   maxlength="7" autocomplete="off" spellcheck="false"
+                   placeholder="#3b82f6" aria-label="Colour as a hex value" />
+        </div>
+        <span asp-validation-for="Input.Color" class="text-danger small d-block"></span>
+    </div>
+</div>
+
+@* Swatch → hex box, and the little preview square. Delegated listeners
+   and no inline handlers, the same rule round 029 set for the quote line
+   editor: nothing server-provided is ever interpolated into a JavaScript
+   string here, so a colour or an icon name is only ever data.
+
+   This block is inside the partial on purpose. It is rendered twice at
+   most (never both at once — the page shows either the add form or one
+   edit form), the listeners are attached to document once, and the
+   lookups are by id. Putting it in the page would separate the script
+   from the only markup it touches. *@
+<script>
+    (function () {
+        'use strict';
+        if (window.__pcColorWired) return;
+        window.__pcColorWired = true;
+
+        function paint(hex) {
+            var box = document.getElementById('pcColorPreview');
+            if (box && /^#[0-9A-Fa-f]{6}$/.test(hex)) box.style.backgroundColor = hex;
+        }
+
+        document.addEventListener('change', function (e) {
+            var el = e.target;
+            if (!el || !el.getAttribute) return;
+
+            var swatch = el.getAttribute('data-pc-swatch');
+            if (!swatch) return;
+
+            var field = document.getElementById('pcColorValue');
+            if (field) {
+                field.value = swatch;
+                paint(swatch);
+            }
+        });
+
+        document.addEventListener('input', function (e) {
+            if (e.target && e.target.id === 'pcColorValue') paint(e.target.value);
+        });
+    })();
+</script>

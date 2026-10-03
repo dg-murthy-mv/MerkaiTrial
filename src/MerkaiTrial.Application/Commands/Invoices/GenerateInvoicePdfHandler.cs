@@ -98,15 +98,37 @@ namespace MerkaiTrial.Application.Commands.Invoices
             // ── Load tenant info ─────────────────────────────────────────
             var tenantName  = _tenantService.GetTenantName();
 
-            // Phone + FromEmail not on ICurrentTenantService yet — load directly
-            var tenantContact = await _db.Tenants
+            // 065: was { Phone, FromEmail }. The company profile columns
+            // 064 added are what let an invoice name the seller and carry a
+            // tax registration number — which is the difference between a
+            // receipt and a document somebody can file.
+            var tenantInfo = await _db.Tenants
                 .AsNoTracking()
                 .Where(t => t.Id == tenantId && !t.IsDeleted)
-                .Select(t => new { t.Phone, t.FromEmail })
+                .Select(t => new
+                {
+                    t.Phone,
+                    t.FromEmail,
+                    t.ReplyToEmail,
+                    t.LegalName,
+                    t.AddressLine1,
+                    t.AddressLine2,
+                    t.City,
+                    t.State,
+                    t.PostalCode,
+                    t.Website,
+                    t.TaxNumber,
+                    t.TaxNumberLabel
+                })
                 .FirstOrDefaultAsync(ct);
 
-            var tenantPhone = tenantContact?.Phone;
-            var tenantEmail = tenantContact?.FromEmail;
+            var tenantPhone = tenantInfo?.Phone;
+
+            // ReplyToEmail first — FromEmail is the sending identity, often
+            // a no-reply address, and an invoice is something people answer.
+            var tenantEmail = !string.IsNullOrWhiteSpace(tenantInfo?.ReplyToEmail)
+                ? tenantInfo!.ReplyToEmail
+                : tenantInfo?.FromEmail;
 
             // ── Build InvoiceDto from entity (re-use query handler logic) ─
             // 053. An invoice reaches its customer either directly (DealId)
@@ -159,8 +181,30 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     Quantity       = l.Quantity,
                     UnitOfMeasure  = l.UnitOfMeasure,          // 052c
                     UnitPrice      = l.UnitPrice,
+
                     LineDiscount   = l.LineDiscount,
+
+                    // 065 — THE SAME DEFECT FROM 055 AS THE QUOTE HANDLER
+                    // HAD. InvoicePdfService prints line.DiscountLabel,
+                    // which is computed from DiscountPercent, and this
+                    // handler builds its own InvoiceDto and never set it.
+                    // So every invoice PDF printed the discount AMOUNT even
+                    // on lines agreed as a percentage — and the quote the
+                    // invoice was raised from said "-10%".
+                    //
+                    // Exactly what this file's own 052c note warns about:
+                    // it mirrors InvoicesQueries by hand, so a field added
+                    // there has to be added here as well.
+                    DiscountPercent = l.DiscountPercent,       // 065
+
                     TaxRate        = l.TaxRate,
+
+                    // 067. Same hazard again. The PDF turns the HSN / SAC
+                    // column on by asking whether any line has a code, so
+                    // omitting this line would silently print every Indian
+                    // tax invoice without the classification it is required
+                    // to carry — no error, nothing to notice.
+                    TaxCode        = l.TaxCode,                // 067
                     LineTotal      = (l.UnitPrice * l.Quantity) - l.LineDiscount,
                     LineTax        = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * l.TaxRate,
                     LineGrandTotal = ((l.UnitPrice * l.Quantity) - l.LineDiscount) * (1 + l.TaxRate)
@@ -190,12 +234,25 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 DateFormat     = _tenantService.GetDateFormat(),
                 TaxLabel       = _tenantService.GetTaxLabel(),
                 NumberFormat   = _tenantService.GetNumberFormat(),
+                // 065: the full letterhead — see TenantPdfInfo, where the
+                // layout rules live so this and the quote PDF assemble the
+                // block with the same code.
                 Tenant         = new TenantPdfInfo
                 {
                     Name    = tenantName,
                     Phone   = tenantPhone,
                     Email   = tenantEmail,
-                    Country = _tenantService.GetCountryName()
+                    Country = _tenantService.GetCountryName(),
+
+                    LegalName      = tenantInfo?.LegalName,
+                    AddressLine1   = tenantInfo?.AddressLine1,
+                    AddressLine2   = tenantInfo?.AddressLine2,
+                    City           = tenantInfo?.City,
+                    State          = tenantInfo?.State,
+                    PostalCode     = tenantInfo?.PostalCode,
+                    Website        = tenantInfo?.Website,
+                    TaxNumber      = tenantInfo?.TaxNumber,
+                    TaxNumberLabel = tenantInfo?.TaxNumberLabel
                 }
             };
 

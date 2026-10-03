@@ -1,0 +1,338 @@
+@using System.Globalization
+@using System.Text.Json
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Products.PriceGridVm
+@{
+    // The currencies offerable here: everything Merkai can price in,
+    // MINUS the workspace's own. The home price is the main price field
+    // above this partial, and the API refuses a row in that currency —
+    // two places to store it would disagree and nothing would say which
+    // one a quote had used.
+    var offerable = CurrencyConfiguration.Currencies
+        .Where(c => !string.Equals(c.Code, Model.HomeCurrencyCode, StringComparison.OrdinalIgnoreCase))
+        .Select(c => new { code = c.Code, name = c.Name, symbol = c.Symbol, decimals = c.Decimals })
+        .ToList();
+
+}
+@* =====================================================================
+   Products/_PriceGrid.cshtml — NEW (069).
+
+   Prices in currencies OTHER than the workspace's own, rendered by BOTH
+   Create.cshtml and Edit.cshtml.
+
+   ── WHY A PARTIAL ───────────────────────────────────────────────────
+
+   The same lesson rounds 029 and 068 both paid for. Create and Edit
+   each carried their own copy of the quote line editor; they drifted,
+   and one copy ended up with an XSS hole and a null-reference crash the
+   other did not have. A grid of currencies and prices is small enough
+   to copy and exactly big enough to drift.
+
+   ── WHY IT POSTS JSON RATHER THAN INDEXED FORM FIELDS ───────────────
+
+   Prices[0].CurrencyCode / Prices[0].ListPrice would bind natively, and
+   it would work until somebody removed the middle row: the indexes gap,
+   the model binder stops at the first missing index, and the rows after
+   the gap are silently dropped. Renumbering them in JavaScript is the
+   usual answer and is one more thing to get wrong.
+
+   One hidden field holding JSON is the pattern _QuoteItemsEditor has
+   used since 029 and it has not bitten once. The page model deserialises
+   it with the same options.
+
+   ── NULL vs EMPTY ───────────────────────────────────────────────────
+
+   The hidden field ALWAYS posts — "[]" when the grid is empty. That
+   matters: the API treats null as "the caller said nothing, leave the
+   prices alone" and an empty list as "no other currencies, remove
+   them". Since this form is the complete statement of a product's
+   prices, it has to send the empty list rather than nothing.
+   ===================================================================== *@
+
+<style>
+    .pg-wrap { border: 1px solid #e5e8ec; border-radius: 10px; background: #fbfcfd; padding: .85rem .9rem; }
+    .pg-row { display: flex; gap: .5rem; align-items: start; margin-bottom: .45rem; }
+    .pg-row .pg-cur { flex: 0 0 11rem; }
+    .pg-row .pg-amt { flex: 1 1 auto; min-width: 0; }
+    .pg-row .pg-rm  { flex: 0 0 auto; }
+    .pg-rm .btn { --bs-btn-padding-y: .3rem; --bs-btn-padding-x: .5rem; }
+    .pg-empty { color: #94a3b8; font-size: .86rem; padding: .35rem 0 .15rem; }
+    .pg-sym { min-width: 3rem; justify-content: center; font-weight: 600; color: #475569; }
+    .pg-home { font-size: .8rem; color: #64748b; }
+    .pg-home strong { color: #0f172a; }
+</style>
+
+<div class="pg-wrap" id="pgWrap">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="pg-home">
+            Priced in <strong>@Model.HomeCurrencyCode</strong> above.
+            Add a price here for any other currency you quote in.
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="pgAdd">
+            <i class="bi bi-plus-lg me-1"></i>Add currency
+        </button>
+    </div>
+
+    <div id="pgRows"></div>
+
+    <div class="pg-empty d-none" id="pgEmpty">
+        No other currencies. Quotes in @Model.HomeCurrencyCode use the price above.
+    </div>
+
+    <div class="alert alert-warning py-2 px-3 small mt-2 d-none" id="pgProblem" role="alert"></div>
+
+    @* The one posted field. See the note at the top on why it is JSON.
+       Bound by NAME to the page handler's parameter, not with asp-for:
+       asp-for would derive the name from the PARTIAL's model and post
+       something like PriceGridVm.Prices, which no handler takes.
+
+       value= IS THE SEEDED LIST, NOT "[]". If the script below fails to
+       run — a JS error elsewhere on the page, a blocked inline script —
+       an "[]" default would post "no other currencies" and silently
+       delete every price on the product as a side effect of saving its
+       name. Seeding it means a broken script leaves the prices exactly
+       as they were. *@
+    <input type="hidden" name="@Model.PricesJsonFieldName" id="pgJson"
+           value="@Model.PricesJson" />
+</div>
+
+<script>
+    (function () {
+        'use strict';
+
+        var wrap = document.getElementById('pgWrap');
+        if (!wrap) return;
+
+        var rowsEl   = document.getElementById('pgRows');
+        var emptyEl  = document.getElementById('pgEmpty');
+        var jsonEl   = document.getElementById('pgJson');
+        var addBtn   = document.getElementById('pgAdd');
+        var problem  = document.getElementById('pgProblem');
+
+        // Server data, serialised rather than written out as JS
+        // literals — a currency NAME is server data going into a script
+        // block, and "Côte d'Ivoire Franc" is harmless only until it
+        // isn't.
+        var CURRENCIES = @Html.Raw(JsonSerializer.Serialize(offerable));
+        // THE SAME STRING the hidden field above was rendered with, so
+        // the field and the grid can never start out disagreeing.
+        var SEED       = @Html.Raw(Model.PricesJson);
+        var FORM_ID    = @Html.Raw(JsonSerializer.Serialize(Model.FormId));
+
+        var uid  = 1;
+        var rows = [];
+
+        function num(v, d) {
+            var n = parseFloat(v);
+            return isFinite(n) ? n : d;
+        }
+
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .split('&').join('&amp;')
+                .split('<').join('&lt;')
+                .split('>').join('&gt;')
+                .split('"').join('&quot;')
+                .split("'").join('&#39;');
+        }
+
+        function currencyById(code) {
+            for (var i = 0; i < CURRENCIES.length; i++)
+                if (CURRENCIES[i].code === code) return CURRENCIES[i];
+            return null;
+        }
+
+        /// Codes already chosen, so the same currency cannot be picked
+        /// twice. The API refuses it too — "USD is listed twice" — but
+        /// being told after a round trip is a worse way to find out than
+        /// not being offered it.
+        function taken(exceptKey) {
+            var t = {};
+            for (var i = 0; i < rows.length; i++)
+                if (rows[i].key !== exceptKey && rows[i].currencyCode)
+                    t[rows[i].currencyCode] = true;
+            return t;
+        }
+
+        function firstFree() {
+            var t = taken(null);
+            for (var i = 0; i < CURRENCIES.length; i++)
+                if (!t[CURRENCIES[i].code]) return CURRENCIES[i].code;
+            return '';
+        }
+
+        function options(selected, key) {
+            var t = taken(key);
+            var html = '<option value="">Pick a currency…</option>';
+            for (var i = 0; i < CURRENCIES.length; i++) {
+                var c = CURRENCIES[i];
+                // A currency used by ANOTHER row is left out, except the
+                // one this row already holds — which must stay in its own
+                // list or the select would lose its value.
+                if (t[c.code] && c.code !== selected) continue;
+                html += '<option value="' + esc(c.code) + '"' +
+                        (c.code === selected ? ' selected' : '') + '>' +
+                        esc(c.code) + ' — ' + esc(c.name) + '</option>';
+            }
+            return html;
+        }
+
+        function render() {
+            if (rows.length === 0) {
+                rowsEl.innerHTML = '';
+                if (emptyEl) emptyEl.classList.remove('d-none');
+                sync();
+                return;
+            }
+            if (emptyEl) emptyEl.classList.add('d-none');
+
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var c = currencyById(r.currencyCode);
+                var sym = c ? c.symbol : '';
+
+                html +=
+                '<div class="pg-row" data-key="' + r.key + '">' +
+                  '<div class="pg-cur">' +
+                    '<select class="form-select form-select-sm" data-key="' + r.key + '"' +
+                      ' data-f="currencyCode" aria-label="Currency, price ' + (i + 1) + '">' +
+                      options(r.currencyCode, r.key) +
+                    '</select>' +
+                  '</div>' +
+                  '<div class="pg-amt">' +
+                    '<div class="input-group input-group-sm">' +
+                      '<span class="input-group-text pg-sym">' + esc(sym) + '</span>' +
+                      '<input type="number" class="form-control" data-key="' + r.key + '"' +
+                        ' data-f="listPrice" value="' + r.listPrice + '"' +
+                        ' min="0" step="0.01" inputmode="decimal"' +
+                        ' aria-label="Price ' + (i + 1) + '" />' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="pg-rm">' +
+                    '<button type="button" class="btn btn-outline-danger" data-pg-rm="' + r.key + '"' +
+                      ' title="Remove this currency" aria-label="Remove price ' + (i + 1) + '">' +
+                      '<i class="bi bi-trash"></i></button>' +
+                  '</div>' +
+                '</div>';
+            }
+            rowsEl.innerHTML = html;
+            sync();
+        }
+
+        function rowByKey(k) {
+            for (var i = 0; i < rows.length; i++) if (rows[i].key === k) return rows[i];
+            return null;
+        }
+
+        /// Writes the hidden field. Called on every change, not only on
+        /// submit: an input event that does not fire — a browser autofill
+        /// path, a value set by script — is how the quote editor used to
+        /// drop a line, and syncing eagerly is what 029 replaced that
+        /// with.
+        function sync() {
+            var out = [];
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                if (!r.currencyCode) continue;          // an unfinished row
+                out.push({ currencyCode: r.currencyCode, listPrice: num(r.listPrice, 0) });
+            }
+            // ALWAYS a JSON array, "[]" included. The API reads null as
+            // "leave the prices alone" and [] as "remove them", and this
+            // form is the complete statement of a product's prices.
+            jsonEl.value = JSON.stringify(out);
+        }
+
+        function problems() {
+            var msgs = [];
+            var seen = {};
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                if (!r.currencyCode) continue;
+                if (seen[r.currencyCode]) msgs.push(r.currencyCode + ' is listed twice.');
+                seen[r.currencyCode] = true;
+                if (num(r.listPrice, -1) < 0) msgs.push('The ' + r.currencyCode + ' price cannot be negative.');
+            }
+            return msgs;
+        }
+
+        function showProblems(msgs) {
+            if (!problem) return;
+            if (msgs.length === 0) { problem.classList.add('d-none'); problem.textContent = ''; return; }
+            problem.textContent = msgs.join(' ');
+            problem.classList.remove('d-none');
+        }
+
+        // ── events ───────────────────────────────────────────────────
+        if (addBtn) addBtn.addEventListener('click', function () {
+            if (rows.length >= CURRENCIES.length) return;   // every currency used
+            rows.push({ key: uid++, currencyCode: firstFree(), listPrice: 0 });
+            render();
+        });
+
+        rowsEl.addEventListener('change', function (e) {
+            var el = e.target;
+            if (!el || !el.getAttribute) return;
+            var f = el.getAttribute('data-f');
+            var k = parseInt(el.getAttribute('data-key'), 10);
+            if (!f || !Number.isFinite(k)) return;
+
+            var r = rowByKey(k);
+            if (!r) return;
+
+            if (f === 'currencyCode') {
+                // A string, not a number. Without this branch the select
+                // would fall into num() below and every change would
+                // store 0 — the same trap the quote editor's unit select
+                // had before 052.
+                r.currencyCode = el.value || '';
+                render();          // the symbol and the other selects move
+                return;
+            }
+
+            r.listPrice = num(el.value, 0);
+            sync();
+            showProblems(problems());
+        });
+
+        rowsEl.addEventListener('input', function (e) {
+            var el = e.target;
+            if (!el || el.getAttribute('data-f') !== 'listPrice') return;
+            var k = parseInt(el.getAttribute('data-key'), 10);
+            var r = Number.isFinite(k) ? rowByKey(k) : null;
+            if (!r) return;
+            r.listPrice = num(el.value, 0);
+            sync();
+        });
+
+        rowsEl.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-pg-rm]') : null;
+            if (!btn) return;
+            var k = parseInt(btn.getAttribute('data-pg-rm'), 10);
+            rows = rows.filter(function (r) { return r.key !== k; });
+            render();
+            showProblems(problems());
+        });
+
+        // Belt and braces on submit. The field is already in sync, but a
+        // page whose form is submitted by script rather than by a button
+        // gets one last pass.
+        var form = document.getElementById(FORM_ID);
+        if (form) form.addEventListener('submit', function (e) {
+            sync();
+            var msgs = problems();
+            showProblems(msgs);
+            if (msgs.length > 0) e.preventDefault();
+        });
+
+        // ── seed ─────────────────────────────────────────────────────
+        for (var i = 0; i < SEED.length; i++) {
+            rows.push({
+                key: uid++,
+                currencyCode: SEED[i].currencyCode || '',
+                listPrice: num(SEED[i].listPrice, 0)
+            });
+        }
+        render();
+    })();
+</script>

@@ -212,6 +212,17 @@ public static class AdminWebServiceRegistration
         services.AddScoped<ICompanyService, CompanyService>();
         services.AddScoped<IProductService, ProductService>();
 
+        // 068 — product categories.
+        //
+        // Read by the four Products pages for the Category dropdown and
+        // for every row's icon and colour, and written by
+        // Settings/ProductCategories. Without this line the app starts
+        // normally and then throws "Unable to resolve service for type
+        // 'IProductCategoryService'" the first time anybody opens the
+        // products list — which is the worst shape of DI failure, because
+        // it looks like a page bug rather than a missing registration.
+        services.AddScoped<IProductCategoryService, ProductCategoryService>();
+
         // Workspace settings
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRoleService, RoleService>();

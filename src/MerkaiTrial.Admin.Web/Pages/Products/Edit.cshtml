@@ -1,4 +1,5 @@
 @page "/Products/Edit/{id}"
+@using System.Linq
 @model MerkaiTrial.Admin.Web.Pages.Products.EditModel
 @{
     ViewData["Title"] = "Edit Product";
@@ -23,7 +24,8 @@
         </div>
     }
 
-    <form method="post">
+    @* 069: id= so _PriceGrid can hook this form's submit event. *@
+    <form method="post" id="productForm">
         <input type="hidden" asp-for="Id" />
         <div class="row g-4">
             <div class="col-lg-8">
@@ -54,9 +56,31 @@
                                 <label asp-for="Input.Category" class="form-label">
                                     Category <span class="text-danger">*</span>
                                 </label>
-                                <select asp-for="Input.Category" asp-items="Model.GetCategoryOptions()" class="form-select">
-                                    <option value="">-- Select Category --</option>
-                                </select>
+                                @* 068: the workspace's own categories, from
+                                   Settings -> Product Categories, rather than the
+                                   eight hardcoded ones. An EMPTY list is a real
+                                   state — every category removed, or the API
+                                   unreachable — and a dropdown with one dead
+                                   placeholder in it explains nothing, so say what
+                                   to do instead. *@
+                                @if (Model.CategoryNames.Any())
+                                {
+                                    <select asp-for="Input.Category" asp-items="Model.GetCategoryOptions()" class="form-select">
+                                        <option value="">-- Select Category --</option>
+                                    </select>
+                                }
+                                else
+                                {
+                                    <select class="form-select" disabled>
+                                        <option>No categories available</option>
+                                    </select>
+                                    <div class="form-text text-warning-emphasis">
+                                        <i class="bi bi-exclamation-triangle me-1"></i>
+                                        Your workspace has no product categories.
+                                        <a asp-page="/Settings/ProductCategories/Index">Add one</a>
+                                        and come back — a product needs a category.
+                                    </div>
+                                }
                                 <span asp-validation-for="Input.Category" class="text-danger small"></span>
                             </div>
                         </div>
@@ -98,11 +122,56 @@
                             </div>
 
                             <div class="col-md-4">
-                                @* Currency is tenant-level — not editable per product *@
+                                @* Currency is workspace-level — not editable per
+                                   product. The price ABOVE is in this currency; see
+                                   Product.ListPrice. 069 adds the other currencies
+                                   in their own block below rather than making this
+                                   field editable, because changing a product's
+                                   currency and adding a second price are two
+                                   different intentions. *@
                                 <label class="form-label">Currency</label>
                                 <input type="hidden" asp-for="Input.Currency" />
                                 <input class="form-control bg-light" value="@Model.TenantCurrencyCode — @Model.TenantCurrencyName" readonly />
-                                <div class="form-text">Set by your tenant configuration.</div>
+                                <div class="form-text">Set by your workspace configuration.</div>
+                            </div>
+
+                            @* ── 069: PRICES IN OTHER CURRENCIES ──────────
+                               Full width, below the home price rather than
+                               beside it, because it is a list that grows and
+                               the three fields above it are singular.
+
+                               WHY THIS IS HERE AND NOT ONLY ON THE EDIT PAGE:
+                               a product's non-home prices are part of deciding
+                               what the product IS. Making somebody save it
+                               first and then come back would mean the first
+                               quote raised in USD against a brand-new product
+                               has no price — which is the exact hole this round
+                               is closing. *@
+                            <div class="col-12">
+                                <label class="form-label">Prices in other currencies</label>
+                                <partial name="_PriceGrid" model="Model.PriceGrid" />
+                            </div>
+
+                            @* ── 070: WHAT A BUNDLE CONTAINS ──────────────
+                               Hidden unless the kind is Bundle. Shown and
+                               hidden by the script at the bottom of this page
+                               without a round trip, because somebody choosing
+                               "Bundle" from the dropdown should not have to
+                               save first to find out what that means.
+
+                               ALWAYS RENDERED, not conditionally: the grid
+                               posts a hidden field, and a field that is absent
+                               from the DOM posts nothing — which the API reads
+                               as "the caller said nothing about contents" and
+                               leaves them alone. For a product being changed
+                               FROM a bundle TO a service that is almost right,
+                               and the handler clears the contents anyway, but
+                               rendering it always means the browser and the
+                               server agree about what an empty bundle looks
+                               like. *@
+                            <div class="col-12 d-none" id="bundleSection">
+                                <label class="form-label">What this bundle contains</label>
+                                <partial name="_BundleGrid" model="Model.BundleGrid" />
                             </div>
 
                             <div class="col-md-4">
@@ -186,4 +255,34 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+
+    @* ── 070 ─────────────────────────────────────────────────────────────
+       Show the bundle grid only for the Bundle kind.
+
+       Not in _BundleGrid itself: the partial owns the grid, this page owns
+       the layout, and a partial reaching out to toggle a container it does
+       not render would be the kind of coupling that breaks the first time
+       somebody moves the markup.
+
+       Delegated listener on document, no inline handler — the rule round
+       029 set for the quote line editor and kept since. *@
+    <script>
+        (function () {
+            'use strict';
+            var sel = document.getElementById('Input_Type');
+            var box = document.getElementById('bundleSection');
+            if (!sel || !box) return;
+
+            function apply() {
+                // Case-insensitive, matching ProductKinds.IsBundle on the
+                // server. A value of "bundle" from an older row would
+                // otherwise hide the grid on a product that has one.
+                var isBundle = (sel.value || '').toLowerCase() === 'bundle';
+                box.classList.toggle('d-none', !isBundle);
+            }
+
+            sel.addEventListener('change', apply);
+            apply();
+        })();
+    </script>
 }

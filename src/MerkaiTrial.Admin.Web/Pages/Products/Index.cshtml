@@ -151,7 +151,13 @@
                         <tr>
                             <td class="ps-3">
                                 <div class="d-flex align-items-center">
-                                    <i class="@Model.GetCategoryIcon(product.Category) fs-4 me-3" style="color: @Model.GetCategoryColor(product.Category);"></i>
+                                    @* 068: icon and colour from the workspace's own
+                                       category list. title= only when the category no
+                                       longer exists — a grey box on its own reads as a
+                                       styling bug rather than a removed category. *@
+                                    <i class="@Model.GetCategoryIcon(product.Category) fs-4 me-3"
+                                       style="color: @Model.GetCategoryColor(product.Category);"
+                                       title="@Model.CategoryWarning(product.Category)"></i>
                                     <div>
                                         <strong>@product.Name</strong>
                                         @if (!string.IsNullOrEmpty(product.Description))
@@ -161,7 +167,25 @@
                                     </div>
                                 </div>
                             </td>
-                            <td><span class="badge bg-info">@(product.Category ?? "Uncategorized")</span></td>
+                            @* 068: an orphaned category is shown as it is stored,
+                               in a muted badge. Hiding it would mean the product
+                               looked uncategorized on this page while its Edit
+                               form still carried the value. *@
+                            <td>
+                                @if (product.Category is null)
+                                {
+                                    <span class="badge bg-light text-muted border">Uncategorized</span>
+                                }
+                                else if (Model.IsCategoryOrphaned(product.Category))
+                                {
+                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                          title="No longer one of your categories">@product.Category</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-info">@product.Category</span>
+                                }
+                            </td>
                             <td><code>@(product.Sku ?? "-")</code></td>
                             @* 051: the unit rides with the price. Without it a
                                list of numbers says nothing about what is being
@@ -173,8 +197,52 @@
                                 {
                                     <br /><small class="text-muted">+@product.TaxRate.Value% tax</small>
                                 }
+                                @* 069: how many OTHER currencies this product is
+                                   priced in. Shown only when there are any, so a
+                                   single-currency workspace sees the column it saw
+                                   before this round.
+
+                                   A count rather than the prices themselves: this
+                                   list has one row per product and the figures
+                                   belong on the product page, but "is this one
+                                   priced for my US deals" is a question somebody
+                                   scans a list for. *@
+                                @if (product.OtherCurrencyCount > 0)
+                                {
+                                    <br />
+                                    <a asp-page="./Detail" asp-route-id="@product.Id"
+                                       class="badge bg-light text-dark border text-decoration-none"
+                                       title="Also priced in @product.OtherCurrencyCount other @(product.OtherCurrencyCount == 1 ? "currency" : "currencies")">
+                                        <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
+                                    </a>
+                                }
                             </td>
-                            <td><span class="badge bg-secondary">@product.Type</span></td>
+                            @* 070: a bundle says how many products are in it.
+                               "Bundle" alone does not answer the question
+                               somebody scanning the list has, which is whether
+                               it has been filled in yet. *@
+                            <td>
+                                @if (product.IsBundle)
+                                {
+                                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle"
+                                          title="@Model.BundleTooltip(product)">
+                                        <i class="bi bi-boxes me-1"></i>Bundle
+                                        @if (product.BundleComponentCount > 0)
+                                        {
+                                            <text>· @product.BundleComponentCount</text>
+                                        }
+                                    </span>
+                                    @if (product.BundleComponentCount == 0)
+                                    {
+                                        <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
+                                           title="This bundle is empty."></i>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">@product.Type</span>
+                                }
+                            </td>
                             <td>
                                 @if (Model.CanUpdate)
                                 {
@@ -230,7 +298,9 @@
             <div class="card border-0 shadow-sm mb-3">
                 <div class="card-body">
                     <div class="d-flex align-items-start mb-3">
-                        <i class="@Model.GetCategoryIcon(product.Category) fs-3 me-3" style="color: @Model.GetCategoryColor(product.Category);"></i>
+                        <i class="@Model.GetCategoryIcon(product.Category) fs-3 me-3"
+                           style="color: @Model.GetCategoryColor(product.Category);"
+                           title="@Model.CategoryWarning(product.Category)"></i>
                         <div class="flex-grow-1">
                             <h6 class="mb-1">@product.Name</h6>
                             <div class="d-flex gap-2 flex-wrap">
@@ -261,6 +331,13 @@
                             <div>
                                 <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
                             </div>
+                            @if (product.OtherCurrencyCount > 0)
+                            {
+                                @* 069 — see the desktop table. *@
+                                <span class="badge bg-light text-dark border mt-1">
+                                    <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
+                                </span>
+                            }
                         </div>
                         <div class="col-6">
                             <small class="text-muted">SKU</small>

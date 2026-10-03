@@ -30,8 +30,18 @@
 //
 // 055 adds DiscountPercent — see LineDiscounts.cs.
 //
-// Columns are widened / added by Sql/052_LineQuantityAndUnits.sql and
-// Sql/055_LineDiscountPercent.sql.
+// 067 adds TaxCode, and it belongs to exactly the same argument as
+// UnitOfMeasure above. Products.TaxCode has existed since 051 — the
+// HSN / SAC code in India, the equivalent classification elsewhere — and
+// it went nowhere, because a GST invoice has to print the code against
+// every LINE and the line had no column to print from. Snapshotted, for
+// the reason WHY 2 gives: correcting a product's HSN next March must not
+// reprint last year's invoice with the new code, because what was filed
+// with the tax authority would then no longer match what the system
+// shows. A custom line with no product can carry one too.
+//
+// Columns are widened / added by Sql/052_LineQuantityAndUnits.sql,
+// Sql/055_LineDiscountPercent.sql and Sql/067_LineTaxCode.sql.
 // InvoiceLine in Invoice.cs gets exactly the same two changes in the same
 // round — a quote that can say 12.5 against an invoice that rounds it to
 // 12 would be worse than neither.
@@ -84,6 +94,23 @@ namespace MerkaiTrial.Domain.Entities
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate { get; set; }  // 0.18 for 18%
+
+        /// <summary>
+        /// 067: NVARCHAR(20), nullable. The tax classification this line
+        /// was quoted under — an HSN or SAC code in India, whatever the
+        /// local authority asks for elsewhere, NULL in the markets that ask
+        /// for nothing.
+        ///
+        /// Snapshotted from Product.TaxCode when the line is added (see
+        /// LineTaxCodes in QuotesCommandHandler.cs), never joined live
+        /// through ProductId — the same rule as Name, UnitPrice and
+        /// UnitOfMeasure, and for a sharper reason: this one goes on a tax
+        /// document.
+        ///
+        /// NULL and "" mean the same thing and are stored as NULL, so a
+        /// line never carries whitespace onto an invoice.
+        /// </summary>
+        public string? TaxCode { get; set; }
 
         // Audit Fields
         public DateTime CreatedAtUtc { get; set; }

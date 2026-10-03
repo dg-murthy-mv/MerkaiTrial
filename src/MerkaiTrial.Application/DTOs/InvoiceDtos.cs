@@ -12,6 +12,19 @@
 // moment the invoice was raised — silently, with the money changing.
 //
 // InvoiceLineDto.QuantityDisplay ("12.5 m²") is what the views print.
+//
+// 067 — TAX CLASSIFICATION ON THE LINE
+//
+// Both line shapes gain TaxCode, for the same "they have to move in the
+// same round" reason as above: CreateInvoiceFromQuoteHandler copies every
+// quote item into a CreateInvoiceLineDto, so a code on the quote line
+// with nowhere to land on the invoice line would be dropped exactly at
+// the point it starts to matter — the tax invoice is the document that
+// legally has to carry it.
+//
+// Nullable. NULL is the normal state outside the markets that ask for a
+// code, and every screen and both PDFs show the column only when at least
+// one line on the document has one.
 // =====================================================================
 
 using System;
@@ -182,6 +195,17 @@ namespace MerkaiTrial.Application.DTOs
 
         public decimal TaxRate { get; set; }
 
+        /// <summary>
+        /// 067: the tax classification this line was INVOICED under — HSN /
+        /// SAC in India, the local equivalent elsewhere, NULL where none
+        /// applies. Copied from the quote line when the invoice was raised
+        /// from a quote; snapshotted, not joined to the product.
+        /// </summary>
+        public string? TaxCode { get; set; }
+
+        /// <summary>067: true when this line has a code to print.</summary>
+        public bool HasTaxCode => !string.IsNullOrWhiteSpace(TaxCode);
+
         // Calculated
         public decimal LineTotal { get; set; }
         public decimal LineTax { get; set; }
@@ -216,6 +240,15 @@ namespace MerkaiTrial.Application.DTOs
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate { get; set; }  // Decimal format (0.18 for 18%)
+
+        /// <summary>
+        /// 067. Blank with a ProductId set → the handler snapshots the
+        /// product's own code, so an existing API caller keeps working.
+        /// CreateInvoiceFromQuoteHandler fills it from the quote line, which
+        /// takes priority over the product: the invoice must say what the
+        /// customer accepted, not what the catalogue says today.
+        /// </summary>
+        public string? TaxCode { get; set; }
     }
 
     public class InvoiceStatisticsDto

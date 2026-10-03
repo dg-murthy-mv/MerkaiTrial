@@ -38,8 +38,31 @@ public static class ProductKinds
     public const string Service      = "Service";
     public const string Subscription = "Subscription";
 
-    /// <summary>The three, in the order the dropdown should show them.</summary>
-    public static readonly string[] All = { Product, Service, Subscription };
+    /// <summary>
+    /// 070. A product made of other products — "Starter package",
+    /// containing 1 × Onboarding, 3 × Training day, 1 × Support.
+    ///
+    /// A VALUE OF THE EXISTING Type COLUMN, not a new column and not a
+    /// new table on Products. What it contains lives in
+    /// dbo.ProductBundleItems; the bundle's own ListPrice is its price.
+    ///
+    /// On a quote it is ONE line at that price, with its contents
+    /// printed underneath — see ProductBundleItem.cs for why, and for
+    /// the one cost of that choice (a line has one tax rate, so a bundle
+    /// mixing 5% goods with 18% services cannot be one line under
+    /// Indian GST).
+    /// </summary>
+    public const string Bundle       = "Bundle";
+
+    /// <summary>
+    /// The four, in the order the dropdown should show them.
+    ///
+    /// Bundle is LAST deliberately. It is the only kind that cannot
+    /// stand on its own — it needs other products to exist first — so it
+    /// belongs at the end of the list rather than competing for
+    /// attention with the kind most products actually are.
+    /// </summary>
+    public static readonly string[] All = { Product, Service, Subscription, Bundle };
 
     public static bool IsKnown(string? value)
         => value is not null && All.Contains(value, StringComparer.OrdinalIgnoreCase);
@@ -58,6 +81,7 @@ public static class ProductKinds
     {
         Service      => "bi-tools",
         Subscription => "bi-arrow-repeat",
+        Bundle       => "bi-boxes",          // 070
         _            => "bi-box-seam"
     };
 
@@ -66,8 +90,24 @@ public static class ProductKinds
     {
         Service      => "Sold by time or effort — priced per hour, day or job.",
         Subscription => "Recurring. Renewals aren't tracked yet, so treat it as a one-off for now.",
+        Bundle       => "Several products sold together at one price. " +
+                        "On a quote it is a single line, with its contents listed underneath.",
         _            => "A physical or countable item."
     };
+
+    /// <summary>
+    /// 070. True for the one kind that is made of other products.
+    ///
+    /// Its own method rather than `kind == Bundle` scattered around:
+    /// the product form shows a whole section on this answer, the quote
+    /// editor changes what it writes into a line's description, and the
+    /// products list draws a different badge. Three places asking the
+    /// same question is three places to forget to normalise first —
+    /// which would make "bundle" in lower case behave as an ordinary
+    /// product and silently drop the contents.
+    /// </summary>
+    public static bool IsBundle(string? kind)
+        => string.Equals(Normalise(kind), Bundle, StringComparison.Ordinal);
 
     /// <summary>
     /// The unit that makes sense as a starting point for a kind. Only a
@@ -229,4 +269,66 @@ public static class TaxCodes
             "INR" => "HSN for goods, SAC for services. Printed on the GST invoice.",
             _     => "Optional. Printed on the invoice where your tax authority asks for it."
         };
+
+    // ── 067 ──────────────────────────────────────────────────────────
+    // The code now travels onto the quote line and the invoice line, so
+    // it needs a form that fits in a table header and a single place that
+    // decides what a stored code looks like.
+
+    /// <summary>
+    /// 067. The same label, short enough for a column header on a quote
+    /// table, an invoice table and a PDF — where "Tax classification code"
+    /// is four times the width of the values underneath it.
+    ///
+    /// Keyed on currency for the same reason LabelFor is, and the two must
+    /// stay in step: the product form says "HSN / SAC code" and the
+    /// invoice column had better not say something unrelated.
+    /// </summary>
+    public static string ColumnHeaderFor(string? currencyCode) =>
+        (currencyCode ?? string.Empty).ToUpperInvariant() switch
+        {
+            "INR" => "HSN / SAC",
+            _     => "Tax code"
+        };
+
+    /// <summary>
+    /// 067. The longest code the column will hold — NVARCHAR(20) on
+    /// Products.TaxCode (051), QuoteItems.TaxCode and InvoiceLines.TaxCode
+    /// (067). Used for maxlength= on the inputs and for the guard in
+    /// LineTaxCodes.Resolve, so a pasted paragraph is refused in one place
+    /// instead of truncated by SQL Server in three.
+    /// </summary>
+    public const int MaxLength = 20;
+
+    /// <summary>
+    /// 067. What to STORE for a code somebody typed or a product carries.
+    ///
+    /// Trimmed, and empty becomes NULL — "" and NULL would otherwise be
+    /// two ways of saying "no code", and every screen and both PDFs decide
+    /// whether to show the column by asking whether any line has one. Two
+    /// spellings of nothing would make an empty column appear on documents
+    /// that have no codes at all.
+    ///
+    /// Over-long input is cut to MaxLength rather than rejected: this is an
+    /// optional reference field, and losing a quote because a code was
+    /// pasted with a trailing description would be a worse outcome than a
+    /// shortened code the rep can see and fix. The inputs carry maxlength=
+    /// so it practically never gets here.
+    /// </summary>
+    public static string? Normalise(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= MaxLength ? trimmed : trimmed[..MaxLength];
+    }
+
+    /// <summary>
+    /// 067. True when at least one line on the document carries a code —
+    /// the one test every screen and both PDFs use to decide whether the
+    /// column exists at all. A Thai or Philippine document shows exactly
+    /// what it showed before this round.
+    /// </summary>
+    public static bool AnyPresent(IEnumerable<string?>? codes)
+        => codes is not null && codes.Any(c => !string.IsNullOrWhiteSpace(c));
 }

@@ -27,6 +27,16 @@
 // CHANGES (055), on InvoiceLine only:
 //   ✅ DiscountPercent — see LineDiscounts.cs. Added by
 //      Sql/055_LineDiscountPercent.sql.
+//
+// CHANGES (067), on InvoiceLine only:
+//   ✅ TaxCode — the HSN / SAC code or local equivalent, snapshotted onto
+//      the line. Products.TaxCode has existed since 051 and had nowhere
+//      to go: a GST invoice prints the code against every line, and the
+//      line had no column for it. Copied from the quote item when the
+//      invoice is raised from a quote, so an invoice says exactly what
+//      the accepted quote said. QuoteItem.cs takes the same change in the
+//      same round, for the same reason the 052 note gives.
+//      Added by Sql/067_LineTaxCode.sql.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -139,6 +149,21 @@ namespace MerkaiTrial.Domain.Entities
         public decimal? DiscountPercent { get; set; }
 
         public decimal TaxRate { get; set; }  // 0.18 for 18%
+
+        /// <summary>
+        /// 067: NVARCHAR(20), nullable. The tax classification this line
+        /// was INVOICED under — HSN / SAC in India, the local equivalent
+        /// elsewhere, NULL where none applies.
+        ///
+        /// Copied from the quote item when the invoice is raised from a
+        /// quote, and resolved from the product (or typed) on a manual
+        /// invoice. Snapshotted, never read live through ProductId: an
+        /// issued tax invoice is a filed document and must keep saying
+        /// what was filed, whatever the catalogue says later.
+        ///
+        /// NULL and "" mean the same thing and are stored as NULL.
+        /// </summary>
+        public string? TaxCode { get; set; }
 
         // Legacy field (kept for compatibility)
         public decimal Amount { get; set; }  // Total line amount (calculated)

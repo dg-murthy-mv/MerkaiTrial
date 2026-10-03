@@ -1,0 +1,464 @@
+@using System.Globalization
+@using System.Text.Json
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Products.BundleGridVm
+@{
+    // What can go IN a bundle. The page has already excluded this
+    // product and every other bundle; this is the shape the script needs.
+    var choosable = Model.Choosable
+        .Select(p => new
+        {
+            id    = p.Id,
+            name  = p.Name,
+            sku   = p.Sku,
+            unit  = UnitsOfMeasure.Normalise(p.UnitOfMeasure),
+            price = p.ListPrice,
+            active = p.IsActive
+        })
+        .ToList();
+}
+@* =====================================================================
+   Products/_BundleGrid.cshtml — NEW (070).
+
+   What a bundle contains, rendered by BOTH Create.cshtml and
+   Edit.cshtml. Hidden unless the kind is Bundle; the kind dropdown shows
+   and hides it without a round trip.
+
+   ── WHAT THIS IS NOT ────────────────────────────────────────────────
+
+   It is not a price builder. The bundle's price is the main price field
+   above it, and it stays that way: if the price were the sum of the
+   components, editing one component would silently reprice the bundle
+   and every quote drafted from it afterwards. The total below is a
+   HINT — "components total ₹52,000, this bundle is 13% below" — which
+   is the number a business actually decides with, and it is computed in
+   the browser, never stored.
+
+   ── THE ONE THING THE FORM HAS TO WARN ABOUT ────────────────────────
+
+   A quote line carries ONE tax rate and ONE tax code, taken from the
+   bundle product itself. A bundle mixing 5% goods with 18% services
+   cannot be quoted as a single line under Indian GST. Said plainly
+   below, because somebody will build exactly that bundle and the
+   failure would otherwise surface as a wrong tax figure on an invoice.
+
+   ── JSON, NOT INDEXED FIELDS ────────────────────────────────────────
+
+   Same reasoning as _PriceGrid: Items[0].ComponentProductId binds
+   natively until somebody removes the middle row, at which point the
+   indexes gap and the model binder silently drops everything after it.
+   ===================================================================== *@
+
+<style>
+    .bg-wrap { border: 1px solid #e5e8ec; border-radius: 10px; background: #fbfcfd; padding: .85rem .9rem; }
+    .bg-row { display: flex; gap: .5rem; align-items: start; margin-bottom: .45rem; }
+    .bg-row .bg-prod { flex: 1 1 auto; min-width: 0; }
+    .bg-row .bg-qty  { flex: 0 0 9.5rem; }
+    .bg-row .bg-rm   { flex: 0 0 auto; }
+    .bg-rm .btn { --bs-btn-padding-y: .3rem; --bs-btn-padding-x: .5rem; }
+    .bg-empty { color: #94a3b8; font-size: .86rem; padding: .35rem 0 .15rem; }
+    .bg-unit { min-width: 3.5rem; justify-content: center; font-size: .78rem; color: #475569; }
+
+    .bg-tot { display: grid; grid-template-columns: 1fr auto; gap: .25rem .9rem;
+              font-size: .86rem; margin-top: .6rem; padding-top: .6rem;
+              border-top: 1px solid #e5e8ec; }
+    .bg-tot .lbl { color: #64748b; }
+    .bg-tot .amt { text-align: right; font-weight: 600; white-space: nowrap; }
+    .bg-tot .good { color: #16a34a; }
+    .bg-tot .warn { color: #b45309; }
+</style>
+
+<div class="bg-wrap" id="bgWrap">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="small text-muted">
+            The products this bundle is made of. On a quote it becomes
+            <strong>one line</strong> at the price above, with these listed underneath.
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="bgAdd">
+            <i class="bi bi-plus-lg me-1"></i>Add product
+        </button>
+    </div>
+
+    <div id="bgRows"></div>
+
+    <div class="bg-empty d-none" id="bgEmpty">
+        Nothing in this bundle yet. Add at least one product — a bundle with no
+        contents is a price with no explanation.
+    </div>
+
+    <div class="bg-tot" id="bgTotals">
+        <div class="lbl">Components total</div>
+        <div class="amt" id="bgComponents">—</div>
+
+        <div class="lbl">This bundle</div>
+        <div class="amt" id="bgBundle">—</div>
+
+        <div class="lbl" id="bgDeltaLabel">Saving for the customer</div>
+        <div class="amt" id="bgDelta">—</div>
+    </div>
+
+    <div class="alert alert-warning py-2 px-3 small mt-2 d-none" id="bgProblem" role="alert"></div>
+
+    @* The tax caveat. Not conditional — somebody has to read it before
+       they build the bundle that hits it, not after. *@
+    <div class="alert alert-light border py-2 px-3 small mt-2 mb-0">
+        <i class="bi bi-info-circle me-1 text-primary"></i>
+        A bundle line carries <strong>one tax rate and one tax code</strong> — the
+        bundle's own, set above. If these products are taxed at different rates,
+        quote them as separate lines instead of bundling them.
+    </div>
+
+    @* The one posted field. Bound by NAME to the page handler's
+       parameter, not with asp-for — asp-for would derive the name from
+       the PARTIAL's model and post something no handler takes.
+
+       value= is the SEEDED list, not "[]", for the same reason
+       _PriceGrid's is: a script that fails to run would otherwise post
+       an empty bundle. *@
+    <input type="hidden" name="@Model.ItemsJsonFieldName" id="bgJson"
+           value="@Model.ItemsJson" />
+</div>
+
+<script>
+    (function () {
+        'use strict';
+
+        var wrap = document.getElementById('bgWrap');
+        if (!wrap) return;
+
+        var rowsEl  = document.getElementById('bgRows');
+        var emptyEl = document.getElementById('bgEmpty');
+        var jsonEl  = document.getElementById('bgJson');
+        var addBtn  = document.getElementById('bgAdd');
+        var problem = document.getElementById('bgProblem');
+
+        // Server data, serialised rather than written out as JS literals
+        // — a product NAME is server data going into a script block, and
+        // the Edit page's catalogue was broken by exactly that before 029.
+        var CHOOSABLE = @Html.Raw(JsonSerializer.Serialize(choosable));
+        var SEED      = @Html.Raw(Model.ItemsJson);
+        var SYMBOL    = @Html.Raw(JsonSerializer.Serialize(Model.CurrencySymbol));
+        var FORM_ID   = @Html.Raw(JsonSerializer.Serialize(Model.FormId));
+
+        // The bundle's price as the SERVER rendered it. A fallback, not
+        // the source: bundlePrice() below reads the live field so the
+        // hint follows what the person is typing. This is what the hint
+        // uses if the price input cannot be found at all — a renamed id,
+        // a reordered form — so the components total still gets something
+        // honest to compare against instead of zero.
+        var INITIAL_PRICE = @Model.BundlePrice.ToString(CultureInfo.InvariantCulture);
+
+        // Matches QuoteLineChecks.QuantityDecimals and the DECIMAL(18,4)
+        // column. Anything finer is rounded by SQL Server without a word.
+        var QTY_DP = 4;
+
+        var uid  = 1;
+        var rows = [];
+
+        function num(v, d) {
+            var n = parseFloat(v);
+            return isFinite(n) ? n : d;
+        }
+
+        function qty(v, d) {
+            var n = num(v, NaN);
+            if (!isFinite(n)) return d;
+            return Math.round(n * Math.pow(10, QTY_DP)) / Math.pow(10, QTY_DP);
+        }
+
+        function money(n) {
+            return SYMBOL + (isFinite(n) ? n : 0).toLocaleString(undefined, {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            });
+        }
+
+        function esc(s) {
+            return String(s == null ? '' : s)
+                .split('&').join('&amp;')
+                .split('<').join('&lt;')
+                .split('>').join('&gt;')
+                .split('"').join('&quot;')
+                .split("'").join('&#39;');
+        }
+
+        function productById(id) {
+            for (var i = 0; i < CHOOSABLE.length; i++)
+                if (CHOOSABLE[i].id === id) return CHOOSABLE[i];
+            return null;
+        }
+
+        /// Ids already chosen, so the same product cannot be added twice.
+        /// The API refuses it too — "The same product is listed twice" —
+        /// but being told after a round trip is a worse way to find out
+        /// than not being offered it.
+        function taken(exceptKey) {
+            var t = {};
+            for (var i = 0; i < rows.length; i++)
+                if (rows[i].key !== exceptKey && rows[i].componentProductId)
+                    t[rows[i].componentProductId] = true;
+            return t;
+        }
+
+        function firstFree() {
+            var t = taken(null);
+            for (var i = 0; i < CHOOSABLE.length; i++)
+                if (!t[CHOOSABLE[i].id]) return CHOOSABLE[i].id;
+            return '';
+        }
+
+        function options(selected, key) {
+            var t = taken(key);
+            var html = '<option value="">Pick a product…</option>';
+            for (var i = 0; i < CHOOSABLE.length; i++) {
+                var p = CHOOSABLE[i];
+                // One used by ANOTHER row is left out, except the one
+                // this row already holds — which must stay in its own
+                // list or the select would lose its value.
+                if (t[p.id] && p.id !== selected) continue;
+
+                var label = p.name + (p.sku ? ' (' + p.sku + ')' : '');
+                if (!p.active) label += ' — inactive';
+
+                html += '<option value="' + esc(p.id) + '"' +
+                        (p.id === selected ? ' selected' : '') + '>' +
+                        esc(label) + '</option>';
+            }
+            return html;
+        }
+
+        function render() {
+            if (rows.length === 0) {
+                rowsEl.innerHTML = '';
+                if (emptyEl) emptyEl.classList.remove('d-none');
+                recalc();
+                return;
+            }
+            if (emptyEl) emptyEl.classList.add('d-none');
+
+            var html = '';
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var p = productById(r.componentProductId);
+                var unit = p ? p.unit : '';
+
+                html +=
+                '<div class="bg-row" data-key="' + r.key + '">' +
+                  '<div class="bg-prod">' +
+                    '<select class="form-select form-select-sm" data-key="' + r.key + '"' +
+                      ' data-f="componentProductId" aria-label="Product, component ' + (i + 1) + '">' +
+                      options(r.componentProductId, r.key) +
+                    '</select>' +
+                    (p && !p.active
+                        ? '<div class="form-text text-warning-emphasis">' +
+                          'This product is inactive. It stays in the bundle — that is allowed — ' +
+                          'but it cannot be quoted on its own.</div>'
+                        : '') +
+                  '</div>' +
+                  '<div class="bg-qty">' +
+                    '<div class="input-group input-group-sm">' +
+                      '<input type="number" class="form-control" data-key="' + r.key + '"' +
+                        ' data-f="quantity" value="' + r.quantity + '"' +
+                        // step="any", not step="0.0001": with a step set,
+                        // the browser rejects an off-grid value with its
+                        // own bubble, which suppresses the submit event —
+                        // and then this grid's own message never appears.
+                        // The same reasoning as the quote line editor's
+                        // quantity input since 052.
+                        ' min="0" step="any" inputmode="decimal"' +
+                        ' aria-label="Quantity, component ' + (i + 1) + '" />' +
+                      '<span class="input-group-text bg-unit">' + esc(unit) + '</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="bg-rm">' +
+                    '<button type="button" class="btn btn-outline-danger" data-bg-rm="' + r.key + '"' +
+                      ' title="Remove from the bundle" aria-label="Remove component ' + (i + 1) + '">' +
+                      '<i class="bi bi-trash"></i></button>' +
+                  '</div>' +
+                '</div>';
+            }
+            rowsEl.innerHTML = html;
+            recalc();
+        }
+
+        function rowByKey(k) {
+            for (var i = 0; i < rows.length; i++) if (rows[i].key === k) return rows[i];
+            return null;
+        }
+
+        /// The bundle's own price, read LIVE off the main price field.
+        /// Not passed in once: the person types the bundle price and the
+        /// hint has to follow, or it is a hint about a number that is no
+        /// longer on screen.
+        function bundlePrice() {
+            var el = document.getElementById('Input_ListPrice');
+            return el ? num(el.value, INITIAL_PRICE) : num(INITIAL_PRICE, 0);
+        }
+
+        function recalc() {
+            var total = 0;
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var p = productById(r.componentProductId);
+                if (!p) continue;
+                total += num(p.price, 0) * Math.max(0, qty(r.quantity, 0));
+            }
+
+            var price = bundlePrice();
+
+            var cEl = document.getElementById('bgComponents');
+            var bEl = document.getElementById('bgBundle');
+            var dEl = document.getElementById('bgDelta');
+            var lEl = document.getElementById('bgDeltaLabel');
+
+            if (cEl) cEl.textContent = rows.length === 0 ? '—' : money(total);
+            if (bEl) bEl.textContent = money(price);
+
+            if (!dEl || !lEl) return;
+
+            if (total <= 0) {
+                dEl.textContent = '—';
+                dEl.className = 'amt';
+                lEl.textContent = 'Saving for the customer';
+                return;
+            }
+
+            var delta = total - price;
+            var pct   = Math.round((delta / total) * 1000) / 10;
+
+            if (delta >= 0) {
+                lEl.textContent = 'Saving for the customer';
+                dEl.textContent = money(delta) + ' (' + pct.toFixed(1) + '%)';
+                dEl.className = 'amt good';
+            } else {
+                // Legal, and occasionally intended — a package with
+                // service wrapped around it. Said plainly rather than
+                // hidden, because it is usually a typo in the price.
+                lEl.textContent = 'Above the components total';
+                dEl.textContent = money(-delta) + ' (' + Math.abs(pct).toFixed(1) + '%)';
+                dEl.className = 'amt warn';
+            }
+        }
+
+        function sync() {
+            var out = [];
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                if (!r.componentProductId) continue;       // an unfinished row
+                out.push({
+                    componentProductId: r.componentProductId,
+                    quantity: qty(r.quantity, 1)
+                });
+            }
+            jsonEl.value = JSON.stringify(out);
+        }
+
+        function problems() {
+            var msgs = [];
+            var seen = {};
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                if (!r.componentProductId) continue;
+                if (seen[r.componentProductId])
+                    msgs.push('The same product is listed twice. Use one row with a bigger quantity.');
+                seen[r.componentProductId] = true;
+                if (!(qty(r.quantity, 0) > 0))
+                    msgs.push('Every component needs a quantity above zero.');
+            }
+            return msgs;
+        }
+
+        function showProblems(msgs) {
+            if (!problem) return;
+            if (msgs.length === 0) { problem.classList.add('d-none'); problem.textContent = ''; return; }
+            // Unique, so three bad rows do not print the same sentence
+            // three times.
+            var seen = {}, out = [];
+            for (var i = 0; i < msgs.length; i++)
+                if (!seen[msgs[i]]) { seen[msgs[i]] = true; out.push(msgs[i]); }
+            problem.textContent = out.join(' ');
+            problem.classList.remove('d-none');
+        }
+
+        // ── events ───────────────────────────────────────────────────
+        if (addBtn) addBtn.addEventListener('click', function () {
+            if (rows.length >= CHOOSABLE.length) return;   // everything used
+            rows.push({ key: uid++, componentProductId: firstFree(), quantity: 1 });
+            render();
+            sync();
+        });
+
+        rowsEl.addEventListener('change', function (e) {
+            var el = e.target;
+            if (!el || !el.getAttribute) return;
+            var f = el.getAttribute('data-f');
+            var k = parseInt(el.getAttribute('data-key'), 10);
+            if (!f || !Number.isFinite(k)) return;
+
+            var r = rowByKey(k);
+            if (!r) return;
+
+            if (f === 'componentProductId') {
+                // A string, not a number — without this branch the
+                // select's value would fall into num() below and every
+                // change would store 0. The same trap the quote editor's
+                // unit select had before 052.
+                r.componentProductId = el.value || '';
+                render();       // the unit, the other selects and the total move
+                sync();
+                showProblems(problems());
+                return;
+            }
+
+            r.quantity = qty(el.value, 1);
+            recalc();
+            sync();
+            showProblems(problems());
+        });
+
+        rowsEl.addEventListener('input', function (e) {
+            var el = e.target;
+            if (!el || el.getAttribute('data-f') !== 'quantity') return;
+            var k = parseInt(el.getAttribute('data-key'), 10);
+            var r = Number.isFinite(k) ? rowByKey(k) : null;
+            if (!r) return;
+            r.quantity = qty(el.value, 1);
+            recalc();
+            sync();
+        });
+
+        rowsEl.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-bg-rm]') : null;
+            if (!btn) return;
+            var k = parseInt(btn.getAttribute('data-bg-rm'), 10);
+            rows = rows.filter(function (r) { return r.key !== k; });
+            render();
+            sync();
+            showProblems(problems());
+        });
+
+        // The bundle price lives OUTSIDE this partial, so the hint
+        // listens for it on the document rather than inside bgWrap.
+        document.addEventListener('input', function (e) {
+            if (e.target && e.target.id === 'Input_ListPrice') recalc();
+        });
+
+        var form = document.getElementById(FORM_ID);
+        if (form) form.addEventListener('submit', function (e) {
+            sync();
+            var msgs = problems();
+            showProblems(msgs);
+            if (msgs.length > 0) e.preventDefault();
+        });
+
+        // ── seed ─────────────────────────────────────────────────────
+        for (var i = 0; i < SEED.length; i++) {
+            rows.push({
+                key: uid++,
+                componentProductId: SEED[i].componentProductId || '',
+                quantity: qty(SEED[i].quantity, 1)
+            });
+        }
+        render();
+        sync();
+    })();
+</script>

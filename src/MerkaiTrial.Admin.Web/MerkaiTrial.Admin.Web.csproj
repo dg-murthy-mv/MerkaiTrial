@@ -17,6 +17,7 @@
     <Folder Include="Pages\Settings\AuditLogs\" />
     <Folder Include="Pages\Settings\LeadStatuses\" />
     <Folder Include="Pages\Settings\CompanyProfile\" />
+    <Folder Include="Pages\Settings\ProductCategories\" />
     <Folder Include="Pages\Settings\TaxRates\" />
     <Folder Include="Pages\Settings\Notifications\" />
     <Folder Include="Pages\Settings\PipelineRules\" />

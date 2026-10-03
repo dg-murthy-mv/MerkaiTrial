@@ -52,12 +52,25 @@ namespace MerkaiTrial.WebApi.Controllers
         [FromQuery] string? category = null,
         [FromQuery] bool? isActive = null,
         [FromQuery] string? search = null,
+        // 069. The currency the returned prices should be denominated in.
+        //
+        // Omitted means the workspace's own, which is what every caller
+        // before this round meant and still gets. The quote line editor
+        // passes the QUOTE's currency, which comes from the deal and is
+        // not always the workspace's — see ProductPricing.cs for the
+        // defect that fixes.
+        //
+        // Safe in the query string: it changes which prices come back,
+        // never WHOSE. The tenant scope is the query filter plus
+        // tenantId, exactly as before.
+        [FromQuery] string? currency = null,
         CancellationToken cancellationToken = default)
         {
             try
             {
                 var result = await _getProductsHandler.Handle(
-                    tenantId, pageNumber, pageSize, category, isActive, search, cancellationToken);
+                    tenantId, pageNumber, pageSize, category, isActive, search,
+                    currency, cancellationToken);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -217,6 +230,28 @@ namespace MerkaiTrial.WebApi.Controllers
         // them to _currentUserService.GetCurrentTenantId() would make the
         // controller say what it means — a worthwhile round, but it
         // changes every caller's URL and does not belong in a one-line fix.
+        //
+        // ── 068 ──────────────────────────────────────────────────────
+        //
+        // WHAT THIS ENDPOINT NOW ANSWERS, which is not what it used to.
+        //
+        // The handler behind it read DISTINCT Product.Category off the
+        // products table, so it answered "which categories are IN USE"
+        // while every caller was asking "which categories EXIST". A
+        // workspace with no products got an empty list, and a category
+        // nobody had used yet was invisible. It reads
+        // dbo.ProductCategories now — see GetCategoriesHandler, which
+        // spells out all three consequences.
+        //
+        // Still Products.Read, deliberately. Reading the names is part of
+        // filing a product, so anybody who can add one needs it. EDITING
+        // the list is configuring the workspace and lives on
+        // ProductCategoriesController under Settings.*, where a
+        // salesperson cannot reach it.
+        //
+        // Active categories only. An inactive one still prints on old
+        // documents but nothing new should be filed under it; the Settings
+        // page asks for the inactive rows through its own endpoint.
         [HttpGet("categories")]
         [Authorize(Policy = Policies.ProductsRead)]
         public async Task<ActionResult<List<string>>> GetCategories([FromQuery] Guid tenantId)

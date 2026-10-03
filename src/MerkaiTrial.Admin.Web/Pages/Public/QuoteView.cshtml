@@ -127,11 +127,40 @@
             padding: 0.2rem 0.75rem;
             font-size: 0.85rem;
         }
+        /* 065 — the seller's letterhead. Sits under the purple header on
+           the white card, above the items: who it is from, then what is
+           in it. Quiet on purpose — the customer came to read the prices,
+           not the supplier's address, but they must be able to find it. */
+        .seller {
+            padding: 1.25rem 2.5rem 0;
+            display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;
+        }
+        .seller .lbl {
+            font-size: .68rem; text-transform: uppercase; letter-spacing: .07em;
+            color: #94a3b8; font-weight: 700; margin-bottom: .3rem;
+        }
+        .seller .nm  { font-weight: 700; color: #0f172a; font-size: .98rem; }
+        .seller .ln  { color: #64748b; font-size: .84rem; line-height: 1.5; }
+        .seller .tax {
+            color: #0f172a; font-size: .84rem; margin-top: .35rem;
+            font-weight: 600;
+        }
+        .seller a { color: #4f46e5; text-decoration: none; }
+        .seller a:hover { text-decoration: underline; }
+
         /* The quantity now carries a unit ("12.5 m²"), so it must not wrap
            between the number and the unit. */
         .qty-cell { white-space: nowrap; }
         .discount-cell { white-space: nowrap; color: #059669; font-weight: 600; }
         .discount-none { color: #cbd5e1; font-weight: 400; }
+
+        /* 067. Monospaced: a classification code is a reference number a
+           customer or their accountant reads digit by digit, and a
+           proportional font makes 1 / 7 and 0 / 8 work harder than they
+           should at this size. */
+        .tax-code-cell { white-space: nowrap; font-size: .9rem; color: #334155;
+                         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .tax-code-none { color: #cbd5e1; font-weight: 400; font-family: inherit; }
 
         @@media (max-width: 600px) {
             .quote-header-bar, .quote-body, .action-bar { padding: 1.25rem; }
@@ -225,6 +254,57 @@ else
             </div>
         }
 
+        @* ── 065: WHO THIS IS FROM ─────────────────────────────────
+           Drawn only when the workspace has filled in its Company
+           Profile. Before this round the page never named the seller at
+           all, so a customer had a quote for ฿25,246.65 with an Accept
+           button and no idea who they were agreeing with. *@
+        @if (Model.ShowSeller)
+        {
+            var seller = Model.Seller!;
+            <div class="seller">
+                <div>
+                    <div class="lbl">Quote from</div>
+                    <div class="nm">@seller.DisplayName</div>
+                    <div class="ln">
+                        @foreach (var line in seller.AddressLines())
+                        {
+                            @line<br />
+                        }
+                    </div>
+                    @{ var sellerTax = seller.TaxLine(); }
+                    @if (sellerTax is not null)
+                    {
+                        <div class="tax">@sellerTax</div>
+                    }
+                </div>
+
+                @{ var sellerContact = seller.ContactLine(); }
+                @if (!string.IsNullOrWhiteSpace(sellerContact))
+                {
+                    <div style="margin-left:auto; text-align:right;">
+                        <div class="lbl">Questions?</div>
+                        <div class="ln">
+                            @* Each one tappable on a phone, which is where
+                               a customer most often opens one of these. *@
+                            @if (!string.IsNullOrWhiteSpace(seller.Phone))
+                            {
+                                <a href="tel:@seller.Phone">@seller.Phone</a><br />
+                            }
+                            @if (!string.IsNullOrWhiteSpace(seller.Email))
+                            {
+                                <a href="mailto:@seller.Email">@seller.Email</a><br />
+                            }
+                            @if (!string.IsNullOrWhiteSpace(seller.Website))
+                            {
+                                <span>@seller.Website</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
         <!-- ── Body ─────────────────────────────────────────────────── -->
         <div class="quote-body">
 
@@ -236,13 +316,23 @@ else
                         <tr>
                             <th scope="col">#</th>
                             <th scope="col">Item</th>
+                            @* 067: a column, not a sub-line under the item name,
+                               because this page is the customer's own copy of the
+                               document and has to match the PDF they may print or
+                               forward to their accountant. Drawn only when a line
+                               has a code — the same rule the Discount column above
+                               has followed since 059. *@
+                            @if (Model.HasAnyLineTaxCode)
+                            {
+                                <th scope="col">@Model.TaxCodeLabel</th>
+                            }
                             <th scope="col" class="text-center">Qty</th>
                             <th scope="col" class="text-end">Unit Price</th>
                             @if (Model.HasAnyLineDiscount)
                             {
                                 <th scope="col" class="text-end">Discount</th>
                             }
-                            <th scope="col" class="text-end">Tax</th>
+                            <th scope="col" class="text-end">@Model.TaxLabel</th>
                             <th scope="col" class="text-end">Total</th>
                         </tr>
                     </thead>
@@ -260,6 +350,15 @@ else
                                         <div class="text-muted small">@item.Description</div>
                                     }
                                 </td>
+                                @if (Model.HasAnyLineTaxCode)
+                                {
+                                    @* 067: an em dash where a line has no code, so
+                                       the customer can tell "not classified" from a
+                                       cell that failed to render. *@
+                                    <td class="tax-code-cell @(item.HasTaxCode ? "" : "tax-code-none")">
+                                        @(item.HasTaxCode ? item.TaxCode : "—")
+                                    </td>
+                                }
                                 @* 052: QuantityDisplay, not Quantity. The raw
                                    decimal prints "2.0000" at scale 4. *@
                                 <td class="text-center qty-cell">@item.QuantityDisplay</td>
@@ -301,7 +400,7 @@ else
                             </div>
                         }
                         <div class="d-flex justify-content-between mb-1">
-                            <span class="text-muted">Tax</span>
+                            <span class="text-muted">@Model.TaxLabel</span>
                             <span>@Model.FormatCurrency(Model.Quote.TaxTotal)</span>
                         </div>
                         <div class="d-flex justify-content-between grand-total-row">

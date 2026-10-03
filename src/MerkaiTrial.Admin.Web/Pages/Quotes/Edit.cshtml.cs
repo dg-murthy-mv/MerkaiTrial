@@ -78,6 +78,7 @@
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;   // 067: TaxCodes
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -384,6 +385,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     return Page();
                 }
 
+                // 067 — see Create.cshtml.cs. TaxCodes.Normalise would
+                // silently shorten an over-long code, which is wrong in
+                // front of a form: the rep would save, reopen, and find
+                // something other than what they typed.
+                if (items.Any(i => (i.TaxCode ?? string.Empty).Trim().Length > TaxCodes.MaxLength))
+                {
+                    ErrorMessage = $"A tax code can be at most {TaxCodes.MaxLength} characters.";
+                    await LoadFormDataAsync(tenantId);
+                    return Page();
+                }
+
                 // ✅ Currency from the STORED quote, never from the post. The
                 // hidden field exists so the form is self-describing; trusting
                 // it would let anyone re-denominate a quote from dev tools.
@@ -412,7 +424,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                         UnitOfMeasure = i.UnitOfMeasure,   // 052
                         LineDiscount = i.LineDiscount,
                         DiscountPercent = i.DiscountPercent,   // 055
-                        TaxRate      = i.TaxRate / 100m   // % → decimal fraction
+                        TaxRate      = i.TaxRate / 100m,  // % → decimal fraction
+                        // 067. `?? string.Empty`, never a bare null — see
+                        // QuoteItemData.TaxCode. On this page it is the
+                        // difference between clearing a code and having the
+                        // product's put straight back.
+                        TaxCode      = i.TaxCode ?? string.Empty
                     }).ToList()
                 };
 

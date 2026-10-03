@@ -1,17 +1,28 @@
-﻿using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Products
 {
     public interface IProductService
     {
+        /// <summary>
+        /// 069. <paramref name="currency"/> is new and TRAILING, so every
+        /// existing call still compiles and still means "the workspace's
+        /// own currency".
+        ///
+        /// Pass the QUOTE's currency when building a quote: the returned
+        /// ListPrice is then a price in that currency, and
+        /// HasPriceInCurrency is false on the products that have none.
+        /// See ProductPricing.cs.
+        /// </summary>
         Task<PaginatedResult<ProductListItem>> GetAllAsync(
              Guid tenantId,
              int pageNumber = 1,
              int pageSize = 25,
              string? category = null,
              bool? isActive = null,
-             string? searchTerm = null);
+             string? searchTerm = null,
+             string? currency = null);
 
         Task<ProductStatsDto> GetStatsAsync(Guid tenantId);
         Task<ProductDto> GetByIdAsync(Guid tenantId, Guid productId);
@@ -40,7 +51,8 @@ namespace MerkaiTrial.Admin.Web.Services.Products
            int pageSize = 25,
            string? category = null,
            bool? isActive = null,
-           string? searchTerm = null)
+           string? searchTerm = null,
+           string? currency = null)   // 069
         {
             try
             {
@@ -54,6 +66,13 @@ namespace MerkaiTrial.Admin.Web.Services.Products
 
                 if (!string.IsNullOrEmpty(searchTerm))
                     url += $"&search={Uri.EscapeDataString(searchTerm)}";
+
+                // 069. Escaped like the search term. A currency code
+                // should never need it, but this value now arrives from
+                // Deals.Currency — an nvarchar an import can put anything
+                // into — rather than from a seeded reference table.
+                if (!string.IsNullOrEmpty(currency))
+                    url += $"&currency={Uri.EscapeDataString(currency)}";
 
                 return await _apiService.GetAsync<PaginatedResult<ProductListItem>>(url);
             }

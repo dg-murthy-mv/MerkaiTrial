@@ -33,7 +33,12 @@
         // 055: seeded so reopening a quote shows "10%" where the rep typed
         // a percentage, not the amount it worked out to.
         discountPercent = i.DiscountPercent,
-        taxRate      = i.TaxRate * 100m
+        taxRate      = i.TaxRate * 100m,
+        // 067: seeded so reopening a quote shows the HSN / SAC code it was
+        // saved with. "" rather than null for a line that has none — the
+        // editor posts this field back, and "" is what tells the server the
+        // line is deliberately unclassified rather than "ask the product".
+        taxCode      = i.TaxCode ?? string.Empty
     }).ToList();
 
     var editor = new QuoteItemsEditorVm

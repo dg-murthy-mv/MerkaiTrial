@@ -20,6 +20,15 @@
             units = g.Select(u => new { code = u.Code, label = u.Label }).ToList()
         })
         .ToList();
+
+    // 067. The tax classification code — HSN / SAC in India, "Tax code"
+    // everywhere else. The short form, because this one goes in a cell of a
+    // table that already has seven columns, not on a product form with a
+    // label above it. TaxCodes is the one place the wording lives, so the
+    // product form, this editor, both detail pages and both PDFs all say
+    // the same thing.
+    var taxCodeLabel = TaxCodes.ColumnHeaderFor(Model.CurrencyCode);
+    var taxCodeMax   = TaxCodes.MaxLength;
 }
 @* =====================================================================
    _QuoteItemsEditor.cshtml
@@ -32,6 +41,27 @@
    IT MUST BE RENDERED INSIDE THE FORM it posts with: it owns the hidden
    itemsJson field, and the host page owns the form, the dates and the
    buttons.
+
+   ── 067: A TAX CLASSIFICATION CODE PER LINE ─────────────────────────
+
+   Products have carried a tax code since 051 — HSN / SAC in India — and
+   it stopped at the product. The quote line had no field for it, so the
+   invoice raised from the quote had none either, and the one document
+   that legally has to print it could not.
+
+   The box sits beside the description rather than in a column of its
+   own: the table already has seven columns and the numeric ones cannot
+   wrap, while the description can. It is editable, not read-only from
+   the catalogue, for one case a product-only snapshot misses entirely —
+   a CUSTOM line, typed by hand with no product behind it, still needs a
+   code on an Indian invoice.
+
+   Picking a product from the catalogue fills the box in from
+   data-taxcode, the same way it fills in the unit. Clearing the box
+   clears the code: the editor always POSTS the field, and the server
+   reads "" as "deliberately empty" and null as "nothing to say, ask the
+   product" — see LineTaxCodes.Resolve. Those two being different is
+   what makes the box clearable at all.
 
    ── 052: DECIMAL QUANTITY, AND A UNIT PER LINE ──────────────────────
 
@@ -169,6 +199,22 @@
                 color: #475569; background: #fbfcfd; }
     .qe-dmode:focus { color: #0f172a; background: #fff; }
     .qe-dmode.pct { color: #0d6efd; font-weight: 650; }
+
+    /* 067. The tax-code box sits beside the description, not in a column of
+       its own: the table already carries seven columns and an eighth would
+       squeeze the numeric ones, which cannot wrap. Narrow, quiet, and
+       monospaced so an eight-digit HSN stays readable at this size.
+
+       flex-basis on the description rather than a width on the code box, so
+       the code keeps its 7.5rem on a narrow screen and the description —
+       the one thing here that CAN wrap — gives up the space. */
+    .qe-item-row { display: flex; gap: .3rem; align-items: flex-start; margin-top: .25rem; }
+    .qe-item-row > .qe-desc-wrap { flex: 1 1 auto; min-width: 0; }
+    .qe-taxcode { flex: 0 0 7.5rem; font-size: .74rem !important; padding: .25rem .4rem;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                  color: #475569; background: #fbfcfd; text-align: left !important; }
+    .qe-taxcode:focus { color: #0f172a; background: #fff; }
+    .qe-taxcode::placeholder { font-family: inherit; color: #9aa6b2; }
     .qe-n { text-align: right; }
     .qe-row-no { color: #94a3b8; font-size: .8rem; padding-top: .8rem !important; }
     .qe-line-total { font-weight: 650; white-space: nowrap; padding-top: .8rem !important; }
@@ -335,6 +381,14 @@
                                "1,200.00 / units" reads worse than "1,200.00". *@
                             var perUnit = UnitsOfMeasure.ShortOf(p.UnitOfMeasure);
 
+                            @* 067: shown in the list, because a rep picking
+                               between two similar products in India may be
+                               picking between two HSN codes, and a missing
+                               code is something to notice BEFORE the line is
+                               on the quote rather than after the invoice has
+                               gone out. *@
+                            var prodTaxCode = TaxCodes.Normalise(p.TaxCode);
+
                             @* Everything the click needs is in data- attributes, which
                                Razor HTML-encodes. Nothing is interpolated into a JS
                                string, so a product called  Widget "Pro"  or  Bob's Kit
@@ -346,19 +400,71 @@
                                     data-id="@p.Id"
                                     data-name="@(p.Name ?? string.Empty)"
                                     data-desc="@(p.Description ?? string.Empty)"
-                                    data-price="@p.ListPrice.ToString(CultureInfo.InvariantCulture)"
+                                    @* 069: EMPTY when this product has no price in the
+                                       quote's currency, which is a different thing from a
+                                       price of zero and is read as such by the click
+                                       handler. Sending the number anyway would be the
+                                       defect this round fixes: a USD quote filled in from
+                                       rupee figures. *@
+                                    data-price="@(p.HasPriceInCurrency ? p.ListPrice.ToString(CultureInfo.InvariantCulture) : string.Empty)"
                                     data-tax="@(p.TaxRate?.ToString(CultureInfo.InvariantCulture) ?? string.Empty)"
                                     @* 052: the product's own unit, snapshotted onto the line the
                                        moment it is added. Normalise() here rather than trusting
                                        the column, so a row written before 051 — or one carrying a
                                        code nobody recognises — still yields a usable unit. *@
-                                    data-unit="@UnitsOfMeasure.Normalise(p.UnitOfMeasure)">
+                                    data-unit="@UnitsOfMeasure.Normalise(p.UnitOfMeasure)"
+                                    @* 067: the product's tax classification code,
+                                       snapshotted onto the line the same way. Through
+                                       Normalise() so a code stored with stray spaces
+                                       before this round does not travel onto a quote
+                                       with them. *@
+                                    data-taxcode="@(TaxCodes.Normalise(p.TaxCode) ?? string.Empty)"
+                                    @* 070: the bundle's contents as ONE SENTENCE,
+                                       built server-side by
+                                       ProductBundles.BuildBreakdown. Dropped into the
+                                       line's DESCRIPTION when the bundle is picked, so
+                                       the quote keeps saying what the package contained
+                                       on the day it went out even if the bundle is
+                                       edited afterwards.
+
+                                       Empty for every kind other than Bundle, which is
+                                       how the click handler tells the two apart. Razor
+                                       HTML-encodes it, so a component called
+                                       Widget "Pro" is just data — the same rule 029 set
+                                       for every other attribute on this button. *@
+                                    data-bundle="@(p.BundleBreakdown ?? string.Empty)">
                                 <div class="d-flex justify-content-between align-items-start gap-3">
                                     <div style="min-width:0;">
-                                        <div class="pn">@(string.IsNullOrWhiteSpace(p.Name) ? "(unnamed product)" : p.Name)</div>
+                                        <div class="pn">
+                                            @(string.IsNullOrWhiteSpace(p.Name) ? "(unnamed product)" : p.Name)
+                                            @if (p.IsBundle)
+                                            {
+                                                @* 070: so a rep can see it is a package
+                                                   before they add it — the line that
+                                                   arrives will carry a long description
+                                                   they did not type, and that should not
+                                                   be a surprise. *@
+                                                <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle ms-1"
+                                                      title="A bundle of @p.BundleComponentCount products. Added as one line with its contents listed.">
+                                                    <i class="bi bi-boxes me-1"></i>Bundle
+                                                </span>
+                                            }
+                                        </div>
+                                        @if (p.IsBundle && !string.IsNullOrWhiteSpace(p.BundleBreakdown))
+                                        {
+                                            <div class="pd fst-italic">@p.BundleBreakdown</div>
+                                        }
                                         @if (!string.IsNullOrWhiteSpace(p.Description))
                                         {
                                             <div class="pd">@p.Description</div>
+                                        }
+                                        @if (prodTaxCode is not null)
+                                        {
+                                            <div class="pd mt-1">
+                                                <span class="badge bg-light text-dark border fw-normal">
+                                                    @taxCodeLabel @prodTaxCode
+                                                </span>
+                                            </div>
                                         }
                                     </div>
                                     @* 050: the rate is shown as well as the price,
@@ -367,9 +473,25 @@
                                        workspace default is exactly the thing someone
                                        needs to see BEFORE they add the line. *@
                                     <div class="text-end flex-shrink-0">
-                                        <span class="badge bg-light text-dark border">
-                                            @Model.CurrencyCode @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)@(string.IsNullOrEmpty(perUnit) ? "" : " / " + perUnit)
-                                        </span>
+                                        @* 069: a product with no price in THIS QUOTE'S
+                                           currency says so instead of showing a figure.
+                                           Still pickable — a rep may well know the price
+                                           and type it — and the line then starts at zero,
+                                           where the editor's own "needs a unit price above
+                                           zero" check stops the save until they do. *@
+                                        @if (p.HasPriceInCurrency)
+                                        {
+                                            <span class="badge bg-light text-dark border">
+                                                @Model.CurrencyCode @p.ListPrice.ToString("N2", CultureInfo.InvariantCulture)@(string.IsNullOrEmpty(perUnit) ? "" : " / " + perUnit)
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                                  title="This product has no @Model.CurrencyCode price. Add one under Products, or type the price on the line.">
+                                                <i class="bi bi-exclamation-triangle me-1"></i>No @Model.CurrencyCode price
+                                            </span>
+                                        }
                                         @if (p.TaxRate.HasValue)
                                         {
                                             <div class="pd mt-1">
@@ -413,6 +535,13 @@
         // serialised, not a second copy written out in JavaScript.
         var UNIT_GROUPS  = @Html.Raw(JsonSerializer.Serialize(unitGroups));
         var DEFAULT_UNIT = @Html.Raw(JsonSerializer.Serialize(UnitsOfMeasure.Unit));
+
+        // 067. The label and the length limit, serialised rather than
+        // written out as a JS literal, for the same reason the unit list is:
+        // TaxCodes decides the wording and the column width is NVARCHAR(20),
+        // and neither should have a second definition in here to drift.
+        var TAX_CODE_LABEL = @Html.Raw(JsonSerializer.Serialize(taxCodeLabel));
+        var TAX_CODE_MAX   = @taxCodeMax;
         // Matches QuoteLineChecks.QuantityDecimals. The column is
         // DECIMAL(18,4): anything finer would be rounded by SQL Server
         // without a word, so 0.00004 would price at nothing.
@@ -546,7 +675,9 @@
                 quantity: 1, unitOfMeasure: DEFAULT_UNIT,
                 unitPrice: 0, lineDiscount: 0,
                 discountPercent: null,          // 055: null = typed as an amount
-                taxRate: num(DEFAULT_TAX, 0), listPrice: 0
+                taxRate: num(DEFAULT_TAX, 0),
+                taxCode: '',                    // 067: '' = no classification
+                listPrice: 0
             };
         }
 
@@ -579,6 +710,15 @@
                         // again would turn a genuine 0.5% rate into 50%, because
                         // asPercent treats anything in (0,1] as a fraction.
                         taxRate: num(s.taxRate, num(DEFAULT_TAX, 0)),
+                        // 067. A quote written before this round has no code
+                        // in its seed, and neither has a line in a market
+                        // that asks for none. '' is the right answer for both
+                        // — and it is what gets posted back, which the server
+                        // reads as "deliberately empty" rather than "say
+                        // nothing and let the product decide". That is what
+                        // lets a rep CLEAR a code the catalogue supplied.
+                        taxCode: (s.taxCode === null || s.taxCode === undefined)
+                            ? '' : String(s.taxCode),
                         listPrice: (pid && LIST_PRICES && LIST_PRICES[pid] != null)
                             ? num(LIST_PRICES[pid], 0) : num(s.unitPrice, 0)
                     });
@@ -662,10 +802,26 @@
                       ' data-key="' + k + '" data-f="name" value="' + esc(r.name) + '"' +
                       ' placeholder="What are you selling?" maxlength="200"' +
                       ' aria-label="Item name, line ' + (i + 1) + '" />' +
-                    '<input type="text" class="form-control form-control-sm mt-1" id="qe-desc-' + k + '"' +
-                      ' data-key="' + k + '" data-f="description" value="' + esc(r.description) + '"' +
-                      ' placeholder="Description (optional)" maxlength="500"' +
-                      ' aria-label="Description, line ' + (i + 1) + '" />' +
+                    // 067. Description and tax code share a row. The code is
+                    // optional everywhere and most workspaces will leave it
+                    // alone, so it is quiet rather than absent: a line on an
+                    // Indian GST invoice has to carry one, and a custom line
+                    // typed by hand has no product to inherit it from — which
+                    // is exactly the case a product-only snapshot misses.
+                    '<div class="qe-item-row">' +
+                      '<div class="qe-desc-wrap">' +
+                        '<input type="text" class="form-control form-control-sm" id="qe-desc-' + k + '"' +
+                          ' data-key="' + k + '" data-f="description" value="' + esc(r.description) + '"' +
+                          ' placeholder="Description (optional)" maxlength="500"' +
+                          ' aria-label="Description, line ' + (i + 1) + '" />' +
+                      '</div>' +
+                      '<input type="text" class="form-control form-control-sm qe-taxcode"' +
+                        ' id="qe-taxcode-' + k + '"' +
+                        ' data-key="' + k + '" data-f="taxCode" value="' + esc(r.taxCode) + '"' +
+                        ' placeholder="' + esc(TAX_CODE_LABEL) + '" maxlength="' + TAX_CODE_MAX + '"' +
+                        ' title="' + esc(TAX_CODE_LABEL) + ' for this line. Optional — printed on the quote and the invoice when set."' +
+                        ' aria-label="' + esc(TAX_CODE_LABEL) + ', line ' + (i + 1) + '" />' +
+                    '</div>' +
                   '</td>' +
                   '<td data-lbl="Qty">' +
                     // 052. step="any", not step="0.0001". With a step set, the
@@ -845,6 +1001,7 @@
                 var c = document.getElementById('qe-disc-' + k);
                 var m = document.getElementById('qe-dmode-' + k);   // 055
                 var t = document.getElementById('qe-tax-' + k);
+                var x = document.getElementById('qe-taxcode-' + k); // 067
 
                 if (n) r.name         = n.value || '';
                 if (d) r.description  = d.value || '';
@@ -860,6 +1017,9 @@
                     else          r.lineDiscount    = num(c.value, 0);
                 }
                 if (t) r.taxRate      = num(t.value, 0);
+                // 067. A string, trimmed here so what is validated, what is
+                // shown and what is posted are the same value. Never num().
+                if (x) r.taxCode      = (x.value || '').trim();
             }
         }
 
@@ -970,7 +1130,14 @@
                         discountPercent: isPct(r)
                             ? Math.round(num(r.discountPercent, 0) * 100) / 100
                             : null,
-                        taxRate: r.taxRate               // percentage; the server divides by 100
+                        taxRate: r.taxRate,              // percentage; the server divides by 100
+                        // 067. Always sent, even empty. "" and null mean
+                        // DIFFERENT things to LineTaxCodes.Resolve: "" is
+                        // "this line has no classification, leave it alone",
+                        // null is "I have nothing to say, ask the product".
+                        // This editor always has something to say, so it
+                        // always sends a string.
+                        taxCode: (r.taxCode || '').trim()
                     };
                 }));
                 return true;
@@ -997,6 +1164,16 @@
                 // select would fall into num() below and every change would
                 // store 0 — and the line would post a unit of "0".
                 r[f] = el.value || DEFAULT_UNIT;
+            } else if (f === 'taxCode') {
+                // 067. Also a string. Same trap as the unit: without this
+                // branch an HSN code would go through num() and every line
+                // would post a tax code of "0" — or of "998314" read as a
+                // number, which is the same bug wearing a hat.
+                //
+                // NOT trimmed here. Trimming on every keystroke would stop
+                // somebody typing a space, and syncFromDom trims before
+                // anything is validated or posted.
+                r[f] = el.value || '';
             } else if (f === 'quantity') {
                 r[f] = qty(el.value, 0);
                 el.classList.remove('is-invalid');
@@ -1061,7 +1238,69 @@
 
                 syncFromDom();
 
-                var price = num(b.getAttribute('data-price'), 0);
+                // ── 069: EMPTY IS NOT ZERO, AGAIN ────────────────────
+                //
+                // The same distinction the tax rate needed in 050, for a
+                // sharper reason. An empty data-price means this product
+                // has no price in the quote's currency; a "0" means it is
+                // genuinely free. num('', 0) and num('0', 0) are
+                // indistinguishable, so the raw attribute is tested.
+                //
+                // Both end up at 0 on the line — but only the empty case
+                // leaves listPrice at 0 too, which keeps the discount
+                // maths from measuring against a price that does not
+                // exist, and the rep has to type a figure before the
+                // editor will let the quote save.
+                var rawPrice = b.getAttribute('data-price');
+                var hasPrice = !(rawPrice === null || rawPrice === '');
+                var price    = hasPrice ? num(rawPrice, 0) : 0;
+
+                // ── 070: A BUNDLE BECOMES **ONE** LINE ───────────────
+                //
+                // Not one line per component. The customer sees a price
+                // they can say yes to, and nothing in the line maths,
+                // the tax maths, the approval rules, the PDF layout or
+                // CreateInvoiceFromQuoteHandler has to change — a bundle
+                // line is an ordinary line with a longer description.
+                //
+                // The contents go into the DESCRIPTION, and that is the
+                // snapshot: the sentence is frozen here, at the moment
+                // the line is added, so a quote already sent never
+                // changes when somebody edits the bundle. The bundle
+                // itself stays a live reference everywhere else.
+                // Definition live, document frozen.
+                //
+                // It is APPENDED to the product's own description rather
+                // than replacing it, because a bundle can have both — a
+                // sentence about what the package is for, and then what
+                // is in it.
+                //
+                // WORTH KNOWING: the line carries ONE tax rate and ONE
+                // tax code, taken from the bundle product itself. A
+                // bundle mixing 5% goods with 18% services cannot be
+                // quoted as a single line under Indian GST; the product
+                // form says so, and the answer is to quote those
+                // components separately.
+                var ownDesc  = b.getAttribute('data-desc') || '';
+                var bundleOf = b.getAttribute('data-bundle') || '';
+
+                var description = bundleOf
+                    ? (ownDesc ? ownDesc + ' — ' + bundleOf : bundleOf)
+                    : ownDesc;
+
+                // QuoteItem.Description is NVARCHAR(500) and this input
+                // carries maxlength="500" — which restricts TYPING and
+                // not a value set by script. ProductBundles caps the
+                // breakdown at 460, but a bundle whose product ALSO has a
+                // description of its own can push the pair over.
+                //
+                // Cut here rather than letting SQL Server do it silently.
+                // An ellipsis on screen is something a rep can see and
+                // shorten; a description that lost its last component
+                // between the browser and the database is not.
+                if (description.length > 500) {
+                    description = description.slice(0, 499) + '\u2026';
+                }
 
                 // ── 050: the product's OWN tax rate ──────────────────
                 //
@@ -1088,7 +1327,9 @@
                     key: uid++, itemId: null,
                     productId: b.getAttribute('data-id') || null,
                     name: b.getAttribute('data-name') || '',
-                    description: b.getAttribute('data-desc') || '',
+                    // 070. The product's description plus, for a bundle,
+                    // what is in it. See the note above.
+                    description: description,
                     quantity: 1,
                     // 052. The product's own unit, snapshotted now. A line
                     // added from the catalogue should not need the unit picked
@@ -1099,7 +1340,26 @@
                     discountPercent: null,   // 055
 
                     taxRate: taxRate,
-                    listPrice: price    // the discount maths measures against this
+
+                    // ── 067: the product's own classification code ───────
+                    //
+                    // Snapshotted here, exactly like the unit above, so a
+                    // line added from the catalogue arrives with its HSN /
+                    // SAC already filled in and the rep does not retype it
+                    // on every quote.
+                    //
+                    // '' for a product with no code, which is the honest
+                    // answer and the one the server reads as "no
+                    // classification on this line". There is no empty-vs-zero
+                    // trap here the way there is for the tax RATE — a code
+                    // is a string, and an absent one has only one meaning.
+                    taxCode: (b.getAttribute('data-taxcode') || '').trim(),
+
+                    // 069. ZERO when there is no price in this currency,
+                    // so the "how far below list is this line" maths does
+                    // not measure against a figure that was never a price
+                    // in the quote's currency. See hasPrice above.
+                    listPrice: hasPrice ? price : 0
                 });
                 render();
 

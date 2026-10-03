@@ -14,7 +14,23 @@
             <div>
                 <h2 class="mb-1">@Model.Product.Name</h2>
                 <p class="text-muted mb-0">
-                    <span class="badge bg-info me-2">@(Model.Product.Category ?? "Uncategorized")</span>
+                    @* 068: shown as it is STORED. An orphaned category is
+                       marked rather than hidden — hiding it would make the
+                       product look uncategorized here while its Edit form
+                       still carried the value. *@
+                    @if (Model.Product.Category is null)
+                    {
+                        <span class="badge bg-light text-muted border me-2">Uncategorized</span>
+                    }
+                    else if (Model.IsCategoryOrphaned())
+                    {
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-2"
+                              title="No longer one of your categories">@Model.Product.Category</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-info me-2">@Model.Product.Category</span>
+                    }
                     @if (Model.Product.IsActive)
                     {
                         <span class="badge bg-success">Active</span>
@@ -69,7 +85,27 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="text-muted small">Category</label>
-                                    <div><span class="badge bg-info fs-6">@(Model.Product.Category ?? "Uncategorized")</span></div>
+                                    <div>
+                                        @if (Model.Product.Category is null)
+                                        {
+                                            <span class="badge bg-light text-muted border fs-6">Uncategorized</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge @(Model.IsCategoryOrphaned() ? "bg-warning-subtle text-warning-emphasis border border-warning-subtle" : "bg-info") fs-6">@Model.Product.Category</span>
+                                        }
+                                    </div>
+                                    @if (Model.IsCategoryOrphaned())
+                                    {
+                                        @* 068. Said plainly, with what to do about it.
+                                           The product is fine; it is simply filed under
+                                           something that is no longer on the list. *@
+                                        <small class="text-warning-emphasis d-block mt-1">
+                                            <i class="bi bi-info-circle me-1"></i>No longer one of your
+                                            categories. Edit the product to pick another, or add it back
+                                            under Settings &rarr; Product Categories.
+                                        </small>
+                                    }
                                 </div>
                                 <div class="col-md-6">
                                     <label class="text-muted small">Type</label>
@@ -106,11 +142,161 @@
                                 <div class="col-md-4">
                                     <label class="text-muted small">Currency</label>
                                     <div class="fw-semibold">@Model.TenantCurrencyName (@Model.TenantCurrencyCode)</div>
+                                    <div class="form-text">The price above is in this currency.</div>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="text-muted small">Tax Rate</label>
                                     <div class="fw-semibold">@(Model.Product.TaxRate?.ToString("N2") ?? "0")%</div>
                                 </div>
+
+                                @* ── 069: PRICES IN OTHER CURRENCIES ──────────
+                                   Shown only when there are any, so a
+                                   single-currency workspace sees exactly the page
+                                   it saw before this round.
+
+                                   A quote takes its currency from its DEAL, so
+                                   these are the prices a quote in one of these
+                                   currencies will actually use. A currency NOT
+                                   listed here has no price, and the quote line
+                                   editor will say so rather than quietly using
+                                   the @Model.TenantCurrencyCode figure — which is
+                                   what it used to do. *@
+                                @* ── 070: WHAT THIS BUNDLE CONTAINS ──────────
+                                   A table, because the quantities line up and
+                                   somebody checking a package reads down them.
+                                   Shown only for a bundle.
+
+                                   The components' own prices ARE shown here, and
+                                   the total beside them — this page is for the
+                                   person who sells it, not the customer. The
+                                   breakdown that goes on a QUOTE carries names
+                                   and quantities only; printing component prices
+                                   there would invite the customer to add them up
+                                   and find a different number. *@
+                                @if (Model.IsBundle)
+                                {
+                                    <div class="col-12">
+                                        <label class="text-muted small">What this bundle contains</label>
+                                        @if (!Model.BundleItems.Any())
+                                        {
+                                            <div class="alert alert-warning py-2 px-3 small mb-0">
+                                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                                This bundle is empty. A quote line raised from it would
+                                                show a price with nothing under it — edit the product and
+                                                add its contents.
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="table-responsive">
+                                                <table class="table table-sm align-middle mb-1">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Product</th>
+                                                            <th class="text-end">Qty</th>
+                                                            <th class="text-end">Each</th>
+                                                            <th class="text-end">Line</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var item in Model.BundleItems)
+                                                        {
+                                                            <tr>
+                                                                <td>
+                                                                    @item.ComponentName
+                                                                    @if (!string.IsNullOrWhiteSpace(item.ComponentSku))
+                                                                    {
+                                                                        <code class="ms-1 small">@item.ComponentSku</code>
+                                                                    }
+                                                                    @if (!item.ComponentIsActive)
+                                                                    {
+                                                                        <span class="badge bg-secondary ms-1"
+                                                                              title="Not sold separately any more. That is allowed — it stays in the bundle.">Inactive</span>
+                                                                    }
+                                                                </td>
+                                                                <td class="text-end">@item.QuantityDisplay</td>
+                                                                <td class="text-end text-muted">@Model.FormatCurrency(item.ComponentListPrice)</td>
+                                                                <td class="text-end">@Model.FormatCurrency(item.ComponentListPrice * item.Quantity)</td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                    <tfoot>
+                                                        <tr class="fw-semibold">
+                                                            <td colspan="3" class="text-end">Components total</td>
+                                                            <td class="text-end">@Model.FormatCurrency(Model.ComponentsTotal)</td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colspan="3" class="text-end text-muted">This bundle</td>
+                                                            <td class="text-end">@Model.FormatCurrency(Model.Product.ListPrice)</td>
+                                                        </tr>
+                                                        @if (Model.BundleDiscountPercent is { } pct)
+                                                        {
+                                                            <tr class="@(pct >= 0 ? "text-success" : "text-warning-emphasis")">
+                                                                <td colspan="3" class="text-end">
+                                                                    @(pct >= 0 ? "Saving for the customer" : "Above the components total")
+                                                                </td>
+                                                                <td class="text-end fw-semibold">
+                                                                    @Model.FormatCurrency(Math.Abs(Model.ComponentsTotal - Model.Product.ListPrice))
+                                                                    (@Math.Abs(pct).ToString("0.#")%)
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tfoot>
+                                                </table>
+                                            </div>
+                                            <div class="form-text">
+                                                On a quote this is <strong>one line</strong> at the bundle price,
+                                                with these listed in the description. The line carries the
+                                                bundle's own tax rate and tax code — if these products are
+                                                taxed differently, quote them separately.
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @* 070: the warning before somebody deactivates a
+                                   product that other bundles depend on. Nothing
+                                   else in the product would tell them. *@
+                                @if (Model.Product.UsedInBundleCount > 0)
+                                {
+                                    <div class="col-12">
+                                        <div class="alert alert-info py-2 px-3 small mb-0">
+                                            <i class="bi bi-boxes me-1"></i>
+                                            This product is part of
+                                            <strong>@Model.Product.UsedInBundleCount
+                                            @(Model.Product.UsedInBundleCount == 1 ? "bundle" : "bundles")</strong>.
+                                            Deactivating it stops it being quoted on its own; the bundles keep it.
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (Model.OtherPrices.Any())
+                                {
+                                    <div class="col-12">
+                                        <label class="text-muted small">Prices in other currencies</label>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm mb-1" style="max-width:28rem;">
+                                                <tbody>
+                                                    @foreach (var price in Model.OtherPrices)
+                                                    {
+                                                        <tr>
+                                                            <td class="text-muted" style="width:9rem;">
+                                                                @Model.CurrencyLabel(price.CurrencyCode)
+                                                            </td>
+                                                            <td class="fw-semibold">
+                                                                @Model.FormatInCurrency(price.ListPrice, price.CurrencyCode)
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="form-text">
+                                            Used by quotes raised in these currencies. A currency with no
+                                            price here cannot be quoted from this product until one is set.
+                                        </div>
+                                    </div>
+                                }
                                 <div class="col-md-8">
                                     <label class="text-muted small">@Model.TaxCodeLabel</label>
                                     <div class="fw-semibold">

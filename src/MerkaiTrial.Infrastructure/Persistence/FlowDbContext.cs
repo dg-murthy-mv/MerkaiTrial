@@ -24,6 +24,23 @@
 //      to start without this, which is exactly what that guard is for.
 //   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
 //      tenant-owned and filtered.
+//  14. (070) ProductBundleItem — what a bundle contains. Strictly
+//      tenant-owned, like ProductPrice. Two foreign keys to Products
+//      (the bundle and the component), both spelled out in
+//      ProductBundleItemConfiguration because EF pairs navigations with
+//      foreign keys by convention and gets it wrong with two.
+//  13. (069) ProductPrice — what a product costs in a currency that is
+//      NOT the workspace's own. STRICTLY tenant-owned, unlike
+//      ProductCategory above: TenantId is not nullable and there is no
+//      shared row, because Merkai has no business publishing what
+//      anybody's product costs.
+//  12. (068) ProductCategory — product categories, which were a static
+//      C# list until this round. Added to the SHARED list, not the
+//      strict one: TenantId NULL is a Merkai default visible to every
+//      workspace, and a row with a TenantId belongs to that workspace
+//      alone. Under the strict filter no workspace could ever see a
+//      default, which is precisely the bug item 11 below describes
+//      having had for TaxRate.
 //  11. (056) TaxRate MOVED from the strict list to the shared list —
 //      NULL now means "system rate, every tenant in that country". See
 //      the note beside it; it is the difference between that table
@@ -101,6 +118,22 @@ public class FlowDbContext : DbContext
     public DbSet<InvoiceLine> InvoiceLines { get; set; }
     public DbSet<Payment> Payments { get; set; }
     public DbSet<Product> Products { get; set; }
+
+    /// <summary>068. Shared-or-tenant: TenantId NULL = Merkai default.</summary>
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+
+    /// <summary>
+    /// 069. Strictly tenant-owned. Holds prices in currencies OTHER than
+    /// the workspace's own; the home-currency price is Product.ListPrice.
+    /// </summary>
+    public DbSet<ProductPrice> ProductPrices => Set<ProductPrice>();
+
+    /// <summary>
+    /// 070. Strictly tenant-owned. What a bundle contains — one row per
+    /// component, with a quantity. One level only: the application
+    /// refuses a bundle inside a bundle.
+    /// </summary>
+    public DbSet<ProductBundleItem> ProductBundleItems => Set<ProductBundleItem>();
     public DbSet<User> Users => Set<User>();
     public DbSet<LeadChannel> LeadChannels { get; set; }
     public DbSet<LeadSource> LeadSources { get; set; }
@@ -262,6 +295,17 @@ public class FlowDbContext : DbContext
         b.Entity<Company>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Contact>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Product>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // ProductPrices (069). STRICT, and that is the whole point of the
+        // distinction from ProductCategory two sections down: a category
+        // can sensibly be a Merkai default shared with everybody, a price
+        // never can. If this ever ends up in the shared group, every
+        // workspace will be able to read every other workspace's prices.
+        b.Entity<ProductPrice>()    .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // ProductBundleItems (070). Strict, like the prices above: what
+        // is inside somebody's package is their business.
+        b.Entity<ProductBundleItem>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Activity>()        .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Attachment>()      .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantSettings>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
@@ -340,6 +384,29 @@ public class FlowDbContext : DbContext
         // rows would let a tenant admin edit one. TaxRateCommandHelper
         // checks ownership explicitly on every update and delete.
         b.Entity<TaxRate>()         .HasQueryFilter(e => e.TenantId == null || e.TenantId == CurrentTenantId);
+
+        // ProductCategories (068). Here from the start rather than being
+        // moved here later like TaxRate was, for the same reason: a
+        // Merkai default IS the shared-reference case this section
+        // exists for. Under the strict filter every workspace would open
+        // the products page to an empty category dropdown.
+        //
+        // How the EFFECTIVE list is resolved on top of this filter —
+        // "own rows if you have any, defaults otherwise" — lives in
+        // ProductCategoryResolution (Application/Configuration/
+        // ProductCategoriesConfiguration.cs), not here. This filter only
+        // decides what a workspace is ALLOWED to see.
+        //
+        // A SuperAdmin has no tenant, so CurrentTenantId is Guid.Empty
+        // and this resolves to "Merkai defaults only" for them, which is
+        // the correct thing for a platform-level screen to show.
+        //
+        // The write side does NOT rely on this filter. It admits system
+        // rows, so on its own it would let a tenant admin rename a Merkai
+        // default for every workspace at once. Ownership is checked
+        // explicitly in ProductCategoryHandlers on every update, delete
+        // and reorder — the same arrangement TaxRateCommandHelper uses.
+        b.Entity<ProductCategory>() .HasQueryFilter(e => e.TenantId == null || e.TenantId == CurrentTenantId);
 
         // ── Users and UserTokens: deliberately NOT filtered ───────────
         // Login resolves a user by email with no tenant context, and the

@@ -126,6 +126,37 @@ namespace MerkaiTrial.Domain.Entities
         /// if the refusal was recorded.
         /// </summary>
         public const string ActionRefused = "ActionRefused";
+
+        // ── Product categories (068) ──────────────────────────────────
+        //
+        // A category is a small thing with a wide blast radius: renaming
+        // one REWRITES Product.Category on every product carrying the old
+        // name, and deleting one can move products to another category or
+        // leave them uncategorized. "Who turned Hardware into Devices and
+        // when" is a question somebody will ask, and the products
+        // themselves no longer hold the answer once the rename has run.
+        //
+        // Every value here is well inside the 32 characters the Action
+        // column allows — the longest is 22.
+        //
+        // Data on each: the names involved and the number of products
+        // touched. Never the whole affected list: an audit row is widely
+        // readable and a product list is business data, not a record of
+        // what somebody did.
+        public const string ProductCategoryCreated = "ProductCategoryCreated";
+        public const string ProductCategoryUpdated = "ProductCategoryUpdated";
+        public const string ProductCategoryDeleted = "ProductCategoryDeleted";
+
+        /// <summary>
+        /// 068. The workspace took a private copy of the Merkai default
+        /// category list, which happens once, automatically, the first
+        /// time anybody edits anything on the Settings page.
+        ///
+        /// Audited because it is the moment the workspace stops following
+        /// the defaults — after this, a new Merkai default will never
+        /// appear in their list, and that is worth being able to date.
+        /// </summary>
+        public const string ProductCategoriesAdopted = "ProdCatsAdopted";
     }
 
     public class AuditLog
@@ -182,5 +213,8 @@ namespace MerkaiTrial.Domain.Entities
         public const string Contact = "Contact";
         public const string Company = "Company";
         public const string Product = "Product";
+
+        /// <summary>068. A row in dbo.ProductCategories.</summary>
+        public const string ProductCategory = "ProductCategory";
     }
 }
