@@ -120,6 +120,31 @@ namespace MerkaiTrial.Application.DTOs
         /// </summary>
         public QuoteSellerDto? Seller { get; set; }
 
+        /// <summary>
+        /// 071: THE PAYMENT SCHEDULE, for the two documents a CUSTOMER
+        /// sees — the quote PDF and the public /q/{token} page.
+        ///
+        /// EMPTY IS THE NORMAL STATE and means "payable in full"; both
+        /// surfaces print nothing at all in that case, so a quote raised
+        /// before this round looks exactly as it did.
+        ///
+        /// Set by GetQuoteByTokenHandler and GenerateQuotePdfHandler.
+        /// Null-free but empty on the internal read paths, which do not
+        /// need it: the quote page loads the schedule separately through
+        /// IQuoteMilestoneService, because it also needs what has been
+        /// invoiced against each stage and that is not part of the quote.
+        ///
+        /// ⚠ BOTH SETTERS BUILD THEIR OWN QuoteDto BY HAND. That is the
+        /// hazard the 065 and 067 notes in GenerateQuotePdfHandler
+        /// describe having been bitten by twice — a field added to one
+        /// read path and not the others fails silently, by printing a
+        /// document with a section missing.
+        /// </summary>
+        public List<MilestoneRowDto> PaymentStages { get; set; } = new();
+
+        /// <summary>071: true when this quote is billed in stages.</summary>
+        public bool HasPaymentSchedule => PaymentStages.Count > 0;
+
         public List<QuoteItemDto> Items { get; set; } = new();
     }
 

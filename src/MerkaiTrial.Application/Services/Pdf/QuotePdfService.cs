@@ -5,6 +5,19 @@
 //   builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 //   (QuestPDF.Settings.License = LicenseType.Community already set)
 //
+// 071. A PAYMENT SCHEDULE SECTION, between the totals and the validity
+// notice, printed ONLY when the quote has one. "30% on signing, 40% on
+// delivery, 30% on completion" is a commercial term the customer is
+// agreeing to, and this is the copy they keep — a schedule that lived
+// only on the seller's screen would be worse than not having the feature.
+//
+// The AMOUNT column is the figure the server COMPUTED for each stage,
+// not the percentage somebody typed. The final stage absorbs the
+// rounding (see QuoteMilestones), so the stages add up to exactly the
+// grand total printed above them — which the percentages, on their own,
+// would not: 33.33% three times leaves the customer's accounts
+// department short and unable to see why.
+//
 // COMPLETE FILE — 067. The line-items table gains a TAX CLASSIFICATION
 // column — "HSN / SAC" on an Indian quote, "Tax code" elsewhere — and it
 // is rendered ONLY when at least one line on the quote carries a code. A
@@ -446,6 +459,109 @@ namespace MerkaiTrial.Application.Services.Pdf
                                 });
                             });
                         });
+
+                        // ── PAYMENT SCHEDULE (071) ──────────────────────────────
+                        //
+                        // Prints ONLY when the quote has one. An empty
+                        // schedule means "payable in full", which is what
+                        // every quote raised before 071 is — so those
+                        // render byte-for-byte as they did.
+                        //
+                        // This is the copy the CUSTOMER keeps, and the
+                        // payment terms are a commercial term they are
+                        // agreeing to. A schedule that lived only on the
+                        // seller's screen would be the one version of this
+                        // feature worse than not having it.
+                        //
+                        // The AMOUNT column is the computed one, not the
+                        // typed percentage — see QuoteMilestones: the final
+                        // stage absorbs the rounding, so the stages add up
+                        // to exactly the grand total above. Printing the
+                        // percentages alone would leave the customer's
+                        // accounts department adding up 33.33% three times
+                        // and finding they are short.
+                        if (model.Quote.HasPaymentSchedule)
+                        {
+                            col.Item().PaddingTop(18).Column(sched =>
+                            {
+                                sched.Item().Text("Payment schedule")
+                                    .FontSize(9).Bold().FontColor(AccentHex);
+
+                                sched.Item().PaddingTop(6).Table(st =>
+                                {
+                                    st.ColumnsDefinition(cols =>
+                                    {
+                                        cols.ConstantColumn(22);   // #
+                                        cols.RelativeColumn(4);    // Stage + condition
+                                        cols.RelativeColumn(2);    // When
+                                        cols.RelativeColumn(1.4f); // Share
+                                        cols.RelativeColumn(2);    // Amount
+                                    });
+
+                                    void SchedHeader(string text, bool alignRight = false)
+                                    {
+                                        st.Header(header =>
+                                        {
+                                            var cell = header.Cell()
+                                                .Background(LightHex)
+                                                .PaddingVertical(4).PaddingHorizontal(5);
+
+                                            var t = alignRight ? cell.AlignRight() : cell;
+                                            t.Text(text).FontSize(8).Bold().FontColor(AccentHex);
+                                        });
+                                    }
+
+                                    SchedHeader("#");
+                                    SchedHeader("Stage");
+                                    SchedHeader("When");
+                                    SchedHeader("Share", true);
+                                    SchedHeader("Amount", true);
+
+                                    foreach (var stage in model.Quote.PaymentStages)
+                                    {
+                                        st.Cell().BorderBottom(0.5f).BorderColor(BorderHex)
+                                          .PaddingVertical(4).PaddingHorizontal(5)
+                                          .Text(stage.Sequence.ToString(CultureInfo.InvariantCulture))
+                                          .FontSize(9).FontColor(MutedHex);
+
+                                        st.Cell().BorderBottom(0.5f).BorderColor(BorderHex)
+                                          .PaddingVertical(4).PaddingHorizontal(5)
+                                          .Text(stage.Name).FontSize(9);
+
+                                        // The CONDITION is what a customer
+                                        // actually reads — "on signing",
+                                        // "on handover". The date, when
+                                        // there is one, goes beside it.
+                                        var when = stage.DueDateUtc.HasValue
+                                            ? (string.IsNullOrWhiteSpace(stage.DueCondition)
+                                                ? stage.DueDateUtc.Value.ToString(model.DateFormat, CultureInfo.InvariantCulture)
+                                                : stage.DueCondition + " (" +
+                                                  stage.DueDateUtc.Value.ToString(model.DateFormat, CultureInfo.InvariantCulture) + ")")
+                                            : (stage.DueCondition ?? "");
+
+                                        st.Cell().BorderBottom(0.5f).BorderColor(BorderHex)
+                                          .PaddingVertical(4).PaddingHorizontal(5)
+                                          .Text(when).FontSize(8).FontColor(MutedHex);
+
+                                        st.Cell().BorderBottom(0.5f).BorderColor(BorderHex)
+                                          .PaddingVertical(4).PaddingHorizontal(5)
+                                          .AlignRight()
+                                          .Text(stage.EffectivePercent.ToString("0.##", CultureInfo.InvariantCulture) + "%")
+                                          .FontSize(8).FontColor(MutedHex);
+
+                                        st.Cell().BorderBottom(0.5f).BorderColor(BorderHex)
+                                          .PaddingVertical(4).PaddingHorizontal(5)
+                                          .AlignRight()
+                                          .Text($"{sym}{stage.Amount.ToString("N2", culture)}")
+                                          .FontSize(9).Bold();
+                                    }
+                                });
+
+                                sched.Item().PaddingTop(5)
+                                    .Text("Each stage is invoiced separately. The stages add up to the grand total above.")
+                                    .FontSize(8).FontColor(MutedHex);
+                            });
+                        }
 
                         // ── VALIDITY NOTICE ─────────────────────────────────────
                         col.Item().PaddingTop(20)

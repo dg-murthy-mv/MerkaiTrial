@@ -172,7 +172,18 @@ namespace MerkaiTrial.Application.Queries.Invoices
                             ItemCount = i.Lines.Count(l => !l.IsDeleted),
                             IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
                                         i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
-                            CreatedAtUtc = i.CreatedAtUtc
+                            CreatedAtUtc = i.CreatedAtUtc,
+
+                            // 071. The SNAPSHOT columns on the invoice row,
+                            // not a join to the schedule — which is the
+                            // point of them being columns. The list shows
+                            // "2 of 3 — On delivery" as a badge; an invoice
+                            // for a whole quote carries NULL here and the
+                            // badge does not render.
+                            MilestoneId = i.MilestoneId,
+                            MilestoneName = i.MilestoneName,
+                            MilestoneSequence = i.MilestoneSequence,
+                            MilestoneCount = i.MilestoneCount
                         },
 
                         // 053. The invoice reaches its customer either
@@ -315,6 +326,25 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     Notes = invoice.Notes,
                     PromptPayQrImageUrl = invoice.PromptPayQrImageUrl,
                     CheckoutUrl = invoice.CheckoutUrl,
+
+                    // 071. SNAPSHOTS off the invoice row. The schedule is
+                    // deliberately NOT joined here: an issued invoice has
+                    // to keep saying "Milestone 2 of 3 — On delivery" after
+                    // somebody renames the stage or re-cuts the schedule,
+                    // and reading it live is how a document starts
+                    // disagreeing with itself. Definition live, document
+                    // frozen — 067's rule for TaxCode and 070's for bundle
+                    // contents, applied a third time.
+                    //
+                    // QuoteNumber above is what InvoiceDto.MilestoneBasisNote
+                    // prints alongside these ("Amounts shown are 40% of
+                    // accepted quote QUO-0042"), so the two travel together.
+                    MilestoneId = invoice.MilestoneId,
+                    MilestoneName = invoice.MilestoneName,
+                    MilestoneSequence = invoice.MilestoneSequence,
+                    MilestoneCount = invoice.MilestoneCount,
+                    MilestonePercent = invoice.MilestonePercent,
+
                     Lines = invoice.Lines.Select(l => new InvoiceLineDto
                     {
                         Id = l.Id,

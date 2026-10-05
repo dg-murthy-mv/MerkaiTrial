@@ -72,6 +72,40 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found for tenant {tenantId}");
 
+            // ── 071: THE PAYMENT SCHEDULE ──────────────────────────────
+            //
+            // "30% on signing, 40% on delivery, 30% on completion" is a
+            // commercial term, and the PDF is the copy the customer
+            // keeps. A quote with no schedule returns an empty list and
+            // QuotePdfService prints nothing at all, so every quote
+            // raised before this round renders exactly as it did.
+            //
+            // No IgnoreQueryFilters here, unlike the public token read:
+            // this handler runs with the tenant resolved, so the STRICT
+            // filter on QuoteMilestone is doing its job.
+            var stages = await QuoteMilestones.GetForQuoteAsync(_db, tenantId, quoteId, ct);
+            var shares = QuoteMilestones.Allocate(stages, quote.GrandTotal);
+
+            var pdfStages = shares.Select(sh =>
+            {
+                var source = stages.First(m => m.Id == sh.MilestoneId);
+                return new MilestoneRowDto
+                {
+                    Id               = source.Id,
+                    SortOrder        = source.SortOrder,
+                    Name             = source.Name,
+                    Percent          = source.Percent,
+                    FixedAmount      = source.FixedAmount,
+                    DueCondition     = source.DueCondition,
+                    DueDateUtc       = source.DueDateUtc,
+                    Sequence         = sh.Sequence,
+                    Count            = sh.Count,
+                    Amount           = sh.Amount,
+                    EffectivePercent = sh.Percent,
+                    IsFinal          = sh.IsFinal
+                };
+            }).ToList();
+
             // ── Load the seller's letterhead ───────────────────────────
             // 065: was { Phone, FromEmail }. The company profile columns
             // 064 added are what let this document name the seller and
@@ -118,6 +152,16 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 TaxTotal      = quote.TaxTotal,
                 GrandTotal    = quote.GrandTotal,
                 VerticalName  = quote.Deal?.Vertical?.Name,
+
+                // 071. THE SAME HAZARD AS 055, 065 AND 067, a fourth
+                // time — this handler builds its own DTO by hand, so a
+                // field added to the other read paths and not here
+                // produces a PDF with a section silently missing. The
+                // schedule is the worst one to lose: the customer would
+                // be signing a document whose payment terms are only on
+                // the seller's screen.
+                PaymentStages = pdfStages,
+
                 Items = quote.Items.Select(i => new QuoteItemDto
                 {
                     Id             = i.Id,

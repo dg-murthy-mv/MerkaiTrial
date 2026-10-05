@@ -201,6 +201,20 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IPipelineStageService, PipelineStageService>();
         services.AddScoped<IQuoteService, QuoteService>();
         services.AddScoped<IQuoteApprovalService, QuoteApprovalService>();   // 017 — quote approvals
+
+        // 071 — the billing schedule on a quote (milestone billing).
+        //
+        // Read by Quotes/Detail (the schedule panel and the invoice
+        // list), written by the schedule editor on the same page, and
+        // read again by Invoices/Create to decide which stage is being
+        // billed. Without this line the app starts normally and then
+        // throws "Unable to resolve service for type
+        // 'IQuoteMilestoneService'" the first time anybody opens a quote
+        // — the worst shape of DI failure, because it looks like a page
+        // bug rather than a missing registration. This is the line round
+        // 068 had to be sent twice for.
+        services.AddScoped<IQuoteMilestoneService, QuoteMilestoneService>();
+
         services.AddScoped<IInvoiceService, InvoiceService>();
         services.AddScoped<IActivityService, ActivityService>();
         services.AddScoped<INotificationService, NotificationService>();   // 037

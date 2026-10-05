@@ -14,6 +14,21 @@
 //   print the HSN / SAC code against every line.
 //
 // ALSO IN THIS FILE, AND WORTH CHECKING YOU HAVE IT — 065
+// 071 — THE PAYMENT SCHEDULE ON THE CUSTOMER'S COPY
+//
+//   GetQuoteByTokenHandler also carries the billing schedule out to the
+//   public /q/{token} page, because that is the page where the customer
+//   presses Accept. Agreeing to a quote without its payment terms on the
+//   same screen is the one version of this feature that would be worse
+//   than not having it.
+//
+//   The read uses IgnoreQueryFilters for the same reason the quote read
+//   below it does — no tenant claim on an anonymous page — and the note
+//   beside it says what breaks silently without it.
+//
+//   Nothing about any INVOICE travels to the customer. Whether the
+//   seller has billed stage 2 yet is the seller's business.
+//
 //   GetQuoteByTokenHandler projects a QuoteSellerDto so the PUBLIC quote
 //   page can print your company's name, address and tax number. The copy
 //   of this file that was in the solution on 2 October did not have that
@@ -1348,6 +1363,55 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 })
                 .FirstOrDefaultAsync(ct);
 
+            // ── 071: THE PAYMENT SCHEDULE ────────────────────────────────
+            //
+            // IgnoreQueryFilters, for the third time in this handler and
+            // for exactly the reason the two notes above give: the public
+            // page is [AllowAnonymous] with no tenant claim, so
+            // CurrentTenantId is Guid.Empty and QuoteMilestone's STRICT
+            // filter would return an empty list. Not an error — an empty
+            // schedule is a perfectly normal answer — so the page would
+            // simply have printed the quote with its payment terms
+            // missing, on the one document where the customer agrees to
+            // them.
+            //
+            // Scoped by QuoteId AND TenantId even so. The filter is what
+            // is being bypassed, not the tenancy: a token identifies one
+            // quote on one workspace, and the tenant is known from the
+            // quote row itself.
+            var stages = await _db.QuoteMilestones
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(m => m.QuoteId == quote.Id && m.TenantId == quote.TenantId && !m.IsDeleted)
+                .OrderBy(m => m.SortOrder)
+                .ToListAsync(ct);
+
+            var shares = QuoteMilestones.Allocate(stages, quote.GrandTotal);
+
+            // Display only. No invoice information travels to the
+            // customer's page: whether the seller has raised stage 2 yet
+            // is the seller's business, and the public DTO deliberately
+            // carries exactly what gets printed and nothing else.
+            var publicStages = shares.Select(sh =>
+            {
+                var source = stages.First(m => m.Id == sh.MilestoneId);
+                return new MilestoneRowDto
+                {
+                    Id               = source.Id,
+                    SortOrder        = source.SortOrder,
+                    Name             = source.Name,
+                    Percent          = source.Percent,
+                    FixedAmount      = source.FixedAmount,
+                    DueCondition     = source.DueCondition,
+                    DueDateUtc       = source.DueDateUtc,
+                    Sequence         = sh.Sequence,
+                    Count            = sh.Count,
+                    Amount           = sh.Amount,
+                    EffectivePercent = sh.Percent,
+                    IsFinal          = sh.IsFinal
+                };
+            }).ToList();
+
             // 053. The public page is the customer's own copy of the quote,
             // so getting this wrong is the most visible version of the bug:
             // it addressed them by their own first and last name under a
@@ -1356,6 +1420,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
             {
                 // 065
                 Seller = seller,
+
+                // 071
+                PaymentStages = publicStages,
 
                 Id = quote.Id,
                 TenantId = quote.TenantId,

@@ -24,6 +24,12 @@
 //      to start without this, which is exactly what that guard is for.
 //   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
 //      tenant-owned and filtered.
+//  15. (071) QuoteMilestone — the billing schedule on a quote, "30% on
+//      signing, 40% on delivery, 30% on completion". Strictly
+//      tenant-owned: a schedule is never shared, so TenantId is not
+//      nullable and there is no Merkai default row. ZERO ROWS IS THE
+//      NORMAL STATE and means "invoice the whole quote once", which is
+//      what every quote raised before that round still does.
 //  14. (070) ProductBundleItem — what a bundle contains. Strictly
 //      tenant-owned, like ProductPrice. Two foreign keys to Products
 //      (the bundle and the component), both spelled out in
@@ -134,6 +140,14 @@ public class FlowDbContext : DbContext
     /// refuses a bundle inside a bundle.
     /// </summary>
     public DbSet<ProductBundleItem> ProductBundleItems => Set<ProductBundleItem>();
+
+    /// <summary>
+    /// 071. Strictly tenant-owned. The billing schedule on a quote — one
+    /// row per stage, each a percentage OR a fixed amount. NO ROWS means
+    /// "invoice the whole quote once", which is the default and what
+    /// every quote raised before 071 does.
+    /// </summary>
+    public DbSet<QuoteMilestone> QuoteMilestones => Set<QuoteMilestone>();
     public DbSet<User> Users => Set<User>();
     public DbSet<LeadChannel> LeadChannels { get; set; }
     public DbSet<LeadSource> LeadSources { get; set; }
@@ -252,6 +266,19 @@ public class FlowDbContext : DbContext
         // LineDiscounts and on the editor, not here.
         b.Entity<QuoteItem>()  .Property(e => e.DiscountPercent).HasPrecision(5, 2);
         b.Entity<InvoiceLine>().Property(e => e.DiscountPercent).HasPrecision(5, 2);
+
+        // 071 — the milestone share, as a percent. (9,4), matching
+        // QuoteMilestone.Percent and dbo.Invoices.MilestonePercent.
+        //
+        // This is the one line in this round that the 062 note is about.
+        // A third of a quote is 33.3333%; at EF's default two places it
+        // becomes 33.33, three of those come to 99.99, and the schedule
+        // is 0.01% short for a reason nothing on the screen explains.
+        // QuoteMilestone.Percent itself is declared in
+        // QuoteMilestoneConfiguration; this is the snapshot copy that
+        // lands on the invoice, and it needs the same shape or the
+        // snapshot disagrees with the schedule it came from.
+        b.Entity<Invoice>()    .Property(e => e.MilestonePercent).HasPrecision(9, 4);
     }
 
     // =================================================================
@@ -288,6 +315,14 @@ public class FlowDbContext : DbContext
 
         b.Entity<Quote>()           .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<QuoteItem>()       .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // QuoteMilestones (071). Strict. A billing schedule is one
+        // workspace's commercial terms with one customer; there is no
+        // version of this table where a Merkai default row makes sense,
+        // so it is deliberately NOT in the shared-or-tenant group with
+        // Role, CompanyVertical, TaxRate and ProductCategory.
+        b.Entity<QuoteMilestone>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
         b.Entity<Invoice>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<InvoiceLine>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<Payment>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);

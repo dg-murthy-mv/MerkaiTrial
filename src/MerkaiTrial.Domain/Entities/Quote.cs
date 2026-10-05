@@ -1,4 +1,19 @@
-﻿using MerkaiTrial.Domain.Enums;
+// =====================================================================
+// Quote.cs
+// Location: MerkaiTrial.Domain/Entities/Quote.cs
+//
+// CHANGES (071 — partial invoicing / milestone billing)
+//   ✅ ONE LINE ADDED: the Milestones navigation collection. Nothing
+//      else in this file moves, and no column is added to dbo.Quotes —
+//      the schedule lives in its own table (dbo.QuoteMilestones), so a
+//      quote with no schedule is a quote with no rows, which is exactly
+//      what every existing quote is.
+//
+//   An empty collection means "invoice the whole thing once": the
+//   behaviour the product had before this round, and still the default.
+// =====================================================================
+
+using MerkaiTrial.Domain.Enums;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace MerkaiTrial.Domain.Entities
@@ -37,5 +52,18 @@ namespace MerkaiTrial.Domain.Entities
         // Navigation Properties
         public Deal Deal { get; set; } = null!;
         public ICollection<QuoteItem> Items { get; set; } = new List<QuoteItem>();
+
+        /// <summary>
+        /// 071. The billing schedule — "30% on signing, 40% on delivery,
+        /// 30% on completion". EMPTY IS THE NORMAL STATE and means
+        /// "invoice the whole thing once", which is what the product did
+        /// before this round and still does for every quote nobody gives
+        /// a schedule to.
+        ///
+        /// Ordered by SortOrder wherever it is read; EF does not order a
+        /// collection for you, and the order of a billing schedule is
+        /// the order the work happens in.
+        /// </summary>
+        public ICollection<QuoteMilestone> Milestones { get; set; } = new List<QuoteMilestone>();
     }
 }

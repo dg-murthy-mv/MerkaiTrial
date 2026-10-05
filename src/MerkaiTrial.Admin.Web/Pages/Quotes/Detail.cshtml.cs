@@ -57,6 +57,37 @@
 //   ✅ Status / delete refusals from the API show their real message
 //      ("This quote needs approval before it can be sent…") instead of
 //      "Failed to update quote status".
+//
+// CHANGES (071 — partial invoicing / milestone billing)
+//
+//   ✅ A QUOTE CAN NOW HAVE MORE THAN ONE INVOICE, and this page assumed
+//      it could not. `Invoice` (singular) is kept — it is still the right
+//      answer for a quote with no schedule, which is most of them — but
+//      everything that used it as "is this quote invoiced" now reads
+//      LiveInvoices instead:
+//
+//        IsLocked          — was `|| Invoice != null`
+//        StatusActions     — the Revise button, same test
+//
+//      Without that change, a quote billed in three stages would unlock
+//      itself the moment the first stage was voided, because `Invoice`
+//      would come back null while two live invoices still existed.
+//
+//   ✅ THE BILLING SCHEDULE PANEL. Loaded as Billing; drawn by
+//      _BillingSchedule.cshtml, which is one line in Detail.cshtml the
+//      same way the approval panel is. Shows every stage with its
+//      computed amount, what has been invoiced against it, and a Create
+//      invoice button per stage.
+//
+//   ✅ OnPostSaveScheduleAsync — the editor posts one scheduleJson
+//      field, like the price grid in 069 and the bundle grid in 070.
+//
+//   ✅ OnPostCreateInvoiceAsync takes an OPTIONAL milestoneId. Null is
+//      the whole quote, which is what the existing button posts, so
+//      nothing about the unscheduled path changes. The duplicate check
+//      in this handler is now per stage, matching
+//      CreateInvoiceFromQuoteHandler — and the API has the final say
+//      either way, now backed by a unique index.
 // =====================================================================
 
 using System.Globalization;
@@ -80,18 +111,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly ICurrentTenantService  _tenantService;
         private readonly IInvoiceService        _invoiceService;
         private readonly IQuoteApprovalService  _approvals;
+        private readonly IQuoteMilestoneService _milestones;          // 071
         private readonly ILogger<DetailModel>   _logger;
 
         protected override string ModuleName => Modules.Quotes;
 
         public DetailModel(
-            IQuoteService         quoteService,
-            ICurrentUserService   currentUserService,
-            ICurrentTenantService tenantService,
-            IInvoiceService       invoiceService,
-            IQuoteApprovalService approvals,
-            IAuthorizationService authorizationService,
-            ILogger<DetailModel>  logger)
+            IQuoteService          quoteService,
+            ICurrentUserService    currentUserService,
+            ICurrentTenantService  tenantService,
+            IInvoiceService        invoiceService,
+            IQuoteApprovalService  approvals,
+            IQuoteMilestoneService milestones,
+            IAuthorizationService  authorizationService,
+            ILogger<DetailModel>   logger)
             : base(authorizationService, currentUserService, logger)
         {
             _quoteService       = quoteService;
@@ -99,6 +132,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _tenantService      = tenantService;
             _invoiceService     = invoiceService;
             _approvals          = approvals;
+            _milestones         = milestones;
             _logger             = logger;
         }
 
@@ -121,10 +155,96 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         /// <summary>Approval panel data. Null if it couldn't be loaded — the page still works.</summary>
         public QuoteApprovalStateDto? Approval { get; set; }
 
+        // ── 071: milestone billing ────────────────────────────────────
+
+        /// <summary>
+        /// EVERY invoice on this quote, void ones included, newest first.
+        /// A quote with a schedule has one per stage; a quote without has
+        /// at most one live and possibly several void.
+        /// </summary>
+        public List<InvoiceListItem> AllInvoices { get; set; } = new();
+
+        /// <summary>
+        /// The live ones — not void. THIS is "has this quote been
+        /// invoiced", and it replaces every `Invoice != null` test that
+        /// used to mean it. With a schedule, `Invoice` holds only the
+        /// first stage's invoice, so the old test would have unlocked a
+        /// part-billed quote the moment that one stage was voided.
+        /// </summary>
+        public List<InvoiceListItem> LiveInvoices =>
+            AllInvoices.Where(i => i.Status != "Cancelled").ToList();
+
+        /// <summary>
+        /// The billing schedule, with the agreed / invoiced / outstanding
+        /// rollup. Never null — see BillingScheduleResult: a failed load
+        /// and "no schedule" look identical in the DTO, so the flag comes
+        /// back separately and this page shows a warning rather than
+        /// pretending there are no payment terms.
+        /// </summary>
+        public BillingScheduleResult Billing { get; set; } = new();
+
+        /// <summary>True when this quote is billed in stages.</summary>
+        public bool HasSchedule => Billing.HasSchedule;
+
+        /// <summary>
+        /// True when the schedule panel should offer an Edit button.
+        /// Needs quotes.update; the API checks it again. A quote that has
+        /// been invoiced can still be opened — names and dates stay
+        /// editable — and the editor explains what is frozen.
+        /// </summary>
+        public bool CanEditSchedule => CanUpdate && Quote != null;
+
+        /// <summary>
+        /// Everything _BillingSchedule.cshtml needs, built here so the
+        /// partial reads nothing off this page model. One line in the
+        /// view:
+        ///
+        ///     &lt;partial name="_BillingSchedule" model="Model.BillingVm" /&gt;
+        ///
+        /// Money and Date are passed in as the page's OWN helpers —
+        /// amounts on this panel are in the QUOTE's currency and
+        /// DetailModel.Money already owns that rule, including appending
+        /// the ISO code for a foreign-currency quote. Re-deriving it in
+        /// the partial would be a second copy of the thing round 029 was
+        /// written to stop having two of.
+        /// </summary>
+        public BillingScheduleVm BillingVm => new()
+        {
+            QuoteId          = Id,
+            Billing          = Billing,
+            CurrencySymbol   = GetSymbol(Quote?.Currency),
+            QuoteTotal       = Quote?.GrandTotal ?? 0m,
+            Money            = Money,
+            Date             = FormatDate,
+            CanEdit          = CanEditSchedule,
+
+            // CROSS-MODULE. Raising an invoice from this page needs
+            // invoices.create as well as quotes.update, which is exactly
+            // what OnPostCreateInvoiceAsync checks before it does
+            // anything — so the button and the handler agree.
+            CanCreateInvoice = CanUpdate && UserCanCreate(Modules.Invoices),
+
+            Invoices         = AllInvoices,
+            SuggestedJson    = System.Text.Json.JsonSerializer.Serialize(
+                                   MerkaiTrial.Application.Commands.Quotes.QuoteMilestones
+                                       .SuggestedSchedule()
+                                       .Select(m => new
+                                       {
+                                           id           = Guid.Empty,
+                                           name         = m.Name,
+                                           percent      = m.Percent,
+                                           fixedAmount  = m.FixedAmount,
+                                           dueCondition = m.DueCondition,
+                                           dueDate      = (string?)null
+                                       }))
+        };
+
         // ── Level 1: UI lock ──────────────────────────────────────────
         // Accepted quotes with an invoice are part of the financial trail.
         // Accepted quotes without an invoice can still be deleted (edge case).
-        public bool IsLocked => Quote?.Status is "Accepted" or "Rejected" || Invoice != null;
+        //
+        // 071: LiveInvoices, not Invoice. See the property's own note.
+        public bool IsLocked => Quote?.Status is "Accepted" or "Rejected" || LiveInvoices.Count > 0;
 
         // ── Tenant context ────────────────────────────────────────────
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
@@ -165,9 +285,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 try
                 {
                     var invoiceList  = await _invoiceService.GetAllAsync(tenantId, quoteId: Id);
+
+                    // 071: the whole list is kept now, not just the first
+                    // live one. A quote billed in stages has one invoice
+                    // per stage, and the schedule panel has to show all of
+                    // them.
+                    AllInvoices      = invoiceList?.ToList() ?? new List<InvoiceListItem>();
+                    VoidInvoiceCount = AllInvoices.Count(i => i.Status == "Cancelled");
+
                     // (018) The live invoice — a void one doesn't count.
-                    var firstInvoice = invoiceList?.FirstOrDefault(i => i.Status != "Cancelled");
-                    VoidInvoiceCount = invoiceList?.Count(i => i.Status == "Cancelled") ?? 0;
+                    // Still loaded in full, because the existing "there is
+                    // an invoice" box on this page shows its totals, and
+                    // for a quote with no schedule it is the only invoice
+                    // there will ever be.
+                    var firstInvoice = AllInvoices.FirstOrDefault(i => i.Status != "Cancelled");
 
                     if (firstInvoice != null)
                         Invoice = await _invoiceService.GetByIdAsync(tenantId, firstInvoice.Id);
@@ -176,8 +307,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 {
                     _logger.LogWarning(invEx,
                         "Failed to load invoice for quote {QuoteId}", Id);
-                    Invoice = null;
+                    Invoice     = null;
+                    AllInvoices = new List<InvoiceListItem>();
                 }
+
+                // ── 071: the billing schedule ─────────────────────────
+                //
+                // Never throws — the service degrades and reports it with
+                // a flag. A quote page with one panel missing beats a dead
+                // quote page, and _BillingSchedule.cshtml says so on the
+                // screen rather than pretending there are no payment
+                // terms.
+                Billing = await _milestones.GetAsync(Id);
 
                 // ✅ Load attachments
                 try
@@ -540,8 +681,91 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             }
         }
 
+        // ── SAVE BILLING SCHEDULE (071) ───────────────────────────────
+        //
+        // One hidden field carrying the whole schedule as JSON, exactly
+        // like the price grid in 069 and the bundle grid in 070. The
+        // stages only make sense together — they have to add up to the
+        // quote — so "save the schedule" is one instruction and not a
+        // row-at-a-time API.
+        //
+        // AN EMPTY LIST IS A REAL INSTRUCTION: it removes the schedule
+        // and the quote goes back to being invoiced once, for the whole
+        // amount. A MALFORMED payload is NOT treated as empty — it
+        // refuses, because "the script failed to run" and "remove the
+        // payment terms" must never be the same outcome. That is the 069
+        // lesson: the price grid's hidden field originally defaulted to
+        // [] and would have deleted every price if its script had not
+        // run.
+        public async Task<IActionResult> OnPostSaveScheduleAsync(Guid id, string? scheduleJson)
+        {
+            try
+            {
+                var check = await ValidatePermissionAsync(Actions.Update);
+                if (check != null) return check;
+
+                Id = id;
+
+                if (Id == Guid.Empty)
+                {
+                    ErrorMessage = "Invalid quote ID";
+                    return RedirectToPage("/Quotes/Index");
+                }
+
+                List<QuoteMilestoneDto>? stages;
+                try
+                {
+                    stages = string.IsNullOrWhiteSpace(scheduleJson)
+                        ? null
+                        : System.Text.Json.JsonSerializer.Deserialize<List<QuoteMilestoneDto>>(
+                            scheduleJson,
+                            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch (System.Text.Json.JsonException jex)
+                {
+                    _logger.LogWarning(jex, "Malformed schedule payload for quote {QuoteId}", Id);
+                    stages = null;
+                }
+
+                if (stages == null)
+                {
+                    ErrorMessage = "The payment schedule didn't reach the server properly. " +
+                                   "Nothing has been changed — reload the page and try again.";
+                    return RedirectToPage(new { id = Id });
+                }
+
+                var saved = await _milestones.SaveAsync(Id, stages);
+
+                SuccessMessage = saved.HasSchedule
+                    ? $"Payment schedule saved — {saved.Rows.Count} stage{(saved.Rows.Count == 1 ? "" : "s")}."
+                    : "Payment schedule removed. This quote will be invoiced once, for the whole amount.";
+
+                return RedirectToPage(new { id = Id });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // "The stages come to 90,000.00 of 100,000.00…", or the
+                // lock message naming the invoice. Written for the person
+                // by QuoteMilestones.Validate.
+                ErrorMessage = ex.Message;
+                return RedirectToPage(new { id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save the billing schedule for quote {QuoteId}", id);
+                ErrorMessage = "Failed to save the payment schedule. Please try again.";
+                return RedirectToPage(new { id });
+            }
+        }
+
         // ── CREATE INVOICE ────────────────────────────────────────────
-        public async Task<IActionResult> OnPostCreateInvoiceAsync(Guid id)
+        //
+        // 071: milestoneId is OPTIONAL. Null means the whole quote, which
+        // is what the unscheduled path's button posts — so that path is
+        // unchanged. A quote WITH a schedule posts the stage's id from
+        // the schedule panel, and the API refuses a null for such a quote
+        // rather than quietly billing all of it.
+        public async Task<IActionResult> OnPostCreateInvoiceAsync(Guid id, Guid? milestoneId)
         {
             try
             {
@@ -583,29 +807,99 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     return RedirectToPage("/Quotes/Detail", new { id = Id });
                 }
 
+                // ── 071: which stage, and is it free? ─────────────────
+                //
+                // The schedule is re-read here rather than trusted from
+                // the form. The form was rendered at some point in the
+                // past; the schedule may have been re-cut since, and this
+                // handler is about to decide how much money to invoice.
+                //
+                // A FAILED LOAD STOPS THE WHOLE THING. "Could not read
+                // the schedule" and "there is no schedule" look the same
+                // in the DTO, and acting on the second when it was really
+                // the first would invoice the entire quote against a
+                // customer who agreed to pay 30% of it now. This is the
+                // one place that distinction is worth a hard stop.
+                var billing = await _milestones.GetAsync(Id);
+
+                if (billing.LoadFailed)
+                {
+                    ErrorMessage = "Couldn't read this quote's payment schedule, so no invoice has been created. " +
+                                   "Reload the page and try again.";
+                    return RedirectToPage("/Quotes/Detail", new { id = Id });
+                }
+
+                if (billing.HasSchedule && !milestoneId.HasValue)
+                {
+                    ErrorMessage = $"This quote is billed in {billing.Schedule.Rows.Count} stages. " +
+                                   "Pick a stage in the Payment schedule panel.";
+                    return RedirectToPage("/Quotes/Detail", new { id = Id });
+                }
+
+                if (!billing.HasSchedule && milestoneId.HasValue)
+                {
+                    ErrorMessage = "This quote no longer has a payment schedule. Reload the page and try again.";
+                    return RedirectToPage("/Quotes/Detail", new { id = Id });
+                }
+
+                var stage = milestoneId.HasValue
+                    ? billing.Schedule.Rows.FirstOrDefault(r => r.Id == milestoneId.Value)
+                    : null;
+
+                if (milestoneId.HasValue && stage == null)
+                {
+                    ErrorMessage = "That payment stage is no longer on this quote. Reload the page and try again.";
+                    return RedirectToPage("/Quotes/Detail", new { id = Id });
+                }
+
+                // The duplicate check, now PER STAGE. For a quote with no
+                // schedule this is the pre-071 test, word for word: the
+                // one live invoice with no stage against it.
+                //
+                // The API checks this again, and since 071 so does a
+                // unique index — which is the only one of the three that
+                // can win a race between two people pressing the button
+                // at the same moment.
                 var existingInvoices = await _invoiceService.GetAllAsync(tenantId, quoteId: Id);
-                var live = existingInvoices?.FirstOrDefault(i => i.Status != "Cancelled");
+
+                var live = stage == null
+                    ? existingInvoices?.FirstOrDefault(i => i.Status != "Cancelled" && !i.IsMilestoneInvoice)
+                    : existingInvoices?.FirstOrDefault(i => i.Status != "Cancelled"
+                                                            && i.MilestoneId == stage.Id);
+
                 if (live != null)
                 {
+                    var what = stage == null ? "this quote" : $"stage {stage.Sequence} ({stage.Name})";
+
                     ErrorMessage = live.Status == "Draft"
-                        ? "A draft invoice already exists for this quote — open it from the box above."
-                        : $"Invoice {live.Number} already exists for this quote. Void it first if it needs replacing.";
+                        ? $"A draft invoice already exists for {what} — open it from the panel above."
+                        : $"Invoice {live.Number} already covers {what}. Void it first if it needs replacing.";
                     return RedirectToPage("/Quotes/Detail", new { id = Id });
                 }
 
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
+                // The stage's own DueDateUtc is a SUGGESTION, so it
+                // pre-fills the due date when it has one. Thirty days
+                // from today otherwise — the pre-071 default, unchanged.
+                var dueDate = stage?.DueDateUtc?.Date ?? DateTime.UtcNow.Date.AddDays(30);
+
                 var invoice = await _invoiceService.CreateFromQuoteAsync(new CreateInvoiceFromQuoteDto
                 {
                     TenantId        = tenantId,
                     QuoteId         = Id,
+                    MilestoneId     = milestoneId,
                     IssueDateUtc    = DateTime.UtcNow.Date,
-                    DueDateUtc      = DateTime.UtcNow.Date.AddDays(30),
+                    DueDateUtc      = dueDate,
                     CreatedBy       = currentUser.FullName,
                     SendImmediately = false
                 });
 
-                SuccessMessage = "Draft invoice created. Check the dates, then Issue it — it gets its invoice number then.";
+                SuccessMessage = stage == null
+                    ? "Draft invoice created. Check the dates, then Issue it — it gets its invoice number then."
+                    : $"Draft invoice created for stage {stage.Sequence} of {stage.Count} ({stage.Name}). " +
+                      "Check the dates, then Issue it — it gets its invoice number then.";
+
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
             }
             catch (InvalidOperationException ex)
@@ -811,7 +1105,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     if (!CanChangeStatus(Quote.Status, m.Status)) continue;
                     // A quote that has been invoiced is part of the financial
                     // trail; don't offer to reopen it.
-                    if (m.Status == "Revised" && Invoice != null) continue;
+                    //
+                    // 071: LiveInvoices, not Invoice. A quote billed in
+                    // three stages whose FIRST stage was voided would come
+                    // back with Invoice == null while two live invoices
+                    // still existed, and this page would have offered to
+                    // revise it.
+                    if (m.Status == "Revised" && LiveInvoices.Count > 0) continue;
                     moves.Add(m);
                 }
 

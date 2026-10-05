@@ -104,6 +104,21 @@ namespace MerkaiTrial.Domain.Entities
         public const string QuoteAcceptedPublic = "QuoteAcceptedPublic";
         public const string QuoteRejectedPublic = "QuoteRejectedPublic";
 
+        // ── Billing schedule (071) ────────────────────────────────────
+        //
+        // Audited because the schedule decides how much money is
+        // invoiced and when. "Why is this invoice for 40% and not 30%"
+        // is answerable only if somebody wrote down that the schedule
+        // changed, and who changed it.
+        //
+        // Both values are abbreviated to stay inside the 32-character
+        // cap noted above — the same reason InvoiceStatusChanged is
+        // stored as "InvoiceStatusChgd".
+        public const string BillingScheduleSaved = "BillSchedSaved";
+
+        /// <summary>The schedule was removed; the quote goes back to one invoice.</summary>
+        public const string BillingScheduleCleared = "BillSchedCleared";
+
         // ── Invoices ──────────────────────────────────────────────────
         public const string InvoiceCreated = "InvoiceCreated";
         public const string InvoiceUpdated = "InvoiceUpdated";

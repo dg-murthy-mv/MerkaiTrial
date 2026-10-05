@@ -120,6 +120,22 @@
                     </h5>
                 </div>
                 <div class="card-body">
+                    @* 071. The amounts below are the QUOTE's. On a
+                       milestone invoice every one of them is billed at
+                       the stage's share, which is said here rather than
+                       left for somebody to work out from a total that
+                       does not match. *@
+                    @if (Model.Stage != null)
+                    {
+                        <div class="alert alert-light border py-2 px-3 small">
+                            <i class="bi bi-info-circle me-1 text-primary"></i>
+                            Every line below is billed at
+                            <strong>@Model.Stage.EffectivePercent.ToString("0.##")%</strong>
+                            for this stage, keeping its own tax rate and tax code.
+                            The figures shown are the quote's.
+                        </div>
+                    }
+
                     @foreach (var item in Model.Quote.Items)
                     {
                         <div class="border rounded p-3 mb-3">
@@ -219,6 +235,49 @@
             <div class="card-body">
                 @if (Model.Mode == "FromQuote" && Model.Quote != null)
                 {
+                    @* 071. A MILESTONE invoice is not for the quote's
+                       total, and showing the quote's total as "Grand
+                       Total" with a Create button under it would be the
+                       page telling somebody they are about to bill four
+                       lakh when they are about to bill one-and-a-half.
+
+                       So when a stage is being billed, the stage's own
+                       figure leads, and the quote's breakdown is shown
+                       below it, labelled as the quote's. The stage amount
+                       is the one the SERVER computed (including the
+                       last-stage remainder) — not re-derived here, which
+                       would be a second copy of the rounding rule. *@
+                    @if (Model.Stage != null)
+                    {
+                        <div class="alert alert-primary py-2 px-3 mb-3">
+                            <div class="small text-uppercase" style="letter-spacing:.03em;opacity:.8;">
+                                Stage @Model.Stage.Sequence of @Model.Stage.Count
+                            </div>
+                            <div class="fw-bold">@Model.Stage.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(Model.Stage.DueCondition))
+                            {
+                                <div class="small">@Model.Stage.DueCondition</div>
+                            }
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-end mb-3">
+                            <span class="fs-5 fw-bold">This invoice:</span>
+                            <span class="fs-4 fw-bold text-primary">@Model.FormatCurrency(Model.Stage.Amount)</span>
+                        </div>
+
+                        <div class="small text-muted mb-2">
+                            @Model.Stage.EffectivePercent.ToString("0.##")% of the accepted quote
+                            @if (Model.Stage.IsFinal && Model.Stage.Count > 1)
+                            {
+                                <text>— the final stage, so it bills whatever is left and the invoices add up to exactly the quote.</text>
+                            }
+                        </div>
+                        <hr>
+                        <div class="small text-muted mb-2">
+                            Accepted quote @Model.Quote.Number
+                        </div>
+                    }
+
                     <div class="d-flex justify-content-between mb-2">
                         <span>Subtotal:</span>
                         <span class="fw-bold">@Model.FormatCurrency(Model.Quote.Subtotal)</span>
@@ -236,8 +295,10 @@
                     </div>
                     <hr>
                     <div class="d-flex justify-content-between">
-                        <span class="fs-5 fw-bold">Grand Total:</span>
-                        <span class="fs-4 fw-bold text-primary">@Model.FormatCurrency(Model.Quote.GrandTotal)</span>
+                        <span class="fs-5 fw-bold">@(Model.Stage != null ? "Quote total:" : "Grand Total:")</span>
+                        <span class="@(Model.Stage != null ? "fs-5 fw-bold text-muted" : "fs-4 fw-bold text-primary")">
+                            @Model.FormatCurrency(Model.Quote.GrandTotal)
+                        </span>
                     </div>
                 }
                 else
@@ -271,6 +332,17 @@
                        selector always returned null and the submit hook never bound. *@
                     <form method="post" asp-page-handler="CreateFromQuote" id="fromQuoteInvoiceForm">
                         <input type="hidden" name="QuoteId" value="@Model.QuoteId" />
+                        @* 071. Which stage of the schedule this invoice is.
+                           Rendered only when there IS one, so a quote
+                           without a schedule posts exactly what it posted
+                           before this round — nothing. The handler
+                           re-reads the schedule and refuses a stage that
+                           has gone away, so a stale value here cannot
+                           bill the wrong thing. *@
+                        @if (Model.Stage != null)
+                        {
+                            <input type="hidden" name="MilestoneId" value="@Model.Stage.Id" />
+                        }
                         <input type="hidden" name="IssueDate" id="IssueDateHidden" value="@Model.IssueDate.ToString("yyyy-MM-dd")" />
                         <input type="hidden" name="DueDate" id="DueDateHidden" value="@Model.DueDate.ToString("yyyy-MM-dd")" />
                         <input type="hidden" name="Notes" id="NotesHidden" value="@Model.Notes" />

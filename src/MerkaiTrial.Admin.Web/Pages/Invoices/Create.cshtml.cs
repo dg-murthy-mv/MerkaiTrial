@@ -66,6 +66,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly IDealService _dealService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
+        private readonly IQuoteMilestoneService _milestones;          // 071
         private readonly ILogger<CreateModel> _logger;
 
         public CreateModel(
@@ -75,6 +76,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             IDealService dealService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
+            IQuoteMilestoneService milestones,
             IAuthorizationService authorizationService,
             ILogger<CreateModel> logger)
             : base(authorizationService, currentUserService, logger)
@@ -85,6 +87,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             _dealService = dealService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
+            _milestones = milestones;
             _logger = logger;
         }
 
@@ -128,6 +131,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         [BindProperty]
         public string? Notes { get; set; }
+
+        // ── 071: milestone billing ────────────────────────────────────
+
+        /// <summary>
+        /// WHICH stage of the quote's schedule to bill. Arrives in the
+        /// query string from the schedule panel's link, and is posted
+        /// back as a hidden field.
+        ///
+        /// NULL on a quote with no schedule, which is the default and
+        /// most quotes. A quote WITH a schedule and no stage chosen does
+        /// NOT silently bill the whole amount — the page refuses and asks
+        /// which stage, the same way CreateInvoiceFromQuoteHandler does.
+        /// </summary>
+        [BindProperty(SupportsGet = true)]
+        public Guid? MilestoneId { get; set; }
+
+        /// <summary>
+        /// The quote's billing schedule. Never null — a failed read comes
+        /// back flagged, and this page STOPS on that flag rather than
+        /// treating "could not read the schedule" as "there is no
+        /// schedule". The second would invoice a whole project to a
+        /// customer who agreed to pay 30% of it now.
+        /// </summary>
+        public BillingScheduleResult Billing { get; private set; } = new();
+
+        /// <summary>The stage being billed, resolved from MilestoneId. Null for a whole quote.</summary>
+        public MilestoneRowDto? Stage { get; private set; }
+
+        /// <summary>True when this quote is billed in stages.</summary>
+        public bool HasSchedule => Billing.HasSchedule;
 
         [TempData]
         public string? SuccessMessage { get; set; }
@@ -188,6 +221,61 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     Currency = !string.IsNullOrEmpty(Quote.Currency) ? Quote.Currency : _tenantService.GetCurrencyCode();
                     IssueDate = DateTime.Today;
                     DueDate = DateTime.Today.AddDays(30);
+
+                    // ── 071: the billing schedule ─────────────────────
+                    Billing = await _milestones.GetAsync(QuoteId.Value);
+
+                    if (Billing.LoadFailed)
+                    {
+                        // Hard stop. "Could not read the schedule" and
+                        // "there is no schedule" look identical in the
+                        // DTO, and carrying on as if it were the second
+                        // would bill the whole quote against a customer
+                        // who agreed to stages. Back to the quote, with a
+                        // sentence that says what happened.
+                        ErrorMessage = "Couldn't read this quote's payment schedule, so no invoice has been started. " +
+                                       "Try again from the quote.";
+                        return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                    }
+
+                    if (HasSchedule)
+                    {
+                        if (!MilestoneId.HasValue)
+                        {
+                            ErrorMessage = $"This quote is billed in {Billing.Schedule.Rows.Count} stages. " +
+                                           "Pick a stage in the Payment schedule panel.";
+                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                        }
+
+                        Stage = Billing.Schedule.Rows.FirstOrDefault(r => r.Id == MilestoneId.Value);
+
+                        if (Stage == null)
+                        {
+                            ErrorMessage = "That payment stage is no longer on this quote.";
+                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                        }
+
+                        if (Stage.IsInvoiced)
+                        {
+                            ErrorMessage = $"Stage {Stage.Sequence} ({Stage.Name}) is already covered by " +
+                                           $"{Stage.InvoiceNumber ?? "a draft invoice"}. " +
+                                           "Void it first if it needs replacing.";
+                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                        }
+
+                        // The stage's own date is a SUGGESTION, so it
+                        // pre-fills the due date when it has one. Thirty
+                        // days from today otherwise — the pre-071 default.
+                        if (Stage.DueDateUtc.HasValue)
+                            DueDate = Stage.DueDateUtc.Value.Date;
+                    }
+                    else if (MilestoneId.HasValue)
+                    {
+                        // A stale link: the schedule was removed after
+                        // somebody opened the quote page.
+                        ErrorMessage = "This quote no longer has a payment schedule.";
+                        return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                    }
                 }
                 else if (DealId.HasValue)
                 {
@@ -270,10 +358,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
+                // ── 071: re-read the schedule. ────────────────────────
+                //
+                // Not trusted from the form. The form was rendered at
+                // some point in the past, the schedule may have been
+                // re-cut since, and this handler is about to decide how
+                // much money to invoice. A failed read stops everything
+                // for the reason the OnGet path gives at length.
+                var billing = await _milestones.GetAsync(QuoteId.Value);
+
+                if (billing.LoadFailed)
+                {
+                    ErrorMessage = "Couldn't read this quote's payment schedule, so no invoice has been created. " +
+                                   "Reload the page and try again.";
+                    return RedirectToPage(new { QuoteId });
+                }
+
+                if (billing.HasSchedule && !MilestoneId.HasValue)
+                {
+                    ErrorMessage = $"This quote is billed in {billing.Schedule.Rows.Count} stages. " +
+                                   "Pick a stage in the Payment schedule panel on the quote.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
+                if (!billing.HasSchedule && MilestoneId.HasValue)
+                {
+                    ErrorMessage = "This quote no longer has a payment schedule. Reload the page and try again.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
+                if (MilestoneId.HasValue &&
+                    billing.Schedule.Rows.All(r => r.Id != MilestoneId.Value))
+                {
+                    ErrorMessage = "That payment stage is no longer on this quote. Reload the page and try again.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
                 var dto = new CreateInvoiceFromQuoteDto
                 {
                     TenantId = tenantId,
                     QuoteId = QuoteId.Value,
+                    MilestoneId = MilestoneId,          // 071 — null = the whole quote
                     IssueDateUtc = AsUtcDate(IssueDate),
                     DueDateUtc = AsUtcDate(DueDate),
                     Notes = Notes,
@@ -289,13 +414,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             catch (InvalidOperationException ex)
             {
                 ErrorMessage = ex.Message;
-                return RedirectToPage(new { QuoteId });
+                return RedirectToPage(new { QuoteId, MilestoneId });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating invoice from quote");
                 ErrorMessage = "Failed to create the invoice. Please try again.";
-                return RedirectToPage(new { QuoteId });
+                return RedirectToPage(new { QuoteId, MilestoneId });
             }
         }
 
@@ -373,15 +498,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         /// <summary>A date picked on the page is a calendar date — keep it, don't shift it by the server's time zone.</summary>
         private static DateTime AsUtcDate(DateTime d) => DateTime.SpecifyKind(d.Date, DateTimeKind.Utc);
 
-        /// <summary>Says whether it was issued, and if not, why.</summary>
+        /// <summary>
+        /// Says whether it was issued, and if not, why.
+        ///
+        /// 071: a milestone invoice says WHICH stage, from the snapshot on
+        /// the invoice itself rather than from the schedule, so the
+        /// sentence matches the document that was just created even if
+        /// the schedule changes a minute later.
+        /// </summary>
         private static string ResultMessage(InvoiceDto invoice, bool wantedToIssue)
         {
+            var stage = invoice.IsMilestoneInvoice && invoice.MilestoneSequence.HasValue
+                ? $" for stage {invoice.MilestoneSequence} of {invoice.MilestoneCount} ({invoice.MilestoneName})"
+                : string.Empty;
+
             if (invoice.Status != "Draft")
-                return $"Invoice {invoice.Number} created and issued.";
+                return $"Invoice {invoice.Number} created and issued{stage}.";
 
             return wantedToIssue
                 ? "Invoice saved as a draft but NOT issued — it's over your workspace's limits, so a manager of this deal's team (or an admin) needs to issue it. Open it to see why."
-                : "Draft invoice created. Issue it when it's ready — it gets its number then.";
+                : $"Draft invoice created{stage}. Issue it when it's ready — it gets its number then.";
         }
 
         // NOTE: this nested InvoiceItemData duplicates the top-level

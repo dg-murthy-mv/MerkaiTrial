@@ -113,6 +113,40 @@
     </div>
 }
 
+@* ── (071) MILESTONE banner ──────────────────────────────────────
+   This invoice bills ONE STAGE of a quote's payment schedule, so its
+   unit prices are a share of the quote's and will not match the
+   catalogue. That needs saying at the top, next to the figures, and not
+   on another page: a customer's accounts department reading "1 ×
+   ₹13,500" against a catalogue price of ₹45,000 is a phone call.
+
+   Everything here is a SNAPSHOT taken when the invoice was raised. The
+   schedule is deliberately not re-read — renaming a stage must not
+   rewrite an invoice that is already out. *@
+@if (Model.Invoice?.IsMilestoneInvoice == true)
+{
+    <div class="alert alert-primary d-flex gap-3 align-items-start mb-4">
+        <i class="bi bi-calendar2-check fs-3"></i>
+        <div>
+            <div class="fw-bold">@Model.Invoice.MilestoneLabel</div>
+            @if (!string.IsNullOrWhiteSpace(Model.Invoice.MilestoneBasisNote))
+            {
+                <div class="small">@Model.Invoice.MilestoneBasisNote</div>
+            }
+            <div class="small mt-1">
+                Every line of the quote is on this invoice at that share, keeping its own
+                tax rate and tax code.
+                @if (Model.Invoice.QuoteId.HasValue)
+                {
+                    <a href="/Quotes/Detail?id=@Model.Invoice.QuoteId" class="text-decoration-none">
+                        See the full schedule on the quote <i class="bi bi-arrow-right"></i>
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @* ── (018) DRAFT: issue box ─────────────────────────────────────── *@
 @if (Model.IsDraft)
 {

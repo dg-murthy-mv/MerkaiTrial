@@ -1,20 +1,10 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages.Quotes
-@using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
 @{
     ViewData["Title"] = Model.Quote == null ? "Quote" : $"Quote {Model.Quote.Number}";
 
     var q = Model.Quote;
-
-    // 067. The tax classification code, shown under the item name rather
-    // than in a column of its own: this table already carries seven
-    // columns, and the item cell is the only one that can take a third
-    // line without the numbers losing width. The label follows the
-    // QUOTE's currency, not the workspace's — a quote priced in INR says
-    // "HSN / SAC" even when the workspace is set to something else.
-    var taxCodeLabel = TaxCodes.ColumnHeaderFor(
-        string.IsNullOrWhiteSpace(q?.Currency) ? Model.CurrencyCode : q!.Currency);
     var hasExpiry = q != null && DetailModel.HasExpiry(q.ExpiresAtUtc);
     var outWithCustomer = q != null && (q.Status == "Sent" || q.Status == "Viewed");
     var expiryDays = hasExpiry ? Model.DaysUntilExpiry(q!.ExpiresAtUtc) : 0;
@@ -144,16 +134,6 @@
     .qd-items .nm { font-weight: 600; color: #0f172a; }
     .qd-items .ds { color: #64748b; font-size: .8rem; margin-top: .15rem; }
     .qd-items .muted { color: #94a3b8; }
-
-    /* 067. The line's tax classification code. Monospaced because it is a
-       reference number people compare digit by digit, and quiet because
-       most workspaces never set one. */
-    .qd-items .tc { margin-top: .22rem; font-size: .72rem; color: #475569;
-                    display: inline-block; padding: .05rem .4rem; border-radius: 4px;
-                    border: 1px solid #e2e8f0; background: #f8fafc; }
-    .qd-items .tc .k { color: #94a3b8; margin-right: .3rem; }
-    .qd-items .tc .v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-                       font-weight: 600; letter-spacing: .02em; }
 
     /* ── totals ─────────────────────────────────────────────────── */
     .qd-tot { display: grid; grid-template-columns: 1fr auto; gap: .35rem .9rem; font-size: .88rem; }
@@ -290,7 +270,10 @@ else
             {
                 <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-2">
                     <i class="bi bi-lock-fill me-1"></i>
-                    @(Model.Invoice != null ? "Invoiced — view only" : "Closed — view only")
+                    @* 071: LiveInvoices, not Invoice. A quote billed in
+                       stages whose FIRST stage was voided still has live
+                       invoices, and this badge used to call it "closed". *@
+                    @(Model.LiveInvoices.Count > 0 ? "Invoiced — view only" : "Closed — view only")
                 </span>
             }
         </div>
@@ -300,7 +283,47 @@ else
     @* ONE strip, not three stacked alerts. Which one you get is decided by
        priority: a live invoice outranks "accepted, raise an invoice",
        which outranks the plain status hint. *@
-    @if (Model.Invoice != null)
+    @* 071. A quote billed in STAGES gets its own strip. The old one said
+       "Invoiced as INV-0042" off the first live invoice it found, which on
+       a three-stage quote with one stage billed is true of a third of the
+       money and reads as though the whole thing is done. The schedule
+       panel below carries the detail; this is the one-line summary. *@
+    @if (Model.HasSchedule)
+    {
+        var sched  = Model.Billing.Schedule;
+        var billed = sched.Rows.Count(r => r.IsInvoiced);
+        var left   = sched.Rows.Count - billed;
+
+        <div class="qd-state" style="--tone:#6610f2;">
+            <i class="bi bi-calendar2-check" style="font-size:1.1rem;color:#6610f2;"></i>
+            <span class="txt">
+                @if (billed == 0)
+                {
+                    <text>
+                        <strong>Billed in @sched.Rows.Count stages.</strong>
+                        Nothing invoiced yet — raise the first one from the payment schedule below.
+                    </text>
+                }
+                else if (left == 0)
+                {
+                    <text>
+                        <strong>All @sched.Rows.Count stages invoiced</strong> —
+                        @Model.Money(sched.InvoicedTotal) of @Model.Money(sched.QuoteTotal),
+                        @Model.Money(sched.OutstandingTotal) still outstanding.
+                    </text>
+                }
+                else
+                {
+                    <text>
+                        <strong>@billed of @sched.Rows.Count stages invoiced</strong> —
+                        @Model.Money(sched.InvoicedTotal) billed,
+                        @Model.Money(sched.NotYetInvoicedTotal) still to bill.
+                    </text>
+                }
+            </span>
+        </div>
+    }
+    else if (Model.Invoice != null)
     {
         <div class="qd-state" style="--tone:#0d6efd;">
             <i class="bi bi-receipt" style="font-size:1.1rem;color:#0d6efd;"></i>
@@ -381,6 +404,11 @@ else
     @* (017) Approval panel — draws nothing when there's nothing to say *@
     <partial name="_QuoteApprovalPanel" model="Model" />
 
+    @* (071) Payment schedule. Always drawn: with no schedule it explains
+       that this quote is invoiced once, which is the thing somebody
+       looking for staged billing needs to be told. *@
+    <partial name="_BillingSchedule" model="Model.BillingVm" />
+
     <div class="row g-3">
 
         @* ── LEFT: line items + totals ──────────────────────────── *@
@@ -430,17 +458,6 @@ else
                                             @if (!string.IsNullOrWhiteSpace(it.Description))
                                             {
                                                 <div class="ds">@it.Description</div>
-                                            }
-                                            @* 067. Only when the line HAS one. A badge
-                                               reading "HSN / SAC —" on every line of
-                                               every quote in three of four markets would
-                                               be noise, and the PDF applies the same rule
-                                               to its column. *@
-                                            @if (it.HasTaxCode)
-                                            {
-                                                <div class="tc">
-                                                    <span class="k">@taxCodeLabel</span><span class="v">@it.TaxCode</span>
-                                                </div>
                                             }
                                         </td>
                                         @* 052: "12.5 m²" rather than a bare "12.5".

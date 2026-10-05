@@ -39,6 +39,37 @@
 //   ✅ Line checks on create/update (quantity, price, discount, tax).
 //   ✅ Delete: drafts only.
 //
+// 071 — PARTIAL INVOICING / MILESTONE BILLING
+//
+//   A quote can carry a BILLING SCHEDULE: "30% on signing, 40% on
+//   delivery, 30% on completion". Each stage becomes its own invoice,
+//   and each invoice is a COMPLETE copy of the quote at that stage's
+//   share — every line, so every line keeps its own tax rate and its
+//   own HSN / SAC code. After 067 that is the whole point.
+//
+//   ✅ THE ONE-INVOICE-PER-QUOTE GUARD IS NOW ONE PER MILESTONE. The
+//      message changes from "an invoice already exists for this quote"
+//      to naming the stage. For a quote with NO schedule the rule is
+//      byte-for-byte what it was: MilestoneId is NULL on every invoice,
+//      and the query below looks for a live invoice with a NULL
+//      MilestoneId — one per quote. The database now enforces it too
+//      (UX_Invoices_Quote_Milestone_Live), which closes a race the
+//      read-then-write guard could never close on its own.
+//
+//   ✅ A quote WITH a schedule REFUSES an invoice that does not name a
+//      stage. Quietly billing the whole amount against a quote somebody
+//      deliberately split into stages is the worst available reading of
+//      an omitted field.
+//
+//   ✅ LINE SCALING. QuoteMilestones.AllocateLines does the arithmetic;
+//      the rounding rule and the proof that the stages sum to exactly
+//      the quote total are in that file's header. What this file owns is
+//      how a scaled line READS — see the long note in
+//      CreateInvoiceFromQuoteHandler. A line that is fully allocated to
+//      this stage (a single 100% stage, which is the default) is copied
+//      verbatim, so the common case produces exactly the invoice it
+//      produced before this round.
+//
 // 067 — TAX CLASSIFICATION ON THE LINE
 //   ✅ Every line path carries TaxCode — the HSN / SAC code in India, the
 //      local equivalent elsewhere, null where none applies.
@@ -80,6 +111,7 @@
 using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.Commands.Quotes;
 using MerkaiTrial.Application.Common;          // 055: LineDiscounts
+using MerkaiTrial.Application.Configuration;   // 052: UnitsOfMeasure — 071 needs it for a collapsed line
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -301,6 +333,18 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 Amount = grandTotal,
                 Balance = grandTotal,
                 Notes = dto.Notes,
+
+                // 071. All five NULL unless CreateInvoiceFromQuoteHandler
+                // filled them in — which is the only thing that does. A
+                // manual invoice has no quote and therefore no schedule,
+                // and the database refuses the combination anyway
+                // (CK_Invoices_MilestoneNeedsQuote).
+                MilestoneId = dto.MilestoneId,
+                MilestoneName = dto.MilestoneName,
+                MilestoneSequence = dto.MilestoneSequence,
+                MilestoneCount = dto.MilestoneCount,
+                MilestonePercent = dto.MilestonePercent,
+
                 CreatedAtUtc = now,
                 CreatedBy = string.IsNullOrWhiteSpace(dto.CreatedBy) ? currentUser.FullName : dto.CreatedBy!,
                 IsDeleted = false
@@ -336,7 +380,18 @@ namespace MerkaiTrial.Application.Commands.Invoices
 
             await _audit.WriteAsync(
                 AuditAction.InvoiceCreated, AuditEntityType.Invoice, invoice.Id, dto.TenantId,
-                new { number = invoice.Number, total = invoice.Total, quoteId = invoice.QuoteId });
+                new
+                {
+                    number = invoice.Number,
+                    total = invoice.Total,
+                    quoteId = invoice.QuoteId,
+                    // 071. Which stage, and what share of the quote. "Why
+                    // is this invoice 40% of the quote" has to be
+                    // answerable from the audit log and not only from a
+                    // screen that may have been re-cut since.
+                    milestoneId = invoice.MilestoneId,
+                    milestone = invoice.MilestoneLabel
+                });
 
             if (dto.SendImmediately)
             {
@@ -382,6 +437,19 @@ namespace MerkaiTrial.Application.Commands.Invoices
             GrandTotal = invoice.Subtotal - invoice.DiscountTotal + invoice.TaxTotal,
             Balance = invoice.Balance,
             Notes = invoice.Notes,
+
+            // 071. The snapshots, straight off the row — the schedule is
+            // deliberately not consulted. QuoteNumber comes with them
+            // because InvoiceDto.MilestoneBasisNote prints it ("Amounts
+            // shown are 40% of accepted quote QUO-0042"), and the Quote
+            // is already Included by the caller's query.
+            QuoteNumber = invoice.Quote?.Number,
+            MilestoneId = invoice.MilestoneId,
+            MilestoneName = invoice.MilestoneName,
+            MilestoneSequence = invoice.MilestoneSequence,
+            MilestoneCount = invoice.MilestoneCount,
+            MilestonePercent = invoice.MilestonePercent,
+
             Lines = invoice.Lines.Select(l => new InvoiceLineDto
             {
                 Id = l.Id,
@@ -447,68 +515,263 @@ namespace MerkaiTrial.Application.Commands.Invoices
             if (quote.Status != QuoteStatus.Accepted)
                 throw new InvalidOperationException("Can only create invoice from accepted quotes");
 
-            // A VOID invoice doesn't block a new one — that is how a mistake
-            // on an issued invoice is corrected.
-            var existingInvoice = await _db.Invoices
-                .FirstOrDefaultAsync(i => i.QuoteId == dto.QuoteId && i.TenantId == dto.TenantId &&
-                                          !i.IsDeleted && i.Status != InvoiceStatus.Cancelled);
+            // ── 071: which stage of the schedule is this? ─────────────
+            //
+            // An EMPTY schedule is the normal case and means "the whole
+            // quote" — the pre-071 behaviour, unchanged. A schedule WITH
+            // stages requires the caller to name one.
+            var milestones = await QuoteMilestones.GetForQuoteAsync(_db, dto.TenantId, dto.QuoteId);
+            var shares = QuoteMilestones.Allocate(milestones, quote.GrandTotal);
+
+            var stageIndex = -1;
+            MilestoneShare? stage = null;
+
+            if (shares.Count > 0)
+            {
+                if (!dto.MilestoneId.HasValue)
+                    throw new InvalidOperationException(
+                        $"Quote {quote.Number} is billed in {shares.Count} stages. " +
+                        $"Pick which one to invoice: {string.Join("; ", shares.Select(s => $"{s.Sequence}. {s.Name}"))}.");
+
+                stageIndex = shares.FindIndex(s => s.MilestoneId == dto.MilestoneId.Value);
+
+                if (stageIndex < 0)
+                    throw new InvalidOperationException(
+                        "That payment stage is no longer on this quote. Reload the quote and pick a stage again.");
+
+                stage = shares[stageIndex];
+
+                if (stage.Amount <= 0m)
+                    throw new InvalidOperationException(
+                        $"Stage {stage.Sequence} ({stage.Name}) comes to nothing on this quote, so there is no invoice to raise.");
+            }
+            else if (dto.MilestoneId.HasValue)
+            {
+                throw new InvalidOperationException(
+                    "This quote has no payment schedule, so there is no stage to invoice. Invoice the whole quote instead.");
+            }
+
+            // ── The guard: ONE LIVE INVOICE PER STAGE ─────────────────
+            //
+            // A VOID invoice doesn't block a new one — that is how a
+            // mistake on an issued invoice is corrected.
+            //
+            // The MilestoneId comparison is BRANCHED IN C# rather than
+            // written as one expression. `i.MilestoneId == dto.MilestoneId`
+            // with a null on the right is the kind of thing that depends
+            // on the provider's null semantics to come out as IS NULL
+            // instead of `= @p` — and if it ever came out as the latter,
+            // the no-schedule case would match nothing, the guard would
+            // pass, and a quote could be invoiced twice. Two explicit
+            // Where clauses cannot be read two ways.
+            var liveInvoices = _db.Invoices
+                .Where(i => i.QuoteId == dto.QuoteId
+                            && i.TenantId == dto.TenantId
+                            && !i.IsDeleted
+                            && i.Status != InvoiceStatus.Cancelled);
+
+            // ⚠ BEFORE the per-stage check: a live invoice for the WHOLE
+            // quote blocks EVERY stage.
+            //
+            // The case is a quote with no schedule that gets invoiced in
+            // full, after which somebody adds a schedule.
+            // SaveBillingScheduleHandler refuses that, so it should not
+            // be reachable — but "should not be reachable" is how a quote
+            // ends up billed twice, and this is the handler that would
+            // actually do it. A pre-071 invoice carries MilestoneId NULL,
+            // which is exactly this shape.
+            if (dto.MilestoneId.HasValue)
+            {
+                var wholeQuote = await _db.Invoices
+                    .Where(i => i.QuoteId == dto.QuoteId
+                                && i.TenantId == dto.TenantId
+                                && !i.IsDeleted
+                                && i.Status != InvoiceStatus.Cancelled
+                                && i.MilestoneId == null)
+                    .Select(i => i.Number)
+                    .FirstOrDefaultAsync();
+
+                if (wholeQuote != null)
+                    throw new InvalidOperationException(
+                        $"This quote is already invoiced in full ({wholeQuote}), so a stage cannot be billed on top of it. " +
+                        "Void that invoice first.");
+            }
+
+            liveInvoices = dto.MilestoneId.HasValue
+                ? liveInvoices.Where(i => i.MilestoneId == dto.MilestoneId.Value)
+                : liveInvoices.Where(i => i.MilestoneId == null);
+
+            var existingInvoice = await liveInvoices.FirstOrDefaultAsync();
 
             if (existingInvoice != null)
+            {
+                var what = stage == null
+                    ? "this quote"
+                    : $"stage {stage.Sequence} ({stage.Name}) of this quote";
+
                 throw new InvalidOperationException(existingInvoice.Status == InvoiceStatus.Draft
-                    ? "A draft invoice already exists for this quote — open it instead."
-                    : $"Invoice {existingInvoice.Number} already exists for this quote. Void it first if it needs to be replaced.");
+                    ? $"A draft invoice already exists for {what} — open it instead."
+                    : $"Invoice {existingInvoice.Number} already covers {what}. Void it first if it needs to be replaced.");
+            }
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
+
+            // ── 071: the lines, scaled to this stage ──────────────────
+            //
+            // Quote order, so the invoice lists what the quote lists in
+            // the order the quote listed it.
+            var items = quote.Items.Where(i => !i.IsDeleted).ToList();
+            var lineShares = QuoteMilestones.AllocateLines(items, shares, stageIndex);
+
+            var lines = new List<CreateInvoiceLineDto>();
+
+            for (var index = 0; index < items.Count; index++)
+            {
+                var item = items[index];
+                var shareOfLine = lineShares[index];
+
+                var grossFull = item.UnitPrice * item.Quantity;
+
+                var line = new CreateInvoiceLineDto
+                {
+                    ProductId = item.ProductId,
+                    Name = item.Name,
+                    Description = item.Description,
+                    TaxRate = item.TaxRate,
+                    // 067: the HSN / SAC code travels with the line, and
+                    // this is the copy that matters most. The invoice is
+                    // the document the tax authority sees; it must carry
+                    // the classification the customer accepted on the
+                    // quote, not whatever the catalogue happens to say
+                    // on the day the invoice is raised.
+                    //
+                    // ?? "" rather than passing the quote's null straight
+                    // through: null tells CreateInvoiceHandler "nothing
+                    // was said about the code, go and ask the product",
+                    // and that is exactly what must NOT happen here. A
+                    // quote line deliberately carrying no code has to
+                    // produce an invoice line carrying no code — see
+                    // LineTaxCodes.Resolve, where null and "" mean two
+                    // different things on purpose.
+                    //
+                    // 071 does not change this. A stage bills a share of
+                    // the money, never a different classification.
+                    TaxCode = item.TaxCode ?? ""
+                };
+
+                // ── HOW A SCALED LINE READS ───────────────────────────
+                //
+                // Three cases, and the first one is the one that runs
+                // almost always.
+                //
+                // 1. THE WHOLE LINE. No schedule, or a single 100% stage
+                //    (the default), or a stage that happens to take all
+                //    of this line. Copied verbatim — quantity, unit
+                //    price, unit of measure and the discount PERCENTAGE,
+                //    exactly as before 071. This is what makes the
+                //    common case produce byte-for-byte the invoice it
+                //    produced in round 070.
+                //
+                // 2. THE QUANTITY DIVIDES EVENLY. "3 days × ₹15,000" at
+                //    40% becomes "3 days × ₹6,000". The quantity and the
+                //    unit survive, which is the whole point of 052, and
+                //    the arithmetic is exact because the division came
+                //    out at two places.
+                //
+                // 3. IT DOES NOT DIVIDE EVENLY. The line collapses to
+                //    one unit at the stage's value. The alternative is a
+                //    unit price with a rounding error in it, multiplied
+                //    by the quantity — which would make the invoices
+                //    stop summing to the quote, and that is the one
+                //    promise this round is not allowed to break.
+                //
+                // THE DISCOUNT PERCENTAGE IS DROPPED in cases 2 and 3,
+                // on purpose. CreateInvoiceHandler treats a percentage
+                // as authoritative and RECOMPUTES the amount from it
+                // (LineDiscounts.Resolve) — which would throw away the
+                // allocated figure and put the rounding error straight
+                // back. The allocated amount is passed instead; the
+                // screens still show an implied percentage where they
+                // want one (LineDiscounts.ImpliedPercent).
+                if (shareOfLine.Gross == grossFull && shareOfLine.Discount == item.LineDiscount)
+                {
+                    // Case 1.
+                    line.UnitPrice = item.UnitPrice;
+                    line.Quantity = item.Quantity;
+                    // 052: the quote's unit, copied like Name and
+                    // UnitPrice. An invoice raised from a quote must say
+                    // the same thing the customer accepted, down to "m²".
+                    line.UnitOfMeasure = item.UnitOfMeasure;
+                    line.LineDiscount = item.LineDiscount;
+                    // 055: the percentage travels with the line. Without
+                    // it the invoice would show a flat amount where the
+                    // quote said "-10%", which is the same money
+                    // described two different ways to the same customer.
+                    line.DiscountPercent = item.DiscountPercent;
+                }
+                else
+                {
+                    var scaledUnitPrice = item.Quantity > 0m
+                        ? decimal.Round(shareOfLine.Gross / item.Quantity, 2, MidpointRounding.AwayFromZero)
+                        : 0m;
+
+                    if (item.Quantity > 0m && scaledUnitPrice * item.Quantity == shareOfLine.Gross)
+                    {
+                        // Case 2.
+                        line.UnitPrice = scaledUnitPrice;
+                        line.Quantity = item.Quantity;
+                        line.UnitOfMeasure = item.UnitOfMeasure;
+                    }
+                    else
+                    {
+                        // Case 3.
+                        line.UnitPrice = shareOfLine.Gross;
+                        line.Quantity = 1m;
+                        line.UnitOfMeasure = UnitsOfMeasure.Unit;
+                    }
+
+                    line.LineDiscount = shareOfLine.Discount;
+                    line.DiscountPercent = null;   // see the note above
+                }
+
+                lines.Add(line);
+            }
 
             var createDto = new CreateInvoiceDto
             {
                 TenantId = dto.TenantId,
                 QuoteId = dto.QuoteId,
                 DealId = quote.DealId,
+                // 071. DueDateUtc stays the caller's — the stage's own
+                // DueDateUtc is a SUGGESTION the page pre-fills with, not
+                // something this handler imposes behind the user's back.
                 IssueDateUtc = dto.IssueDateUtc,
                 DueDateUtc = dto.DueDateUtc,
                 Currency = quote.Currency,
                 Notes = dto.Notes,
                 SendImmediately = dto.SendImmediately,
                 CreatedBy = string.IsNullOrWhiteSpace(dto.CreatedBy) ? currentUser.FullName : dto.CreatedBy,
-                Lines = quote.Items.Where(i => !i.IsDeleted).Select(item => new CreateInvoiceLineDto
-                {
-                    ProductId = item.ProductId,
-                    Name = item.Name,
-                    Description = item.Description,
-                    UnitPrice = item.UnitPrice,
-                    Quantity = item.Quantity,
-                    // 052: the quote's unit, copied like Name and UnitPrice.
-                    // An invoice raised from a quote must say the same thing
-                    // the customer accepted, down to "m²".
-                    UnitOfMeasure = item.UnitOfMeasure,
-                    LineDiscount = item.LineDiscount,
-                    // 055: the percentage travels with the line. Without it
-                    // the invoice would show a flat amount where the quote
-                    // said "-10%", which is the same money described two
-                    // different ways to the same customer.
-                    DiscountPercent = item.DiscountPercent,
-                    TaxRate = item.TaxRate,
-                    // 067: the HSN / SAC code travels with the line too, and
-                    // this is the copy that matters most. The invoice is the
-                    // document the tax authority sees; it must carry the
-                    // classification the customer accepted on the quote, not
-                    // whatever the catalogue happens to say on the day the
-                    // invoice is raised.
-                    //
-                    // ?? "" rather than passing the quote's null straight
-                    // through: null tells CreateInvoiceHandler "nothing was
-                    // said about the code, go and ask the product", and that
-                    // is exactly what must NOT happen here. A quote line
-                    // deliberately carrying no code has to produce an invoice
-                    // line carrying no code — see LineTaxCodes.Resolve, where
-                    // null and "" mean two different things on purpose.
-                    TaxCode = item.TaxCode ?? ""
-                }).ToList()
+
+                // 071. The snapshots. stage is null for a whole-quote
+                // invoice, which leaves all five NULL — the pre-071 row.
+                MilestoneId = stage?.MilestoneId,
+                MilestoneName = stage?.Name,
+                MilestoneSequence = stage?.Sequence,
+                MilestoneCount = stage?.Count,
+                MilestonePercent = stage?.Percent,
+
+                Lines = lines
             };
 
             var result = await _createInvoice.Handle(createDto);
-            _logger.LogInformation("Invoice {Number} created from quote {QuoteNumber}", result.Number, quote.Number);
+
+            if (stage == null)
+                _logger.LogInformation("Invoice {Number} created from quote {QuoteNumber}", result.Number, quote.Number);
+            else
+                _logger.LogInformation(
+                    "Invoice {Number} created from quote {QuoteNumber} for milestone {Sequence}/{Count} ({Percent}%)",
+                    result.Number, quote.Number, stage.Sequence, stage.Count, stage.Percent);
+
             return result;
         }
     }

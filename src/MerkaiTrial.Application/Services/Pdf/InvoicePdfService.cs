@@ -38,6 +38,18 @@
 //    not fit. Widened to 64pt, taken from the Description column.
 //
 // 3. THE TAX COLUMN WAS ROUNDING THE RATE. "N0" on (TaxRate * 100)
+// 071. A MILESTONE BANNER above the line-items table, printed ONLY on an
+// invoice that bills one stage of a quote's payment schedule: "Milestone
+// 2 of 3 — On delivery (40%)", with "Amounts shown are 40% of accepted
+// quote QUO-0042" under it.
+//
+// It is not decoration. A milestone invoice's unit prices are a SHARE of
+// the quote's, so a customer comparing "1 × 13,500" with a quoted 45,000
+// has every reason to query it — and the answer has to be on the same
+// page as the figures, not on a screen they cannot see. Every field is a
+// snapshot taken when the invoice was raised; the schedule is never
+// re-read for a document.
+//
 //    printed 12.5% as "13%" — on a TAX INVOICE, next to a tax amount
 //    calculated from the real 12.5%, so the document contradicts itself
 //    in front of whoever files it. "0.##" now, and formatted with the
@@ -414,6 +426,51 @@ namespace MerkaiTrial.Application.Services.Pdf
                                     DateRow("Quote ref:", model.Invoice.QuoteNumber);
                             });
                         });
+
+                        // ── MILESTONE BANNER (071) ─────────────────────────────
+                        //
+                        // Printed ONLY on an invoice that bills ONE STAGE
+                        // of a quote's payment schedule. An ordinary
+                        // invoice — manual, or for a whole quote — prints
+                        // nothing here and renders exactly as it did
+                        // before this round.
+                        //
+                        // WHY IT HAS TO BE ON THE DOCUMENT, not just on
+                        // the screen: a milestone invoice's unit prices
+                        // are a SHARE of the quote's. A customer's
+                        // accounts department reading "1 × 13,500"
+                        // against a quoted 45,000 has every reason to
+                        // query it, and the answer belongs on the same
+                        // page as the figures.
+                        //
+                        // Everything here is a SNAPSHOT taken when the
+                        // invoice was raised. The schedule is never
+                        // re-read for a document: renaming a stage must
+                        // not rewrite an invoice that is already filed in
+                        // somebody's tax return.
+                        if (model.Invoice.IsMilestoneInvoice)
+                        {
+                            col.Item().PaddingTop(16)
+                                .Background(LightHex)
+                                .Padding(9)
+                                .Column(c =>
+                                {
+                                    c.Item().Text(model.Invoice.MilestoneLabel ?? "Milestone")
+                                        .FontSize(10).Bold().FontColor(AccentHex);
+
+                                    if (!string.IsNullOrWhiteSpace(model.Invoice.MilestoneBasisNote))
+                                    {
+                                        c.Item().PaddingTop(3)
+                                            .Text(model.Invoice.MilestoneBasisNote)
+                                            .FontSize(8.5f).FontColor(MutedHex);
+                                    }
+
+                                    c.Item().PaddingTop(2)
+                                        .Text("Every line of the accepted quote appears below at this stage's share, " +
+                                              "keeping its own tax rate and tax classification.")
+                                        .FontSize(8).FontColor(MutedHex);
+                                });
+                        }
 
                         col.Item().PaddingTop(20);
 

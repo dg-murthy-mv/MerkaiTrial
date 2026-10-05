@@ -25,6 +25,27 @@
 // Nullable. NULL is the normal state outside the markets that ask for a
 // code, and every screen and both PDFs show the column only when at least
 // one line on the document has one.
+//
+// 071 — MILESTONE BILLING
+//
+// Three shapes change, and none of them changes behaviour for an invoice
+// that is not a milestone invoice:
+//
+//   CreateInvoiceFromQuoteDto gains MilestoneId — WHICH stage to bill.
+//   NULL means the whole quote, which is what every existing caller
+//   sends by not sending anything, so the API is unchanged for them.
+//
+//   CreateInvoiceDto gains the five milestone fields so
+//   CreateInvoiceFromQuoteHandler can stamp them onto the row it
+//   creates. They are NOT meant to be set by an outside caller: a
+//   manual invoice has no quote and therefore no schedule, and
+//   CK_Invoices_MilestoneNeedsQuote in the migration refuses the
+//   combination at the database.
+//
+//   InvoiceDto and InvoiceListItem gain the snapshots, so every screen
+//   and the PDF can say "Milestone 2 of 3 — On delivery (40%)" without
+//   going back for the schedule. An invoice for a whole quote carries
+//   NULL in all of them and reads exactly as it does today.
 // =====================================================================
 
 using System;
@@ -82,6 +103,68 @@ namespace MerkaiTrial.Application.DTOs
         public DateTime? UpdatedAtUtc { get; set; }
         public string? UpdatedBy { get; set; }
 
+        // ── Milestone billing (071) — all NULL on an ordinary invoice ─
+        //
+        // SNAPSHOTS, read straight off the invoice row. The schedule is
+        // deliberately NOT consulted here: an invoice already with the
+        // customer has to keep saying what it said after somebody
+        // renames a stage. Definition live, document frozen.
+
+        public Guid? MilestoneId { get; set; }
+        public string? MilestoneName { get; set; }
+        public int? MilestoneSequence { get; set; }
+        public int? MilestoneCount { get; set; }
+
+        /// <summary>The share billed, as a PERCENT (40.0000 = 40%).</summary>
+        public decimal? MilestonePercent { get; set; }
+
+        /// <summary>True when this invoice bills one stage of a schedule.</summary>
+        public bool IsMilestoneInvoice => MilestoneId.HasValue;
+
+        /// <summary>
+        /// "Milestone 2 of 3 — On delivery (40%)", or null when this is
+        /// not a milestone invoice. WRITTEN ONCE, here, because three
+        /// screens and the PDF all print it and three wordings of the
+        /// same sentence is how documents end up disagreeing.
+        /// </summary>
+        public string? MilestoneLabel
+        {
+            get
+            {
+                if (!IsMilestoneInvoice) return null;
+
+                var position = MilestoneSequence.HasValue && MilestoneCount.HasValue
+                    ? $"Milestone {MilestoneSequence} of {MilestoneCount}"
+                    : "Milestone";
+
+                var name = string.IsNullOrWhiteSpace(MilestoneName) ? null : MilestoneName!.Trim();
+                var share = MilestonePercent.HasValue ? $"{MilestonePercent.Value:0.##}%" : null;
+
+                if (name != null && share != null) return $"{position} — {name} ({share})";
+                if (name != null) return $"{position} — {name}";
+                if (share != null) return $"{position} ({share})";
+                return position;
+            }
+        }
+
+        /// <summary>
+        /// 071. The sentence that goes under the lines on the screen and
+        /// on the PDF, so a unit price the customer does not recognise
+        /// has an explanation beside it rather than next to it on
+        /// another page: "Amounts shown are 40% of accepted quote
+        /// QUO-0042." Null when there is nothing to explain.
+        /// </summary>
+        public string? MilestoneBasisNote
+        {
+            get
+            {
+                if (!IsMilestoneInvoice || !MilestonePercent.HasValue) return null;
+
+                var quote = string.IsNullOrWhiteSpace(QuoteNumber) ? "the accepted quote" : $"accepted quote {QuoteNumber}";
+                return $"Amounts shown are {MilestonePercent.Value:0.##}% of {quote}.";
+            }
+        }
+
         // Calculated
         public bool IsOverdue { get; set; }
         public bool IsFullyPaid { get; set; }
@@ -109,6 +192,42 @@ namespace MerkaiTrial.Application.DTOs
         public bool IsOverdue { get; set; }
 
         public DateTime CreatedAtUtc { get; set; }
+
+        // ── Milestone billing (071) ───────────────────────────────────
+        //
+        // Enough for the badge on the list — "2 of 3 — On delivery" —
+        // plus the id, which is NOT for display. The quote page matches
+        // invoices to stages with it when deciding whether a stage is
+        // free to bill; matching on the sequence number instead would
+        // break the moment a schedule was re-cut, which is exactly the
+        // kind of thing that only goes wrong with real money on it.
+        //
+        // The percentage is deliberately left off the list, where there
+        // is no room for it and no decision that turns on it.
+
+        public Guid? MilestoneId { get; set; }
+        public string? MilestoneName { get; set; }
+        public int? MilestoneSequence { get; set; }
+        public int? MilestoneCount { get; set; }
+
+        public bool IsMilestoneInvoice => MilestoneId.HasValue;
+
+        /// <summary>"2 of 3 — On delivery", or null. Short, for a badge.</summary>
+        public string? MilestoneBadge
+        {
+            get
+            {
+                if (!IsMilestoneInvoice) return null;
+
+                var position = MilestoneCount.HasValue
+                    ? $"{MilestoneSequence} of {MilestoneCount}"
+                    : $"Stage {MilestoneSequence}";
+
+                return string.IsNullOrWhiteSpace(MilestoneName)
+                    ? position
+                    : $"{position} — {MilestoneName!.Trim()}";
+            }
+        }
     }
 
     public class CreateInvoiceDto
@@ -128,6 +247,24 @@ namespace MerkaiTrial.Application.DTOs
 
         // Optional: Send immediately after creation
         public bool SendImmediately { get; set; }
+
+        // ── Milestone billing (071) — INTERNAL ────────────────────────
+        //
+        // Set by CreateInvoiceFromQuoteHandler, and by nothing else. An
+        // outside caller has no business stamping a milestone onto a
+        // manual invoice, and the database refuses the combination
+        // anyway (CK_Invoices_MilestoneNeedsQuote: a MilestoneId
+        // requires a QuoteId).
+        //
+        // All NULL → the invoice is for a whole quote, or is manual.
+        // That is the default and it is what every existing caller
+        // produces without changing a line.
+
+        public Guid? MilestoneId { get; set; }
+        public string? MilestoneName { get; set; }
+        public int? MilestoneSequence { get; set; }
+        public int? MilestoneCount { get; set; }
+        public decimal? MilestonePercent { get; set; }
     }
 
     public class CreateInvoiceFromQuoteDto
@@ -141,6 +278,21 @@ namespace MerkaiTrial.Application.DTOs
 
         public string CreatedBy { get; set; } = string.Empty;
         public bool SendImmediately { get; set; }
+
+        /// <summary>
+        /// 071. WHICH stage of the quote's billing schedule to invoice.
+        ///
+        /// NULL means "the whole quote", which is:
+        ///   • what every caller written before 071 sends, by not
+        ///     sending anything — so nothing existing changes; and
+        ///   • the only legal value for a quote with no schedule.
+        ///
+        /// A quote WITH a schedule refuses a null here, with a message
+        /// naming the stages. Silently billing the whole amount against
+        /// a quote somebody deliberately split into stages would be the
+        /// worst possible reading of an omitted field.
+        /// </summary>
+        public Guid? MilestoneId { get; set; }
     }
 
     public class UpdateInvoiceDto

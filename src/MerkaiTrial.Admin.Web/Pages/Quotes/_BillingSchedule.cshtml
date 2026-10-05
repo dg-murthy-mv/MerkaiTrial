@@ -1,0 +1,819 @@
+@using System.Globalization
+@using System.Text.Json
+@model MerkaiTrial.Admin.Web.Pages.Quotes.BillingScheduleVm
+@{
+    var s = Model.Billing.Schedule;
+    var rows = s.Rows;
+    var hasSchedule = Model.Billing.HasSchedule;
+    var failed = Model.Billing.LoadFailed;
+
+    // Void invoices on this quote, so the history is visible instead of
+    // looking like nothing ever happened. Live ones are shown against
+    // their own stage in the table.
+    var voided = Model.Invoices.Where(i => i.Status == "Cancelled").ToList();
+}
+@* =====================================================================
+   Quotes/_BillingSchedule.cshtml — NEW (071).
+
+   The payment schedule panel on a quote: every stage with the amount it
+   will actually invoice, what has been billed against it, the agreed /
+   invoiced / outstanding rollup, and an editor.
+
+   ── ONE LINE IN Detail.cshtml ───────────────────────────────────────
+
+       <partial name="_BillingSchedule" model="Model.BillingVm" />
+
+   Same arrangement as _QuoteApprovalPanel (017).
+
+   ── THE AMOUNT COLUMN IS THE COMPUTED ONE, NOT THE TYPED ONE ────────
+
+   A stage shows what it WILL INVOICE, beside the percentage somebody
+   typed. They are usually the same number; on the last stage they can
+   differ by a paisa or two, because the last stage absorbs the rounding
+   so the invoices add up to exactly the quote.
+
+   Showing the computed figure is the whole reason this column exists.
+   The alternative — printing "33.33%" and letting somebody discover a
+   ₹0.02 difference on the final invoice — is how a schedule loses an
+   argument with a customer's accounts department.
+
+   ── NO NESTED FORMS ─────────────────────────────────────────────────
+
+   Each stage's "Create invoice" button is its own small form inside the
+   table. The EDITOR form is rendered AFTER the table, never around it.
+   A form inside a form silently drops the inner one in every browser,
+   and the symptom is a button that posts the wrong handler.
+
+   ── JSON, NOT INDEXED FIELDS ────────────────────────────────────────
+
+   Same reasoning as _PriceGrid (069) and _BundleGrid (070):
+   Stages[0].Percent binds natively until somebody removes the middle
+   row, at which point the indexes gap and the model binder silently
+   drops everything after it.
+   ===================================================================== *@
+
+<style>
+    .bs-card .table { margin-bottom: 0; }
+    .bs-seq { width: 2.2rem; height: 2.2rem; border-radius: 50%;
+              background: #eef2ff; color: #4338ca; font-weight: 600;
+              display: inline-flex; align-items: center; justify-content: center;
+              font-size: .82rem; }
+    .bs-seq.done { background: #dcfce7; color: #15803d; }
+    .bs-share { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .bs-amt { text-align: right; font-weight: 600; white-space: nowrap;
+              font-variant-numeric: tabular-nums; }
+    .bs-cond { color: #64748b; font-size: .82rem; }
+
+    .bs-roll { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+               gap: .6rem; padding: .85rem .9rem; background: #fbfcfd;
+               border-top: 1px solid #e5e8ec; }
+    .bs-roll .box { background: #fff; border: 1px solid #e5e8ec; border-radius: 8px;
+                    padding: .5rem .65rem; }
+    .bs-roll .lbl { color: #64748b; font-size: .74rem; text-transform: uppercase;
+                    letter-spacing: .03em; }
+    .bs-roll .val { font-weight: 600; font-size: .95rem; white-space: nowrap;
+                    font-variant-numeric: tabular-nums; }
+    .bs-roll .val.out { color: #b45309; }
+    .bs-roll .val.paid { color: #16a34a; }
+
+    .bse-row { display: flex; gap: .5rem; align-items: start; margin-bottom: .5rem; }
+    .bse-row .bse-name { flex: 1 1 11rem; min-width: 0; }
+    .bse-row .bse-basis { flex: 0 0 13.5rem; }
+    .bse-row .bse-when { flex: 1 1 11rem; min-width: 0; }
+    .bse-row .bse-rm { flex: 0 0 auto; }
+    .bse-rm .btn { --bs-btn-padding-y: .3rem; --bs-btn-padding-x: .5rem; }
+    .bse-amt { font-size: .78rem; color: #475569; text-align: right;
+               min-height: 1rem; font-variant-numeric: tabular-nums; }
+    .bse-tot { display: grid; grid-template-columns: 1fr auto; gap: .2rem .9rem;
+               font-size: .86rem; margin-top: .6rem; padding-top: .6rem;
+               border-top: 1px solid #e5e8ec; }
+    .bse-tot .lbl { color: #64748b; }
+    .bse-tot .amt { text-align: right; font-weight: 600; white-space: nowrap;
+                    font-variant-numeric: tabular-nums; }
+    .bse-tot .good { color: #16a34a; }
+    .bse-tot .warn { color: #b45309; }
+    .bse-locked { opacity: .72; }
+</style>
+
+<div class="card border-0 shadow-sm mb-4 bs-card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-calendar2-check me-2 text-primary"></i>Payment schedule
+            @if (hasSchedule)
+            {
+                <span class="badge bg-light text-dark border ms-2">@rows.Count stage@(rows.Count == 1 ? "" : "s")</span>
+            }
+        </h6>
+
+        @* The editor is offered unless the quote is already invoiced in
+           full, which is the one state where nothing in it could be
+           saved — the empty body below explains why, so there is no
+           button that opens a panel whose only possible outcome is a
+           refusal. *@
+        @if (Model.CanEdit && !failed && !s.IsInvoicedInFull)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    data-bs-toggle="collapse" data-bs-target="#bsEditor"
+                    aria-expanded="false" aria-controls="bsEditor">
+                <i class="bi bi-pencil me-1"></i>@(hasSchedule ? "Edit schedule" : "Set up stages")
+            </button>
+        }
+    </div>
+
+    @if (failed)
+    {
+        @* The read failed. This is NOT the same as "no schedule", and
+           saying so matters: the quote may well be billed in stages and
+           this panel simply cannot see them. *@
+        <div class="card-body">
+            <div class="alert alert-warning mb-0 py-2 px-3 small" role="alert">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Couldn't load this quote's payment schedule. It hasn't been changed —
+                reload the page to try again. Invoicing is blocked until this loads,
+                so nothing can be billed against the wrong terms in the meantime.
+            </div>
+        </div>
+    }
+    else if (!hasSchedule)
+    {
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                This quote is invoiced <strong>once, for the whole amount</strong>
+                (@Model.Money(s.QuoteTotal)).
+            </p>
+            <p class="text-muted small mb-0">
+                For project work billed in stages — "30% on signing, 40% on delivery,
+                30% on completion" — set up a schedule and each stage gets its own
+                invoice, carrying every line of this quote at that stage's share.
+            </p>
+
+            @if (s.IsInvoicedInFull)
+            {
+                <div class="alert alert-light border py-2 px-3 small mt-3 mb-0">
+                    <i class="bi bi-info-circle me-1 text-primary"></i>
+                    This quote has already been invoiced in full
+                    (@s.WholeQuoteInvoiceNumber), so it can't be split into stages now —
+                    every stage would be billed on top of that invoice. Void it first if
+                    you need to bill in stages instead.
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:3rem"></th>
+                        <th>Stage</th>
+                        <th class="bs-share">Share</th>
+                        <th class="text-end">Amount</th>
+                        <th>Invoice</th>
+                        @if (Model.CanCreateInvoice)
+                        {
+                            <th style="width:9rem"></th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var r in rows)
+                {
+                    <tr>
+                        <td>
+                            <span class="bs-seq @(r.IsInvoiced ? "done" : "")">@r.Sequence</span>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">@r.Name</div>
+                            @if (!string.IsNullOrWhiteSpace(r.DueCondition))
+                            {
+                                <div class="bs-cond">@r.DueCondition</div>
+                            }
+                            @if (r.DueDateUtc.HasValue)
+                            {
+                                <div class="bs-cond">
+                                    <i class="bi bi-calendar3 me-1"></i>@Model.Date(r.DueDateUtc.Value)
+                                </div>
+                            }
+                        </td>
+                        <td class="bs-share">
+                            @if (r.Percent.HasValue)
+                            {
+                                <span>@r.Percent.Value.ToString("0.##")%</span>
+                            }
+                            else
+                            {
+                                <span class="text-muted" title="A fixed amount, not a percentage of the quote">
+                                    @Model.Money(r.FixedAmount ?? 0m)
+                                </span>
+                            }
+
+                            @if (r.IsFinal && rows.Count > 1)
+                            {
+                                @* The one place the rounding rule is visible. *@
+                                <i class="bi bi-info-circle text-muted ms-1"
+                                   title="The last stage bills whatever is left, so the invoices add up to exactly the quote."></i>
+                            }
+                        </td>
+                        <td class="bs-amt">@Model.Money(r.Amount)</td>
+                        <td>
+                            @if (r.IsInvoiced)
+                            {
+                                <a href="/Invoices/Detail?id=@r.InvoiceId" class="text-decoration-none">
+                                    @(string.IsNullOrWhiteSpace(r.InvoiceNumber) ? "Draft" : r.InvoiceNumber)
+                                </a>
+                                <div class="bs-cond">
+                                    @r.InvoiceStatus
+                                    @if (r.PaidAmount > 0m)
+                                    {
+                                        <span class="text-success">· @Model.Money(r.PaidAmount) paid</span>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="text-muted small">Not invoiced</span>
+                            }
+                        </td>
+
+                        @if (Model.CanCreateInvoice)
+                        {
+                            <td class="text-end">
+                                @if (r.CanBill)
+                                {
+                                    @* Its own form. NEVER inside the editor form
+                                       below — see the header. *@
+                                    <form method="post" asp-page-handler="CreateInvoice" class="d-inline">
+                                        <input type="hidden" name="id" value="@Model.QuoteId" />
+                                        <input type="hidden" name="milestoneId" value="@r.Id" />
+                                        <button type="submit" class="btn btn-sm btn-primary">
+                                            <i class="bi bi-receipt me-1"></i>Invoice
+                                        </button>
+                                    </form>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(r.BlockedReason))
+                                {
+                                    <span class="text-muted small" title="@r.BlockedReason">
+                                        <i class="bi bi-dash-circle"></i>
+                                    </span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bs-roll">
+            <div class="box">
+                <div class="lbl">Agreed</div>
+                <div class="val">@Model.Money(s.QuoteTotal)</div>
+            </div>
+            <div class="box">
+                <div class="lbl">Invoiced</div>
+                <div class="val">@Model.Money(s.InvoicedTotal)</div>
+            </div>
+            <div class="box">
+                <div class="lbl">Paid</div>
+                <div class="val paid">@Model.Money(s.PaidTotal)</div>
+            </div>
+            <div class="box">
+                <div class="lbl">Outstanding</div>
+                <div class="val out">@Model.Money(s.OutstandingTotal)</div>
+            </div>
+            <div class="box">
+                <div class="lbl">Still to bill</div>
+                <div class="val">@Model.Money(s.NotYetInvoicedTotal)</div>
+            </div>
+        </div>
+
+        @* The schedule no longer adds up to the quote — almost always
+           because the quote was edited after the schedule was set. The
+           amounts above are still exact (the final stage absorbs the
+           difference), but they are no longer what anybody typed, so this
+           has to be said rather than left to be noticed. *@
+        @if (!s.MatchesQuoteTotal)
+        {
+            <div class="card-body pt-3 pb-0">
+                <div class="alert alert-warning py-2 px-3 small mb-0" role="alert">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <strong>The stages no longer match this quote.</strong>
+                    They were set up against a different total
+                    (they come to @Model.Money(s.StatedTotal), and the quote is now
+                    @Model.Money(s.QuoteTotal)) — most likely the quote was edited
+                    afterwards. The amounts shown above still add up to the quote,
+                    because the final stage takes the difference.
+                    @if (Model.CanEdit && !s.IsInvoicedInFull)
+                    {
+                        <text>Open the schedule and set the shares again.</text>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (s.IsOverInvoiced)
+        {
+            @* Should not be reachable — the stage guard and the unique
+               index both prevent it. If it ever happens, saying so beats
+               showing "0 still to bill" and leaving somebody to work out
+               why the numbers do not tie. *@
+            <div class="card-body pt-3 pb-0">
+                <div class="alert alert-danger py-2 px-3 small mb-0" role="alert">
+                    <i class="bi bi-exclamation-octagon me-1"></i>
+                    More has been invoiced (@Model.Money(s.InvoicedTotal)) than this quote
+                    agreed (@Model.Money(s.QuoteTotal)). Check the invoices listed above.
+                </div>
+            </div>
+        }
+
+        @if (!s.QuoteIsBillable && !string.IsNullOrWhiteSpace(s.NotBillableReason))
+        {
+            <div class="card-body pt-3 pb-0">
+                <div class="alert alert-light border py-2 px-3 small mb-0">
+                    <i class="bi bi-info-circle me-1 text-primary"></i>@s.NotBillableReason
+                </div>
+            </div>
+        }
+    }
+
+    @if (voided.Count > 0)
+    {
+        <div class="card-body pt-3 @(hasSchedule ? "" : "pt-0")">
+            <div class="small text-muted">
+                <i class="bi bi-slash-circle me-1"></i>
+                Voided on this quote:
+                @for (var i = 0; i < voided.Count; i++)
+                {
+                    <a href="/Invoices/Detail?id=@voided[i].Id" class="text-decoration-none">@voided[i].Number</a>@(i < voided.Count - 1 ? ", " : "")
+                }
+                — a voided invoice frees its stage to be billed again.
+            </div>
+        </div>
+    }
+
+    @* =================================================================
+       THE EDITOR
+       Rendered after the table, never around it. One hidden field.
+       ================================================================= *@
+    @if (Model.CanEdit && !failed && !s.IsInvoicedInFull)
+    {
+        <div class="collapse border-top" id="bsEditor">
+            <div class="card-body" id="bseWrap">
+                <form method="post" asp-page-handler="SaveSchedule" id="bseForm">
+                    <input type="hidden" name="id" value="@Model.QuoteId" />
+
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                        <div class="small text-muted">
+                            Each stage is a <strong>percentage</strong> of the quote or a
+                            <strong>fixed amount</strong>. They have to add up to
+                            @Model.Money(Model.QuoteTotal).
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="bseSuggest">
+                                <i class="bi bi-magic me-1"></i>50 / 50
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="bseAdd">
+                                <i class="bi bi-plus-lg me-1"></i>Add stage
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="bseRows"></div>
+
+                    <div class="text-muted small d-none" id="bseEmpty">
+                        No stages. Saving like this removes the schedule, and this quote
+                        goes back to being invoiced once for the whole amount.
+                    </div>
+
+                    <div class="bse-tot">
+                        <div class="lbl">Stages come to</div>
+                        <div class="amt" id="bseSum">—</div>
+
+                        <div class="lbl">Quote total</div>
+                        <div class="amt">@Model.Money(Model.QuoteTotal)</div>
+
+                        <div class="lbl" id="bseGapLabel">Unaccounted for</div>
+                        <div class="amt" id="bseGap">—</div>
+                    </div>
+
+                    <div class="alert alert-warning py-2 px-3 small mt-2 d-none" id="bseProblem" role="alert"></div>
+
+                    @* The invoiced-in-full case cannot reach here: this
+                       whole editor is not rendered for it, because
+                       nothing in it could be saved. The body above the
+                       table is where that is explained. *@
+                    @if (s.AmountsLocked)
+                    {
+                        <div class="alert alert-light border py-2 px-3 small mt-2 mb-0">
+                            <i class="bi bi-lock me-1 text-primary"></i>
+                            <strong>The amounts are fixed.</strong>
+                            @{
+                                var lockedBy = string.IsNullOrWhiteSpace(s.LockedByInvoiceNumber)
+                                    ? "An invoice"
+                                    : "Invoice " + s.LockedByInvoiceNumber;
+                            }
+                            @lockedBy has already been raised against this schedule, and
+                            re-cutting the shares would leave it disagreeing with the quote.
+                            Names, conditions and dates can still be changed — to change the
+                            money, void that invoice first.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-light border py-2 px-3 small mt-2 mb-0">
+                            <i class="bi bi-info-circle me-1 text-primary"></i>
+                            The <strong>last stage bills whatever is left</strong>, so the
+                            invoices always add up to exactly the quote — three stages of
+                            33.33% do not, on their own.
+                        </div>
+                    }
+
+                    @* Bound by NAME, not asp-for. value= is the SEEDED
+                       schedule and never "[]" — see ScheduleJson. *@
+                    <input type="hidden" name="@Model.ScheduleJsonFieldName" id="bseJson"
+                           value="@Model.ScheduleJson" />
+
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" class="btn btn-sm btn-light"
+                                data-bs-toggle="collapse" data-bs-target="#bsEditor">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-primary" id="bseSave">
+                            <i class="bi bi-check2 me-1"></i>Save schedule
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                'use strict';
+
+                var wrap = document.getElementById('bseWrap');
+                if (!wrap) return;
+
+                var rowsEl  = document.getElementById('bseRows');
+                var emptyEl = document.getElementById('bseEmpty');
+                var jsonEl  = document.getElementById('bseJson');
+                var addBtn  = document.getElementById('bseAdd');
+                var sugBtn  = document.getElementById('bseSuggest');
+                var sumEl   = document.getElementById('bseSum');
+                var gapEl   = document.getElementById('bseGap');
+                var gapLbl  = document.getElementById('bseGapLabel');
+                var problem = document.getElementById('bseProblem');
+                var saveBtn = document.getElementById('bseSave');
+                var formEl  = document.getElementById('bseForm');
+
+                // Server data, serialised rather than written out as JS
+                // literals. A stage NAME is server data going into a
+                // script block, and round 029 removed exactly this
+                // pattern from the quote line editor after a product
+                // name with an apostrophe in it broke the page.
+                var SEED      = @Html.Raw(Model.ScheduleJson);
+                var SUGGESTED = @Html.Raw(Model.SuggestedJson);
+                var SYMBOL    = @Html.Raw(JsonSerializer.Serialize(Model.CurrencySymbol));
+                var TOTAL     = @Model.QuoteTotal.ToString(CultureInfo.InvariantCulture);
+                var LOCKED    = @(s.AmountsLocked ? "true" : "false");
+
+                // One minor unit per stage — the same tolerance
+                // QuoteMilestones.Tolerance applies on the server. The
+                // server has the final say; this only decides whether the
+                // warning shows before the round trip.
+                function tolerance(n) { return 0.01 * Math.max(n, 1); }
+
+                var uid  = 1;
+                var rows = [];
+
+                function num(v, d) {
+                    var n = parseFloat(v);
+                    return isFinite(n) ? n : d;
+                }
+
+                function round2(n) { return Math.round(n * 100) / 100; }
+
+                function money(n) {
+                    return SYMBOL + (isFinite(n) ? n : 0).toLocaleString(undefined, {
+                        minimumFractionDigits: 2, maximumFractionDigits: 2
+                    });
+                }
+
+                function esc(s) {
+                    return String(s == null ? '' : s)
+                        .split('&').join('&amp;')
+                        .split('<').join('&lt;')
+                        .split('>').join('&gt;')
+                        .split('"').join('&quot;')
+                        .split("'").join('&#39;');
+                }
+
+                // What a row is worth, before the last-stage rule. The
+                // server's QuoteMilestones.StatedAmount, in the browser.
+                function stated(r) {
+                    if (r.basis === 'percent') return round2(TOTAL * num(r.percent, 0) / 100);
+                    return round2(num(r.fixedAmount, 0));
+                }
+
+                function render() {
+                    rowsEl.innerHTML = '';
+
+                    for (var i = 0; i < rows.length; i++) {
+                        var r = rows[i];
+                        var locked = LOCKED;
+                        var div = document.createElement('div');
+                        div.className = 'bse-row' + (locked ? ' bse-locked' : '');
+                        div.setAttribute('data-key', r.key);
+
+                        var basisCell =
+                            '<div class="input-group input-group-sm">' +
+                              '<select class="form-select" data-f="basis"' + (locked ? ' disabled' : '') + '>' +
+                                '<option value="percent"' + (r.basis === 'percent' ? ' selected' : '') + '>%</option>' +
+                                '<option value="amount"'  + (r.basis === 'amount'  ? ' selected' : '') + '>' + esc(SYMBOL || 'Amount') + '</option>' +
+                              '</select>' +
+                              '<input type="text" inputmode="decimal" class="form-control" data-f="value"' +
+                                   ' value="' + esc(r.basis === 'percent' ? (r.percent == null ? '' : r.percent)
+                                                                         : (r.fixedAmount == null ? '' : r.fixedAmount)) + '"' +
+                                   (locked ? ' readonly' : '') + ' />' +
+                              '<button type="button" class="btn btn-outline-secondary" data-f="rest"' +
+                                   (locked ? ' disabled' : '') + ' title="Fill this stage with whatever is left">rest</button>' +
+                            '</div>' +
+                            '<div class="bse-amt" data-f="amt"></div>';
+
+                        div.innerHTML =
+                            '<div class="bse-name">' +
+                              '<input type="text" class="form-control form-control-sm" data-f="name" maxlength="120"' +
+                                   ' placeholder="Stage name" value="' + esc(r.name) + '" />' +
+                              (r.invoiceNumber
+                                  ? '<div class="bse-amt text-start text-muted">Invoiced — ' + esc(r.invoiceNumber) + '</div>'
+                                  : '') +
+                            '</div>' +
+                            '<div class="bse-basis">' + basisCell + '</div>' +
+                            '<div class="bse-when">' +
+                              '<input type="text" class="form-control form-control-sm mb-1" data-f="cond" maxlength="200"' +
+                                   ' placeholder="On signing" value="' + esc(r.dueCondition) + '" />' +
+                              '<input type="date" class="form-control form-control-sm" data-f="date"' +
+                                   ' value="' + esc(r.dueDate) + '" />' +
+                            '</div>' +
+                            '<div class="bse-rm">' +
+                              '<button type="button" class="btn btn-outline-danger" data-f="rm"' +
+                                   (locked ? ' disabled' : '') + ' title="Remove this stage">' +
+                                '<i class="bi bi-trash"></i></button>' +
+                            '</div>';
+
+                        rowsEl.appendChild(div);
+                    }
+
+                    emptyEl.classList.toggle('d-none', rows.length > 0);
+                    recalc();
+                }
+
+                function recalc() {
+                    var sum = 0;
+
+                    for (var i = 0; i < rows.length; i++) {
+                        var r = rows[i];
+                        var amount;
+
+                        // The last stage shows the REMAINDER, exactly as
+                        // the server will allocate it. Showing its typed
+                        // percentage here instead is how somebody ends up
+                        // surprised by the final invoice.
+                        if (i === rows.length - 1) {
+                            amount = round2(TOTAL - sum);
+                            if (amount < 0) amount = 0;
+                        } else {
+                            amount = stated(r);
+                        }
+
+                        sum += amount;
+
+                        var cell = rowsEl.querySelector('[data-key="' + r.key + '"] [data-f="amt"]');
+                        if (cell) {
+                            cell.textContent = money(amount);
+                            cell.title = (i === rows.length - 1 && rows.length > 1)
+                                ? 'The last stage bills whatever is left'
+                                : '';
+                        }
+                    }
+
+                    // The STATED total is what the server validates, not
+                    // the allocated one — the allocated one always adds up,
+                    // because the last stage absorbs the difference. So
+                    // "30 / 30 / 30" has to be caught here, not hidden.
+                    var statedSum = 0;
+                    for (var j = 0; j < rows.length; j++) statedSum += stated(rows[j]);
+                    statedSum = round2(statedSum);
+
+                    var gap = round2(TOTAL - statedSum);
+                    var tol = tolerance(rows.length);
+
+                    sumEl.textContent = rows.length ? money(statedSum) : '—';
+
+                    if (!rows.length) {
+                        gapEl.textContent = '—';
+                        gapEl.className = 'amt';
+                        gapLbl.textContent = 'Unaccounted for';
+                        problem.classList.add('d-none');
+                        if (saveBtn) saveBtn.disabled = false;
+                        return;
+                    }
+
+                    if (Math.abs(gap) <= tol) {
+                        gapEl.textContent = money(0);
+                        gapEl.className = 'amt good';
+                        gapLbl.textContent = 'Unaccounted for';
+                        problem.classList.add('d-none');
+                        if (saveBtn) saveBtn.disabled = false;
+                    } else if (gap > 0) {
+                        gapEl.textContent = money(gap);
+                        gapEl.className = 'amt warn';
+                        gapLbl.textContent = 'Unaccounted for';
+                        problem.textContent = 'The stages come to ' + money(statedSum) + ' of ' +
+                            money(TOTAL) + ' — ' + money(gap) + ' is unaccounted for. ' +
+                            'Add it to a stage, or press "rest" on the last one.';
+                        problem.classList.remove('d-none');
+                        if (saveBtn) saveBtn.disabled = true;
+                    } else {
+                        gapEl.textContent = money(-gap);
+                        gapEl.className = 'amt warn';
+                        gapLbl.textContent = 'Over the quote by';
+                        problem.textContent = 'The stages come to ' + money(statedSum) + ', which is ' +
+                            money(-gap) + ' more than the quote. Reduce a stage.';
+                        problem.classList.remove('d-none');
+                        if (saveBtn) saveBtn.disabled = true;
+                    }
+                }
+
+                function sync() {
+                    var out = [];
+                    for (var i = 0; i < rows.length; i++) {
+                        var r = rows[i];
+                        out.push({
+                            id: r.id || '00000000-0000-0000-0000-000000000000',
+                            sortOrder: (i + 1) * 10,
+                            name: r.name,
+                            // Exactly one basis goes out. The server
+                            // refuses both-or-neither, and the database
+                            // has a CHECK saying the same thing.
+                            percent: r.basis === 'percent' ? num(r.percent, 0) : null,
+                            fixedAmount: r.basis === 'amount' ? num(r.fixedAmount, 0) : null,
+                            dueCondition: r.dueCondition || null,
+                            dueDate: r.dueDate ? r.dueDate : null
+                        });
+                    }
+                    jsonEl.value = JSON.stringify(out);
+                }
+
+                function addRow(seed) {
+                    seed = seed || {};
+                    rows.push({
+                        key: 'k' + (uid++),
+                        id: seed.id && seed.id !== '00000000-0000-0000-0000-000000000000' ? seed.id : '',
+                        name: seed.name || '',
+                        basis: (seed.fixedAmount != null && seed.percent == null) ? 'amount' : 'percent',
+                        percent: seed.percent != null ? seed.percent : null,
+                        fixedAmount: seed.fixedAmount != null ? seed.fixedAmount : null,
+                        dueCondition: seed.dueCondition || '',
+                        dueDate: seed.dueDate || '',
+                        invoiceNumber: seed.invoiceNumber || ''
+                    });
+                }
+
+                function rowByKey(key) {
+                    for (var i = 0; i < rows.length; i++)
+                        if (rows[i].key === key) return rows[i];
+                    return null;
+                }
+
+                // ── Events ───────────────────────────────────────────
+                rowsEl.addEventListener('input', function (e) {
+                    var holder = e.target.closest('[data-key]');
+                    if (!holder) return;
+
+                    var r = rowByKey(holder.getAttribute('data-key'));
+                    if (!r) return;
+
+                    var f = e.target.getAttribute('data-f');
+
+                    if (f === 'name') r.name = e.target.value;
+                    else if (f === 'cond') r.dueCondition = e.target.value;
+                    else if (f === 'date') r.dueDate = e.target.value;
+                    else if (f === 'value') {
+                        if (r.basis === 'percent') r.percent = num(e.target.value, null);
+                        else r.fixedAmount = num(e.target.value, null);
+                    }
+
+                    recalc();
+                    sync();
+                });
+
+                rowsEl.addEventListener('change', function (e) {
+                    if (e.target.getAttribute('data-f') !== 'basis') return;
+
+                    var holder = e.target.closest('[data-key]');
+                    if (!holder) return;
+
+                    var r = rowByKey(holder.getAttribute('data-key'));
+                    if (!r) return;
+
+                    r.basis = e.target.value;
+
+                    // Carry the figure across rather than blanking it:
+                    // somebody switching "%" to an amount has usually
+                    // already typed the number they mean.
+                    if (r.basis === 'percent') {
+                        if (r.percent == null && r.fixedAmount != null && TOTAL > 0)
+                            r.percent = round2(r.fixedAmount / TOTAL * 100);
+                        r.fixedAmount = null;
+                    } else {
+                        if (r.fixedAmount == null && r.percent != null)
+                            r.fixedAmount = round2(TOTAL * r.percent / 100);
+                        r.percent = null;
+                    }
+
+                    render();
+                    sync();
+                });
+
+                rowsEl.addEventListener('click', function (e) {
+                    var btn = e.target.closest('button[data-f]');
+                    if (!btn || btn.disabled) return;
+
+                    var holder = btn.closest('[data-key]');
+                    if (!holder) return;
+
+                    var key = holder.getAttribute('data-key');
+                    var f = btn.getAttribute('data-f');
+
+                    if (f === 'rm') {
+                        for (var i = 0; i < rows.length; i++) {
+                            if (rows[i].key === key) { rows.splice(i, 1); break; }
+                        }
+                        render();
+                        sync();
+                        return;
+                    }
+
+                    if (f === 'rest') {
+                        var r = rowByKey(key);
+                        if (!r) return;
+
+                        // Everything the OTHER stages do not claim.
+                        var others = 0;
+                        for (var j = 0; j < rows.length; j++)
+                            if (rows[j].key !== key) others += stated(rows[j]);
+
+                        var left = round2(TOTAL - others);
+                        if (left < 0) left = 0;
+
+                        if (r.basis === 'percent') {
+                            r.percent = TOTAL > 0 ? round2(left / TOTAL * 100) : 0;
+                        } else {
+                            r.fixedAmount = left;
+                        }
+
+                        render();
+                        sync();
+                    }
+                });
+
+                if (addBtn) {
+                    addBtn.addEventListener('click', function () {
+                        addRow({ name: '', percent: null });
+                        render();
+                        sync();
+                    });
+                }
+
+                if (sugBtn) {
+                    sugBtn.addEventListener('click', function () {
+                        if (LOCKED) return;
+                        rows = [];
+                        uid = 1;
+                        for (var i = 0; i < SUGGESTED.length; i++) addRow(SUGGESTED[i]);
+                        render();
+                        sync();
+                    });
+                }
+
+                // One last sync on submit. The input handler keeps the
+                // hidden field current, but a value changed by the
+                // browser's autofill or by a date picker that does not
+                // raise `input` would otherwise be missed — and this
+                // field decides how much money gets invoiced.
+                if (formEl) {
+                    formEl.addEventListener('submit', function () { sync(); });
+                }
+
+                // ── Start ────────────────────────────────────────────
+                if (SEED && SEED.length) {
+                    for (var k = 0; k < SEED.length; k++) addRow(SEED[k]);
+                } else {
+                    for (var m = 0; m < SUGGESTED.length; m++) addRow(SUGGESTED[m]);
+                }
+
+                render();
+                sync();
+            })();
+        </script>
+    }
+</div>

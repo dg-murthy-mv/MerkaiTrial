@@ -237,6 +237,24 @@ else
                                         <i class="bi bi-file-earmark-text me-1"></i>@invoice.QuoteNumber
                                     </div>
                                 }
+                                @* 071. Which stage of the quote this is.
+                                   Nothing renders for an ordinary invoice,
+                                   so the list looks exactly as it did
+                                   before this round for anybody not using
+                                   staged billing.
+
+                                   Without it, a quote billed in three
+                                   stages shows three rows against the same
+                                   quote number with nothing to tell them
+                                   apart but the amount. *@
+                                @if (invoice.IsMilestoneInvoice)
+                                {
+                                    <div class="small">
+                                        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">
+                                            <i class="bi bi-calendar2-check me-1"></i>@invoice.MilestoneBadge
+                                        </span>
+                                    </div>
+                                }
                             </div>
 
                             <!-- Dates and Amounts -->

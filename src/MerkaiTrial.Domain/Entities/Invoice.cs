@@ -37,6 +37,21 @@
 //      the accepted quote said. QuoteItem.cs takes the same change in the
 //      same round, for the same reason the 052 note gives.
 //      Added by Sql/067_LineTaxCode.sql.
+//
+// CHANGES (071 — partial invoicing / milestone billing), on Invoice:
+//   ✅ MilestoneId — which stage of the quote's billing schedule this
+//      invoice is. NULL means "the whole quote", which is what every
+//      invoice raised before this round is, and what every invoice
+//      against a quote with no schedule still is.
+//   ✅ MilestoneName / MilestoneSequence / MilestoneCount /
+//      MilestonePercent — SNAPSHOTS, so "Milestone 2 of 3 — On delivery
+//      (40%)" keeps saying that after somebody renames the stage or
+//      re-cuts the schedule. Definition live, document frozen: the same
+//      rule 067 applied to TaxCode and 070 applied to bundle contents.
+//   ✅ The one-live-invoice-per-QUOTE rule becomes one live invoice per
+//      MILESTONE — enforced for the first time by the database, in
+//      UX_Invoices_Quote_Milestone_Live.
+//      Columns are added by Sql/071_QuoteMilestones.sql.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -84,6 +99,53 @@ namespace MerkaiTrial.Domain.Entities
         public string? VoidedBy { get; set; }
         public string? VoidReason { get; set; }
 
+        // ── Milestone billing (071) ───────────────────────────────────
+        //
+        // ALL FIVE ARE NULL ON AN ORDINARY INVOICE, and "ordinary" means
+        // both of the two cases that existed before this round: a manual
+        // invoice, and an invoice for the whole of a quote that has no
+        // billing schedule. Nothing has to be migrated and nothing has
+        // to be opted out of — a workspace that never opens the schedule
+        // screen will never see a non-NULL value here.
+
+        /// <summary>
+        /// The live link to the stage this invoice bills. Kept (rather
+        /// than relying on the snapshots alone) for two jobs the
+        /// snapshots cannot do: the "which stages are still to bill"
+        /// rollup on the quote, and the schedule screen's refusal to
+        /// change a stage that already has a live invoice.
+        /// </summary>
+        public Guid? MilestoneId { get; set; }
+
+        /// <summary>
+        /// SNAPSHOT of QuoteMilestone.Name at the moment the invoice was
+        /// raised. An invoice already with the customer, and already in
+        /// somebody's GST return, must keep saying "On delivery" after
+        /// the schedule is renamed to "On handover".
+        /// </summary>
+        public string? MilestoneName { get; set; }
+
+        /// <summary>SNAPSHOT. 1-based — the 2 in "milestone 2 of 3".</summary>
+        public int? MilestoneSequence { get; set; }
+
+        /// <summary>SNAPSHOT. The 3 in "milestone 2 of 3".</summary>
+        public int? MilestoneCount { get; set; }
+
+        /// <summary>
+        /// SNAPSHOT of the share actually applied, as a PERCENT
+        /// (40.0000 = 40%), whether the milestone was defined as a
+        /// percentage or as a fixed amount. decimal(9,4), so a third of
+        /// a quote stays 33.3333 instead of being rounded to 33.33 on
+        /// its way in — the 062 lesson, in a new column.
+        ///
+        /// For the LAST milestone this is the share that was actually
+        /// allocated, which is "everything not yet billed" and can
+        /// therefore differ in the fourth decimal place from what the
+        /// schedule screen showed. That is the rounding rule working,
+        /// not a defect: the invoices sum to exactly the quote total.
+        /// </summary>
+        public decimal? MilestonePercent { get; set; }
+
         // Audit fields
         public DateTime CreatedAtUtc { get; set; }
         public string? CreatedBy { get; set; }
@@ -94,6 +156,7 @@ namespace MerkaiTrial.Domain.Entities
         // Navigation properties
         public Quote? Quote { get; set; }
         public Deal? Deal { get; set; }
+        public QuoteMilestone? Milestone { get; set; }                 // 071
         public ICollection<InvoiceLine> Lines { get; set; } = new List<InvoiceLine>();
         public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 
@@ -111,6 +174,39 @@ namespace MerkaiTrial.Domain.Entities
         public bool IsOverdue =>
             DueDateUtc.HasValue && DueDateUtc.Value < DateTime.UtcNow && !IsFullyPaid &&
             Status != InvoiceStatus.Cancelled && Status != InvoiceStatus.Draft;
+
+        /// <summary>
+        /// 071. True when this invoice bills one stage of a schedule
+        /// rather than a whole quote. Reads MilestoneId, not the
+        /// snapshots — a row with a name but no id would be a bug, and
+        /// this is the property every screen branches on.
+        /// </summary>
+        public bool IsMilestoneInvoice => MilestoneId.HasValue;
+
+        /// <summary>
+        /// 071. "Milestone 2 of 3 — On delivery (40%)", or null when
+        /// this is not a milestone invoice. One place, so the three
+        /// screens and the PDF cannot word it three different ways.
+        /// </summary>
+        public string? MilestoneLabel
+        {
+            get
+            {
+                if (!IsMilestoneInvoice) return null;
+
+                var position = MilestoneSequence.HasValue && MilestoneCount.HasValue
+                    ? $"Milestone {MilestoneSequence} of {MilestoneCount}"
+                    : "Milestone";
+
+                var name = string.IsNullOrWhiteSpace(MilestoneName) ? null : MilestoneName!.Trim();
+                var share = MilestonePercent.HasValue ? $"{MilestonePercent.Value:0.##}%" : null;
+
+                if (name != null && share != null) return $"{position} — {name} ({share})";
+                if (name != null) return $"{position} — {name}";
+                if (share != null) return $"{position} ({share})";
+                return position;
+            }
+        }
     }
 
     public class InvoiceLine

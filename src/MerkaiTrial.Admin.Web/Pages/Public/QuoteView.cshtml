@@ -411,6 +411,75 @@ else
                 </div>
             </div>
 
+            @* ── Payment schedule (071) ────────────────────────────────
+               Printed ONLY when the quote has one. An empty schedule
+               means "payable in full", which is what every quote sent
+               before this round is — so those pages render exactly as
+               they did.
+
+               THIS IS THE PAGE WHERE THE CUSTOMER PRESSES ACCEPT. The
+               payment terms are part of what they are agreeing to, so
+               they belong above that button and not only in the PDF
+               attached to an email.
+
+               The AMOUNT column is the figure the server computed, not
+               the typed percentage: the final stage absorbs the
+               rounding, so the stages add up to exactly the total above
+               — which 33.33% three times does not.
+
+               Nothing about any INVOICE appears here. Whether the seller
+               has billed stage 2 yet is the seller's business, and the
+               public DTO deliberately carries no invoice data at all. *@
+            @if (Model.Quote.HasPaymentSchedule)
+            {
+                <div class="mt-4">
+                    <h6 class="text-muted text-uppercase small mb-2" style="letter-spacing:.04em;">
+                        <i class="bi bi-calendar2-check me-1"></i>Payment schedule
+                    </h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-1">
+                            <thead>
+                                <tr class="text-muted small">
+                                    <th style="width:2.5rem">#</th>
+                                    <th>Stage</th>
+                                    <th>When</th>
+                                    <th class="text-end">Share</th>
+                                    <th class="text-end">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var stage in Model.Quote.PaymentStages)
+                            {
+                                <tr>
+                                    <td class="text-muted">@stage.Sequence</td>
+                                    <td class="fw-semibold">@stage.Name</td>
+                                    <td class="text-muted small">
+                                        @if (!string.IsNullOrWhiteSpace(stage.DueCondition))
+                                        {
+                                            <span>@stage.DueCondition</span>
+                                        }
+                                        @if (stage.DueDateUtc.HasValue)
+                                        {
+                                            <span class="d-block">@stage.DueDateUtc.Value.ToString("dd MMM yyyy")</span>
+                                        }
+                                    </td>
+                                    <td class="text-end text-muted small">
+                                        @stage.EffectivePercent.ToString("0.##")%
+                                    </td>
+                                    <td class="text-end fw-semibold">
+                                        @Model.FormatCurrency(stage.Amount)
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="text-muted small">
+                        Each stage is invoiced separately. The stages add up to the total above.
+                    </div>
+                </div>
+            }
+
             <!-- Terms -->
             <div class="mt-4 pt-3 border-top text-muted small">
                 <i class="bi bi-info-circle me-1"></i>
