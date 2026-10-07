@@ -29,6 +29,23 @@
 //      all false, so a property-based gate would silently refuse everything.
 //      (Properties in views, Async in handlers.)
 //
+// CHANGES (074b)
+//   ✅ LoadError — a NEW, non-TempData property for the one message this
+//      page shows on a RENDER rather than after a redirect. The catch in
+//      OnGetAsync used to set the [TempData] ErrorMessage and return
+//      Page(), which saves the value for the NEXT request: the failure
+//      was announced on some unrelated page later, and this one showed
+//      an empty list under "No invoices found."
+//   ✅ The view no longer renders TempData["SuccessMessage"] /
+//      ["ErrorMessage"] itself. _Layout does that for every page, so
+//      every message was appearing twice.
+//   ✅ The view's own 5-second auto-dismiss timer is gone — it was a
+//      second timer over the same alerts as the layout's, and the two
+//      together closed one Bootstrap Alert instance twice. See the note
+//      in Index.cshtml.
+//   ✅ GetSymbol delegates to CurrencyConfiguration instead of its own
+//      hardcoded table, which disagreed about AED and was case-sensitive.
+//
 //   ⚠️ DESIGN NOTE unchanged from before: OnPostUpdateStatus auto-transitions
 //   the linked Deal to Won with no deals.update check. Treated as a
 //   system-level consequence of a legitimate invoice action. Not exploitable
@@ -38,6 +55,7 @@
 
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;   // 074b: CurrencyConfiguration
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -93,11 +111,34 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         public DateTime? ToDate { get; set; }
 
         // Messages
+        //
+        // These two are for POST handlers, which all end in RedirectToPage.
+        // [TempData] survives exactly one redirect, which is what a
+        // post-redirect-get message needs, and _Layout.cshtml renders both
+        // keys for every page — so a handler sets one and says nothing more.
+        //
+        // ⚠ 074b: the VIEW no longer renders them as well. It used to, and
+        // the result was every message appearing twice, one banner above
+        // the other.
         [TempData]
         public string? SuccessMessage { get; set; }
 
         [TempData]
         public string? ErrorMessage { get; set; }
+
+        /// <summary>
+        /// 074b. The load failure, for THIS response.
+        ///
+        /// OnGetAsync's catch used to set ErrorMessage and then return
+        /// Page(). A [TempData] value set during a request that RENDERS is
+        /// saved for the NEXT request — so the message never appeared on
+        /// the page that failed. It turned up on whatever page the user
+        /// opened afterwards, attached to nothing, while this page showed
+        /// an empty list under "No invoices found."
+        ///
+        /// An ordinary property renders now, in the response that failed.
+        /// </summary>
+        public string? LoadError { get; private set; }
 
         // ==================== ON GET ====================
         // ✅ Signature changed from `Task OnGet()` to `Task<IActionResult> OnGetAsync()`
@@ -133,7 +174,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading invoices");
-                ErrorMessage = "Failed to load invoices. Please try again.";
+                // 074b: LoadError, not ErrorMessage. This path RENDERS; it
+                // does not redirect, and a [TempData] value set on a
+                // rendering request is only readable on the next one.
+                LoadError = "Couldn't load your invoices. Please try again.";
                 Invoices = new List<InvoiceListItem>();
                 Statistics = new InvoiceStatisticsDto();
             }
@@ -241,12 +285,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         public string FormatDateTime(DateTime utcDate) => _tenantService.FormatDateTime(utcDate);
         public string FormatCurrency(decimal amount) => _tenantService.FormatCurrency(amount);
 
-        public string GetSymbol(string? code) => code switch
-        {
-            "INR" => "₹", "THB" => "฿", "PHP" => "₱", "AED" => "د.إ",
-            "USD" => "$", "EUR" => "€", "GBP" => "£",
-            _ => _tenantService.GetCurrencySymbol()
-        };
+        /// <summary>
+        /// 074b. Delegates, like every other page does since 074.
+        ///
+        /// The switch that was here was the third hand-written copy of the
+        /// currency symbol table in this solution. It disagreed with
+        /// CurrencyConfiguration about AED — whose symbol is deliberately
+        /// the string "AED", not "د.إ", so an Arabic glyph doesn't land in
+        /// the middle of a left-to-right figure — and it was
+        /// case-SENSITIVE, so "inr" fell through to the workspace's symbol:
+        /// a rupee sign on a dollar amount.
+        ///
+        /// Nothing on this page calls it today. It is kept, and corrected,
+        /// because the next person to need a symbol here will find it and
+        /// use it.
+        /// </summary>
+        public string GetSymbol(string? code) =>
+            string.IsNullOrWhiteSpace(code)
+                ? _tenantService.GetCurrencySymbol()
+                : CurrencyConfiguration.GetCurrencySymbol(code);
 
         public string GetRelativeDate(DateTime? date)
         {

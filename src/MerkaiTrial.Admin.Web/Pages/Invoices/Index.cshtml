@@ -53,21 +53,45 @@
     </div>
 </div>
 
-@* ✅ Alert messages — converted from toast to standard TempData pattern *@
-@if (TempData["SuccessMessage"] is string successMsg)
+@* ── 074b: the TempData alert blocks are GONE from this page ──────────
+
+   _Layout.cshtml renders TempData["SuccessMessage"] and
+   TempData["ErrorMessage"] for EVERY page, just above @@RenderBody().
+   This page rendered the same two keys again, so every "Draft invoice
+   deleted." and every "Invoice issued as INV-0007." appeared TWICE,
+   one banner directly above the other.
+
+   Nothing here is lost: delete it, issue it, hit a failure in a POST
+   handler — the layout's banner says exactly the same thing, in the
+   same place, because the handlers set the same two TempData keys.
+
+   A message that must appear on THIS response rather than the next one
+   cannot use TempData at all. See LoadError just below. *@
+
+@* ── 074b: the load failure, rendered HERE on purpose ────────────────
+
+   OnGetAsync's catch used to set the [TempData] ErrorMessage property
+   and then `return Page()`. A [TempData] value set during a request
+   that RENDERS is saved for the NEXT request — so "Failed to load
+   invoices" never appeared on the page that failed. It appeared on
+   whatever page you opened afterwards, with no connection to anything,
+   while the page that actually broke showed an empty list and the
+   cheerful "No invoices found. Create invoices from accepted quotes."
+
+   LoadError is an ordinary property, so it renders now. It is not
+   dismissible: the layout auto-dismisses .alert-dismissible after five
+   seconds, and a banner explaining why the list is empty should not
+   disappear and leave the explanation behind. *@
+@if (!string.IsNullOrEmpty(Model.LoadError))
 {
-    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-4" role="alert">
-        <i class="bi bi-check-circle-fill"></i>
-        <span>@successMsg</span>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-}
-@if (TempData["ErrorMessage"] is string errorMsg)
-{
-    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-4" role="alert">
-        <i class="bi bi-exclamation-circle-fill"></i>
-        <span>@errorMsg</span>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="alert alert-danger d-flex align-items-start gap-2 mb-4" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div>
+            <strong>@Model.LoadError</strong>
+            <div class="small">
+                The list below is empty because the load failed, not because there are no invoices.
+            </div>
+        </div>
     </div>
 }
 
@@ -384,12 +408,36 @@ else
 
 @section Scripts {
     <script>
-        // Auto-dismiss alerts
-        setTimeout(function () {
-            document.querySelectorAll('.alert-dismissible').forEach(function (el) {
-                bootstrap.Alert.getOrCreateInstance(el).close();
-            });
-        }, 5000);
+        // ⚠ 074b. THE AUTO-DISMISS BLOCK THAT WAS HERE IS GONE.
+        //
+        // It was:
+        //
+        //     setTimeout(function () {
+        //         document.querySelectorAll('.alert-dismissible')
+        //             .forEach(function (el) {
+        //                 bootstrap.Alert.getOrCreateInstance(el).close();
+        //             });
+        //     }, 5000);
+        //
+        // _Layout.cshtml already does this for every page. This was a
+        // SECOND timer over the SAME alerts at the SAME 5000ms, and
+        // @@section Scripts renders after the layout's own script, so it
+        // was registered second and fired second — in the same tick,
+        // closing the same Bootstrap Alert instance a second time.
+        //
+        // That is where
+        //
+        //     TypeError: Cannot read properties of null (reading 'remove')
+        //         at Alert._destroyElement
+        //
+        // came from: close() queues one _destroyElement per call, the
+        // first one calls dispose() which nulls _element, and 150ms later
+        // the second one dereferences it. An uncaught exception inside a
+        // timer, so nothing on the page said a word.
+        //
+        // Don't add it back. If a page ever needs an alert dismissed on a
+        // different schedule, call the layout's lfDismissAlert(el) — it is
+        // idempotent and does not use the Alert component.
 
         function confirmDelete(invoiceId, invoiceNumber) {
             document.getElementById('deleteInvoiceId').value = invoiceId;

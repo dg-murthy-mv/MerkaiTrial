@@ -4,13 +4,17 @@
 @{
     ViewData["Title"] = "Product Categories";
 
-    // Which form is open. Bound from ?edit={id} and ?add=1 on the page
-    // model rather than read out of Request.Query here, so a POST that
-    // fails validation can reopen the same form by setting the property —
-    // the query string is gone by then.
+    // Which form is open. Bound from ?edit={id} and ?add=true on the
+    // page model rather than read out of Request.Query here, so a POST
+    // that fails validation can reopen the same form by setting the
+    // property — the query string is gone by then.
+    //
+    // IsAdding is a computed property over a STRING flag, not a bound
+    // bool. The bool version silently refused "1" and this button did
+    // nothing for three rounds; the page model carries the full note.
     var adding = Model.IsAdding;
 
-    // ADDING WINS. ?add=1&edit={id} is reachable by hand, and rendering
+    // ADDING WINS. ?add=true&edit={id} is reachable by hand, and rendering
     // both forms at once would put two sets of radio inputs with the same
     // ids on the page — at which point clicking an icon in one form moves
     // the selection in the other, because a label's for= attribute binds
@@ -52,6 +56,18 @@
     .pc-row { border: 1px solid #e5e8ec; border-radius: 10px; background: #fff; padding: .7rem .9rem; margin-bottom: .55rem; }
     .pc-row.inactive { background: #fbfcfd; }
     .pc-row.editing { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+
+    /* 073: the row that was just reordered. A move can land a category on
+       a different page, so without this the user sees two changes at once
+       — a new page AND a reshuffled list — with nothing saying which row
+       they just moved. Fades out on its own; no script. */
+    .pc-row.moved { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.14);
+                    animation: pcMoved 2.4s ease-out 1; }
+    @@keyframes pcMoved {
+        0%   { background: #ecfdf5; }
+        70%  { background: #ecfdf5; }
+        100% { background: #fff; }
+    }
 
     .pc-ico {
         width: 2.4rem; height: 2.4rem; border-radius: 9px; flex-shrink: 0;
@@ -108,7 +124,17 @@
     </div>
     @if (Model.CanCreate && !adding)
     {
-        <a asp-page="./Index" asp-route-add="1" class="btn btn-primary">
+        @* "true", not "1". ?add=1 could never open this form: the page
+           model bound it to a bool, and ASP.NET Core's bool binder takes
+           "true"/"false" and nothing else — so the value failed to
+           convert, the flag stayed false and this button did nothing at
+           all. The page model now binds the flag as a string and still
+           accepts "1" for links already in people's history, but the
+           link the app emits says what the binder actually wants. *@
+        @* 073: StateRoute carries the search, the filters AND the page,
+           so opening the form from page 3 of a filtered list comes back
+           to page 3 of that list. It also sets add=true. *@
+        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute(adding: true)" class="btn btn-primary">
             <i class="bi bi-plus-circle me-1"></i>Add category
         </a>
     }
@@ -132,7 +158,9 @@
 @* ── ADOPTION, said before anybody clicks ─────────────────────────────
    This is the one thing on the page that will surprise somebody if it
    is not said in advance. *@
-@if (Model.FollowingDefaults && Model.Categories.Any())
+@* 073: AllCategories, not Categories — a search that matches nothing
+   would otherwise hide the one explanation on the page. *@
+@if (Model.FollowingDefaults && Model.AllCategories.Any())
 {
     <div class="alert alert-info d-flex gap-2 align-items-start">
         <i class="bi bi-info-circle-fill mt-1"></i>
@@ -152,29 +180,74 @@
         @* ── ADD FORM ────────────────────────────────────────────── *@
         @if (adding && Model.CanCreate)
         {
+            @* 073: the form posts the list state as hidden fields so the
+               redirect after a save returns to the same page of the same
+               filtered list. They bind on a POST because the properties
+               are [BindProperty(SupportsGet = true)]. *@
             <form method="post" asp-page-handler="Add" class="pc-row editing">
+                <partial name="_ListState" model="Model" />
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <strong><i class="bi bi-plus-circle me-1 text-primary"></i>New category</strong>
-                    <a asp-page="./Index" class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
+                    <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                       class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
                 </div>
                 <partial name="_CategoryFields" model="Model" />
                 <div class="d-flex gap-2 mt-3">
                     <button type="submit" class="btn btn-primary btn-sm">
                         <i class="bi bi-check-lg me-1"></i>Add category
                     </button>
-                    <a asp-page="./Index" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                    <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                       class="btn btn-outline-secondary btn-sm">Cancel</a>
                 </div>
             </form>
+        }
+
+        @* ── 073: search and filters ─────────────────────────────── *@
+        @* Drawn whenever there is more than one category.
+
+           My first cut only drew it past one page's worth, on the
+           argument that a search box over nine rows is furniture. That
+           argument is wrong here: the standard list is nine, so the
+           search box would have been invisible on exactly the workspaces
+           that asked for it. *@
+        @if (Model.AllCategories.Count > 1)
+        {
+            <partial name="_ListToolbar" model="Model.Toolbar" />
+        }
+
+        @if (!string.IsNullOrEmpty(Model.ReorderBlockedReason) && Model.AllCategories.Count > 1)
+        {
+            @* Said once, where the arrows would have been. Silently
+               dropping them would read as a permissions problem. *@
+            <div class="alert alert-light border py-2 px-3 small d-flex gap-2 align-items-start">
+                <i class="bi bi-arrow-down-up mt-1 text-primary"></i>
+                <span>@Model.ReorderBlockedReason</span>
+            </div>
         }
 
         @if (!Model.Categories.Any())
         {
             <div class="pc-empty">
-                <i class="bi bi-tags"></i>
-                <div>No categories yet.</div>
-                <div class="small">
-                    Add one and your products will have something to be filed under.
-                </div>
+                @if (Model.IsFiltered)
+                {
+                    @* Telling somebody with forty categories that they
+                       have none, because they mistyped a search, is the
+                       empty state getting it exactly backwards. *@
+                    <i class="bi bi-search"></i>
+                    <div>No category matches that search.</div>
+                    <div class="small">
+                        <a asp-page="./Index" asp-route-PageSize="@Model.PageSize">Clear the search and filters</a>
+                        to see all @Model.AllCategories.Count.
+                    </div>
+                }
+                else
+                {
+                    <i class="bi bi-tags"></i>
+                    <div>No categories yet.</div>
+                    <div class="small">
+                        Add one and your products will have something to be filed under.
+                    </div>
+                }
             </div>
         }
 
@@ -182,17 +255,30 @@
         {
             var c = Model.Categories[i];
             var isEditing = editing == c.Id;
-            var isFirst = i == 0;
-            var isLast = i == Model.Categories.Count - 1;
+
+            // 073: first and last IN THE WHOLE LIST, not in this page.
+            // i == 0 disabled the up arrow on the first row of EVERY page,
+            // which would have made it impossible to move anything off
+            // page 2.
+            //
+            // A // comment and not a Razor one: this is a C# statement
+            // position inside the @@for body, and the 068 note at the top
+            // of this file is about exactly that — a code block is parsed
+            // as C#, so constructs that belong to markup do not go here.
+            var isFirst = Model.IsFirstOverall(c.Id);
+            var isLast  = Model.IsLastOverall(c.Id);
+            var justMoved = Model.MovedId == c.Id;
 
             if (isEditing && Model.CanUpdate)
             {
                 <form method="post" asp-page-handler="Save" class="pc-row editing">
                     <input type="hidden" asp-for="Input.Id" value="@c.Id" />
+                    <partial name="_ListState" model="Model" />
 
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <strong><i class="bi bi-pencil me-1 text-primary"></i>Editing &ldquo;@c.Name&rdquo;</strong>
-                        <a asp-page="./Index" class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
+                        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                           class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
                     </div>
 
                     @* ── THE RENAME WARNING ──────────────────────────
@@ -218,28 +304,43 @@
                         <button type="submit" class="btn btn-primary btn-sm">
                             <i class="bi bi-check-lg me-1"></i>Save changes
                         </button>
-                        <a asp-page="./Index" class="btn btn-outline-secondary btn-sm">Cancel</a>
+                        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                           class="btn btn-outline-secondary btn-sm">Cancel</a>
                     </div>
                 </form>
             }
             else
             {
-                <div class="pc-row @(c.IsActive ? "" : "inactive")">
+                <div class="pc-row @(c.IsActive ? "" : "inactive") @(justMoved ? "moved" : "")">
                     <div class="d-flex align-items-center gap-3">
 
                         @* Reorder. Disabled at the ends rather than hidden,
                            so the row's controls do not shift position
-                           between rows. *@
-                        @if (Model.CanUpdate)
+                           between rows.
+
+                           073: CanReorder, not CanUpdate — the arrows go
+                           away entirely while a search or filter is on,
+                           because "swap with the row above" has no honest
+                           answer when the row above is hidden. The notice
+                           above the list says so; the server refuses it
+                           too, since a hidden button is not a control.
+
+                           isFirst / isLast are now about the WHOLE list,
+                           so the up arrow is live on the first row of
+                           page 2 — that row really can move up, onto
+                           page 1, and the handler follows it there. *@
+                        @if (Model.CanReorder)
                         {
                             <div class="d-flex flex-column gap-1">
                                 <form method="post" asp-page-handler="Move" asp-route-id="@c.Id" asp-route-direction="up">
+                                    <partial name="_ListState" model="Model" />
                                     <button type="submit" class="btn btn-sm btn-outline-secondary pc-ord"
                                             title="Move up" aria-label="Move @c.Name up" disabled="@isFirst">
                                         <i class="bi bi-chevron-up"></i>
                                     </button>
                                 </form>
                                 <form method="post" asp-page-handler="Move" asp-route-id="@c.Id" asp-route-direction="down">
+                                    <partial name="_ListState" model="Model" />
                                     <button type="submit" class="btn btn-sm btn-outline-secondary pc-ord"
                                             title="Move down" aria-label="Move @c.Name down" disabled="@isLast">
                                         <i class="bi bi-chevron-down"></i>
@@ -284,12 +385,13 @@
                         <div class="d-flex gap-1 flex-shrink-0">
                             @if (Model.CanUpdate)
                             {
-                                <a asp-page="./Index" asp-route-edit="@c.Id"
+                                <a asp-page="./Index" asp-all-route-data="@Model.StateRoute(editId: c.Id)"
                                    class="btn btn-sm btn-outline-primary" title="Edit">
                                     <i class="bi bi-pencil"></i>
                                 </a>
 
                                 <form method="post" asp-page-handler="Toggle" asp-route-id="@c.Id">
+                                    <partial name="_ListState" model="Model" />
                                     <button type="submit"
                                             class="btn btn-sm @(c.IsActive ? "btn-outline-secondary" : "btn-outline-success")"
                                             title="@(c.IsActive ? "Stop offering this for new products" : "Offer this again")">
@@ -321,6 +423,7 @@
                          aria-labelledby="pcRemoveLabel-@c.Id" aria-hidden="true">
                         <div class="modal-dialog modal-dialog-centered">
                             <form method="post" asp-page-handler="Remove" asp-route-id="@c.Id" class="modal-content">
+                                <partial name="_ListState" model="Model" />
                                 <div class="modal-header">
                                     <h5 class="modal-title" id="pcRemoveLabel-@c.Id">
                                         Remove &ldquo;@c.Name&rdquo;?
@@ -370,9 +473,10 @@
                 }
             }
         }
-    </div>
+        @* ── 073: pager ──────────────────────────────────────────── *@
+        <partial name="_Pager" model="Model.Pager" />
 
-    @* ── ASIDE ──────────────────────────────────────────────────── *@
+    </div>
     <div class="col-lg-4">
         <div class="pc-aside">
             <h6 class="mb-2">How these are used</h6>

@@ -1,0 +1,31 @@
+@model MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories.IndexModel
+@* =====================================================================
+   Settings/ProductCategories/_ListState.cshtml — NEW (073).
+
+   The search, the filters and the page, as hidden fields. Dropped into
+   every POST form on the page:
+
+       <partial name="_ListState" model="Model" />
+
+   WHY EVERY FORM NEEDS IT
+
+   Each handler ends with RedirectToPage(ReturnRoute()), and ReturnRoute
+   is built from the page model's bound properties. On a POST those
+   properties bind from the FORM, not from the URL the user is looking
+   at — so without these fields every save, toggle, remove and reorder
+   would redirect to page 1 of an unfiltered list.
+
+   The symptom is mild and maddening: switch three categories off in a
+   row, and after each one you are back at the top of the list hunting
+   for where you were.
+
+   They bind on a POST because the properties are
+   [BindProperty(SupportsGet = true)] — SupportsGet ADDS GET binding, it
+   does not remove the POST binding every [BindProperty] has.
+   ===================================================================== *@
+
+<input type="hidden" name="q" value="@Model.SearchTerm" />
+<input type="hidden" name="status" value="@Model.StatusFilter" />
+<input type="hidden" name="kind" value="@Model.KindFilter" />
+<input type="hidden" name="PageNumber" value="@Model.PageNumber" />
+<input type="hidden" name="PageSize" value="@Model.PageSize" />

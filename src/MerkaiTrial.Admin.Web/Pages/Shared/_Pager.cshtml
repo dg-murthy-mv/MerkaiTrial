@@ -1,0 +1,133 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.PagerVm
+@* =====================================================================
+   Pages/Shared/_Pager.cshtml — NEW (072).
+
+   The pager strip at the foot of every list page. One line:
+
+       <partial name="_Pager" model="Model.Pager" />
+
+   ── EVERY LINK CARRIES EVERY FILTER ─────────────────────────────────
+
+   Through asp-all-route-data and PagerVm.RouteFor(page), which merges
+   the filter dictionary with the page and the page size. The pagers this
+   replaces listed each filter by hand on Previous, on each number and on
+   Next — fifteen places on the Contacts page — so a filter added later
+   had fifteen chances to be forgotten, and forgetting one meant the
+   filter silently vanished the moment somebody clicked page 2.
+
+   ── THE PAGE-SIZE FORM RESETS TO PAGE 1 ─────────────────────────────
+
+   Going from 100 per page to 10 while on page 3 would otherwise leave
+   you on page 3 of a list that is now ten times longer — a different
+   place entirely, with no indication anything moved. The hidden page
+   field below is pinned to 1.
+
+   ── IT DRAWS WHENEVER THERE ARE ROWS ────────────────────────────────
+
+   Not only when there is more than one page: the page-size selector is
+   useful on a single page of 10 when there are 11 rows. The numbered
+   nav is what's conditional.
+   ===================================================================== *@
+
+<style>
+    .lp-foot { display: flex; align-items: center; justify-content: space-between;
+               gap: 1rem; flex-wrap: wrap; padding: .6rem .9rem;
+               border-top: 1px solid #f1f3f5; background: #fbfcfd; }
+    .lp-note { font-size: .78rem; color: #64748b; white-space: nowrap; }
+    .lp-size { display: flex; align-items: center; gap: .4rem; }
+    .lp-size .form-select { font-size: .8rem; }
+</style>
+
+@if (Model.TotalCount > 0)
+{
+    <div class="lp-foot">
+
+        @if (Model.ShowPageSize)
+        {
+            <form method="get" class="lp-size">
+                @* Every filter, so changing the page size keeps the list
+                   you were looking at. *@
+                @foreach (var keep in Model.Route)
+                {
+                    <input type="hidden" name="@keep.Key" value="@keep.Value" />
+                }
+
+                @* Pinned to 1 — see the header. *@
+                <input type="hidden" name="@Model.PageField" value="1" />
+
+                <label class="lp-note mb-0" for="lpPageSize">Per page</label>
+                <select id="lpPageSize"
+                        name="@Model.PageSizeField"
+                        class="form-select form-select-sm"
+                        style="width:auto;"
+                        onchange="this.form.submit()"
+                        aria-label="Rows per page">
+                    @foreach (var size in MerkaiTrial.Admin.Web.Pages.Shared.PagerVm.Sizes)
+                    {
+                        <option value="@size" selected="@(size == Model.PageSize)">@size</option>
+                    }
+                </select>
+
+                @* Works without JavaScript too. Hidden when scripting is
+                   on, because onchange has already submitted by then. *@
+                <noscript>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Apply</button>
+                </noscript>
+            </form>
+        }
+        else
+        {
+            <span class="lp-note">Page @Model.Page of @Model.TotalPages</span>
+        }
+
+        @if (Model.TotalPages > 1)
+        {
+            <nav aria-label="Pages">
+                <ul class="pagination pagination-sm mb-0">
+
+                    <li class="page-item @(Model.Page <= 1 ? "disabled" : "")">
+                        <a class="page-link"
+                           asp-page="@Model.PageRoute"
+                           asp-all-route-data="@Model.RouteFor(Model.Page - 1)"
+                           aria-label="Previous page">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+
+                    @foreach (var n in Model.Window())
+                    {
+                        @* 0 is the ellipsis marker — a real page is never 0. *@
+                        if (n == 0)
+                        {
+                            <li class="page-item disabled"><span class="page-link">…</span></li>
+                        }
+                        else
+                        {
+                            <li class="page-item @(n == Model.Page ? "active" : "")">
+                                <a class="page-link"
+                                   asp-page="@Model.PageRoute"
+                                   asp-all-route-data="@Model.RouteFor(n)"
+                                   aria-label="Page @n"
+                                   aria-current="@(n == Model.Page ? "page" : null)">@n</a>
+                            </li>
+                        }
+                    }
+
+                    <li class="page-item @(Model.Page >= Model.TotalPages ? "disabled" : "")">
+                        <a class="page-link"
+                           asp-page="@Model.PageRoute"
+                           asp-all-route-data="@Model.RouteFor(Model.Page + 1)"
+                           aria-label="Next page">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+
+                </ul>
+            </nav>
+        }
+        else
+        {
+            <span class="lp-note">All @Model.TotalCount shown</span>
+        }
+    </div>
+}

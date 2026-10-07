@@ -1,6 +1,48 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Settings/ProductCategories/Index.cshtml.cs
 //
+// 073 — SEARCH, FILTERS AND PAGING
+//
+//   The list is filtered and paged IN MEMORY, on this page, and that is
+//   a deliberate choice rather than a shortcut. /api/product-categories
+//   returns the whole list in one call because the whole list is the
+//   unit of meaning here: the ORDER is a property of all of it, Remove
+//   needs every other category as a reassign target, and the up/down
+//   buttons post the complete new order. Server-side paging would mean
+//   three more round trips to rebuild what one call already gives us,
+//   for a table that is a dozen rows on most workspaces.
+//
+//   ⚠ TWO THINGS THAT PAGING BREAKS IF YOU ARE NOT CAREFUL, and both
+//   are handled below:
+//
+//   1. "FIRST" AND "LAST" ARE PROPERTIES OF THE WHOLE LIST, not of the
+//      page you are looking at. The up arrow was disabled on row 0 of
+//      the rendered list; paged, that would disable it on the first row
+//      of EVERY page and silently strip the ability to move a category
+//      off page 2. IsFirst/IsLast index into the full ordered list.
+//
+//   2. MOVING A ROW CAN MOVE IT TO ANOTHER PAGE. Press up on the first
+//      row of page 2 and it belongs on page 1 — correctly, because the
+//      order is global. Redirecting back to the page you were on would
+//      show the row simply gone. OnPostMoveAsync works out which page
+//      the row landed on and sends you there.
+//
+//   REORDERING IS DISABLED WHILE A SEARCH OR FILTER IS ACTIVE, which is
+//   the one thing here I would defend hardest. "Move up" means "swap
+//   with the row above" — and with rows filtered out, the row above on
+//   screen is not the row above in the list. Either reading surprises
+//   somebody: swap with the visible neighbour and the saved order jumps
+//   further than it looks; swap with the real neighbour and nothing
+//   appears to happen. Disabled, with a sentence saying why, is the only
+//   version that cannot quietly do the wrong thing.
+//
+// 071b — THE ADD BUTTON NEVER WORKED. ?add=1 was bound to a bool, and
+// ASP.NET Core's bool binder accepts "true"/"false" and nothing else, so
+// the value failed to convert, the flag stayed false, and the form never
+// rendered — on every workspace, since this file shipped. The flag is a
+// string now and IsAdding decides what counts as on. The full note is on
+// the property.
+//
 // NEW FILE (068). The categories a workspace files its products under.
 //
 // ONE PAGE, NOT Index + Create + Edit. A category has four fields —
@@ -35,6 +77,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;
@@ -42,6 +85,8 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Routing;
 using System.ComponentModel.DataAnnotations;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
@@ -63,7 +108,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
         protected override string ModuleName => Modules.Settings;
 
         // ── What the page renders ─────────────────────────────────────
+
+        /// <summary>
+        /// EVERY category this workspace has, in order. The authority for
+        /// the order, for "is this row first or last", and for the Remove
+        /// dialog's reassign targets.
+        ///
+        /// ⚠ Use this, never Categories, for anything about the LIST.
+        /// Categories is one page of it.
+        /// </summary>
+        public List<ProductCategoryDto> AllCategories { get; private set; } = new();
+
+        /// <summary>
+        /// The slice actually rendered: AllCategories after the search and
+        /// filters, cut to one page. 073.
+        /// </summary>
         public List<ProductCategoryDto> Categories { get; private set; } = new();
+
+        /// <summary>The filtered list before paging — what the count and the pager measure.</summary>
+        public List<ProductCategoryDto> Matching { get; private set; } = new();
 
         /// <summary>
         /// True while this workspace is still following the Merkai
@@ -92,8 +155,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
         ///
         /// Built here rather than re-derived per row in Razor.
         /// </summary>
+        /// <summary>
+        /// 073: reads AllCategories, not Categories. Paged, the old
+        /// version offered only the destinations that happened to be on
+        /// the same page — so removing a category from page 2 could not
+        /// move its products into anything on page 1.
+        /// </summary>
         public List<string> ReassignTargetsFor(Guid id)
-            => Categories
+            => AllCategories
                 .Where(c => c.Id != id && c.IsActive)
                 .OrderBy(c => c.SortOrder)
                 .Select(c => c.Name)
@@ -113,9 +182,62 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
         [BindProperty(SupportsGet = true, Name = "edit")]
         public Guid? EditId { get; set; }
 
-        /// <summary>?add=1 — the new-category form is open.</summary>
+        /// <summary>
+        /// ?add=… — the new-category form is open.
+        ///
+        /// ⚠ BOUND AS A STRING, NOT A BOOL, AND THAT IS THE WHOLE POINT.
+        ///
+        /// This was a bool bound straight from the query string, and the
+        /// Add button linked to ?add=1. ASP.NET Core binds a bool with
+        /// BooleanConverter, which accepts "true" and "false" and NOTHING
+        /// ELSE — so "1" failed to convert, IsAdding stayed false, and the
+        /// add form never rendered. The Add button did nothing at all, on
+        /// every workspace, since round 068.
+        ///
+        /// It failed in the quietest way available: the conversion error
+        /// lands in ModelState under the key "add", which is a PROPERTY
+        /// key, so the page's asp-validation-summary="ModelOnly" left it
+        /// out. No message, no banner, no log line above Information —
+        /// the page simply redrew itself. The only visible trace was
+        /// "ModelState is Invalid" in the framework's own log, on exactly
+        /// the request carrying ?add=1.
+        ///
+        /// A string binds whatever arrives, so there is no conversion to
+        /// fail and no ModelState entry to swallow. IsAdding below then
+        /// decides what counts as on, accepting the handful of spellings a
+        /// person might type or a bookmark might carry.
+        /// </summary>
         [BindProperty(SupportsGet = true, Name = "add")]
-        public bool IsAdding { get; set; }
+        public string? AddFlag { get; set; }
+
+        /// <summary>
+        /// True when the new-category form should be open.
+        ///
+        /// Settable, because the POST handlers set it directly to keep the
+        /// form open after a validation failure — the person's typing is
+        /// what has to survive, not the URL. An explicit set always wins
+        /// over the query string.
+        /// </summary>
+        public bool IsAdding
+        {
+            get => _isAdding ?? IsOn(AddFlag);
+            set => _isAdding = value;
+        }
+
+        private bool? _isAdding;
+
+        /// <summary>
+        /// What counts as "on" in a query string. Deliberately generous:
+        /// the app's own link now says add=true, but ?add=1 is in people's
+        /// history and address bars from before this fix, and a link that
+        /// used to open a form should not quietly stop.
+        /// </summary>
+        private static bool IsOn(string? value)
+            => value is not null &&
+               (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("1",    StringComparison.Ordinal)           ||
+                value.Equals("yes",  StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("on",   StringComparison.OrdinalIgnoreCase));
 
         // ── The inline form, used by both add and edit ────────────────
         [BindProperty] public InputModel Input { get; set; } = new();
@@ -151,6 +273,251 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
         }
 
         // =============================================================
+        // 073 — SEARCH, FILTERS AND PAGING
+        // =============================================================
+
+        [BindProperty(SupportsGet = true, Name = "q")]
+        public string? SearchTerm { get; set; }
+
+        /// <summary>"" = any, "active", "inactive".</summary>
+        [BindProperty(SupportsGet = true, Name = "status")]
+        public string? StatusFilter { get; set; }
+
+        /// <summary>
+        /// "" = any, "standard" = a Merkai default this workspace still
+        /// follows, "custom" = one this workspace owns.
+        /// </summary>
+        [BindProperty(SupportsGet = true, Name = "kind")]
+        public string? KindFilter { get; set; }
+
+        [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
+        [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = DefaultPageSize;
+
+        /// <summary>
+        /// ?moved={id} — the row that was just reordered, so the view can
+        /// flash it. Set only by OnPostMoveAsync's redirect; it is a
+        /// display hint and nothing reads it for a decision.
+        /// </summary>
+        [BindProperty(SupportsGet = true, Name = "moved")]
+        public Guid? MovedId { get; set; }
+
+        public const int DefaultPageSize = 10;
+        public const int MaxPageSize = 100;
+
+        public bool IsFiltered =>
+            !string.IsNullOrWhiteSpace(SearchTerm) ||
+            !string.IsNullOrWhiteSpace(StatusFilter) ||
+            !string.IsNullOrWhiteSpace(KindFilter);
+
+        public int TotalPages => Matching.Count == 0
+            ? 1
+            : (int)Math.Ceiling(Matching.Count / (double)PageSize);
+
+        public int FirstRow => Matching.Count == 0 ? 0 : (PageNumber - 1) * PageSize + 1;
+        public int LastRow  => Math.Min(PageNumber * PageSize, Matching.Count);
+
+        // ── Reordering ────────────────────────────────────────────────
+
+        /// <summary>
+        /// Up/down are offered only on the UNFILTERED list. See the long
+        /// note in the file header: with rows filtered out, "the row
+        /// above" on screen and "the row above" in the saved order are
+        /// two different rows, and both readings surprise somebody.
+        ///
+        /// Paging is fine — the order is global and the move handler
+        /// follows the row to its new page.
+        /// </summary>
+        public bool CanReorder => CanUpdate && !IsFiltered;
+
+        /// <summary>Why the arrows are missing, or null when they are not.</summary>
+        public string? ReorderBlockedReason => CanUpdate && IsFiltered
+            ? "Clear the search to rearrange the list — the order is the whole list's, not this filtered view's."
+            : null;
+
+        /// <summary>
+        /// True when this row is first or last IN THE WHOLE LIST, which is
+        /// what disables its arrow. Against the rendered page it would
+        /// disable the up arrow on the first row of every page.
+        /// </summary>
+        public bool IsFirstOverall(Guid id) => AllCategories.Count > 0 && AllCategories[0].Id == id;
+        public bool IsLastOverall(Guid id)  => AllCategories.Count > 0 && AllCategories[^1].Id == id;
+
+        // ── The shared components (072) ───────────────────────────────
+
+        public ListToolbarVm Toolbar => new()
+        {
+            SearchName        = "q",
+            SearchValue       = SearchTerm,
+            SearchPlaceholder = "Category name",
+            SearchLabel       = "Search categories",
+            SearchWidth       = "260px",
+
+            Filters = new List<ListFilterVm>
+            {
+                new()
+                {
+                    Name    = "status",
+                    Label   = "Filter by on or off",
+                    Options = new List<SelectListItem>
+                    {
+                        new() { Value = "",         Text = "On and off",  Selected = string.IsNullOrWhiteSpace(StatusFilter) },
+                        new() { Value = "active",   Text = "On only",     Selected = StatusFilter == "active" },
+                        new() { Value = "inactive", Text = "Off only",    Selected = StatusFilter == "inactive" }
+                    }
+                },
+                new()
+                {
+                    Name    = "kind",
+                    Label   = "Filter by standard or custom",
+                    Options = new List<SelectListItem>
+                    {
+                        new() { Value = "",         Text = "Standard and custom", Selected = string.IsNullOrWhiteSpace(KindFilter) },
+                        new() { Value = "standard", Text = "Standard only",       Selected = KindFilter == "standard" },
+                        new() { Value = "custom",   Text = "Custom only",         Selected = KindFilter == "custom" }
+                    }
+                }
+            },
+
+            // The page SIZE is carried; the page NUMBER is not, so a
+            // search always lands on page 1.
+            Carry      = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+            ClearRoute = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+
+            IsFiltered   = IsFiltered,
+            TotalCount   = Matching.Count,
+            FirstRow     = FirstRow,
+            LastRow      = LastRow,
+            NounSingular = "category",
+            NounPlural   = "categories"
+        };
+
+        public PagerVm Pager => new()
+        {
+            Page       = PageNumber,
+            PageSize   = PageSize,
+            TotalCount = Matching.Count,
+            TotalPages = TotalPages,
+            PageField  = nameof(PageNumber),
+            Route      = FilterRoute()
+        };
+
+        /// <summary>
+        /// The active search and filters as route values. One definition,
+        /// used by the pager's links, the page-size form, the Clear link
+        /// AND by every Edit / Add link on the page — so opening a form on
+        /// page 3 of a filtered list comes back to page 3 of that list.
+        /// </summary>
+        public Dictionary<string, string> FilterRoute()
+        {
+            var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(SearchTerm))   route["q"]      = SearchTerm!.Trim();
+            if (!string.IsNullOrWhiteSpace(StatusFilter)) route["status"] = StatusFilter!;
+            if (!string.IsNullOrWhiteSpace(KindFilter))   route["kind"]   = KindFilter!;
+
+            return route;
+        }
+
+        /// <summary>
+        /// The filters, the page AND the page size — for the links that
+        /// open a form and for every redirect after a write, so nobody is
+        /// dumped back on page 1 of everything after switching a category
+        /// off.
+        /// </summary>
+        public Dictionary<string, string> StateRoute(Guid? editId = null, bool adding = false)
+        {
+            var route = FilterRoute();
+
+            route[nameof(PageNumber)] = PageNumber <= 1 ? "1" : PageNumber.ToString();
+            route[nameof(PageSize)]   = PageSize.ToString();
+
+            // "true", never "1". ASP.NET Core binds a bool with
+            // BooleanConverter, which takes "true"/"false" and nothing
+            // else — ?add=1 is exactly how this button was dead for three
+            // rounds. The flag is a string now and still accepts "1", but
+            // the link the app emits says what the binder wants.
+            if (adding) route["add"] = "true";
+            if (editId is { } id && id != Guid.Empty) route["edit"] = id.ToString();
+
+            return route;
+        }
+
+        /// <summary>StateRoute as route values a redirect will accept verbatim.</summary>
+        private RouteValueDictionary ReturnRoute()
+        {
+            // A RouteValueDictionary and not a Dictionary: RedirectToPage
+            // takes `object routeValues` and reflects over an ordinary
+            // object's PROPERTIES, so a plain dictionary risks a redirect
+            // to ?Comparer=...&Count=3.
+            var values = new RouteValueDictionary();
+            foreach (var pair in StateRoute()) values[pair.Key] = pair.Value;
+
+            // ?moved is deliberately NOT carried. It is a one-shot hint
+            // from a redirect the move handler makes; carrying it would
+            // leave a row flashing after every unrelated save.
+            return values;
+        }
+
+        /// <summary>
+        /// Apply the search and filters to the full list, then cut one
+        /// page out of it.
+        ///
+        /// Ordinal-ignore-case matching, not the current culture: a
+        /// category list is short, the names are the workspace's own, and
+        /// culture-sensitive comparison on a Turkish machine famously does
+        /// not match "I" with "i".
+        /// </summary>
+        private void ApplyFilters()
+        {
+            IEnumerable<ProductCategoryDto> rows = AllCategories;
+
+            if (!string.IsNullOrWhiteSpace(SearchTerm))
+            {
+                var needle = SearchTerm.Trim();
+                rows = rows.Where(c => c.Name.Contains(needle, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (string.Equals(StatusFilter, "active", StringComparison.OrdinalIgnoreCase))
+                rows = rows.Where(c => c.IsActive);
+            else if (string.Equals(StatusFilter, "inactive", StringComparison.OrdinalIgnoreCase))
+                rows = rows.Where(c => !c.IsActive);
+
+            if (string.Equals(KindFilter, "standard", StringComparison.OrdinalIgnoreCase))
+                rows = rows.Where(c => c.IsSystem);
+            else if (string.Equals(KindFilter, "custom", StringComparison.OrdinalIgnoreCase))
+                rows = rows.Where(c => !c.IsSystem);
+
+            Matching = rows.ToList();
+
+            if (PageSize <= 0) PageSize = DefaultPageSize;
+            if (PageSize > MaxPageSize) PageSize = MaxPageSize;
+            if (PageNumber < 1) PageNumber = 1;
+
+            // A page past the end shows the LAST page, not an empty table.
+            // Reachable without trying: be on page 3, switch a filter on,
+            // and three rows match.
+            if (PageNumber > TotalPages) PageNumber = TotalPages;
+
+            Categories = Matching
+                .Skip((PageNumber - 1) * PageSize)
+                .Take(PageSize)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Which page a given category is on, after the current filters.
+        /// Used by the move handler to follow a row that has just crossed
+        /// a page boundary. 1 when it is not in the filtered list at all.
+        /// </summary>
+        private int PageContaining(Guid id)
+        {
+            var index = Matching.FindIndex(c => c.Id == id);
+            if (index < 0) return 1;
+
+            return (index / Math.Max(PageSize, 1)) + 1;
+        }
+
+        // =============================================================
         // GET
         // =============================================================
 
@@ -162,7 +529,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             await InitializePermissionsAsync();
             await LoadAsync();
 
-            // ?add=1 wins over ?edit={id}, matching the view. Both forms
+            // ?add=true wins over ?edit={id}, matching the view. Both forms
             // on one page would duplicate the icon radios' ids, and a
             // <label for> binds to the FIRST match in the document — so
             // clicking an icon in one form would move the other's.
@@ -188,7 +555,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             // clicks Edit and then changes their mind about one field.
             if (EditId is { } id && id != Guid.Empty)
             {
-                var row = Categories.FirstOrDefault(c => c.Id == id);
+                // 073: AllCategories, not Categories. Paged, a row being
+                // edited on page 2 is not in the current page's slice when
+                // the filters change under it, and this would have cleared
+                // the form and claimed the category no longer exists.
+                var row = AllCategories.FirstOrDefault(c => c.Id == id);
 
                 if (row is null)
                 {
@@ -246,7 +617,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 });
 
                 SuccessMessage = Describe($"\"{Input.Name.Trim()}\" added.", result);
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (InvalidOperationException ex)
             {
@@ -311,7 +682,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                     : $"\"{Input.Name.Trim()}\" saved.";
 
                 SuccessMessage = Describe(msg, result);
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (KeyNotFoundException)
             {
@@ -356,7 +727,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 if (row is null)
                 {
                     ErrorMessage = "That category no longer exists.";
-                    return RedirectToPage();
+                    return RedirectToPage(ReturnRoute());
                 }
 
                 var result = await _categories.UpdateAsync(id, new UpdateProductCategoryDto
@@ -373,18 +744,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                         : $"\"{row.Name}\" switched back on.",
                     result);
 
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (InvalidOperationException ex)
             {
                 ErrorMessage = ex.Message;
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to toggle product category {Id}", id);
                 ErrorMessage = "Could not change the category. Please try again.";
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
         }
 
@@ -414,23 +785,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 };
 
                 SuccessMessage = Describe(moved, result);
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (KeyNotFoundException)
             {
                 ErrorMessage = "That category no longer exists.";
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (InvalidOperationException ex)
             {
                 ErrorMessage = ex.Message;
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to remove product category {Id}", id);
                 ErrorMessage = "Could not remove the category. Please try again.";
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
         }
 
@@ -447,6 +818,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             var denied = await ValidatePermissionAsync(Actions.Update);
             if (denied is not null) return denied;
 
+            // 073: refuse a move while the list is filtered, on the SERVER.
+            // The view hides the arrows, but a hidden button is not a
+            // control — this form is one hand-written POST away. The
+            // reasoning is in the file header: with rows filtered out,
+            // "swap with the row above" has two different answers and
+            // neither is the one the user is looking at.
+            if (IsFiltered)
+            {
+                ErrorMessage = "Clear the search before rearranging — the order belongs to the whole list.";
+                return RedirectToPage(ReturnRoute());
+            }
+
             try
             {
                 var list    = await _categories.GetAllAsync(includeInactive: true);
@@ -460,7 +843,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 if (index < 0)
                 {
                     ErrorMessage = "That category no longer exists.";
-                    return RedirectToPage();
+                    return RedirectToPage(ReturnRoute());
                 }
 
                 var target = direction == "up" ? index - 1 : index + 1;
@@ -469,23 +852,44 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 // for pressing a button that was disabled anyway would be
                 // noise.
                 if (target < 0 || target >= ordered.Count)
-                    return RedirectToPage();
+                    return RedirectToPage(ReturnRoute());
 
                 (ordered[index], ordered[target]) = (ordered[target], ordered[index]);
 
                 await _categories.ReorderAsync(ordered);
-                return RedirectToPage();
+
+                // ── 073: FOLLOW THE ROW TO ITS NEW PAGE ───────────────
+                //
+                // Press up on the first row of page 2 and the category
+                // correctly belongs on page 1 — the order is global, the
+                // view is what happens to be paginated. Redirecting back
+                // to page 2 would show the row simply gone, which reads
+                // as the button having deleted something.
+                //
+                // Reload, re-page, and send the user to wherever it landed.
+                var moved = ordered[target];
+                await LoadAsync();
+
+                var route = ReturnRoute();
+                route[nameof(PageNumber)] = PageContaining(moved);
+
+                // So the view can flash the row that just moved. Without
+                // it, a move that crosses a page boundary is two visual
+                // changes at once — a different page AND a reordered list.
+                route["moved"] = moved.ToString();
+
+                return RedirectToPage(route);
             }
             catch (InvalidOperationException ex)
             {
                 ErrorMessage = ex.Message;
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to reorder product categories");
                 ErrorMessage = "Could not change the order. Please try again.";
-                return RedirectToPage();
+                return RedirectToPage(ReturnRoute());
             }
         }
 
@@ -501,7 +905,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 // category in order to offer switching it back on.
                 var list = await _categories.GetAllAsync(includeInactive: true);
 
-                Categories                = list.Categories;
+                // 073: the FULL list, in display order, is the authority
+                // for the ordering and for the reassign targets. The
+                // service already returns it sorted; sorting again here
+                // means IsFirstOverall/IsLastOverall and the move handler
+                // cannot disagree with what the view draws.
+                AllCategories = list.Categories
+                    .OrderBy(c => c.SortOrder)
+                    .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
                 FollowingDefaults         = list.FollowingDefaults;
                 UncategorizedProductCount = list.UncategorizedProductCount;
             }
@@ -512,8 +925,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 // nothing.
                 Logger.LogError(ex, "Failed to load product categories");
                 ErrorMessage ??= "Could not load your categories. Please try again.";
-                Categories = new List<ProductCategoryDto>();
+                AllCategories = new List<ProductCategoryDto>();
             }
+
+            // Always, including after a failure — so Matching and
+            // Categories are empty lists rather than nulls and the view
+            // has nothing to guard against.
+            ApplyFilters();
         }
 
         /// <summary>

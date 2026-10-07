@@ -1,0 +1,89 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.ListToolbarVm
+@* =====================================================================
+   Pages/Shared/_ListToolbar.cshtml — NEW (072).
+
+   The search + filter strip at the top of every list page. One line:
+
+       <partial name="_ListToolbar" model="Model.Toolbar" />
+
+   ── IT IS A GET FORM, ON PURPOSE ────────────────────────────────────
+
+   Submitting puts the search and the filters in the URL, which is what
+   makes a filtered list bookmarkable, shareable and survivable across
+   the back button. A POST would need a redirect to achieve the same and
+   would lose the filters on a refresh.
+
+   ── THE PAGE NUMBER IS NOT IN THIS FORM ─────────────────────────────
+
+   Deliberately. Carrying it would land a fresh search on page 7 of a
+   two-page result, which renders empty and reads to the user as "no
+   matches" — see the note on ListToolbarVm.Carry. Submitting this form
+   always starts at page 1 because the field simply is not here.
+
+   ── NO NESTED FORMS ─────────────────────────────────────────────────
+
+   The count on the right is a span, not a control, and the Clear link is
+   an anchor. The pager below is a separate sibling form. Nothing here
+   wraps anything else.
+   ===================================================================== *@
+
+<style>
+    .lt-bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+              padding: .6rem .75rem; border: 1px solid #e9ecef; border-radius: 12px;
+              background: #fff; margin-bottom: 1rem; }
+    .lt-count { font-size: .78rem; color: #64748b; white-space: nowrap; }
+    .lt-bar .form-select, .lt-bar .form-control { font-size: .84rem; }
+</style>
+
+<div class="lt-bar">
+    <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+
+        @* Carried through so a search does not reset the page size or
+           move the user off the tab they were on. The page number is
+           deliberately absent — see the header. *@
+        @foreach (var keep in Model.Carry)
+        {
+            <input type="hidden" name="@keep.Key" value="@keep.Value" />
+        }
+
+        <div class="input-group input-group-sm" style="width:@Model.SearchWidth;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search"
+                   name="@Model.SearchName"
+                   value="@Model.SearchValue"
+                   class="form-control"
+                   placeholder="@Model.SearchPlaceholder"
+                   autocomplete="off"
+                   aria-label="@Model.SearchLabel" />
+        </div>
+
+        @foreach (var filter in Model.Filters)
+        {
+            <select name="@filter.Name"
+                    class="form-select form-select-sm"
+                    style="width:@filter.Width;"
+                    aria-label="@filter.Label">
+                @foreach (var option in filter.Options)
+                {
+                    @* selected="@bool" is the Razor form: it renders the
+                       attribute when true and omits it when false. Writing
+                       selected="selected" by hand inside a loop is how a
+                       dropdown ends up with two selected options. *@
+                    <option value="@option.Value" selected="@option.Selected">@option.Text</option>
+                }
+            </select>
+        }
+
+        <button class="btn btn-sm btn-outline-secondary" type="submit">
+            <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+
+        @if (Model.IsFiltered)
+        {
+            <a asp-page="@Model.PageRoute" asp-all-route-data="@Model.ClearRoute"
+               class="btn btn-sm btn-link px-1">Clear</a>
+        }
+    </form>
+
+    <span class="lt-count ms-auto">@Model.CountLabel</span>
+</div>

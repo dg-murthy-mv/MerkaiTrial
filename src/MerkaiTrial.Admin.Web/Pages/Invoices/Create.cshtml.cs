@@ -1,6 +1,24 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Create.cshtml.cs
 //
+// CHANGES (074 — the catalogue reaches the manual invoice)
+//   The MANUAL path (straight from a deal, no quote) got none of what
+//   052, 055, 067, 069 and 070 built. Same four fixes as Edit.cshtml.cs,
+//   whose header sets them out in full:
+//     1. the catalogue is loaded in the DEAL's currency, not the
+//        workspace's — it was handing ₹ figures to a USD invoice;
+//     2. quantity is decimal;
+//     3. unit of measure, tax code and percentage discount travel;
+//     4. the line editor is _QuoteItemsEditor.cshtml, the shared one.
+//
+//   The nested InvoiceItemData class is GONE. Its own comment said
+//   "Consider deleting this one and using the shared type — deferred,
+//   out of scope"; it is the top-level one in Edit.cshtml.cs now, which
+//   is the copy that gained the decimal quantity.
+//
+//   The FromQuote path is untouched — those invoices copy the quote's
+//   lines and have been correct since 067.
+//
 // ✅ SESSION 5 — PERMISSION MIGRATION
 //   1. AppPageModel  →  AuthorizedPageModel   (ModuleName = Modules.Invoices)
 //   2. OnGetAsync was UNGATED — now invoices.create, plus
@@ -42,8 +60,10 @@
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Products;
+using MerkaiTrial.Admin.Web.Pages.Quotes;          // 074: QuoteItemsEditorVm
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;       // 074: CurrencyConfiguration
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -173,6 +193,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         /// <summary>Tenant default tax as a percentage (7 for Thai VAT) — for new custom lines.</summary>
         public decimal DefaultTaxRate { get; private set; }
+
+        /// <summary>074: "GST", "VAT" — the editor's tax column header.</summary>
+        public string DefaultTaxRateName { get; private set; } = "Tax";
         public string Mode => QuoteId.HasValue ? "FromQuote" : "Manual";
 
         public async Task<IActionResult> OnGetAsync()
@@ -301,9 +324,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     {
                         try
                         {
+                            // ⚠ 074: THE DEAL'S CURRENCY. Without it the
+                            // catalogue comes back priced in the
+                            // WORKSPACE's currency and this page hands
+                            // those figures to an invoice denominated in
+                            // something else — the 069 bug, which was
+                            // fixed on quotes and left standing here.
+                            //
+                            // MUST run after Deal is loaded; that is what
+                            // knows the currency.
                             var paginated = await _productService.GetAllAsync(
                                 tenantId: tenantId, pageNumber: 1, pageSize: 1000,
-                                category: null, isActive: true, searchTerm: null);
+                                category: null, isActive: true, searchTerm: null,
+                                currency: Deal?.Currency ?? _tenantService.GetCurrencyCode());
                             Products = paginated?.Items ?? new List<ProductListItem>();
                         }
                         catch (Exception pex)
@@ -317,6 +350,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     {
                         var raw = await _tenantService.GetDefaultTaxRateAsync();
                         DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+
+                        // 074: the country's word for it — "GST", "VAT" —
+                        // for the editor's column header.
+                        var label = _tenantService.GetTaxLabel();
+                        if (!string.IsNullOrWhiteSpace(label)) DefaultTaxRateName = label;
                     }
                     catch (Exception tex)
                     {
@@ -353,6 +391,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     ErrorMessage = "Quote ID is required";
                     return RedirectToPage();
+                }
+
+                // 074. Before anything is read or written.
+                var dateProblem = DateProblem();
+                if (dateProblem != null)
+                {
+                    ErrorMessage = dateProblem;
+                    return RedirectToPage(new { QuoteId, MilestoneId });
                 }
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
@@ -438,6 +484,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     return RedirectToPage();
                 }
 
+                // 074. Before anything is parsed or written.
+                var dateProblem = DateProblem();
+                if (dateProblem != null)
+                {
+                    ErrorMessage = dateProblem;
+                    return RedirectToPage(new { DealId });
+                }
+
                 // (018) Case-insensitive — the page sends camelCase. Without this
                 // every line arrived with an empty name and zero price.
                 var items = JsonSerializer.Deserialize<List<InvoiceItemData>>(
@@ -468,9 +522,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                         Name = i.Name,
                         Description = i.Description,
                         UnitPrice = i.UnitPrice,
-                        Quantity = i.Quantity,
+                        Quantity = i.Quantity,            // 074: decimal, was int
+
+                        // 052 / 055 / 067 — all three now travel. See the
+                        // matching block in Edit.cshtml.cs for why each
+                        // one matters; TaxCode is the one a GST invoice
+                        // is legally incomplete without.
+                        UnitOfMeasure = i.UnitOfMeasure,
                         LineDiscount = i.LineDiscount,
-                        TaxRate = i.TaxRate / 100m
+                        DiscountPercent = i.DiscountPercent,
+                        TaxRate = i.TaxRate / 100m,
+                        TaxCode = i.TaxCode ?? ""
                     }).ToList()
                 };
 
@@ -499,6 +561,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private static DateTime AsUtcDate(DateTime d) => DateTime.SpecifyKind(d.Date, DateTimeKind.Utc);
 
         /// <summary>
+        /// 074. Due on or after issue, or the reason it isn't.
+        ///
+        /// The page checks this too, and the page's check is the one the
+        /// user sees — inline, next to the box, before anything is posted.
+        /// This is the one that counts. Both invoice dates arrive in hidden
+        /// fields, and a hidden field is not a control: it can be edited,
+        /// replayed, or posted by something that never rendered the page.
+        ///
+        /// It matters because of what the rest of the system does with the
+        /// due date: an invoice whose due date has passed is Overdue, so an
+        /// invoice issued due-before-issued is overdue the moment it is
+        /// sent, and the customer's first sight of it is a demand that was
+        /// already late.
+        /// </summary>
+        private string? DateProblem()
+            => DueDate.Date < IssueDate.Date
+                ? $"The due date ({DueDate:dd MMM yyyy}) is before the issue date " +
+                  $"({IssueDate:dd MMM yyyy}). An invoice cannot fall due before it is raised."
+                : null;
+
+        /// <summary>
         /// Says whether it was issued, and if not, why.
         ///
         /// 071: a milestone invoice says WHICH stage, from the snapshot on
@@ -520,19 +603,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 : $"Draft invoice created{stage}. Issue it when it's ready — it gets its number then.";
         }
 
-        // NOTE: this nested InvoiceItemData duplicates the top-level
-        // InvoiceItemData declared in Edit.cshtml.cs (same namespace). They do not
-        // collide because this one is nested, but it is confusing. Consider
-        // deleting this one and using the shared type — deferred, out of scope.
-        public class InvoiceItemData
-        {
-            public Guid? ProductId { get; set; }
-            public string Name { get; set; } = string.Empty;
-            public string? Description { get; set; }
-            public decimal UnitPrice { get; set; }
-            public int Quantity { get; set; }
-            public decimal LineDiscount { get; set; }
-            public decimal TaxRate { get; set; }
-        }
+        // 074: the nested InvoiceItemData is GONE. It duplicated the
+        // top-level one in Edit.cshtml.cs (same namespace) with its own
+        // int Quantity, so the two invoice pages rounded quantities
+        // differently — and the comment that used to sit here said as
+        // much and deferred it. Both pages deserialise the one declared
+        // in Edit.cshtml.cs, which is the copy that now carries the
+        // decimal quantity, the unit, the tax code and the percentage.
     }
 }

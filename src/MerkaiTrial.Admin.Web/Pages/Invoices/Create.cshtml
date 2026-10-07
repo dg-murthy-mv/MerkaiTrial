@@ -1,4 +1,6 @@
 @page
+@using System.Text.Json
+@using MerkaiTrial.Admin.Web.Pages.Quotes
 @model MerkaiTrial.Admin.Web.Pages.Invoices.CreateModel
 @* (018) "Create & Issue" (was "Create & Send"); catalog prices/tax rendered
    culture-proof; new custom lines use the tenant's tax rate. *@
@@ -55,6 +57,14 @@
                     <div class="col-md-4">
                         <label class="form-label fw-bold">Due Date *</label>
                         <input type="date" class="form-control" name="DueDate" id="DueDate" value="@Model.DueDate.ToString("yyyy-MM-dd")" required />
+                        @* 074. Nothing checked that the due date was on or
+                           after the issue date, on the client or the server.
+                           An invoice raised due before it was issued came out
+                           Overdue the moment it was sent, which reads as a
+                           billing error to whoever receives it. *@
+                        <div id="invDateErr" class="invalid-feedback d-block d-none">
+                            The due date cannot be before the issue date.
+                        </div>
                         <div class="mt-2">
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDueDays(30)">Net 30</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDueDays(60)">Net 60</button>
@@ -96,9 +106,22 @@
                         }
                         else
                         {
-                            <select class="form-select" name="Currency" id="Currency">
+                            @* 074. Disabled, like the FromQuote path, and for a
+                               reason that only became true this round: the line
+                               editor now loads the catalogue AT THIS CURRENCY —
+                               each product's price list is read for it, and a
+                               product with no price in it is shown as having
+                               none. A dropdown offering a change the catalogue
+                               would not follow is a dropdown that lies.
+
+                               There is one option either way (the deal's
+                               currency, or the workspace's), so nothing is
+                               being taken away. The form posts the hidden
+                               mirror below, not this. *@
+                            <select class="form-select" name="CurrencyDisplay" id="Currency" disabled>
                                 <option value="@invoiceCurrency" selected>@currencyLabel</option>
                             </select>
+                            <div class="form-text">Set by the deal and cannot be changed.</div>
                         }
                     </div>
 
@@ -177,50 +200,53 @@
         }
         else
         {
-            <div class="card mb-4">
-                <div class="card-header bg-light">
-                    <h5 class="mb-0">
-                        <i class="bi bi-list-ul me-2"></i>Invoice Items
-                    </h5>
-                </div>
-                <div class="card-body">
-                    @if (Model.Products.Count > 0)
+            @* ── 074: the SHARED line editor ─────────────────────────
+               The same partial both quote pages render. What it replaces
+               was the thinnest of the four copies: a <select> of product
+               names with the price formatted in the WORKSPACE's currency,
+               no unit of measure, no tax code, no percentage discount, no
+               bundle breakdown, and integer quantities.
+
+               Referenced by path because it lives in Pages/Quotes. Its
+               name says "Quote"; it takes a QuoteItemsEditorVm and nothing
+               else, and renaming it would touch four working pages for a
+               word.
+
+               Rendered BARE, not inside a card — the partial brings its
+               own "Line items" heading, the Add-line and catalogue
+               buttons, and its own totals strip. The card around it used
+               to supply a header reading "Invoice Items", which would now
+               be a second heading saying the same thing two lines above
+               the first. Both quote pages render it bare for the same
+               reason. *@
+            <div class="mb-4">
+                @{
+                    var listPrices = (Model.Products ?? new())
+                        .Where(p => p.HasPriceInCurrency)
+                        .GroupBy(p => p.Id.ToString())
+                        .ToDictionary(g => g.Key, g => g.First().ListPrice);
+
+                    var editor = new QuoteItemsEditorVm
                     {
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Add from Product Catalog</label>
-                            <div class="input-group">
-                                <select id="productSelector" class="form-select">
-                                    <option value="">-- Select a product --</option>
-                                    @foreach (var product in Model.Products)
-                                    {
-                                        <option value="@product.Id" 
-                                                data-name="@product.Name" 
-                                                data-price="@product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)" 
-                                                data-tax="@(Convert.ToDecimal(product.TaxRate).ToString(System.Globalization.CultureInfo.InvariantCulture))">
-                                            @product.Name - @Model.FormatCurrency(product.ListPrice)
-                                        </option>
-                                    }
-                                </select>
-                                <button type="button" class="btn btn-primary" onclick="addProductToInvoice()">
-                                    <i class="bi bi-plus-circle me-2"></i>Add Product
-                                </button>
-                            </div>
-                        </div>
-                    }
-
-                    <div class="mb-3">
-                        <button type="button" class="btn btn-outline-secondary" onclick="addCustomItem()">
-                            <i class="bi bi-plus-circle me-2"></i>Add Custom Item
-                        </button>
-                    </div>
-
-                    <div id="lineItemsContainer"></div>
-
-                    <div id="emptyState" class="text-center py-5 text-muted">
-                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
-                        <p class="mt-3">No items added yet. Add products or custom items above.</p>
-                    </div>
-                </div>
+                        // The form is in the sticky card in the RIGHT
+                        // column, further down the page than this partial.
+                        // That used to matter — see the hidden field and
+                        // bindForm() in the editor; as of 074 it does not.
+                        FormId                = "manualInvoiceForm",
+                        CurrencyCode          = invoiceCurrency,
+                        DefaultTaxRate        = Model.DefaultTaxRate,
+                        TaxLabel              = Model.DefaultTaxRateName,
+                        // Quote approval rules do not apply to an invoice.
+                        // Disabled is also this property's default; spelled
+                        // out so nobody wonders whether it was forgotten.
+                        ApprovalRulesJson     = "{\"enabled\":false}",
+                        Products              = Model.Products ?? new(),
+                        InitialItemsJson      = "[]",
+                        ListPricesJson        = JsonSerializer.Serialize(listPrices),
+                        StartWithOneBlankLine = true
+                    };
+                }
+                <partial name="/Pages/Quotes/_QuoteItemsEditor.cshtml" model="editor" />
             </div>
         }
     </div>
@@ -358,14 +384,28 @@
                 }
                 else
                 {
-                    <form method="post" asp-page-handler="CreateManual" id="manualInvoiceForm" onsubmit="return validateForm()">
+                    @* 074. onsubmit="return validateForm()" is gone, and so is
+                       the page's own itemsJson field.
+
+                       The shared editor owns both now: it writes its own
+                       hidden itemsJson, associates it with this form by id
+                       (form="manualInvoiceForm"), and validates on submit.
+                       A second field with the same name would post twice and
+                       the model binder would hand the handler "[...],[...]" —
+                       two JSON documents separated by a comma, which parses
+                       as neither. *@
+                    <form method="post" asp-page-handler="CreateManual" id="manualInvoiceForm">
                         <input type="hidden" name="DealId" value="@Model.DealId" />
                         <input type="hidden" name="IssueDate" id="IssueDateHidden2" value="@Model.IssueDate.ToString("yyyy-MM-dd")" />
                         <input type="hidden" name="DueDate" id="DueDateHidden2" value="@Model.DueDate.ToString("yyyy-MM-dd")" />
-                        <input type="hidden" name="Currency" value="@Model.Currency" />
+                        @* 074. invoiceCurrency, not Model.Currency — the same
+                           value the dropdown shows and the same one the line
+                           editor priced the catalogue in. Model.Currency can
+                           be blank on a deal that never had one set, and this
+                           used to post that blank. *@
+                        <input type="hidden" name="Currency" value="@invoiceCurrency" />
                         <input type="hidden" name="Notes" id="NotesHidden2" value="@Model.Notes" />
-                        <input type="hidden" name="itemsJson" id="itemsJson" />
-                        
+
                         <button type="submit" name="sendImmediately" value="false" class="btn btn-outline-primary w-100 mb-2">
                             <i class="bi bi-save me-2"></i>Save as Draft
                         </button>
@@ -387,230 +427,169 @@
 @if (Model.Mode == "Manual")
 {
 <script>
-    let lineItems = [];
-    let itemCounter = 0;
-    // ✅ was: const currency = '...'  +  `${currency} ${x.toFixed(2)}`
-    //    toFixed() does NO grouping, so client-computed totals rendered
-    //    ungrouped ("255000.00") while the server rendered "฿255,000.00".
-    //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
-    //    culture, so client and server now agree by construction.
-    const fmtMoney = (x) => window.MerkaiCurrency.format(x);
-    // (018) was 18 — Indian GST for every tenant
-    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    // ─────────────────────────────────────────────────────────────────
+    // 074. WHAT USED TO BE HERE
+    //
+    // About 220 lines: addProductToInvoice(), addCustomItem(),
+    // removeItem(), updateItem(), calculateLineItemTotal(),
+    // updateLineItemTotal(), calculateTotals(), renderLineItems() and
+    // validateForm() — the fourth hand-rolled line-item editor in the
+    // solution, and the thinnest. Integer quantities, no unit of
+    // measure, no tax code, no percentage discount, no bundle
+    // breakdown, catalogue prices in the workspace's currency whatever
+    // the invoice was in, and onclick="" handlers built by string
+    // concatenation around values the user types.
+    //
+    // All of it is now _QuoteItemsEditor.cshtml, which is where those
+    // nine features already worked. What is left here is the three
+    // things that are genuinely this page's: the due-date buttons, the
+    // summary card, and copying the date and notes boxes into the
+    // hidden fields the handler binds.
+    // ─────────────────────────────────────────────────────────────────
+    (function () {
+        'use strict';
 
-    function setDueDays(days) {
-        const issueDate = new Date(document.getElementById('IssueDate').value || new Date());
-        const dueDate = new Date(issueDate);
-        dueDate.setDate(dueDate.getDate() + days);
-        document.getElementById('DueDate').value = dueDate.toISOString().split('T')[0];
-        document.getElementById('DueDateHidden2').value = dueDate.toISOString().split('T')[0];
-    }
+        // ── Net 30 / 60 / 90 ────────────────────────────────────────
+        // Still a global: the buttons are onclick="setDueDays(30)" in
+        // markup above, which can only reach a global. Writing the
+        // hidden field as well as the visible one is belt-and-braces —
+        // the submit handler below copies it anyway.
+        window.setDueDays = function (days) {
+            var issueEl = document.getElementById('IssueDate');
+            var base = (issueEl && issueEl.value) ? new Date(issueEl.value) : new Date();
+            if (isNaN(base.getTime())) base = new Date();
 
-    function addProductToInvoice() {
-        const selector = document.getElementById('productSelector');
-        const option = selector.options[selector.selectedIndex];
-        
-        if (!option.value) {
-            alert('Please select a product');
-            return;
-        }
+            base.setDate(base.getDate() + days);
+            var iso = base.toISOString().split('T')[0];
 
-        const item = {
-            id: ++itemCounter,
-            productId: option.value,
-            name: option.dataset.name,
-            description: '',
-            unitPrice: parseFloat(option.dataset.price),
-            quantity: 1,
-            lineDiscount: 0,
-            taxRate: parseFloat(option.dataset.tax) * 100
+            var due = document.getElementById('DueDate');
+            if (due) due.value = iso;
+            var hidden = document.getElementById('DueDateHidden2');
+            if (hidden) hidden.value = iso;
         };
 
-        lineItems.push(item);
-        renderLineItems();
-        calculateTotals();
-        selector.selectedIndex = 0;
-    }
-
-    function addCustomItem() {
-        const item = {
-            id: ++itemCounter,
-            productId: null,
-            name: 'Custom Item',
-            description: '',
-            unitPrice: 0,
-            quantity: 1,
-            lineDiscount: 0,
-            taxRate: defaultTaxRate
-        };
-
-        lineItems.push(item);
-        renderLineItems();
-        calculateTotals();
-    }
-
-    function removeItem(itemId) {
-        lineItems = lineItems.filter(i => i.id !== itemId);
-        renderLineItems();
-        calculateTotals();
-    }
-
-    function updateItem(itemId, field, value) {
-        const item = lineItems.find(i => i.id === itemId);
-        if (item) {
-            if (field === 'quantity' || field === 'unitPrice' || field === 'lineDiscount' || field === 'taxRate') {
-                item[field] = parseFloat(value) || 0;
-            } else {
-                item[field] = value;
+        // ── the summary card ────────────────────────────────────────
+        // The editor publishes its totals; this page displays them in
+        // the sticky card next to the Create button. Formatted with
+        // MerkaiCurrency (Intl.NumberFormat, the tenant's culture), the
+        // same helper the editor and _Layout use, so the two panels
+        // cannot disagree about grouping or symbol placement.
+        function money(x) {
+            if (window.MerkaiCurrency && window.MerkaiCurrency.format) {
+                return window.MerkaiCurrency.format(x);
             }
-            calculateTotals();
-            updateLineItemTotal(itemId);
+            return (Math.round(x * 100) / 100).toFixed(2);
         }
-    }
 
-    function calculateLineItemTotal(item) {
-        const subtotal = item.unitPrice * item.quantity;
-        const afterDiscount = subtotal - item.lineDiscount;
-        const tax = afterDiscount * (item.taxRate / 100);
-        const total = afterDiscount + tax;
-        return { subtotal, afterDiscount, tax, total };
-    }
-
-    function updateLineItemTotal(itemId) {
-        const item = lineItems.find(i => i.id === itemId);
-        if (item) {
-            const calc = calculateLineItemTotal(item);
-            const element = document.getElementById(`line-total-${itemId}`);
-            if (element) {
-                element.textContent = fmtMoney(calc.total);
-            }
+        function set(id, text) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = text;
         }
-    }
 
-    function calculateTotals() {
-        let subtotal = 0;
-        let discountTotal = 0;
-        let taxTotal = 0;
+        document.addEventListener('quote-items:totals', function (e) {
+            var d = e.detail || {};
 
-        lineItems.forEach(item => {
-            const calc = calculateLineItemTotal(item);
-            subtotal += calc.subtotal;
-            discountTotal += item.lineDiscount;
-            taxTotal += calc.tax;
+            set('subtotalDisplay', money(d.subtotal || 0));
+            set('discountDisplay', '-' + money(d.discount || 0));
+            set('taxDisplay', money(d.tax || 0));
+            set('grandTotalDisplay', money(d.grand || 0));
+
+            var row = document.getElementById('discountRow');
+            if (row) row.style.display = (d.discount > 0) ? 'flex' : 'none';
         });
 
-        const grandTotal = subtotal + taxTotal - discountTotal;
+        // ── dates and notes into the hidden fields ──────────────────
+        // The visible Issue Date, Due Date and Notes boxes are in the
+        // left column, outside this form. The handler binds IssueDate,
+        // DueDate and Notes, so the form carries hidden copies and this
+        // listener fills them in at submit time.
+        //
+        // These three could have had form="manualInvoiceForm" and no
+        // script at all — but then the hidden copies would post TOO,
+        // two values per name, and the binder would take the first. The
+        // copies are what the handler reads, so they are what gets
+        // written.
+        //
+        // Bubble phase, registered here: the editor's own submit
+        // listener may call preventDefault() when a line is invalid.
+        // That stops the POST; it does not stop this listener, so the
+        // hidden fields are written for a submit that never leaves. No
+        // harm — the user fixes the line and submits again, and these
+        // are rewritten from the same boxes.
+        var form = document.getElementById('manualInvoiceForm');
+        if (form) {
+            form.addEventListener('submit', function () {
+                var issue = document.getElementById('IssueDate');
+                var due   = document.getElementById('DueDate');
+                var notes = document.querySelector('textarea[name="Notes"]');
 
-        document.getElementById('subtotalDisplay').textContent = fmtMoney(subtotal);
-        document.getElementById('discountDisplay').textContent = '-' + fmtMoney(discountTotal);
-        document.getElementById('taxDisplay').textContent = fmtMoney(taxTotal);
-        document.getElementById('grandTotalDisplay').textContent = fmtMoney(grandTotal);
-
-        document.getElementById('discountRow').style.display = discountTotal > 0 ? 'flex' : 'none';
-    }
-
-    function renderLineItems() {
-        const container = document.getElementById('lineItemsContainer');
-        const emptyState = document.getElementById('emptyState');
-
-        if (lineItems.length === 0) {
-            container.innerHTML = '';
-            emptyState.style.display = 'block';
-            return;
+                if (issue) set2('IssueDateHidden2', issue.value);
+                if (due)   set2('DueDateHidden2', due.value);
+                if (notes) set2('NotesHidden2', notes.value);
+            });
+        } else if (window.console && console.warn) {
+            console.warn('manualInvoiceForm not found — dates and notes will not sync.');
         }
 
-        emptyState.style.display = 'none';
-
-        container.innerHTML = lineItems.map(item => {
-            const calc = calculateLineItemTotal(item);
-            return `
-                <div class="border rounded p-3 mb-3" style="background: #f8f9fa;">
-                    <div class="d-flex justify-content-between align-items-start mb-3">
-                        <h6 class="mb-0">${item.name}</h6>
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItem(${item.id})">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="row g-2 mb-2">
-                        <div class="col-12">
-                            <label class="form-label small">Item Name</label>
-                            <input type="text" class="form-control form-control-sm" value="${item.name}" 
-                                   onchange="updateItem(${item.id}, 'name', this.value)" />
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label small">Description (Optional)</label>
-                            <input type="text" class="form-control form-control-sm" value="${item.description}" 
-                                   onchange="updateItem(${item.id}, 'description', this.value)" placeholder="Optional description" />
-                        </div>
-                    </div>
-                    
-                    <div class="row g-2">
-                        <div class="col-6 col-md-3">
-                            <label class="form-label small">Unit Price</label>
-                            <input type="number" class="form-control form-control-sm" value="${item.unitPrice}" 
-                                   step="0.01" min="0" onchange="updateItem(${item.id}, 'unitPrice', this.value)" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label small">Quantity</label>
-                            <input type="number" class="form-control form-control-sm" value="${item.quantity}" 
-                                   min="1" onchange="updateItem(${item.id}, 'quantity', this.value)" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label small">Discount</label>
-                            <input type="number" class="form-control form-control-sm" value="${item.lineDiscount}" 
-                                   step="0.01" min="0" onchange="updateItem(${item.id}, 'lineDiscount', this.value)" />
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label small">Tax %</label>
-                            <input type="number" class="form-control form-control-sm" value="${item.taxRate}" 
-                                   step="0.01" min="0" max="100" onchange="updateItem(${item.id}, 'taxRate', this.value)" />
-                        </div>
-                    </div>
-                    
-                    <div class="text-end mt-2">
-                        <strong>Line Total: </strong>
-                        <span class="text-primary fs-5" id="line-total-${item.id}">${fmtMoney(calc.total)}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    function validateForm() {
-        if (lineItems.length === 0) {
-            alert('Please add at least one item to the invoice');
-            return false;
+        function set2(id, value) {
+            var el = document.getElementById(id);
+            if (el) el.value = value;
         }
 
-        for (let item of lineItems) {
-            if (!item.name || item.name.trim() === '') {
-                alert('All items must have a name');
-                return false;
-            }
-            if (item.quantity < 1) {
-                alert('Quantity must be at least 1');
-                return false;
-            }
-            if (item.unitPrice < 0) {
-                alert('Unit price cannot be negative');
-                return false;
-            }
+        // ── due date must not precede issue date ────────────────────
+        // Nothing checked this, here or on the server: you could raise
+        // an invoice that fell due before it was issued, which then
+        // showed up Overdue the moment it was sent.
+        //
+        // Capture phase with stopImmediatePropagation, exactly as
+        // Quotes/Create.cshtml does it: capture runs before the
+        // editor's bubble-phase listener whichever was registered
+        // first, so a bad date stops the post before the lines are
+        // serialised.
+        var issueEl = document.getElementById('IssueDate');
+        var dueEl   = document.getElementById('DueDate');
+        var dateErr = document.getElementById('invDateErr');
+
+        function datesOk() {
+            if (!issueEl || !dueEl || !issueEl.value || !dueEl.value) return true;
+            // Both are yyyy-MM-dd from <input type="date">, so a string
+            // compare is a correct date compare — no parsing, no timezone.
+            return dueEl.value >= issueEl.value;
         }
 
-        document.getElementById('itemsJson').value = JSON.stringify(lineItems);
-        
-        document.getElementById('IssueDateHidden2').value = document.getElementById('IssueDate').value;
-        document.getElementById('DueDateHidden2').value = document.getElementById('DueDate').value;
-        document.getElementById('NotesHidden2').value = document.querySelector('textarea[name="Notes"]').value;
-        
-        return true;
-    }
+        function showDateError(bad) {
+            if (dateErr) dateErr.classList.toggle('d-none', !bad);
+            if (dueEl) dueEl.classList.toggle('is-invalid', bad);
+        }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        renderLineItems();
-        calculateTotals();
-    });
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                var bad = !datesOk();
+                showDateError(bad);
+                if (bad) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    if (dueEl) dueEl.focus();
+                }
+            }, true);
+        }
+
+        // min= on the due date, kept in step with the issue date. The date
+        // picker then greys out the impossible days instead of letting one
+        // be chosen and rejected afterwards. Not a guarantee — hence the
+        // submit check above and the handler's check on the server.
+        function syncMin() {
+            if (dueEl && issueEl) dueEl.min = issueEl.value || '';
+        }
+
+        if (dueEl)   dueEl.addEventListener('change', function () { showDateError(!datesOk()); });
+        if (issueEl) issueEl.addEventListener('change', function () {
+            syncMin();
+            showDateError(!datesOk());
+        });
+
+        syncMin();
+    })();
 </script>
 }
 @if (Model.Mode == "FromQuote")
@@ -648,9 +627,50 @@
                 if (due)   document.getElementById('DueDateHidden').value   = due.value;
                 if (notes) document.getElementById('NotesHidden').value     = notes.value;
             });
+
+            // 074. The same due-date check the manual path got. There is no
+            // line editor on this path and nothing else listens for submit,
+            // so an ordinary bubble-phase listener is enough — but it is
+            // registered AFTER the sync above, and preventDefault here does
+            // not un-write those hidden fields. That is harmless: they are
+            // rewritten from the same boxes on the next submit.
+            form.addEventListener('submit', function (e) {
+                if (!datesOk()) {
+                    showDateError(true);
+                    e.preventDefault();
+                    if (dueEl) dueEl.focus();
+                }
+            });
         } else {
             console.warn('fromQuoteInvoiceForm not found — invoice hidden fields will not sync.');
         }
+
+        var issueEl = document.getElementById('IssueDate');
+        var dueEl   = document.getElementById('DueDate');
+        var dateErr = document.getElementById('invDateErr');
+
+        function datesOk() {
+            if (!issueEl || !dueEl || !issueEl.value || !dueEl.value) return true;
+            // Both are yyyy-MM-dd, so a string compare is a date compare.
+            return dueEl.value >= issueEl.value;
+        }
+
+        function showDateError(bad) {
+            if (dateErr) dateErr.classList.toggle('d-none', !bad);
+            if (dueEl) dueEl.classList.toggle('is-invalid', bad);
+        }
+
+        function syncMin() {
+            if (dueEl && issueEl) dueEl.min = issueEl.value || '';
+        }
+
+        if (dueEl)   dueEl.addEventListener('change', function () { showDateError(!datesOk()); });
+        if (issueEl) issueEl.addEventListener('change', function () {
+            syncMin();
+            showDateError(!datesOk());
+        });
+
+        syncMin();
     });
 </script>
 }

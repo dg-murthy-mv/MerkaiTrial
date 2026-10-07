@@ -38,9 +38,22 @@
    Create.cshtml and Edit.cshtml. QuoteItemsEditorVm.cs says why it exists
    and what went wrong with two copies.
 
-   IT MUST BE RENDERED INSIDE THE FORM it posts with: it owns the hidden
-   itemsJson field, and the host page owns the form, the dates and the
-   buttons.
+   Since 074 it is rendered by FOUR pages: Quotes/Create, Quotes/Edit,
+   Invoices/Create (manual mode) and Invoices/Edit (manual mode). The
+   invoice pages reference it by path, because they live in another
+   folder:
+
+       <partial name="/Pages/Quotes/_QuoteItemsEditor.cshtml" model="editor" />
+
+   It takes a QuoteItemsEditorVm and nothing else. Nothing in here is
+   quote-specific — ApprovalRulesJson defaults to {"enabled":false}, so
+   an invoice gets no approval banner — and renaming the file for the
+   sake of the word "Quote" would touch four working pages.
+
+   IT ONLY NEEDS FormId TO NAME THE FORM IT POSTS WITH. It used to have
+   to be rendered INSIDE that form; as of 074 it does not — see the
+   hidden field and bindForm() below. The host page owns the form, the
+   dates, the notes and the buttons.
 
    ── 067: A TAX CLASSIFICATION CODE PER LINE ─────────────────────────
 
@@ -260,9 +273,37 @@
     }
 </style>
 
-@* The hidden field the host form posts. Named itemsJson on both pages
-   because both handlers take `string itemsJson`. *@
-<input type="hidden" name="itemsJson" id="qeItemsJson" />
+@* The hidden field the host form posts. Named itemsJson on every page
+   that renders this editor, because every handler takes `string itemsJson`.
+
+   ── 074: form="<FormId>" ─────────────────────────────────────────────
+
+   The two quote pages render this partial INSIDE their <form>, so this
+   field was posted because it happened to sit inside the right element.
+   Invoices/Create.cshtml cannot: its line editor is in the left column
+   and its buttons are in a sticky summary card in the right column, two
+   sibling columns of one Bootstrap row. Rendered there, this field sat
+   outside the form and the browser posted NOTHING for it — itemsJson
+   arrives empty and the invoice saves with no lines, with no error
+   anywhere to say why.
+
+   HTML's `form` attribute associates an input with a form by id from
+   anywhere in the document, regardless of nesting or of which came
+   first — association is resolved at submit time, not at parse time.
+   One attribute and the editor stops caring where it is rendered.
+
+   Emitted only when FormId is set. form="" does not mean "no opinion";
+   it means "associated with the form whose id is the empty string",
+   which is no form at all — that would unhook this field on the very
+   pages it already works on. *@
+@if (!string.IsNullOrWhiteSpace(Model.FormId))
+{
+    <input type="hidden" name="itemsJson" id="qeItemsJson" form="@Model.FormId" />
+}
+else
+{
+    <input type="hidden" name="itemsJson" id="qeItemsJson" />
+}
 
 <div class="qe-head">
     <h2><i class="bi bi-list-ul me-1"></i>Line items</h2>
@@ -923,6 +964,24 @@
             set('qeTax', money(tax));
             set('qeGrand', money(grand));
 
+            // 074. The host page may show the same four figures somewhere
+            // else — Invoices/Create.cshtml has a sticky summary card beside
+            // the Create button, which is where somebody looks last before
+            // committing. Those four <span>s were being filled by the page's
+            // own copy of the arithmetic; now there is one calculation and
+            // this event carries the result out. Raw numbers, not strings:
+            // the host formats with window.MerkaiCurrency like everything
+            // else, and a host that ignores the event is unaffected.
+            document.dispatchEvent(new CustomEvent('quote-items:totals', {
+                detail: {
+                    subtotal: sub,
+                    discount: disc,
+                    tax: tax,
+                    grand: grand,
+                    lineCount: rows.length
+                }
+            }));
+
             hint(grand);
         }
 
@@ -1078,7 +1137,12 @@
                 mark('qe-disc-' + k, badDisc);
             }
 
-            if (rows.length === 0) problems.push('A quote needs at least one line.');
+            // 074. Was "A quote needs at least one line." Two of the four
+            // pages rendering this editor are invoice pages, and that is
+            // the only sentence in here that named the document — the two
+            // that mention a quote by name are in the approval hint, which
+            // an invoice never shows because its rules are disabled.
+            if (rows.length === 0) problems.push('Add at least one line.');
             return problems;
         }
 
@@ -1389,14 +1453,37 @@
         // event. The host page's buttons are plain type="submit" now, so the
         // browser validates, this listener serialises the lines, and Enter in
         // a text box behaves like everything else.
-        var form = document.getElementById(FORM_ID);
-        if (form) {
-            form.addEventListener('submit', function (e) {
-                if (!window.QuoteItemsEditor.prepare()) e.preventDefault();
-            });
-        } else if (window.console && console.warn) {
-            console.warn('_QuoteItemsEditor: no form with id "' + FORM_ID +
-                         '" — line items will not be submitted.');
+        //
+        // ── 074: bound in start(), not here ──────────────────────────
+        //
+        // This used to run while the partial was being parsed. On the two
+        // quote pages the editor sits inside its <form>, so the form element
+        // already existed and the lookup worked. Invoices/Create.cshtml
+        // renders the editor in the left column and its form in the right
+        // one — further DOWN the document — so getElementById returned null,
+        // this listener was never attached, and the console warning below
+        // was the only sign that submitting would save an invoice with no
+        // lines on it.
+        //
+        // Moving the lookup into start() (DOMContentLoaded) means the whole
+        // document is parsed before we look, so the editor no longer cares
+        // where on the page its form lives. Nothing can be submitted before
+        // DOMContentLoaded anyway — there is no button to press yet.
+        //
+        // Registration order does not affect Quotes/Create.cshtml, which
+        // deliberately registers a CAPTURE-phase submit listener to veto a
+        // bad expiry date before this one serialises: capture always runs
+        // before bubble, whichever was added first.
+        function bindForm() {
+            var form = document.getElementById(FORM_ID);
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    if (!window.QuoteItemsEditor.prepare()) e.preventDefault();
+                });
+            } else if (window.console && console.warn) {
+                console.warn('_QuoteItemsEditor: no form with id "' + FORM_ID +
+                             '" — line items will not be submitted.');
+            }
         }
 
         // ── first paint ──────────────────────────────────────────────
@@ -1405,7 +1492,7 @@
         // run yet while this partial is being parsed. Calling money() now would
         // fall through to toFixed(2) and the opening totals would render
         // ungrouped ("255000.00") until the first keystroke redrew them.
-        function start() { seed(); render(); }
+        function start() { bindForm(); seed(); render(); }
 
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', start);

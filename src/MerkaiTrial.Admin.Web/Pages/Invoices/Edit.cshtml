@@ -1,525 +1,421 @@
 @page
-@model MerkaiTrial.Admin.Web.Pages.Invoices.EditModel
+@using System.Globalization
 @using System.Text.Json
-@* (018) Invoice raised from a quote: lines shown read-only (they're the
-   quote's) — only due date and notes change. New lines use the tenant's
-   tax rate; catalog lines use the product's. *@
+@using MerkaiTrial.Admin.Web.Pages.Quotes
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Invoices.EditModel
 @{
     ViewData["Title"] = $"Edit Invoice - {Model.ExistingInvoice?.Number}";
-    
-    // ✅ Prepare items for JavaScript
-    var itemsForJson = Model.ExistingInvoice?.Lines ?? new List<MerkaiTrial.Application.DTOs.InvoiceLineDto>();
-}
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    var inv       = Model.ExistingInvoice;
+    var lines     = inv?.Lines ?? new List<MerkaiTrial.Application.DTOs.InvoiceLineDto>();
+    var symbol    = Model.GetSymbol(inv?.Currency);
+    var taxCodeLabel = TaxCodes.ColumnHeaderFor(inv?.Currency);
+    var showTaxCode  = TaxCodes.AnyPresent(lines.Select(l => l.TaxCode));
+
+    // 074. The issue date as the <input type="date"> spells it, for the
+    // due-date check in the script section. Computed here, where inv's
+    // nullability is handled once, rather than dereferenced inside the
+    // section — an empty string there means "no invoice, nothing to
+    // check", which is the same page that renders nothing anyway.
+    var issueIso = inv != null ? inv.IssueDateUtc.ToString("yyyy-MM-dd") : "";
+
+    // The existing lines, in the shape _QuoteItemsEditor seeds from.
+    // camelCase because that is what the editor's script reads; the
+    // PascalCase default loaded every line blank, which this page learned
+    // the hard way in 018.
+    //
+    // TaxRate goes out as a PERCENTAGE: the editor works in percent and
+    // the page model divides by 100 once, where the DTO is built. Three
+    // conventions exist in this codebase and this is the boundary between
+    // two of them.
+    var seed = lines.Select(l => new
+    {
+        itemId          = l.Id,
+        productId       = l.ProductId,
+        name            = l.Name,
+        description     = l.Description,
+        quantity        = l.Quantity,
+        unitOfMeasure   = UnitsOfMeasure.Normalise(l.UnitOfMeasure),
+        unitPrice       = l.UnitPrice,
+        lineDiscount    = l.LineDiscount,
+        discountPercent = l.DiscountPercent,
+        taxRate         = l.TaxRate * 100m,
+        taxCode         = l.TaxCode ?? string.Empty
+    }).ToList();
+
+    // Catalogue prices in THIS INVOICE's currency, for the editor's
+    // "price changed since" hint. Products with no price in it are left
+    // out — HasPriceInCurrency false means ListPrice is a zero
+    // placeholder, not a price.
+    var listPrices = (Model.Products ?? new())
+        .Where(p => p.HasPriceInCurrency)
+        .GroupBy(p => p.Id.ToString())
+        .ToDictionary(g => g.Key, g => g.First().ListPrice);
+
+    var editor = new QuoteItemsEditorVm
+    {
+        FormId                = "editInvoiceForm",
+        CurrencyCode          = inv?.Currency ?? Model.TenantCurrencyCode,
+        DefaultTaxRate        = Model.DefaultTaxRate,
+        TaxLabel              = Model.DefaultTaxRateName,
+        // Quote approval rules do not apply to an invoice. Disabled is
+        // also this property's default; it is spelled out so nobody
+        // wonders later whether it was forgotten.
+        ApprovalRulesJson     = "{\"enabled\":false}",
+        Products              = Model.Products ?? new(),
+        InitialItemsJson      = JsonSerializer.Serialize(seed),
+        ListPricesJson        = JsonSerializer.Serialize(listPrices),
+        StartWithOneBlankLine = false
+    };
+}
+@* =====================================================================
+   Invoices/Edit.cshtml (074 — rebuild)
+   Location: MerkaiTrial.Admin.Web/Pages/Invoices/Edit.cshtml
+
+   COMPLETE FILE.
+
+   WHAT WAS WRONG WITH THE OLD PAGE
+
+   1. IT LOADED BOOTSTRAP AND BOOTSTRAP ICONS AGAIN from a CDN, both the
+      CSS in the body and the JS bundle at the bottom, on top of the
+      copies _Layout.cshtml already loads. Two Bootstrap JS bundles means
+      every modal gets two sets of handlers. Round 029 removed exactly
+      this from the quote pages.
+
+   2. THE CATALOGUE BUILT JAVASCRIPT OUT OF PRODUCT NAMES:
+
+        onclick="addProductFromCatalog('@@product.Id',
+                 '@@Html.Raw(product.Name.Replace("'", "\\'"))', …)"
+
+      A product called O'Brien's Kit could not be added at all — the
+      handler was a SyntaxError — and a double quote in a name broke out
+      of the attribute entirely. Html.Raw on user data inside an
+      event attribute is the pattern 029 removed from the quote editor
+      and 031 from the leads list. This was the last one.
+
+   3. THE LINE EDITOR WAS A FOURTH COPY, and the thinnest: no unit of
+      measure (052), no percentage discount (055), no tax code (067), no
+      bundle breakdown (070), integer quantities, and catalogue prices in
+      the workspace's currency rather than the invoice's (069). It is now
+      _QuoteItemsEditor.cshtml, the same partial both quote pages use.
+
+   4. THE READ-ONLY TABLE for a quote's invoice printed a bare quantity
+      with no unit and no tax code, so the one screen that shows what was
+      actually agreed showed less than the PDF does.
+
+   TempData alerts are rendered once, globally, by _Layout.cshtml — this
+   page used to draw its own on top.
+   ===================================================================== *@
 
 <style>
-    .page-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 2rem 0;
-        margin: -1rem -1rem 2rem -1rem;
-        border-radius: 0 0 1rem 1rem;
-    }
+    .iv-wrap { max-width: 1200px; margin: 0 auto; }
+    .iv-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .iv-title { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 0; line-height: 1.2;
+                display: flex; align-items: center; gap: .5rem; }
+    .iv-title i { color: #4f46e5; font-size: 1.15rem; }
+    .iv-sub { font-size: .84rem; color: #64748b; margin: .25rem 0 0; }
 
-    .form-container {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        padding: 2rem;
-        max-width: 1200px;
-        margin: 0 auto;
-    }
+    .iv-card { border: 1px solid #e9ecef; border-radius: 12px; background: #fff;
+               padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
+    .iv-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+                gap: .75rem; font-size: .85rem; }
+    .iv-facts .k { color: #64748b; font-size: .72rem; text-transform: uppercase;
+                   letter-spacing: .04em; display: block; }
+    .iv-facts .v { font-weight: 600; color: #0f172a; }
 
-    .invoice-info-box {
-        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-        border-left: 4px solid #667eea;
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        margin-bottom: 2rem;
-    }
-
-    .line-items-table thead {
-        background: #f8f9fa;
-    }
-
-    .totals-section {
-        background: #f8f9fa;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin-top: 2rem;
-    }
-
-    .total-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.5rem 0;
-    }
-
-    .total-row.grand-total {
-        border-top: 2px solid #dee2e6;
-        margin-top: 0.5rem;
-        padding-top: 1rem;
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #667eea;
-    }
-
-    .btn-remove-item {
-        color: #dc3545;
-        cursor: pointer;
-    }
+    .iv-ro { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .iv-ro th { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: #64748b;
+                font-weight: 650; padding: .5rem .7rem; background: #fbfcfd;
+                border-bottom: 1px solid #eceff2; white-space: nowrap; }
+    .iv-ro td { padding: .5rem .7rem; border-bottom: 1px solid #f4f6f8; font-size: .85rem;
+                vertical-align: top; }
+    .iv-ro tbody tr:last-child td { border-bottom: 0; }
+    .iv-ro .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 </style>
 
-<div class="container-fluid">
-    <div class="page-header">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center flex-wrap">
-                <div>
-                    <h1 class="h3 mb-1">
-                        <i class="bi bi-pencil-square me-2"></i>Edit Invoice
-                    </h1>
-                    <p class="mb-0 opacity-75">@Model.ExistingInvoice?.Number</p>
-                </div>
-                <div>
-                    <a href="/Invoices/Detail?id=@Model.Id" class="btn btn-outline-light me-2">
-                        <i class="bi bi-arrow-left me-2"></i>Back
-                    </a>
-                    <a href="/Invoices/Index" class="btn btn-outline-light">
-                        <i class="bi bi-list me-2"></i>All Invoices
-                    </a>
-                </div>
-            </div>
+<div class="iv-wrap">
+
+    <div class="iv-head">
+        <div>
+            <h1 class="iv-title"><i class="bi bi-pencil-square"></i>Edit invoice</h1>
+            <p class="iv-sub">@inv?.Number · @inv?.DealTitle</p>
+        </div>
+        <div class="ms-auto d-flex gap-2">
+            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Back
+            </a>
+            <a asp-page="./Index" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-list me-1"></i>All invoices
+            </a>
         </div>
     </div>
 
-    <div class="form-container">
+    @* No alert blocks here. _Layout renders TempData["SuccessMessage"]
+       and ["ErrorMessage"] globally, and [TempData] properties populate
+       exactly those keys. *@
 
-        @if (!string.IsNullOrEmpty(Model.ErrorMessage))
-        {
-            <div class="alert alert-danger alert-dismissible fade show">
-                <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    @if (!Model.IsEditable && !string.IsNullOrEmpty(Model.StatusWarning))
+    {
+        <div class="alert alert-warning">
+            <div class="fw-bold mb-1">
+                <i class="bi bi-exclamation-triangle me-2"></i>Status: @inv?.Status
             </div>
-        }
+            <div class="small mb-0">@Model.StatusWarning</div>
+        </div>
+    }
 
-        @if (!Model.IsEditable && !string.IsNullOrEmpty(Model.StatusWarning))
-        {
-            <div class="alert alert-warning">
-                <h5><i class="bi bi-exclamation-triangle me-2"></i>Invoice Status: @Model.ExistingInvoice?.Status</h5>
-                <p class="mb-0">@Model.StatusWarning</p>
-            </div>
-        }
-
-        @if (Model.ExistingInvoice != null)
-        {
-            <div class="invoice-info-box">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h5 class="mb-3"><i class="bi bi-info-circle me-2"></i>Current Invoice Information</h5>
-                        <p class="mb-2"><strong>Number:</strong> @Model.ExistingInvoice.Number</p>
-                        <p class="mb-2"><strong>Deal:</strong> @Model.ExistingInvoice.DealTitle</p>
-                        <p class="mb-0">
-                            <strong>Status:</strong>
-                            <span class="badge bg-@(Model.ExistingInvoice.Status == "Draft" ? "secondary" : "primary")">
-                                @Model.ExistingInvoice.Status
-                            </span>
-                        </p>
-                    </div>
-                    <div class="col-md-6">
-                        <p class="mb-2"><strong>Amount:</strong> @Model.FormatCurrency(Model.ExistingInvoice.GrandTotal)</p>
-                        <p class="mb-2"><strong>Issue Date:</strong> @Model.FormatDate(Model.ExistingInvoice.IssueDateUtc)</p>
-                        <p class="mb-0"><strong>Items:</strong> @Model.ExistingInvoice.Lines.Count</p>
-                    </div>
+    @if (inv != null)
+    {
+        <div class="iv-card">
+            <div class="iv-facts">
+                <div>
+                    <span class="k">Number</span>
+                    <span class="v">@inv.Number</span>
+                </div>
+                <div>
+                    <span class="k">Status</span>
+                    <span class="v">
+                        <span class="badge bg-@(inv.Status == "Draft" ? "secondary" : "primary")">@inv.Status</span>
+                    </span>
+                </div>
+                <div>
+                    <span class="k">Amount</span>
+                    <span class="v">@symbol@inv.GrandTotal.ToString("N2", CultureInfo.InvariantCulture)</span>
+                </div>
+                <div>
+                    <span class="k">Issue date</span>
+                    <span class="v">@Model.FormatDate(inv.IssueDateUtc)</span>
+                </div>
+                <div>
+                    <span class="k">Items</span>
+                    <span class="v">@inv.Lines.Count</span>
                 </div>
             </div>
 
-            <form method="post" id="editInvoiceForm">
-                <input type="hidden" name="itemsJson" id="itemsJson" />
+            @if (inv.IsMilestoneInvoice)
+            {
+                @* 071: this invoice bills one stage of a quote's schedule,
+                   so its unit prices are a share of the quote's and will
+                   not match the catalogue. *@
+                <div class="alert alert-primary py-2 px-3 small mt-3 mb-0">
+                    <i class="bi bi-calendar2-check me-1"></i>
+                    <strong>@inv.MilestoneLabel</strong>
+                    @if (!string.IsNullOrWhiteSpace(inv.MilestoneBasisNote))
+                    {
+                        <span>— @inv.MilestoneBasisNote</span>
+                    }
+                </div>
+            }
+        </div>
 
-                <!-- Due Date & Notes -->
-                <div class="row mb-4">
+        <form method="post" id="editInvoiceForm">
+            @* 074. ONLY on the from-quote path.
+
+               A manual invoice renders the shared line editor further down,
+               and that partial brings its OWN hidden field — also called
+               itemsJson, because that is the handler's parameter name. Two
+               fields with one name in one form post twice, and the model
+               binder hands the handler "[{...}],[{...}]": two JSON documents
+               joined by a comma, which parses as neither, so every save of
+               every manual invoice would have failed with "Failed to update".
+
+               On the from-quote path the editor is not on the page at all
+               and the handler ignores this value, but it is bound as a
+               parameter, so the field stays and the script below sets it to
+               an empty list. *@
+            @if (Model.IsFromQuote)
+            {
+                <input type="hidden" name="itemsJson" id="itemsJson" />
+            }
+
+            <div class="iv-card">
+                <div class="row g-3">
                     <div class="col-md-6">
-                        <label asp-for="Input.DueDate" class="form-label">
-                            Due Date <span class="text-danger">*</span>
+                        <label asp-for="Input.DueDate" class="form-label small fw-semibold">
+                            Due date <span class="text-danger">*</span>
                         </label>
-                        <input asp-for="Input.DueDate" type="date" class="form-control" />
-                        <span asp-validation-for="Input.DueDate" class="text-danger"></span>
+                        <input asp-for="Input.DueDate" type="date" class="form-control" min="@issueIso" />
+                        <span asp-validation-for="Input.DueDate" class="text-danger small"></span>
+                        @* 074. min= gives the date picker itself the rule, so
+                           the earlier dates are greyed out before anything is
+                           typed. It is not a guarantee — a date can still be
+                           typed into the text part in some browsers, and the
+                           field can be edited away entirely — so the script
+                           below checks it on submit and the handler checks it
+                           again on the server. *@
+                        <div id="invDateErr" class="invalid-feedback d-block d-none">
+                            The due date cannot be before the issue date (@Model.FormatDate(inv.IssueDateUtc)).
+                        </div>
                     </div>
                     <div class="col-md-6">
-                        <label asp-for="Input.Notes" class="form-label">
-                            Notes
-                        </label>
+                        <label asp-for="Input.Notes" class="form-label small fw-semibold">Notes</label>
                         <textarea asp-for="Input.Notes" class="form-control" rows="3"></textarea>
                     </div>
                 </div>
+            </div>
 
-                <hr class="my-4" />
+            @if (Model.IsFromQuote)
+            {
+                @* ── A quote's invoice: lines are read-only ────────── *@
+                <div class="alert alert-info py-2 px-3 small">
+                    <i class="bi bi-lock me-1"></i>
+                    These lines come from the accepted quote and can't be changed here.
+                    To invoice different items, delete this draft and raise a manual
+                    invoice — or revise the quote.
+                </div>
 
-                @if (Model.IsFromQuote)
-                {
-                    <div class="alert alert-info">
-                        <i class="bi bi-lock me-2"></i>
-                        These lines come from the accepted quote and can't be changed here. To invoice different
-                        items, delete this draft and create a manual invoice — or revise the quote.
-                    </div>
-                    <div class="table-responsive mb-4">
-                        <table class="table table-bordered line-items-table">
+                <div class="iv-card p-0" style="overflow:hidden;">
+                    <div class="table-responsive">
+                        <table class="iv-ro">
                             <thead>
                                 <tr>
                                     <th>Item</th>
-                                    <th class="text-center">Qty</th>
-                                    <th class="text-end">Unit Price</th>
-                                    <th class="text-end">Tax %</th>
-                                    <th class="text-end">Discount</th>
-                                    <th class="text-end">Total</th>
+                                    @if (showTaxCode)
+                                    {
+                                        <th>@taxCodeLabel</th>
+                                    }
+                                    <th class="n">Qty</th>
+                                    <th class="n">Unit price</th>
+                                    <th class="n">@Model.DefaultTaxRateName</th>
+                                    <th class="n">Discount</th>
+                                    <th class="n">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var line in itemsForJson)
-                                {
-                                    <tr>
+                            @foreach (var line in lines)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@line.Name</strong>
+                                        @if (!string.IsNullOrWhiteSpace(line.Description))
+                                        {
+                                            <div class="text-muted small">@line.Description</div>
+                                        }
+                                    </td>
+                                    @if (showTaxCode)
+                                    {
                                         <td>
-                                            <strong>@line.Name</strong>
-                                            @if (!string.IsNullOrWhiteSpace(line.Description))
+                                            @if (line.HasTaxCode)
                                             {
-                                                <div class="text-muted small">@line.Description</div>
+                                                <code class="small">@line.TaxCode</code>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
                                             }
                                         </td>
-                                        <td class="text-center">@line.Quantity</td>
-                                        <td class="text-end">@Model.FormatCurrency(line.UnitPrice)</td>
-                                        <td class="text-end">@((line.TaxRate * 100).ToString("0.##"))%</td>
-                                        <td class="text-end">@Model.FormatCurrency(line.LineDiscount)</td>
-                                        <td class="text-end fw-semibold">@Model.FormatCurrency(line.LineGrandTotal)</td>
-                                    </tr>
-                                }
+                                    }
+                                    @* 052: the quantity WITH its unit. The old
+                                       table printed a bare number, so the one
+                                       screen showing what was agreed showed
+                                       less than the PDF did. *@
+                                    <td class="n">@line.QuantityDisplay</td>
+                                    <td class="n">@symbol@line.UnitPrice.ToString("N2", CultureInfo.InvariantCulture)</td>
+                                    <td class="n">@((line.TaxRate * 100).ToString("0.##"))%</td>
+                                    <td class="n">
+                                        @if (!string.IsNullOrWhiteSpace(line.DiscountLabel))
+                                        {
+                                            @* 055: the percentage, when that is
+                                               what was agreed. *@
+                                            <span>@line.DiscountLabel</span>
+                                        }
+                                        else if (line.LineDiscount > 0)
+                                        {
+                                            <span>@symbol@line.LineDiscount.ToString("N2", CultureInfo.InvariantCulture)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    <td class="n fw-semibold">
+                                        @symbol@line.LineGrandTotal.ToString("N2", CultureInfo.InvariantCulture)
+                                    </td>
+                                </tr>
+                            }
                             </tbody>
                         </table>
                     </div>
-                }
-
-                <div id="lineEditor" style="@(Model.IsFromQuote ? "display:none;" : "")">
-                <!-- Line Items -->
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5><i class="bi bi-list-ul me-2"></i>Line Items</h5>
-                    <div>
-                        <button type="button" class="btn btn-outline-primary btn-sm me-2" onclick="showAddFromCatalog()">
-                            <i class="bi bi-plus-circle me-2"></i>Add from Catalog
-                        </button>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="addCustomItem()">
-                            <i class="bi bi-plus-circle me-2"></i>Add Custom Item
-                        </button>
-                    </div>
                 </div>
+            }
+            else
+            {
+                @* ── A manual invoice: the shared line editor ───────── *@
+                @* The same partial the two quote pages render. Referenced
+                   by path because it lives in Pages/Quotes; its name says
+                   "Quote" but it takes a QuoteItemsEditorVm and nothing
+                   else, and renaming it would touch four working pages
+                   for a word. *@
+                <partial name="/Pages/Quotes/_QuoteItemsEditor.cshtml" model="editor" />
+            }
 
-                <div class="table-responsive">
-                    <table class="table table-bordered line-items-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 25%;">Item Name</th>
-                                <th style="width: 25%;">Description</th>
-                                <th style="width: 8%;">Qty</th>
-                                <th style="width: 12%;">Unit Price</th>
-                                <th style="width: 8%;">Tax %</th>
-                                <th style="width: 12%;">Discount</th>
-                                <th style="width: 8%;">Total</th>
-                                <th style="width: 2%;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="lineItemsBody">
-                            <!-- Populated by JavaScript -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div id="emptyState" class="text-center py-4 text-muted" style="display: none;">
-                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
-                    <p class="mt-2">No items yet. Add items to the invoice.</p>
-                </div>
-
-                <!-- Totals -->
-                <div class="row">
-                    <div class="col-md-6 offset-md-6">
-                        <div class="totals-section">
-                            <div class="total-row">
-                                <span>Subtotal:</span>
-                                <strong><span id="subtotalDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
-                            </div>
-                            <div class="total-row">
-                                <span>Discount:</span>
-                                <strong><span id="discountDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
-                            </div>
-                            <div class="total-row">
-                                <span>Tax:</span>
-                                <strong><span id="taxDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
-                            </div>
-                            <div class="total-row grand-total">
-                                <span>Grand Total:</span>
-                                <strong><span id="grandTotalDisplay">@Model.TenantCurrencySymbol 0.00</span></strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                </div>@* /lineEditor *@
-
-                <!-- Action Buttons -->
-                <div class="d-flex justify-content-between mt-4">
-                    <a href="/Invoices/Detail?id=@Model.Id" class="btn btn-secondary">
-                        <i class="bi bi-x-circle me-2"></i>Cancel
-                    </a>
-                    <button type="button" class="btn btn-success btn-lg" onclick="submitInvoice()">
-                        <i class="bi bi-save me-2"></i>Update Invoice
-                    </button>
-                </div>
-            </form>
-        }
-    </div>
-</div>
-
-<!-- Add from Catalog Modal -->
-<div class="modal fade" id="catalogModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add from Product Catalog</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="d-flex justify-content-between mt-4">
+                <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Cancel
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-1"></i>Update invoice
+                </button>
             </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <input type="text" class="form-control" id="productSearch" 
-                           placeholder="Search products..." onkeyup="filterProducts()" />
-                </div>
-                <div style="max-height: 400px; overflow-y: auto;" id="productList">
-                    @foreach (var product in Model.Products)
-                    {
-                        <div class="product-item border-bottom py-2" data-name="@product.Name.ToLower()">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <strong>@product.Name</strong>
-                                    <div class="text-muted small">@product.Description</div>
-                                    <div class="small">Price: @Model.FormatCurrency(product.ListPrice)</div>
-                                </div>
-                                <button type="button" class="btn btn-sm btn-primary"
-                                        onclick="addProductFromCatalog('@product.Id', '@Html.Raw(product.Name.Replace("'", "\\'"))', '@Html.Raw((product.Description ?? "").Replace("'", "\\'"))', @product.ListPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), @(Convert.ToDecimal(product.TaxRate).ToString(System.Globalization.CultureInfo.InvariantCulture)))">
-                                    <i class="bi bi-plus"></i> Add
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    </div>
+        </form>
+    }
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    // ==================== GLOBAL STATE ====================
-    let lineItems = [];
-    let nextId = 1;
-    // ✅ was: const currency = '...'  +  `${currency} ${x.toFixed(2)}`
-    //    toFixed() does NO grouping, so client-computed totals rendered
-    //    ungrouped ("255000.00") while the server rendered "฿255,000.00".
-    //    MerkaiCurrency (see _Layout) uses Intl.NumberFormat with the tenant's
-    //    culture, so client and server now agree by construction.
-    const fmtMoney = (x) => window.MerkaiCurrency.format(x);
-    // (018) was 0 for new lines
-    const defaultTaxRate = @Model.DefaultTaxRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
-    const fromQuote = @(Model.IsFromQuote ? "true" : "false");
-
-    // ==================== LOAD EXISTING ITEMS ====================
-    console.log('=== Loading Existing Items ===');
-    
-    // (018) camelCase — the script below reads item.name / item.unitPrice. The
-    // default (PascalCase) loaded every existing line blank.
-    const existingItemsJson = @Html.Raw(JsonSerializer.Serialize(itemsForJson, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
-    console.log('Existing items:', existingItemsJson);
-
-    if (existingItemsJson && Array.isArray(existingItemsJson)) {
-        existingItemsJson.forEach(item => {
-            lineItems.push({
-                id: nextId++,
-                productId: item.productId,
-                name: item.name || '',
-                description: item.description || '',
-                quantity: item.quantity || 1,
-                unitPrice: item.unitPrice || 0,
-                lineDiscount: item.lineDiscount || 0,
-                taxRate: (item.taxRate * 100) || 0
-            });
-        });
-        console.log('✅ Loaded', lineItems.length, 'items');
-    }
-
-    // ==================== ADD/REMOVE ITEMS ====================
-    function addCustomItem() {
-        lineItems.push({
-            id: nextId++,
-            productId: null,
-            name: '',
-            description: '',
-            quantity: 1,
-            unitPrice: 0,
-            lineDiscount: 0,
-            taxRate: defaultTaxRate
-        });
-        renderLineItems();
-    }
-
-    function addProductFromCatalog(productId, name, description, price, taxFraction) {
-        const tax = parseFloat(taxFraction);
-        lineItems.push({
-            id: nextId++,
-            productId: productId,
-            name: name,
-            description: description || '',
-            quantity: 1,
-            unitPrice: parseFloat(price),
-            lineDiscount: 0,
-            // product tax is stored as a fraction (0.07); fall back to the tenant rate
-            taxRate: (tax > 0 ? tax * 100 : defaultTaxRate)
-        });
-        renderLineItems();
-        bootstrap.Modal.getInstance(document.getElementById('catalogModal')).hide();
-    }
-
-    function removeItem(index) {
-        if (confirm('Remove this item?')) {
-            lineItems.splice(index, 1);
-            renderLineItems();
-        }
-    }
-
-    function updateItem(index, field, value) {
-        if (!lineItems[index]) return;
-        if (['quantity', 'unitPrice', 'lineDiscount', 'taxRate'].includes(field)) {
-            value = parseFloat(value) || 0;
-        }
-        lineItems[index][field] = value;
-        updateItemTotal(index);
-        calculateTotals();
-    }
-
-    // ==================== CALCULATIONS ====================
-    function calculateItemTotal(item) {
-        const qty = parseFloat(item.quantity) || 0;
-        const unit = parseFloat(item.unitPrice) || 0;
-        const disc = parseFloat(item.lineDiscount) || 0;
-        const rate = parseFloat(item.taxRate) || 0;
-        const subtotal = qty * unit;
-        const afterDiscount = Math.max(0, subtotal - disc);
-        const tax = afterDiscount * (rate / 100);
-        return afterDiscount + tax;
-    }
-
-    function updateItemTotal(index) {
-        const item = lineItems[index];
-        if (!item) return;
-        const total = calculateItemTotal(item);
-        const el = document.getElementById(`total-${item.id}`);
-        if (el) el.textContent = fmtMoney(total);
-    }
-
-    function calculateTotals() {
-        let subtotal = 0, discount = 0, tax = 0;
-        lineItems.forEach(item => {
-            const qty = parseFloat(item.quantity) || 0;
-            const unit = parseFloat(item.unitPrice) || 0;
-            const disc = parseFloat(item.lineDiscount) || 0;
-            const rate = parseFloat(item.taxRate) || 0;
-            const itemSubtotal = qty * unit;
-            subtotal += itemSubtotal;
-            discount += disc;
-            const afterDiscount = Math.max(0, itemSubtotal - disc);
-            tax += afterDiscount * (rate / 100);
-        });
-        const grandTotal = Math.max(0, subtotal - discount + tax);
-        document.getElementById('subtotalDisplay').textContent = fmtMoney(subtotal);
-        document.getElementById('discountDisplay').textContent = fmtMoney(discount);
-        document.getElementById('taxDisplay').textContent = fmtMoney(tax);
-        document.getElementById('grandTotalDisplay').textContent = fmtMoney(grandTotal);
-    }
-
-    // ==================== RENDER ====================
-    function escapeHtml(str) {
-        return (str ?? '').toString().replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
-    }
-
-    function renderLineItems() {
-        const tbody = document.getElementById('lineItemsBody');
-        const emptyState = document.getElementById('emptyState');
-        if (lineItems.length === 0) {
-            tbody.innerHTML = '';
-            emptyState.style.display = 'block';
-            calculateTotals();
-            return;
-        }
-        emptyState.style.display = 'none';
-        tbody.innerHTML = lineItems.map((item, index) => `
-            <tr>
-                <td><input type="text" class="form-control form-control-sm" value="${escapeHtml(item.name)}" oninput="updateItem(${index}, 'name', this.value)" placeholder="Item name" required /></td>
-                <td><input type="text" class="form-control form-control-sm" value="${escapeHtml(item.description)}" oninput="updateItem(${index}, 'description', this.value)" placeholder="Description" /></td>
-                <td><input type="number" class="form-control form-control-sm" value="${item.quantity}" oninput="updateItem(${index}, 'quantity', this.value)" min="1" required /></td>
-                <td><input type="number" class="form-control form-control-sm" value="${item.unitPrice}" oninput="updateItem(${index}, 'unitPrice', this.value)" step="0.01" min="0" required /></td>
-                <td><input type="number" class="form-control form-control-sm" value="${item.taxRate}" oninput="updateItem(${index}, 'taxRate', this.value)" step="0.01" min="0" max="100" /></td>
-                <td><input type="number" class="form-control form-control-sm" value="${item.lineDiscount}" oninput="updateItem(${index}, 'lineDiscount', this.value)" step="0.01" min="0" /></td>
-                <td class="text-end"><strong id="total-${item.id}">${fmtMoney(calculateItemTotal(item))}</strong></td>
-                <td class="text-center"><i class="bi bi-trash btn-remove-item" onclick="removeItem(${index})"></i></td>
-            </tr>
-        `).join('');
-        calculateTotals();
-    }
-
-    // ==================== SUBMIT ====================
-    function submitInvoice() {
-        // (018) A quote's invoice sends no lines — the API keeps the quote's.
-        if (fromQuote) {
-            document.getElementById('itemsJson').value = '[]';
-            document.getElementById('editInvoiceForm').submit();
-            return;
-        }
-        if (lineItems.length === 0) {
-            alert('⚠️ Please add at least one item');
-            return;
-        }
-        const invalidItems = lineItems.filter(i => !i.name || i.name.trim() === '');
-        if (invalidItems.length > 0) {
-            alert(`⚠️ All items must have a name. ${invalidItems.length} item(s) missing names.`);
-            return;
-        }
-        const itemsToSend = lineItems.map(item => ({
-            productId: item.productId,
-            name: item.name,
-            description: item.description,
-            unitPrice: item.unitPrice,
-            quantity: item.quantity,
-            lineDiscount: item.lineDiscount,
-            taxRate: item.taxRate
-        }));
-        document.getElementById('itemsJson').value = JSON.stringify(itemsToSend);
-        document.getElementById('editInvoiceForm').submit();
-    }
-
-    function showAddFromCatalog() {
-        new bootstrap.Modal(document.getElementById('catalogModal')).show();
-    }
-
-    function filterProducts() {
-        const search = document.getElementById('productSearch').value.toLowerCase();
-        document.querySelectorAll('.product-item').forEach(item => {
-            const name = item.getAttribute('data-name');
-            item.style.display = name.includes(search) ? 'block' : 'none';
-        });
-    }
-
-    // ==================== INIT ====================
-    document.addEventListener('DOMContentLoaded', function () {
-        renderLineItems();
-    });
-</script>
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        // A quote's invoice sends NO lines — the API keeps the quote's,
+        // and the editor is not on the page to sync anything.
+        //
+        // For a manual invoice the editor owns the itemsJson field and
+        // hooks this form's submit itself (that is what FormId is for), so
+        // there is nothing to do here but the due-date check.
+        (function () {
+            'use strict';
+
+            var fromQuote = @(Model.IsFromQuote ? "true" : "false");
+            var form = document.getElementById('editInvoiceForm');
+            var json = document.getElementById('itemsJson');
+
+            if (fromQuote && form && json) {
+                form.addEventListener('submit', function () { json.value = '[]'; });
+            }
+
+            // ── 074: due date must not precede the issue date ────────
+            // The issue date is not editable here, so it is a constant
+            // rendered from the invoice. Capture phase with
+            // stopImmediatePropagation, so on a manual invoice this runs
+            // before the editor serialises its lines — the same order
+            // Quotes/Create.cshtml uses for its expiry-date check.
+            var ISSUE   = '@issueIso';
+            var dueEl   = document.getElementById('Input_DueDate');
+            var dateErr = document.getElementById('invDateErr');
+
+            function datesOk() {
+                if (!ISSUE || !dueEl || !dueEl.value) return true;
+                // Both yyyy-MM-dd, so a string compare is a date compare.
+                return dueEl.value >= ISSUE;
+            }
+
+            function showDateError(bad) {
+                if (dateErr) dateErr.classList.toggle('d-none', !bad);
+                if (dueEl) dueEl.classList.toggle('is-invalid', bad);
+            }
+
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    var bad = !datesOk();
+                    showDateError(bad);
+                    if (bad) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        if (dueEl) dueEl.focus();
+                    }
+                }, true);
+            }
+
+            if (dueEl) dueEl.addEventListener('change', function () { showDateError(!datesOk()); });
+        })();
+    </script>
 }

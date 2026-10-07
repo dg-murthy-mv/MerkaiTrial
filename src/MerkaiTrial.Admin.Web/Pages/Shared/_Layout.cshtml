@@ -1557,12 +1557,74 @@
                 if (window.innerWidth < 992) closeSidebar();
             });
         });
-        // Auto-dismiss alerts
-        setTimeout(function () {
-            document.querySelectorAll('.alert-dismissible').forEach(function (el) {
-                new bootstrap.Alert(el).close();
-            });
-        }, 5000);
+        // ── Auto-dismiss alerts ──────────────────────────────────────
+        //
+        // ⚠ 074b. THIS NO LONGER TOUCHES BOOTSTRAP'S ALERT COMPONENT AT ALL,
+        // and that is the whole point. The history is worth keeping:
+        //
+        //   Originally:  setTimeout(… new bootstrap.Alert(el).close() …, 5000)
+        //   In 074a:     the same thing through getOrCreateInstance, guarded.
+        //   Both crashed, with:
+        //
+        //       TypeError: Cannot read properties of null (reading 'remove')
+        //           at Alert._destroyElement
+        //
+        // WHY. Bootstrap's _destroyElement does this._element.remove() and
+        // then this.dispose(), and dispose() sets _element to null. So
+        // _element is null only when _destroyElement runs TWICE on ONE
+        // instance — which is what happens when close() is called twice on
+        // it, because each call queues its own _destroyElement for the end
+        // of the fade.
+        //
+        // And a page had its OWN copy of this block, in @@section Scripts:
+        //
+        //       setTimeout(function () {
+        //           document.querySelectorAll('.alert-dismissible')
+        //               .forEach(function (el) {
+        //                   bootstrap.Alert.getOrCreateInstance(el).close();
+        //               });
+        //       }, 5000);
+        //
+        // @@RenderSectionAsync("Scripts") runs AFTER this script, so that
+        // timer is registered second and fires second — in the same tick, on
+        // the same alert, at the same 5000ms. getOrCreateInstance hands it
+        // the instance this block just made, close() runs a second time on
+        // it, two _destroyElement calls are queued, and 150ms later the
+        // second one dereferences null.
+        //
+        // No amount of guarding HERE can stop that, because the second
+        // close() is somebody else's code. So this block stops producing an
+        // Alert instance for anyone to close twice: it removes `show`, which
+        // is the class the .fade/.show pair animates on, and takes the
+        // element out of the document when the fade is done. Same result on
+        // screen, no component, nothing to double-dispose.
+        //
+        // A page that still calls close() on one of these now gets a FRESH
+        // instance of its own, queues exactly one _destroyElement, and
+        // cannot crash — so this is safe even on pages not yet swept.
+        //
+        // The × keeps working: Bootstrap's delegated data-bs-dismiss handler
+        // is untouched, and lfClosing stops this timer repeating the job.
+        //
+        // The only thing given up is the closed.bs.alert event, which
+        // nothing in this solution listens for.
+        function lfDismissAlert(el) {
+            if (!el || !el.isConnected) return;
+            if (el.dataset.lfClosing === '1') return;
+            el.dataset.lfClosing = '1';
+
+            el.classList.remove('show');                     // the fade
+            setTimeout(function () {
+                if (el.isConnected) el.remove();             // then gone
+            }, 200);                                         // .fade is .15s
+        }
+
+        // One timer per alert rather than one snapshot taken at the 5s mark,
+        // so a banner a page adds later can be handed to lfDismissAlert and
+        // behaves the same way.
+        document.querySelectorAll('.alert-dismissible').forEach(function (el) {
+            setTimeout(function () { lfDismissAlert(el); }, 5000);
+        });
     </script>
 
     @* ✅ SHARED CLIENT-SIDE MONEY FORMATTER
