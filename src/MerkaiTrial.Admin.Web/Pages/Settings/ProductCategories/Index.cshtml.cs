@@ -1,6 +1,9 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Settings/ProductCategories/Index.cshtml.cs
 //
+// 075 — DUPLICATE SUCCESS/ERROR BANNERS REMOVED. The only change in this
+//   round; see the note on PageError. Nothing else in this file moved.
+//
 // 073 — SEARCH, FILTERS AND PAGING
 //
 //   The list is filtered and paged IN MEMORY, on this page, and that is
@@ -168,8 +171,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 .Select(c => c.Name)
                 .ToList();
 
-        [TempData] public string? ErrorMessage { get; set; }
-        [TempData] public string? SuccessMessage { get; set; }
+        // 075 — MESSAGES, AND THE DUPLICATE BANNER THEY CAUSED
+        //
+        // These were [TempData] ErrorMessage / SuccessMessage properties,
+        // and the view rendered them itself. _Layout ALSO renders
+        // TempData["SuccessMessage"] and ["ErrorMessage"] for every page,
+        // so every save drew two identical banners — and because the view
+        // read the PROPERTIES, the 074d sweep (Find in Files "TempData[")
+        // could not see it. A [TempData] property set on a request that
+        // RENDERS also turns up again on the next page.
+        //
+        // Now: a message shown after a REDIRECT goes into TempData and the
+        // layout shows it once; a message for a request that RENDERS (a
+        // failed save that keeps the form open) goes into PageError, an
+        // ordinary property, which the view shows.
+        public string? PageError { get; set; }
 
         // ── Which form is open ────────────────────────────────────────
         //
@@ -566,7 +582,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                     // Removed in another tab. Drop back to the plain list
                     // rather than rendering a form for nothing.
                     EditId = null;
-                    ErrorMessage = "That category no longer exists. The list has been refreshed.";
+                    PageError = "That category no longer exists. The list has been refreshed.";
                 }
                 else
                 {
@@ -616,21 +632,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                     IsActive = Input.IsActive
                 });
 
-                SuccessMessage = Describe($"\"{Input.Name.Trim()}\" added.", result);
+                TempData["SuccessMessage"] = Describe($"\"{Input.Name.Trim()}\" added.", result);
                 return RedirectToPage(ReturnRoute());
             }
             catch (InvalidOperationException ex)
             {
                 // The API's own sentence — "There is already a category
                 // called \"Hardware\"." — not a second, vaguer one.
-                ErrorMessage = ex.Message;
+                PageError = ex.Message;
                 await LoadAsync();
                 return Page();
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to add a product category");
-                ErrorMessage = "Could not add the category. Please try again.";
+                PageError = "Could not add the category. Please try again.";
                 await LoadAsync();
                 return Page();
             }
@@ -653,7 +669,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
 
             if (Input.Id is null || Input.Id == Guid.Empty)
             {
-                ErrorMessage = "Could not tell which category to save. Please try again.";
+                PageError = "Could not tell which category to save. Please try again.";
                 await LoadAsync();
                 return Page();
             }
@@ -681,25 +697,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                     ? $"\"{Input.Name.Trim()}\" saved. {Plural(result.ProductsUpdated, "product")} moved with it."
                     : $"\"{Input.Name.Trim()}\" saved.";
 
-                SuccessMessage = Describe(msg, result);
+                TempData["SuccessMessage"] = Describe(msg, result);
                 return RedirectToPage(ReturnRoute());
             }
             catch (KeyNotFoundException)
             {
-                ErrorMessage = "That category no longer exists. The list has been refreshed.";
+                PageError = "That category no longer exists. The list has been refreshed.";
                 await LoadAsync();
                 return Page();
             }
             catch (InvalidOperationException ex)
             {
-                ErrorMessage = ex.Message;
+                PageError = ex.Message;
                 await LoadAsync();
                 return Page();
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to save product category {Id}", Input.Id);
-                ErrorMessage = "Could not save the category. Please try again.";
+                PageError = "Could not save the category. Please try again.";
                 await LoadAsync();
                 return Page();
             }
@@ -726,7 +742,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
 
                 if (row is null)
                 {
-                    ErrorMessage = "That category no longer exists.";
+                    TempData["ErrorMessage"] = "That category no longer exists.";
                     return RedirectToPage(ReturnRoute());
                 }
 
@@ -738,7 +754,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                     IsActive = !row.IsActive
                 });
 
-                SuccessMessage = Describe(
+                TempData["SuccessMessage"] = Describe(
                     row.IsActive
                         ? $"\"{row.Name}\" switched off. It stays on the products already using it."
                         : $"\"{row.Name}\" switched back on.",
@@ -748,13 +764,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             }
             catch (InvalidOperationException ex)
             {
-                ErrorMessage = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
                 return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to toggle product category {Id}", id);
-                ErrorMessage = "Could not change the category. Please try again.";
+                TempData["ErrorMessage"] = "Could not change the category. Please try again.";
                 return RedirectToPage(ReturnRoute());
             }
         }
@@ -784,23 +800,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                         : $"Category removed. {Plural(result.ProductsUpdated, "product")} moved to \"{target}\"."
                 };
 
-                SuccessMessage = Describe(moved, result);
+                TempData["SuccessMessage"] = Describe(moved, result);
                 return RedirectToPage(ReturnRoute());
             }
             catch (KeyNotFoundException)
             {
-                ErrorMessage = "That category no longer exists.";
+                TempData["ErrorMessage"] = "That category no longer exists.";
                 return RedirectToPage(ReturnRoute());
             }
             catch (InvalidOperationException ex)
             {
-                ErrorMessage = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
                 return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to remove product category {Id}", id);
-                ErrorMessage = "Could not remove the category. Please try again.";
+                TempData["ErrorMessage"] = "Could not remove the category. Please try again.";
                 return RedirectToPage(ReturnRoute());
             }
         }
@@ -826,7 +842,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             // neither is the one the user is looking at.
             if (IsFiltered)
             {
-                ErrorMessage = "Clear the search before rearranging — the order belongs to the whole list.";
+                TempData["ErrorMessage"] = "Clear the search before rearranging — the order belongs to the whole list.";
                 return RedirectToPage(ReturnRoute());
             }
 
@@ -842,7 +858,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 var index = ordered.IndexOf(id);
                 if (index < 0)
                 {
-                    ErrorMessage = "That category no longer exists.";
+                    TempData["ErrorMessage"] = "That category no longer exists.";
                     return RedirectToPage(ReturnRoute());
                 }
 
@@ -882,13 +898,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
             }
             catch (InvalidOperationException ex)
             {
-                ErrorMessage = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
                 return RedirectToPage(ReturnRoute());
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Failed to reorder product categories");
-                ErrorMessage = "Could not change the order. Please try again.";
+                TempData["ErrorMessage"] = "Could not change the order. Please try again.";
                 return RedirectToPage(ReturnRoute());
             }
         }
@@ -924,7 +940,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.ProductCategories
                 // banner beats a redirect to somewhere that explains
                 // nothing.
                 Logger.LogError(ex, "Failed to load product categories");
-                ErrorMessage ??= "Could not load your categories. Please try again.";
+                PageError ??= "Could not load your categories. Please try again.";
                 AllCategories = new List<ProductCategoryDto>();
             }
 

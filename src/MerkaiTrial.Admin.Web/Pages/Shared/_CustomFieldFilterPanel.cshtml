@@ -1,0 +1,193 @@
+@using MerkaiTrial.Admin.Web.Pages.Shared
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Shared.CustomFieldListFilterState
+@* =====================================================================
+   Pages/Shared/_CustomFieldFilterPanel.cshtml — NEW (076).
+
+   "Filter by additional details": one input (or a from/to pair) per
+   active custom field, under the list toolbar.
+
+       <partial name="_ListToolbar" model="Model.Toolbar" />
+       <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
+
+   ── NO FORM OF ITS OWN ──────────────────────────────────────────────
+
+   Every input carries form="@Model.FormId" — the toolbar's form — so the
+   search box, the toolbar's dropdowns and these filters go in ONE GET.
+   Two separate forms would each throw the other's values away on
+   submit. The page must set ListToolbarVm.FormId to the same id.
+
+   ── COLLAPSED UNLESS IN USE ─────────────────────────────────────────
+
+   Open when a filter is applied or a value could not be read, so nobody
+   wonders why the list is short; closed otherwise, so the list starts
+   where it always has. Bootstrap's collapse, no page script.
+
+   Inputs post the invariant wire shapes (yyyy-MM-dd, 1250.5, option
+   key), exactly as the record forms do. Labels only ever reach the page
+   through Razor's encoding.
+   ===================================================================== *@
+
+@if (Model.LoadFailed)
+{
+    <div class="small text-muted mb-3 d-flex gap-2 align-items-center">
+        <i class="bi bi-exclamation-triangle text-warning"></i>
+        Additional details could not be loaded, so they cannot be filtered on right now.
+    </div>
+}
+else if (Model.Fields.Count > 0)
+{
+    var open = Model.HasAny || Model.Warnings.Count > 0;
+
+    <div class="cff mb-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-sm @(Model.HasAny ? "btn-primary" : "btn-outline-secondary")"
+                    data-bs-toggle="collapse" data-bs-target="#cffPanel"
+                    aria-expanded="@(open ? "true" : "false")" aria-controls="cffPanel">
+                <i class="bi bi-sliders me-1"></i>Filter by additional details
+                @if (Model.ActiveCount > 0)
+                {
+                    <span class="badge bg-white text-primary ms-1">@Model.ActiveCount</span>
+                }
+            </button>
+
+            @if (Model.HasAny)
+            {
+                @* Chips: what is applied, readable without opening the panel. *@
+                @foreach (var f in Model.Fields)
+                {
+                    var conds = Model.Filters.Where(x => x.FieldId == f.Id).ToList();
+                    if (conds.Count == 0) { continue; }
+
+                    var text = string.Join(" and ", conds.Select(c => c.Op switch
+                    {
+                        CustomFieldFilterOps.Contains => $"contains “{c.Value}”",
+                        CustomFieldFilterOps.Exactly  => f.Options.FirstOrDefault(o => o.Key == c.Value)?.Label ?? c.Value,
+                        CustomFieldFilterOps.Is       => c.Value == "true" ? "Yes" : "No",
+                        CustomFieldFilterOps.AtLeast  => (f.FieldType == CustomFieldTypes.Date ? "from " : "≥ ")
+                                                         + CustomFieldFormatter.Display(f, c.Value, Model.Culture, Model.DateFormat),
+                        CustomFieldFilterOps.AtMost   => (f.FieldType == CustomFieldTypes.Date ? "to " : "≤ ")
+                                                         + CustomFieldFormatter.Display(f, c.Value, Model.Culture, Model.DateFormat),
+                        _ => c.Value
+                    }));
+
+                    <span class="badge bg-light text-dark border fw-normal">
+                        <strong class="fw-semibold">@f.Label:</strong> @text
+                    </span>
+                }
+
+                <a asp-page="@Model.PageRoute" asp-all-route-data="@Model.ClearRoute"
+                   class="btn btn-sm btn-link px-1">Clear these</a>
+            }
+        </div>
+
+        @if (Model.Warnings.Count > 0)
+        {
+            <div class="alert alert-warning py-2 px-3 small mt-2 mb-0" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                @foreach (var w in Model.Warnings)
+                {
+                    <div>@w</div>
+                }
+            </div>
+        }
+
+        <div class="collapse @(open ? "show" : "")" id="cffPanel">
+            <div class="border rounded-3 bg-white p-3 mt-2">
+                <div class="row g-3">
+                    @foreach (var f in Model.Fields)
+                    {
+                        var key = CustomFieldListFilterState.KeyFor(f.Id);
+                        var inputId = "cff_" + f.Id.ToString("N");
+
+                        <div class="col-sm-6 col-lg-4">
+                            <label class="form-label small mb-1" for="@inputId">
+                                <i class="bi @CustomFieldTypes.Icon(f.FieldType) text-muted me-1" aria-hidden="true"></i>@f.Label
+                            </label>
+
+                            @switch (f.FieldType)
+                            {
+                                case CustomFieldTypes.Text:
+                                    <input type="search" class="form-control form-control-sm" id="@inputId"
+                                           name="@key" value="@Model.RawFor(key)" form="@Model.FormId"
+                                           maxlength="200" autocomplete="off" placeholder="Contains…" />
+                                    break;
+
+                                case CustomFieldTypes.Dropdown:
+                                    <select class="form-select form-select-sm" id="@inputId"
+                                            name="@key" form="@Model.FormId">
+                                        <option value="">Any</option>
+                                        @foreach (var o in f.Options)
+                                        {
+                                            @* Retired choices are offered too: records that
+                                               already hold one are exactly what somebody
+                                               may need to find. *@
+                                            <option value="@o.Key" selected="@(o.Key == Model.RawFor(key))">
+                                                @(o.IsActive ? o.Label : o.Label + " (retired)")
+                                            </option>
+                                        }
+                                    </select>
+                                    break;
+
+                                case CustomFieldTypes.Checkbox:
+                                    <select class="form-select form-select-sm" id="@inputId"
+                                            name="@key" form="@Model.FormId">
+                                        <option value="">Any</option>
+                                        <option value="yes" selected="@(Model.RawFor(key) == "yes")">Yes</option>
+                                        <option value="no" selected="@(Model.RawFor(key) == "no")">No</option>
+                                    </select>
+                                    break;
+
+                                case CustomFieldTypes.Number:
+                                {
+                                    var minKey = CustomFieldListFilterState.KeyFor(f.Id, "_min");
+                                    var maxKey = CustomFieldListFilterState.KeyFor(f.Id, "_max");
+                                    var step   = CustomFieldForm.StepFor(f.DecimalPlaces);
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" class="form-control" id="@inputId"
+                                               name="@minKey" value="@Model.RawFor(minKey)" form="@Model.FormId"
+                                               step="@step" inputmode="decimal" placeholder="Min"
+                                               aria-label="@f.Label at least" />
+                                        <span class="input-group-text">to</span>
+                                        <input type="number" class="form-control"
+                                               name="@maxKey" value="@Model.RawFor(maxKey)" form="@Model.FormId"
+                                               step="@step" inputmode="decimal" placeholder="Max"
+                                               aria-label="@f.Label at most" />
+                                    </div>
+                                    break;
+                                }
+
+                                case CustomFieldTypes.Date:
+                                {
+                                    var fromKey = CustomFieldListFilterState.KeyFor(f.Id, "_from");
+                                    var toKey   = CustomFieldListFilterState.KeyFor(f.Id, "_to");
+                                    <div class="input-group input-group-sm">
+                                        <input type="date" class="form-control" id="@inputId"
+                                               name="@fromKey" value="@Model.RawFor(fromKey)" form="@Model.FormId"
+                                               min="1900-01-01" max="2199-12-31"
+                                               aria-label="@f.Label on or after" />
+                                        <span class="input-group-text">to</span>
+                                        <input type="date" class="form-control"
+                                               name="@toKey" value="@Model.RawFor(toKey)" form="@Model.FormId"
+                                               min="1900-01-01" max="2199-12-31"
+                                               aria-label="@f.Label on or before" />
+                                    </div>
+                                    break;
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="d-flex gap-2 align-items-center mt-3">
+                    <button type="submit" class="btn btn-sm btn-primary" form="@Model.FormId">
+                        <i class="bi bi-funnel me-1"></i>Apply filters
+                    </button>
+                    <span class="small text-muted">
+                        Combined with the search above. A @Model.Noun must match every filter.
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+}

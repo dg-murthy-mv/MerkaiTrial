@@ -22,8 +22,26 @@
 //      tenant. A client-supplied tenant ID must never decide which tenant's
 //      data is touched. Admin.Web can keep sending ?tenantId=… — it's
 //      simply ignored now, so no Admin.Web change is required.
+//
+// 079 — CUSTOM FIELDS ON LEADS
+//   5. GET /api/leads takes repeated ?cf=<fieldId>~<op>~<value> custom
+//      field filters (CustomFieldFilterCodec), capped BEFORE decoding so a
+//      request with ten thousand ?cf= values costs nothing. Unreadable ones
+//      are skipped here; the handler drops any that do not fit the field.
+//   6. The page size is clamped in GetLeadsPaginatedHandler (1–100). The
+//      old controller rule turned ?pageSize=200 into 10 — silently, and
+//      the opposite of what was asked — and a direct handler call had no
+//      limit at all.
+//   7. Create / Update already turn InvalidOperationException into
+//      400 { error }; a refused custom field value is one
+//      (CustomFieldValidationException), so its sentence reaches the page.
+//   8. Policies.* constants instead of "Leads.Read"-style literals, as for
+//      Contacts (075), Deals (077) and Companies (078). The literals only
+//      worked because policy names compare case-insensitively.
 // =====================================================================
 
+using MerkaiTrial.Application.Authorization;            // 079
+using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.Commands.Countries;
 using MerkaiTrial.Application.Commands.Leads;
 using MerkaiTrial.Application.DTOs;
@@ -107,7 +125,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// `status` is a status KEY (e.g. "Working"), not a display name.
         /// </summary>
         [HttpGet]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(PaginatedResult<LeadListItem>), 200)]
         public async Task<IActionResult> GetAll(
             [FromQuery] int pageNumber = 1,
@@ -115,22 +133,28 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] string? searchTerm = null,
             [FromQuery] string? status = null,
             [FromQuery] string? assignedTo = null,
+            [FromQuery(Name = "cf")] string[]? cf = null,            // 079
             CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
 
-                if (pageNumber < 1) pageNumber = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 10;
+                // 079 — custom field filters, capped before decoding.
+                var customFilters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        customFilters.Add(filter);
 
+                // Page and size are clamped by the handler (note 6).
                 var query = new GetLeadsPaginatedQuery(
                     TenantId: tenantId,
                     PageNumber: pageNumber,
                     PageSize: pageSize,
                     SearchTerm: searchTerm,
                     Status: status,
-                    AssignedTo: assignedTo
+                    AssignedTo: assignedTo,
+                    CustomFilters: customFilters
                 );
 
                 var result = await _getPaginatedHandler.Handle(query, cancellationToken);
@@ -147,7 +171,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/leads/{id} - Get single lead detail
         /// </summary>
         [HttpGet("{id:guid}")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(LeadDetailDto), 200)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetById(
@@ -177,7 +201,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/leads/channels - Get available channels for dropdown
         /// </summary>
         [HttpGet("channels")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(List<LeadChannelDto>), 200)]
         public async Task<IActionResult> GetChannels(CancellationToken cancellationToken = default)
         {
@@ -200,7 +224,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/leads/sales-team - Assignable users for dropdown
         /// </summary>
         [HttpGet("sales-team")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(List<SalesTeamMemberDto>), 200)]
         public async Task<IActionResult> GetSalesTeam(CancellationToken cancellationToken = default)
         {
@@ -223,7 +247,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/leads/sources - Get available sources for dropdown
         /// </summary>
         [HttpGet("sources")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(List<LeadSourceDto>), 200)]
         public async Task<IActionResult> GetSources(CancellationToken cancellationToken = default)
         {
@@ -259,7 +283,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// facts about now rather than about the period.
         /// </summary>
         [HttpGet("stats")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         [ProducesResponseType(typeof(LeadStatsDto), 200)]
         public async Task<IActionResult> GetStats(
             [FromQuery] DateTime? from = null,
@@ -311,7 +335,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/leads - Create new lead (starts in the tenant's default status)
         /// </summary>
         [HttpPost]
-        [Authorize(Policy = "Leads.Create")]
+        [Authorize(Policy = Policies.LeadsCreate)]
         [ProducesResponseType(typeof(LeadDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(422)]
@@ -358,7 +382,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// PUT /api/leads/{id} - Update lead
         /// </summary>
         [HttpPut("{id:guid}")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         [ProducesResponseType(typeof(LeadDetailDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -403,7 +427,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// and the system Converted status (set only by conversion) with 400.
         /// </summary>
         [HttpPut("{id:guid}/status")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -448,7 +472,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// DELETE /api/leads/{id} - Soft delete lead
         /// </summary>
         [HttpDelete("{id:guid}")]
-        [Authorize(Policy = "Leads.Delete")]
+        [Authorize(Policy = Policies.LeadsDelete)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -484,7 +508,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// <summary>GET /api/leads/countries - dropdown</summary>
         [HttpGet("countries")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         public async Task<ActionResult<List<CountryDropdownDto>>> GetCountries()
         {
             try
@@ -501,7 +525,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// <summary>GET /api/leads/currencies - dropdown</summary>
         [HttpGet("currencies")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         public async Task<ActionResult<List<CurrencyDropdownDto>>> GetCurrencies()
         {
             try
@@ -520,7 +544,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/leads/{leadId}/convert-to-deal
         /// </summary>
         [HttpPost("{leadId:guid}/convert-to-deal")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         [ProducesResponseType(typeof(ConvertLeadToDealResultDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -565,7 +589,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/leads/{id}/convert - Convert lead to contact/company
         /// </summary>
         [HttpPost("{id:guid}/convert")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         [ProducesResponseType(typeof(ConvertLeadResultDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -629,7 +653,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// GET /api/leads/{leadId}/attachments
         [HttpGet("{leadId:guid}/attachments")]
-        [Authorize(Policy = "Leads.Read")]
+        [Authorize(Policy = Policies.LeadsRead)]
         public async Task<IActionResult> GetAttachments(Guid leadId, CancellationToken ct)
         {
             try
@@ -647,7 +671,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// POST /api/leads/{leadId}/attachments
         [HttpPost("{leadId:guid}/attachments")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
         public async Task<IActionResult> UploadAttachment(
             Guid leadId, IFormFile file, CancellationToken ct)
@@ -680,7 +704,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // Leads.Update (not Leads.Delete) — matches Admin.Web's
         // OnPostDeleteAttachmentAsync gate and the other Leads sub-actions.
         [HttpDelete("attachments/{attachmentId:guid}")]
-        [Authorize(Policy = "Leads.Update")]
+        [Authorize(Policy = Policies.LeadsUpdate)]
         public async Task<IActionResult> DeleteAttachment(Guid attachmentId, CancellationToken ct)
         {
             try

@@ -3,10 +3,31 @@
 @{
     ViewData["Title"] = "Create Company";
 }
+@* =====================================================================
+   Companies/Create.cshtml
+
+   078:
+   • "Additional details" — the workspace's custom fields for Companies,
+     through the shared _CustomFieldInputs partial (the same one Edit,
+     Contacts and Deals render).
+   • The error banner is an ordinary property shown on THIS response (it
+     was [TempData], so it appeared on the NEXT page instead). It is not
+     dismissible and has no timer of its own — the layout owns every
+     auto-dismiss, and an error you can close before reading is no help.
+   • A summary line when any field needs attention.
+   • A vertical or country the lists no longer contain is still offered
+     (CompanyFormOptions).
+   ===================================================================== *@
 
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-2">
+                    <li class="breadcrumb-item"><a asp-page="./Index">Companies</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">New</li>
+                </ol>
+            </nav>
             <h2 class="mb-1"><i class="bi bi-plus-circle text-primary"></i> Create Company</h2>
             <p class="text-muted mb-0">Add a new company account</p>
         </div>
@@ -17,9 +38,9 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger alert-dismissible fade show">
-            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.ErrorMessage</span>
         </div>
     }
 
@@ -31,12 +52,21 @@
                         <h5 class="mb-0"><i class="bi bi-info-circle"></i> Company Information</h5>
                     </div>
                     <div class="card-body">
+
+                        @if (!ViewData.ModelState.IsValid)
+                        {
+                            <div class="alert alert-warning py-2 px-3 small d-flex gap-2 align-items-start mb-3" role="alert">
+                                <i class="bi bi-exclamation-circle-fill mt-1"></i>
+                                <span>Some fields need attention — they are marked below.</span>
+                            </div>
+                        }
+
                         <div class="row g-3">
                             <div class="col-12">
                                 <label asp-for="Input.Name" class="form-label">
                                     Company Name <span class="text-danger">*</span>
                                 </label>
-                                <input asp-for="Input.Name" class="form-control" placeholder="e.g., Acme Corporation" />
+                                <input asp-for="Input.Name" class="form-control" placeholder="e.g., Acme Corporation" autofocus />
                                 <span asp-validation-for="Input.Name" class="text-danger small"></span>
                             </div>
                             <div class="col-md-6">
@@ -63,6 +93,9 @@
                                 <span asp-validation-for="Input.TaxId" class="text-danger small"></span>
                             </div>
                         </div>
+
+                        @* 078 — the workspace's own fields. Shared with Edit. *@
+                        <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
                     </div>
                 </div>
             </div>

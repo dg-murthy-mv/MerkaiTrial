@@ -34,6 +34,11 @@
 
    5. A 2rem PURPLE GRADIENT BANNER reading "Edit Deal / Update deal
       information", above a 2rem-padded card.
+
+   077 — "Additional details": the workspace's Deal custom fields through
+   the shared _CustomFieldInputs partial, pre-filled from what is stored.
+   The summary at the top now also says so when only a field (a custom
+   one, at the bottom) needs attention.
    ===================================================================== *@
 
 <style>
@@ -94,14 +99,21 @@
     @* TempData alerts are rendered once, globally, by _Layout.cshtml. This
        block is only for ModelState errors the API added, which TempData does
        not carry. *@
-    @if (!ViewData.ModelState.IsValid && ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+    @if (!ViewData.ModelState.IsValid)
     {
         <div class="alert alert-warning d-flex gap-2" role="alert">
             <i class="bi bi-exclamation-triangle-fill mt-1"></i>
             <div>
-                @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                @if (ViewData.ModelState[string.Empty]?.Errors.Count > 0)
                 {
-                    <div>@err.ErrorMessage</div>
+                    @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                    {
+                        <div>@err.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div>Some fields need attention — they are marked below.</div>
                 }
             </div>
         </div>
@@ -251,6 +263,16 @@
             </div>
         </div>
 
+        @* 077 — the workspace's own fields. Shared with Create. *@
+        @if (Model.ActiveCustomFields.Count > 0 || Model.CustomFieldsLoadFailed)
+        {
+            <div class="px-card">
+                <div class="bd pt-0">
+                    <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
+                </div>
+            </div>
+        }
+
         <div class="text-muted mb-3" style="font-size:.78rem;">
             @* FormatDateTime, not .ToLocalTime().ToString(...) — the tenant's
                timezone and culture, like every other date in the app. *@
@@ -300,7 +322,10 @@
                 <div class="modal-body">
                     <p class="mb-1 fw-semibold">@Model.Input.Title</p>
                     <p class="text-muted small mb-2">
-                        @Model.GetCurrencySymbol(Model.Input.Currency)@Model.Input.ExpectedValue.ToString("N2")
+                        @* 077: FormatCurrency, not ToString("N2") — that used the SERVER's
+                           culture, so an en-IN server put lakh grouping on a Thai deal.
+                           A deal's currency is the workspace's (fixed at creation). *@
+                        @Model.FormatCurrency(Model.Input.ExpectedValue)
                         · @Model.StageName(Model.Input.Stage)
                     </p>
                     <p class="text-muted small mb-0">

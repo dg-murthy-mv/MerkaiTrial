@@ -1,0 +1,159 @@
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Settings.CustomFields.IndexModel
+@* =====================================================================
+   Settings/CustomFields/_FieldSettings.cshtml — NEW (075).
+
+   Everything about a field except its type, rendered by BOTH the add
+   form and the edit form — one copy, so the two cannot drift (the 029
+   and 068 lesson). Reads Model.Input only.
+
+   Sections that apply to one type carry data-cf-show="<types>"; the
+   page's script hides the rest, and the initial `hidden` here is worked
+   out on the server so the form is right before any script runs.
+
+   076: "Show on the list" — a column on the record's list page, at most
+   CustomFieldLimits.MaxListColumns of them. The server refuses a fifth
+   with a sentence naming the four already there.
+
+   DROPDOWN OPTIONS: each row posts Key (hidden), Label and IsActive.
+   Key is empty on a new row and the server issues one; an existing row
+   keeps its key, which is what every saved value points at — so
+   renaming a choice never strands anybody's data. The script renumbers
+   the rows on submit so the indexes have no gaps.
+   ===================================================================== *@
+
+@{
+    var type        = CustomFieldTypes.Normalise(Model.Input.FieldType) ?? CustomFieldTypes.Text;
+    var isDropdown  = type == CustomFieldTypes.Dropdown;
+    var isNumber    = type == CustomFieldTypes.Number;
+    var canRequire  = CustomFieldTypes.SupportsRequired(type);
+    var options     = Model.Input.Options ?? new List<MerkaiTrial.Admin.Web.Pages.Settings.CustomFields.IndexModel.OptionInput>();
+    var nonCheckbox = "text number date dropdown";
+}
+
+<div class="row g-3">
+
+    @* ── NAME ────────────────────────────────────────────────────── *@
+    <div class="col-md-7">
+        <label asp-for="Input.Label" class="form-label">Name</label>
+        <input asp-for="Input.Label" class="form-control" autocomplete="off"
+               maxlength="@CustomFieldLimits.LabelMaxLength" placeholder="e.g. Renewal date" />
+        <small class="text-muted">What people see next to the input.</small>
+        <span asp-validation-for="Input.Label" class="text-danger small d-block"></span>
+    </div>
+
+    @* ── ON / OFF ────────────────────────────────────────────────── *@
+    <div class="col-md-5">
+        <label class="form-label d-block">Availability</label>
+        <div class="form-check form-switch mt-1">
+            <input asp-for="Input.IsActive" class="form-check-input" role="switch"
+                   style="width:2.5em; height:1.3em; cursor:pointer;" />
+            <label asp-for="Input.IsActive" class="form-check-label">Show on forms</label>
+        </div>
+        <small class="text-muted">Off hides it from forms and keeps every value already recorded.</small>
+    </div>
+
+    @* ── HINT ────────────────────────────────────────────────────── *@
+    <div class="col-md-7">
+        <label asp-for="Input.HelpText" class="form-label">Hint <span class="text-muted fw-normal">(optional)</span></label>
+        <input asp-for="Input.HelpText" class="form-control" autocomplete="off"
+               maxlength="@CustomFieldLimits.HelpTextMaxLength"
+               placeholder="e.g. The date the annual contract renews" />
+        <span asp-validation-for="Input.HelpText" class="text-danger small d-block"></span>
+    </div>
+
+    @* ── REQUIRED (not for checkboxes) ───────────────────────────── *@
+    <div class="col-md-5" data-cf-show="@nonCheckbox" hidden="@(!canRequire)">
+        <label class="form-label d-block">Required</label>
+        <div class="form-check form-switch mt-1">
+            <input asp-for="Input.IsRequired" class="form-check-input" role="switch"
+                   style="width:2.5em; height:1.3em; cursor:pointer;" />
+            <label asp-for="Input.IsRequired" class="form-check-label">Must be filled in</label>
+        </div>
+        <small class="text-muted">
+            Records saved before this was switched on ask for it the next time they are edited.
+        </small>
+    </div>
+
+    @* ── 076: SHOW ON THE LIST ───────────────────────────────────── *@
+    <div class="col-md-7">
+        <label class="form-label d-block">On the list</label>
+        <div class="form-check form-switch mt-1">
+            <input asp-for="Input.ShowInList" class="form-check-input" role="switch"
+                   style="width:2.5em; height:1.3em; cursor:pointer;" />
+            <label asp-for="Input.ShowInList" class="form-check-label">Show as a column on the list</label>
+        </div>
+        <small class="text-muted">
+            Up to @CustomFieldLimits.MaxListColumns fields can be columns. Every field can be searched
+            and filtered on, whether it is a column or not.
+        </small>
+    </div>
+
+    @* ── DECIMAL PLACES (numbers only) ───────────────────────────── *@
+    <div class="col-md-7" data-cf-show="number" hidden="@(!isNumber)">
+        <label asp-for="Input.DecimalPlaces" class="form-label">Decimal places</label>
+        <select asp-for="Input.DecimalPlaces" class="form-select" style="max-width:14rem;">
+            @for (var i = 0; i <= CustomFieldLimits.MaxDecimalPlaces; i++)
+            {
+                <option value="@i">@(i == 0 ? "None — whole numbers" : i + (i == 1 ? " place" : " places"))</option>
+            }
+        </select>
+        <small class="text-muted">Numbers show in your workspace's own format, e.g. 1,25,000 or 125,000.</small>
+    </div>
+
+    @* ── OPTIONS (dropdowns only) ────────────────────────────────── *@
+    <div class="col-12" data-cf-show="dropdown" hidden="@(!isDropdown)">
+        <label class="form-label d-block">Choices</label>
+        <div data-cf-options>
+            @for (var i = 0; i < options.Count; i++)
+            {
+                var o = options[i];
+                <div class="cf-opt" data-cf-opt>
+                    <input type="hidden" name="Input.Options[@i].Key" value="@o.Key" data-cf-name="Key" />
+                    <input type="text" class="form-control form-control-sm" name="Input.Options[@i].Label"
+                           value="@o.Label" data-cf-name="Label" autocomplete="off"
+                           maxlength="@CustomFieldLimits.OptionLabelMaxLength"
+                           placeholder="Choice name" aria-label="Choice name" />
+                    <label class="small d-flex align-items-center gap-1 mb-0" title="Off: not offered any more; records that already have it keep it">
+                        <input class="form-check-input m-0" type="checkbox" name="Input.Options[@i].IsActive"
+                               value="true" checked="@o.IsActive" data-cf-name="IsActive" />
+                        <input type="hidden" name="Input.Options[@i].IsActive" value="false" data-cf-name="IsActive" />
+                        On
+                    </label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-cf-remove-option
+                            title="Remove this choice" aria-label="Remove this choice">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            }
+        </div>
+        <button type="button" class="btn btn-sm btn-link text-decoration-none px-0" data-cf-add-option>
+            <i class="bi bi-plus-lg me-1"></i>Add a choice
+        </button>
+        <small class="text-muted d-block">
+            Renaming a choice updates it on every record. Removing one that somebody has picked
+            keeps it for them, marked retired, rather than wiping their answer.
+        </small>
+    </div>
+</div>
+
+@* A fresh option row for the script to clone. Inside a <template>, so
+   its inputs are inert and never posted until a clone is placed in the
+   form. The script gives it a real index on insert and on submit. *@
+<template id="cfOptTemplate">
+    <div class="cf-opt" data-cf-opt>
+        <input type="hidden" name="" value="" data-cf-name="Key" />
+        <input type="text" class="form-control form-control-sm" name="" value="" data-cf-name="Label"
+               autocomplete="off" maxlength="@CustomFieldLimits.OptionLabelMaxLength"
+               placeholder="Choice name" aria-label="Choice name" />
+        <label class="small d-flex align-items-center gap-1 mb-0">
+            <input class="form-check-input m-0" type="checkbox" name="" value="true" checked data-cf-name="IsActive" />
+            <input type="hidden" name="" value="false" data-cf-name="IsActive" />
+            On
+        </label>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-cf-remove-option
+                title="Remove this choice" aria-label="Remove this choice">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
+</template>

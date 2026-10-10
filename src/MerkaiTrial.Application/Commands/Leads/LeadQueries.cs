@@ -14,10 +14,31 @@
 //                                  outside scope → KeyNotFound → 404.
 //                                  Stats.QuotaUsed stays tenant-wide: the
 //                                  plan limit counts every lead.
+//   6. (079) CUSTOM FIELDS ON LEADS
+//        • List: custom search (text values, dropdown choice names),
+//          ?cf= filters and the "On list" column values, through the
+//          shared CustomFieldListQuery — the same code Contacts, Deals and
+//          Companies use. Page size clamped to 1–100 here; a stable order
+//          (CreatedAtUtc desc, then Id); a page past the end is pulled back.
+//        • Detail: LeadDetailDto.CustomFieldValues, retired fields included.
+//   7. (079) ★ /api/leads/stats NO LONGER 500s ON A NEW TENANT.
+//        SqlException 8117 "Operand data type NULL is invalid for count".
+//        The old query counted with conditions like
+//            g.Count(l => openKeys.Contains(l.Status))
+//        and when a workspace had NO status in a category the key list was
+//        EMPTY. EF folds "contains in an empty list" to constant FALSE,
+//        collapses the CASE, and emits COUNT(NULL) — which SQL Server
+//        refuses outright. The dashboard swallowed the error and showed
+//        zeros. Now: ONE query grouped by Status, then the buckets are
+//        added up in memory. No conditional aggregates, nothing to fold,
+//        and it cannot break again when a status is renamed or a category
+//        is emptied.
 // NOTE: Date formatting is NOT done in handlers — UTC always returned.
 //       Call _tenantService.FormatDate(utc) in your Razor Page models.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;    // 079
+using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
@@ -32,17 +53,26 @@ using MerkaiTrial.Application.Security;
 namespace MerkaiTrial.Application.Commands.Leads
 {
     // ==================== GET LEADS PAGINATED ====================
+
+    /// <summary>
+    /// 079: CustomFilters is optional and TRAILING, so every existing
+    /// `new GetLeadsPaginatedQuery(...)` still compiles and means the same.
+    /// </summary>
     public record GetLeadsPaginatedQuery(
         Guid TenantId,
         int PageNumber,
         int PageSize,
         string? SearchTerm = null,
         string? Status = null,
-        string? AssignedTo = null
+        string? AssignedTo = null,
+        IReadOnlyList<CustomFieldFilter>? CustomFilters = null
     );
 
     public class GetLeadsPaginatedHandler : ICommandHandler
     {
+        /// <summary>079. The most rows one page can ask for.</summary>
+        public const int MaxPageSize = 100;
+
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 1
         private readonly IRecordScopeService _scope;
@@ -66,25 +96,53 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                // 079 — clamped HERE, where the data is, not only on the
+                // caller: a direct API call asked for as many rows as it
+                // liked, and page 0 asked SQL for a negative OFFSET.
+                var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
+                var page     = Math.Max(query.PageNumber, 1);
+                var tenantId = query.TenantId;
+
                 // FIX 1: Tenant currency resolved once — not hardcoded
                 var tenantCurrency = _tenantService.GetCurrencyCode();
 
                 // Record visibility — Own / Team / All for this user.
                 var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
 
+                // 079 — the ACTIVE Lead custom fields: search, filters, columns.
+                var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                    _context, tenantId, CustomFieldEntityTypes.Lead, cancellationToken);
+
                 var leadsQuery = _context.Leads
                     .AsNoTracking()
-                    .Where(l => l.TenantId == query.TenantId && !l.IsDeleted)
+                    .Where(l => l.TenantId == tenantId && !l.IsDeleted)
                     .VisibleTo(access);
 
                 if (!string.IsNullOrWhiteSpace(query.SearchTerm))
                 {
-                    var s = query.SearchTerm.ToLower();
-                    leadsQuery = leadsQuery.Where(l =>
-                        l.FullName.ToLower().Contains(s) ||
-                        (l.Email != null && l.Email.ToLower().Contains(s)) ||
-                        (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
-                        (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
+                    var s = query.SearchTerm.Trim().ToLower();
+
+                    // 079 — custom text values and dropdown choice names too.
+                    // Null = no custom field could match; keep the plain search.
+                    var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, s);
+
+                    if (cfMatches is null)
+                    {
+                        leadsQuery = leadsQuery.Where(l =>
+                            l.FullName.ToLower().Contains(s) ||
+                            (l.Email != null && l.Email.ToLower().Contains(s)) ||
+                            (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
+                            (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
+                    }
+                    else
+                    {
+                        leadsQuery = leadsQuery.Where(l =>
+                            l.FullName.ToLower().Contains(s) ||
+                            (l.Email != null && l.Email.ToLower().Contains(s)) ||
+                            (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
+                            (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)) ||
+                            cfMatches.Contains(l.Id));
+                    }
                 }
 
                 // Status: one key ("Working") or several ("New,Working,Qualified").
@@ -107,14 +165,31 @@ namespace MerkaiTrial.Application.Commands.Leads
                 }
 
                 if (!string.IsNullOrWhiteSpace(query.AssignedTo))
-                    leadsQuery = leadsQuery.Where(l => l.OwnerUserId == query.AssignedTo);
+                {
+                    var owner = query.AssignedTo.Trim();
+                    leadsQuery = leadsQuery.Where(l => l.OwnerUserId == owner);
+                }
+
+                // 079 — custom field filters, as id subqueries (shared helper).
+                foreach (var clause in CustomFieldListQuery.FilterClauses(_context, tenantId, defs, query.CustomFilters))
+                {
+                    var ids = clause.EntityIds;   // a local, so EF inlines the subquery
+                    leadsQuery = clause.Exclude
+                        ? leadsQuery.Where(l => !ids.Contains(l.Id))
+                        : leadsQuery.Where(l => ids.Contains(l.Id));
+                }
 
                 var totalCount = await leadsQuery.CountAsync(cancellationToken);
 
+                // 079 — a page past the end becomes the last page.
+                var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
+                if (page > totalPages) page = totalPages;
+
                 var items = await leadsQuery
                     .OrderByDescending(l => l.CreatedAtUtc)
-                    .Skip((query.PageNumber - 1) * query.PageSize)
-                    .Take(query.PageSize)
+                    .ThenBy(l => l.Id)              // 079 — stable: paging never repeats or skips a row
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
                     .Select(l => new LeadListItem(
                         l.Id,
                         l.FullName,
@@ -135,12 +210,20 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ))
                     .ToListAsync(cancellationToken);
 
+                // 079 — the "On list" custom values, this page only, one query.
+                var listValues = await CustomFieldListQuery.ListValuesAsync(
+                    _context, tenantId, defs, items.Select(i => i.Id).ToList(), cancellationToken);
+
+                foreach (var item in items)
+                    if (listValues.TryGetValue(item.Id, out var map))
+                        item.CustomFieldValues = map;
+
                 return new PaginatedResult<LeadListItem>
                 {
                     Items = items,
                     TotalCount = totalCount,
-                    Page = query.PageNumber,
-                    PageSize = query.PageSize
+                    Page = page,
+                    PageSize = pageSize
                 };
             }
             catch (Exception ex)
@@ -237,6 +320,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                 }
                 var statuses = await _statuses.GetAsync(query.TenantId);
 
+                // 079 — every stored custom value, retired fields included.
+                var customFieldValues = await CustomFieldValueWriter.ReadAsync(
+                    _context, query.TenantId, CustomFieldEntityTypes.Lead, row.Lead.Id, cancellationToken);
+
                 // NOTE: Dates returned as UTC — format in page model via:
                 //   _tenantService.FormatDate(lead.CreatedAtUtc)
                 //   _tenantService.FormatDateTime(lead.UpdatedAtUtc)
@@ -270,7 +357,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                     DealId: row.Lead.DealId,
                     DealStage: "",
                     ExpectedValue: row.Lead.EstimatedValue ?? 0m
-                );
+                )
+                {
+                    CustomFieldValues = customFieldValues      // 079
+                };
             }
             catch (KeyNotFoundException) { throw; }
             catch (Exception ex)
@@ -375,22 +465,34 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (query.ToExclusiveUtc.HasValue)
                     periodLeads = periodLeads.Where(l => l.CreatedAtUtc < query.ToExclusiveUtc.Value);
 
-                var counts = await periodLeads
-                    .GroupBy(l => 1)
+                // 079 — ONE row per status, added up below. See note 7: the
+                // old conditional counts became COUNT(NULL) on a tenant with
+                // an empty status category, and SQL Server refused them.
+                var byStatus = await periodLeads
+                    .GroupBy(l => l.Status)
                     .Select(g => new
                     {
-                        TotalLeads = g.Count(),
-                        // "New" is the starting status, whatever it is called.
-                        NewLeads = g.Count(l => l.Status == defaultKey),
-                        // Everything else still in play. Previously this
-                        // counted only LeadStatus.Working, so a tenant with
-                        // three working statuses would under-report.
-                        WorkingLeads = g.Count(l => openKeys.Contains(l.Status) && l.Status != defaultKey),
-                        QualifiedLeads = g.Count(l => qualifiedKeys.Contains(l.Status)),
-                        UnqualifiedLeads = g.Count(l => disqKeys.Contains(l.Status)),
-                        ConvertedLeads = g.Count(l => l.IsConverted)
+                        Status    = g.Key,
+                        Count     = g.Count(),
+                        Converted = g.Sum(l => l.IsConverted ? 1 : 0)
                     })
-                    .FirstOrDefaultAsync(cancellationToken);
+                    .ToListAsync(cancellationToken);
+
+                var openSet      = new HashSet<string>(openKeys, StringComparer.Ordinal);
+                var qualifiedSet = new HashSet<string>(qualifiedKeys, StringComparer.Ordinal);
+                var disqSet      = new HashSet<string>(disqKeys, StringComparer.Ordinal);
+
+                var counts = new
+                {
+                    TotalLeads       = byStatus.Sum(b => b.Count),
+                    // "New" is the starting status, whatever it is called.
+                    NewLeads         = byStatus.Where(b => b.Status == defaultKey).Sum(b => b.Count),
+                    // Everything else still in play (every Open status but the starting one).
+                    WorkingLeads     = byStatus.Where(b => openSet.Contains(b.Status) && b.Status != defaultKey).Sum(b => b.Count),
+                    QualifiedLeads   = byStatus.Where(b => qualifiedSet.Contains(b.Status)).Sum(b => b.Count),
+                    UnqualifiedLeads = byStatus.Where(b => disqSet.Contains(b.Status)).Sum(b => b.Count),
+                    ConvertedLeads   = byStatus.Sum(b => b.Converted)
+                };
 
                 // Tasks and activities count only on leads the user can see.
                 //
@@ -422,12 +524,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                         a.ActivityDate < todayEndUtc, cancellationToken);
 
                 return new LeadStatsDto(
-                    TotalLeads: counts?.TotalLeads ?? 0,
-                    NewLeads: counts?.NewLeads ?? 0,
-                    WorkingLeads: counts?.WorkingLeads ?? 0,
-                    QualifiedLeads: counts?.QualifiedLeads ?? 0,
-                    UnqualifiedLeads: counts?.UnqualifiedLeads ?? 0,
-                    ConvertedLeads: counts?.ConvertedLeads ?? 0,
+                    TotalLeads: counts.TotalLeads,
+                    NewLeads: counts.NewLeads,
+                    WorkingLeads: counts.WorkingLeads,
+                    QualifiedLeads: counts.QualifiedLeads,
+                    UnqualifiedLeads: counts.UnqualifiedLeads,
+                    ConvertedLeads: counts.ConvertedLeads,
                     OverdueReminders: overdueTasks,
                     TodayActivities: todayActivities,
                     QuotaUsed: quotaUsed

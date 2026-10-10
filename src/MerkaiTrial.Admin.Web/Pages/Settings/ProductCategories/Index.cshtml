@@ -140,18 +140,16 @@
     }
 </div>
 
-@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+@* 075: messages after a redirect are rendered by _Layout, once. This
+   page renders only PageError — the message for a request that renders
+   (a failed save that keeps the form open). It used to render the
+   TempData-backed SuccessMessage/ErrorMessage properties as well, which
+   drew a second, identical banner under the layout's. *@
+@if (!string.IsNullOrEmpty(Model.PageError))
 {
-    <div class="alert alert-danger d-flex align-items-start gap-2">
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
         <i class="bi bi-exclamation-triangle-fill mt-1"></i>
-        <span>@Model.ErrorMessage</span>
-    </div>
-}
-@if (!string.IsNullOrEmpty(Model.SuccessMessage))
-{
-    <div class="alert alert-success d-flex align-items-start gap-2">
-        <i class="bi bi-check-circle-fill mt-1"></i>
-        <span>@Model.SuccessMessage</span>
+        <span>@Model.PageError</span>
     </div>
 }
 

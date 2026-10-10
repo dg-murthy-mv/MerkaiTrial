@@ -4,6 +4,32 @@
 //
 // COMPLETE FILE — replaces the 020 version.
 //
+// 078 — GetCurrencySymbol uses CurrencyConfiguration, the one currency
+//   table, instead of its own hardcoded switch (which showed AED as د.إ
+//   while the quote PDF shows "AED", and was case-sensitive).
+//
+// CHANGES (077 — custom fields on deals)
+//
+//   1. Active Deal custom fields render through the shared
+//      _CustomFieldInputs partial, pre-filled from the deal's stored values
+//      (DealDto.CustomFieldValues — GetByIdAsync reads the detail endpoint,
+//      which now returns them), checked here first, and sent as
+//      UpdateDealDto.CustomFields.
+//
+//      Only ACTIVE fields are on the form and only active fields are sent,
+//      so a RETIRED field's value is absent from the map — and absent
+//      means "leave alone". An ordinary edit never wipes it.
+//
+//      If the field list cannot be loaded, CustomFields is sent as NULL
+//      ("say nothing"), so the save changes only the standard fields and
+//      the form says why the custom ones are missing.
+//
+//   2. A refused save set BOTH ModelState and [TempData] ErrorMessage and
+//      then rendered. The ModelState copy showed here; the TempData copy
+//      was saved for the NEXT request and appeared again on the deal page
+//      after the person fixed it and saved. Only ModelState now, for both
+//      the refused and the failed case.
+//
 // CHANGES (030)
 //
 //   1. ★ EVERY SAVE MOVED THE CLOSE DATE BACK A DAY. The old pair was
@@ -109,13 +135,16 @@
 //   • ICurrentTenantService injected for consistency
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;              // 077
 using MerkaiTrial.Admin.Web.Services.Contacts;
+using MerkaiTrial.Admin.Web.Services.CustomFields;     // 077
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;           // 077
 using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
@@ -138,6 +167,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _currentTenantService;
         private readonly IPipelineStageService _stageService;
+        private readonly ICustomFieldService _customFields;     // 077
         private readonly ILogger<EditModel> _logger;
 
         protected override string ModuleName => Modules.Deals;
@@ -150,6 +180,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentUserService currentUserService,
             ICurrentTenantService currentTenantService,
             IPipelineStageService stageService,
+            ICustomFieldService customFields,                    // 077
             IAuthorizationService authorizationService,
             ILogger<EditModel> logger)
             : base(authorizationService, currentUserService, logger)
@@ -161,6 +192,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentUserService = currentUserService;
             _currentTenantService = currentTenantService;
             _stageService = stageService;
+            _customFields = customFields;
             _logger = logger;
         }
 
@@ -186,8 +218,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         [TempData]
         public string? SuccessMessage { get; set; }
 
+        /// <summary>For REDIRECTS only — see change 2 in the header.</summary>
         [TempData]
         public string? ErrorMessage { get; set; }
+
+        // ── 077: custom fields ────────────────────────────────────────
+
+        /// <summary>Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>Active Deal custom fields, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Deal
+        };
 
         // ==================== INPUT MODEL ====================
 
@@ -363,6 +415,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 CreatedAtUtc = deal.CreatedAtUtc;
                 CreatedBy    = deal.CreatedBy;
 
+                // 077 — what the custom inputs start with.
+                CustomFields = CustomFieldForm.FromStored(deal.CustomFieldValues);
+                await LoadCustomFieldsAsync();
+
                 SalesTeam = WithUnassignedOption(          // 041
                     salesTeam.Select(u => new SelectListItem
                     {
@@ -390,6 +446,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
             var check = await ValidatePermissionAsync(Actions.Update);
             if (check != null) return check;
+
+            // 077 — each custom field's message under its own input. Loaded
+            // here, before the ModelState check, so a refused form re-renders
+            // with its custom inputs and what was typed into them.
+            await LoadCustomFieldsAsync();
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
 
             if (!ModelState.IsValid)
             {
@@ -443,7 +505,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     OwnerUserId          = Input.OwnerUserId,
                     SourceId             = Input.SourceId,
                     Tags                 = Input.Tags,
-                    UpdatedBy            = currentUser.FullName
+                    UpdatedBy            = currentUser.FullName,
+
+                    // 077 — null when the field list could not be loaded.
+                    CustomFields         = CustomFieldsLoadFailed
+                                            ? null
+                                            : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
                 };
 
                 await _dealService.UpdateAsync(tenantId, id, updateDto);
@@ -457,8 +524,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             {
                 _logger.LogInformation("Deal {DealId} update refused: {Message}", id, ex.Message);
 
+                // 077 — ModelState only. See change 2 in the header.
                 ModelState.AddModelError(string.Empty, ex.Message);
-                ErrorMessage = ex.Message;
 
                 await ReloadListsAsync(id);
                 return Page();
@@ -466,7 +533,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update deal {DealId}", id);
-                ErrorMessage = "Failed to update deal. Please try again.";
+                ModelState.AddModelError(string.Empty, "Failed to update deal. Please try again.");
                 await ReloadListsAsync(id);
                 return Page();
             }
@@ -580,28 +647,34 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
-        public string GetCurrencySymbol(string currencyCode)
+        /// <summary>077. Non-fatal: the form still saves the standard fields, and says why.</summary>
+        private async Task LoadCustomFieldsAsync()
         {
-            return currencyCode switch
+            try
             {
-                "INR" => "₹",
-                "USD" => "$",
-                "EUR" => "€",
-                "GBP" => "£",
-                "THB" => "฿",
-                "PHP" => "₱",
-                "KES" => "KES",
-                "IDR" => "Rp",
-                "TWD" => "NT$",
-                "COP" => "COL$",
-                "SAR" => "﷼",
-                "ARS" => "AR$",
-                "DKK" => "kr",
-                "AED" => "د.إ",
-                "ZAR" => "R",
-                _ => currencyCode
-            };
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Deal, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the Edit Deal form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
+            }
         }
+
+        /// <summary>
+        /// 078 — the app's ONE currency table (CurrencyConfiguration), not
+        /// a page-local copy. The copy that was here disagreed with it: it
+        /// drew AED as the Arabic glyph, which the quote PDF deliberately
+        /// does not, and it was case-sensitive ("thb" printed as "thb").
+        /// A currency the table does not know shows as its code.
+        /// </summary>
+        public string GetCurrencySymbol(string? currencyCode)
+            => CurrencyConfiguration.GetCurrencySymbol(
+                   string.IsNullOrWhiteSpace(currencyCode) ? _currentTenantService.GetCurrencyCode() : currencyCode);
 
         // GetStageProbability(string) was deleted in 019. It hard-coded the
         // six original stages and their percentages, so a tenant who set

@@ -45,10 +45,34 @@
 //
 //      Create validates the same way. Previously a supplied owner was
 //      trusted blindly there too.
+//
+//   8. (079) CUSTOM FIELDS ON LEADS
+//      • Create and Update hand CreateLeadDto/UpdateLeadDto.CustomFields
+//        to CustomFieldValueWriter.ApplyAsync BEFORE SaveChangesAsync, so
+//        the lead and its values commit together or not at all. A null
+//        map (the widget, the importer, every older caller) skips it.
+//      • A refused value is a CustomFieldValidationException — an
+//        InvalidOperationException carrying a sentence for the person.
+//        Create and Update now re-throw InvalidOperationException (and
+//        Create the plan limit) WITHOUT an ERROR log line: a required
+//        field left empty, or a full plan, is not a system fault. The
+//        controller already turns both into a readable 400 / 422.
+//      • Update's audit row gains "customFields": "changed" when any
+//        custom value changed — never the values themselves.
+//      • Update returns the stored values in LeadDetailDto.CustomFieldValues.
+//      • ConvertLeadHandler copies mapped values onto the contact it
+//        creates (LeadFieldMapper), and writes ContactCreated (078b) for
+//        that contact — before, a contact born from a conversion had no
+//        creation entry at all.
+//
+//   9. (079) Removed `using DocumentFormat.OpenXml.Presentation;` and
+//      `using DocumentFormat.OpenXml.Spreadsheet;` — IDE auto-imports that
+//      nothing used. Spreadsheet alone declares types called Company and
+//      Column; one ambiguous name away from a baffling compile error.
 // =====================================================================
 
-using DocumentFormat.OpenXml.Presentation;
-using DocumentFormat.OpenXml.Spreadsheet;
+using MerkaiTrial.Application.Commands.CustomFields;    // 079
+using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
@@ -177,6 +201,12 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 _context.Leads.Add(lead);
 
+                // 079 — staged in the same unit of work as the lead. A
+                // refused value throws here, before anything is saved.
+                await CustomFieldValueWriter.ApplyAsync(
+                    _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id,
+                    dto.CustomFields, currentUserId.ToString(), isNew: true, cancellationToken);
+
                 // ── 039: tell the new owner, if it is not the creator ──
                 // Added BEFORE the save so the notification and the lead
                 // commit together. The dispatcher does not save.
@@ -204,6 +234,14 @@ namespace MerkaiTrial.Application.Commands.Leads
                     CreatedUtc:  lead.CreatedAtUtc,
                     OwnerUserId: lead.OwnerUserId ?? ""
                 );
+            }
+            catch (PlanLimitExceededException)
+            {
+                throw;   // 079 — the controller returns 422; not a system error
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // 079 — a sentence for the person (custom field, no statuses, owner)
             }
             catch (Exception ex)
             {
@@ -364,6 +402,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.UpdatedAtUtc = DateTime.UtcNow;
                 lead.UpdatedBy = currentUserId.ToString();
 
+                // 079 — same unit of work as the lead's own fields. Throws
+                // a CustomFieldValidationException before anything is saved.
+                await CustomFieldValueWriter.ApplyAsync(
+                    _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id,
+                    dto.CustomFields, currentUserId.ToString(), isNew: false, cancellationToken);
+
+                var customFieldsChanged = _context.ChangeTracker.Entries<CustomFieldValue>()
+                    .Any(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+
                 // ── 039: the owner changed, so tell whoever now has it ──
                 // BEFORE the save, deliberately: the notification and the
                 // reassignment are one transaction.
@@ -397,6 +444,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (oldSourceId != lead.SourceId) changes["sourceId"] = new { from = oldSourceId, to = lead.SourceId };
                 if (oldVerticalId != lead.VerticalId) changes["verticalId"] = new { from = oldVerticalId, to = lead.VerticalId };
                 if (oldValue != lead.EstimatedValue) changes["value"] = new { from = oldValue, to = lead.EstimatedValue };
+
+                // 079 — that something changed, never the values (AuditLog.Data).
+                if (customFieldsChanged) changes["customFields"] = "changed";
 
                 if (changes.Count > 0)
                     await _audit.WriteAsync(
@@ -504,9 +554,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                     DealId: lead.DealId,
                     DealStage: "",
                     ExpectedValue: lead.EstimatedValue ?? 0
-                );
+                )
+                {
+                    // 079 — what is stored now, retired fields included.
+                    CustomFieldValues = await CustomFieldValueWriter.ReadAsync(
+                        _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id, cancellationToken)
+                };
             }
             catch (KeyNotFoundException) { throw; }
+            catch (InvalidOperationException) { throw; }   // 079 — a sentence for the person; not an ERROR line
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating lead {LeadId}", dto.LeadId);
@@ -783,6 +839,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                 };
                 _context.Contacts.Add(contact);
 
+                // 079 — mapped lead values onto the new contact (no deal on
+                // this path). Staged, saved with everything below.
+                var copied = await LeadFieldMapper.CopyAsync(
+                    _context, cmd.TenantId, lead.Id, contact.Id, contactIsNew: true, dealId: null,
+                    cmd.ConvertedBy, cancellationToken);
+
                 // Mark lead converted
                 lead.IsConverted          = true;
                 lead.ConvertedToContactId = contact.Id;
@@ -801,9 +863,23 @@ namespace MerkaiTrial.Application.Commands.Leads
                         name = lead.FullName,
                         contactId = contact.Id,
                         companyId,
-                        companyCreated = cmd.CreateCompany && companyId != cmd.ExistingCompanyId
+                        companyCreated = cmd.CreateCompany && companyId != cmd.ExistingCompanyId,
+                        customFieldsCopied = copied.ToContact          // 079
                     },
                     cancellationToken);
+
+                // 079 — the contact is a new record in its own right (078b).
+                try
+                {
+                    await _audit.WriteAsync(
+                        AuditAction.ContactCreated, AuditEntityType.Contact, contact.Id, cmd.TenantId,
+                        new { name = $"{contact.FirstName} {contact.LastName}".Trim(), companyId = contact.CompanyId, fromLeadId = lead.Id },
+                        cancellationToken);
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogError(auditEx, "Contact {Id} was created by conversion but its audit row could not be written", contact.Id);
+                }
 
                 
                 _logger.LogInformation("Converted lead {LeadId} → contact {ContactId}", cmd.LeadId, contact.Id);

@@ -7,6 +7,18 @@
      2. All scripts moved OUT of form, into @section Scripts
      3. countryCodeMap moved into @section Scripts alongside sync script
      4. Constants moved to module scope (outside DOMContentLoaded)
+
+   079:
+     • "Additional details" — the workspace's Lead custom fields, through
+       the shared _CustomFieldInputs partial.
+     • Errors (plan limit, a refused field, an unexpected failure) reach
+       the validation summary on THIS response; they were [TempData] and
+       showed on the next page. A summary line when any field needs
+       attention.
+     • The country → currency sync uses each country's own currency and
+       the app's currency table, not two hardcoded lists. Choosing a
+       currency by hand updates the symbol too (it did not before), and
+       the page no longer overrides that choice on load.
    ===================================================================== *@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Leads.CreateModel
@@ -39,6 +51,14 @@
                 <div class="card-body">
                     <form method="post">
                         <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+                        @if (!ViewData.ModelState.IsValid)
+                        {
+                            <div class="alert alert-warning py-2 px-3 small d-flex gap-2 align-items-start mb-3" role="alert">
+                                <i class="bi bi-exclamation-circle-fill mt-1"></i>
+                                <span>Some fields need attention — they are marked below.</span>
+                            </div>
+                        }
 
                         <!-- Basic Information -->
                         <div class="mb-4">
@@ -150,9 +170,7 @@
                                     <label asp-for="Input.EstimatedValue" class="form-label">Estimated Value</label>
                                     <div class="input-group">
                                         @* FIX 1: id="currency-symbol" added so JS can update it *@
-                                        <span class="input-group-text" id="currency-symbol">
-                                            @Model.TenantCurrencySymbol
-                                        </span>
+                                        <span class="input-group-text" id="currency-symbol">@Model.CurrencySymbol</span>
                                         <input asp-for="Input.EstimatedValue" type="number" step="0.01"
                                                class="form-control" placeholder="10000.00" />
                                     </div>
@@ -168,6 +186,9 @@
                                 </div>
                             </div>
                         </div>
+
+                        @* 079 — the workspace's own Lead fields. Shared with Edit. *@
+                        <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
 
                         <!-- Actions -->
                         <div class="d-flex justify-content-end gap-2 mt-4">
@@ -190,66 +211,39 @@
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
     <script>
+        // Choosing a country picks its currency and updates the symbol
+        // beside Estimated Value. 079: both maps come from the server —
+        // each country's own currency, and symbols from the app's one
+        // currency table — instead of two hardcoded lists in this script.
         (function () {
-            // ── countryId → countryCode map from server ───────────────
-            const countryCodeMap = @Html.Raw(Model.CountryCodesJson);
+            'use strict';
+            var countryCurrency = @Html.Raw(Model.CountryCurrencyJson);
+            var symbols         = @Html.Raw(Model.SymbolsJson);
 
-            // ── countryCode → default currency mapping ────────────────
-            const currencyMap = {
-                'IN': 'INR', 'TH': 'THB', 'PH': 'PHP',
-                'AE': 'AED', 'SG': 'SGD', 'MY': 'MYR',
-                'ID': 'IDR', 'VN': 'VND', 'AU': 'AUD',
-                'GB': 'GBP', 'US': 'USD', 'EU': 'EUR',
-                'CN': 'CNY', 'JP': 'JPY', 'KR': 'KRW',
-                'BD': 'BDT', 'LK': 'LKR', 'NP': 'NPR',
-                'PK': 'PKR', 'MM': 'MMK',
-            };
-
-            // ── currency code → symbol mapping ────────────────────────
-            const symbolMap = {
-                'INR': '₹', 'THB': '฿', 'PHP': '₱',
-                'AED': 'د.إ', 'SGD': 'S$', 'MYR': 'RM',
-                'IDR': 'Rp', 'VND': '₫', 'AUD': 'A$',
-                'GBP': '£', 'USD': '$', 'EUR': '€',
-                'CNY': '¥', 'JPY': '¥', 'KRW': '₩',
-                'BDT': '৳', 'LKR': 'Rs', 'NPR': 'Rs',
-                'PKR': 'Rs', 'MMK': 'K',
-            };
-
-            const countrySelect  = document.getElementById('Input_CountryId');
-            const currencySelect = document.getElementById('Input_CurrencyId');
-            const symbolSpan     = document.getElementById('currency-symbol');
-
+            var countrySelect  = document.getElementById('Input_CountryId');
+            var currencySelect = document.getElementById('Input_CurrencyId');
+            var symbolSpan     = document.getElementById('currency-symbol');
             if (!countrySelect || !currencySelect) return;
 
-            function syncCurrency() {
-                const countryId  = countrySelect.value;
-                const countryCode = countryCodeMap[countryId];
-                if (!countryCode) return;
+            function showSymbol() {
+                if (!symbolSpan) return;
+                var code = currencySelect.value;
+                if (code) symbolSpan.textContent = symbols[code] || code;
+            }
 
-                const currency = currencyMap[countryCode];
+            countrySelect.addEventListener('change', function () {
+                var currency = countryCurrency[countrySelect.value];
                 if (!currency) return;
-
-                // Update currency dropdown
-                for (const opt of currencySelect.options) {
-                    if (opt.value === currency) {
-                        opt.selected = true;
+                for (var i = 0; i < currencySelect.options.length; i++) {
+                    if (currencySelect.options[i].value === currency) {
+                        currencySelect.selectedIndex = i;
                         break;
                     }
                 }
+                showSymbol();
+            });
 
-                // Update currency symbol span
-                if (symbolSpan) {
-                    symbolSpan.textContent = symbolMap[currency] || currency;
-                }
-            }
-
-            // Sync on country change
-            countrySelect.addEventListener('change', syncCurrency);
-
-            // Sync once on page load in case country is already pre-selected
-            if (countrySelect.value) syncCurrency();
+            currencySelect.addEventListener('change', showSymbol);
         })();
     </script>
-    
 }

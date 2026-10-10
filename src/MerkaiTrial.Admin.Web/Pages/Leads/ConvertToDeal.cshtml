@@ -1,5 +1,6 @@
 @page "{id:guid}"
 @using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Leads.ConvertToDealModel
 @{
     ViewData["Title"] = "Convert to deal";
@@ -45,6 +46,12 @@
 
    4. "What Happens Next" claimed the lead's status would change to
       "Converted" — our key, not the tenant's word for it.
+
+   079 — "Additional details carried over": the mapped Lead custom fields
+   with a value on this lead, and where each lands (contact / deal), so
+   nobody has to convert first and check afterwards. A hint when values
+   exist but nothing is mapped, and the required Deal fields that nothing
+   fills, named up front. All text is Razor-encoded; nothing in script.
    ===================================================================== *@
 
 <style>
@@ -84,6 +91,15 @@
     .lc-stage .pct { font-weight: 500; color: #94a3b8; font-size: .78rem; }
 
     .lc-next { font-size: .86rem; }
+
+    /* 079 — carried-over details */
+    .lc-carry { list-style: none; padding: 0; margin: 0; font-size: .86rem; }
+    .lc-carry li { padding: .45rem 0; border-bottom: 1px solid #f1f3f5; }
+    .lc-carry li:last-child { border-bottom: 0; }
+    .lc-carry .k { color: #64748b; font-size: .78rem; }
+    .lc-carry .v { color: #0f172a; font-weight: 600; overflow-wrap: anywhere; }
+    .lc-carry .to { font-size: .74rem; color: #64748b; }
+    .lc-carry .to .badge { font-weight: 600; }
     .lc-next li { margin-bottom: .35rem; }
 
     .lc-bar { display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
@@ -301,6 +317,75 @@
                         </div>
                     </div>
                 </div>
+
+                @* 079 — what carries across, before it happens. *@
+                @if (Model.CarryOver.Any() || Model.UnmappedValueCount > 0 || Model.RequiredDealFieldsNotFilled.Any())
+                {
+                    <div class="lc-card">
+                        <h2><i class="bi bi-ui-checks-grid"></i>Additional details</h2>
+                        <div class="bd">
+                            @if (Model.CarryOver.Any())
+                            {
+                                <p class="small text-muted mb-2">
+                                    These are copied across when you create the deal.
+                                    @if (Model.ContactId.HasValue)
+                                    {
+                                        <text>On the existing contact, only fields that are still empty are filled in.</text>
+                                    }
+                                </p>
+                                <ul class="lc-carry">
+                                    @foreach (var item in Model.CarryOver)
+                                    {
+                                        <li>
+                                            <div class="k">@item.LeadLabel</div>
+                                            <div class="v">@item.Value</div>
+                                            <div class="to">
+                                                <i class="bi bi-arrow-return-right me-1"></i>
+                                                @if (item.ToContact is not null)
+                                                {
+                                                    <span class="badge bg-light text-dark border me-1">
+                                                        <i class="bi bi-person me-1"></i>Contact · @item.ToContact
+                                                    </span>
+                                                }
+                                                @if (item.ToDeal is not null)
+                                                {
+                                                    <span class="badge bg-light text-dark border">
+                                                        <i class="bi bi-kanban me-1"></i>Deal · @item.ToDeal
+                                                    </span>
+                                                }
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
+                            @if (Model.UnmappedValueCount > 0)
+                            {
+                                <div class="alert alert-light border small mt-2 mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    @Model.UnmappedValueCount filled-in lead
+                                    @(Model.UnmappedValueCount == 1 ? "detail is" : "details are")
+                                    not set to carry over, so @(Model.UnmappedValueCount == 1 ? "it stays" : "they stay") on the lead.
+                                    @if (Model.CanConfigureFields)
+                                    {
+                                        <a asp-page="/Settings/CustomFields/Index" asp-route-entity="@CustomFieldEntityTypes.Lead">Choose what carries over</a>
+                                    }
+                                </div>
+                            }
+
+                            @if (Model.RequiredDealFieldsNotFilled.Any())
+                            {
+                                <div class="alert alert-warning small mt-2 mb-0">
+                                    <i class="bi bi-exclamation-circle me-1"></i>
+                                    The deal will still need
+                                    <strong>@string.Join(", ", Model.RequiredDealFieldsNotFilled)</strong>
+                                    — you'll be asked for @(Model.RequiredDealFieldsNotFilled.Count == 1 ? "it" : "them")
+                                    the next time the deal is edited.
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
 
                 <div class="lc-card">
                     <h2><i class="bi bi-lightbulb"></i>Worth knowing</h2>

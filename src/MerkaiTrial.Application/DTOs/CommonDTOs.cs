@@ -1,4 +1,26 @@
-﻿using MerkaiTrial.Domain.Enums;
+// =====================================================================
+// COMMON DTOs
+// Location: MerkaiTrial.Application/DTOs/CommonDTOs.cs
+//
+// 079 — CUSTOM FIELDS ON LEADS. Added as BODY properties, never as new
+// constructor parameters, so every existing `new LeadDetailDto(...)`,
+// `new CreateLeadDto(...)` and the LINQ projection into LeadListItem keep
+// compiling unchanged. System.Text.Json fills body properties after
+// calling the constructor, so they travel over the API as normal.
+//
+//   LeadDetailDto.CustomFieldValues  every stored value, retired fields included
+//   LeadListItem.CustomFieldValues   the list-column fields, this page only
+//   CreateLeadDto.CustomFields       what the form is stating
+//   UpdateLeadDto.CustomFields       ditto
+//
+// On Create/Update, NULL means "this caller says nothing about custom
+// fields" — the widget, the importer and every caller written before 079
+// send null and behave exactly as before. A dictionary means "these are
+// the values"; a key with an empty value clears that field; an absent
+// key is left alone.
+// =====================================================================
+
+using MerkaiTrial.Domain.Enums;
 using Microsoft.AspNetCore.Http.HttpResults;
 using System;
 using System.Collections.Generic;
@@ -44,9 +66,11 @@ namespace MerkaiTrial.Application.DTOs
         string? Address,           // ✅ NEW
         Guid? CountryId,          // ✅ NEW
         string? CountryName      // ✅ NEW
-
-
-    );
+    )
+    {
+        /// <summary>079. Every stored custom value on this lead, keyed by field id, retired fields included.</summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+    }
     // Soft delete lead
     public record DeleteLeadDto(
         Guid TenantId,
@@ -85,7 +109,11 @@ namespace MerkaiTrial.Application.DTOs
          string? Address,          // ✅ NEW
          Guid? CountryId,          // ✅ NEW (Mandatory)
          string? Currency         // ✅ NEW (Mandatory)
-     );
+     )
+    {
+        /// <summary>079. Null = say nothing about custom fields. See the file header.</summary>
+        public Dictionary<Guid, string?>? CustomFields { get; init; }
+    }
 
     public record LeadListItemDto(
         Guid Id,
@@ -115,7 +143,15 @@ namespace MerkaiTrial.Application.DTOs
         string Currency,           // NEW
         string? OwnerUserId,      // ← ADD THIS
         string? OwnerName
-    );
+    )
+    {
+        /// <summary>
+        /// 079. Values of the fields shown as list columns, for the paged
+        /// Leads list only. Settable because it is filled in after the
+        /// rows are read, in one query for the whole page.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+    }
 
     public record JourneyDto(
         Guid Id,
@@ -193,7 +229,11 @@ namespace MerkaiTrial.Application.DTOs
         string? Address,          // ✅ NEW
         Guid? CountryId,          // ✅ NEW (Mandatory)
         string? Currency        // ✅ NEW (Mandatory)
-    );
+    )
+    {
+        /// <summary>079. Null = say nothing about custom fields. See the file header.</summary>
+        public Dictionary<Guid, string?>? CustomFields { get; init; }
+    }
 
     public record InvoiceSummaryDto(
         string Number,

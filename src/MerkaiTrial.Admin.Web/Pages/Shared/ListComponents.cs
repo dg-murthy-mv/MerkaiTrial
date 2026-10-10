@@ -1,6 +1,13 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Shared/ListComponents.cs
 //
+// 076 — ListToolbarVm.FormId: an optional id on the toolbar's <form>,
+//   so inputs rendered ELSEWHERE on the page (the custom field filter
+//   panel) can join the same GET with form="<id>". Without it, a second
+//   GET form would throw away the toolbar's search on submit, and the
+//   toolbar would throw away the panel's filters. Null on every page that
+//   does not set it, and the form renders exactly as before.
+//
 // NEW FILE (072). The view models behind _ListToolbar.cshtml and
 // _Pager.cshtml — the search/filter strip and the pager that every list
 // page in the app now shares.
@@ -60,6 +67,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
 
     public sealed class ListToolbarVm
     {
+        /// <summary>
+        /// 076. The id of the toolbar's form, for inputs elsewhere on the
+        /// page that should submit with it (form="…"). Null = no id.
+        /// </summary>
+        public string? FormId { get; init; }
+
         // ── Search ───────────────────────────────────────────────────
         public string SearchName { get; init; } = "SearchTerm";
         public string? SearchValue { get; init; }

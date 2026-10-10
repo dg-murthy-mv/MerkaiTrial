@@ -24,6 +24,13 @@
 //      to start without this, which is exactly what that guard is for.
 //   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
 //      tenant-owned and filtered.
+//  16. (075) CustomFieldDefinition + CustomFieldValue — tenant-defined
+//      extra fields on records (Contacts first). BOTH STRICTLY
+//      tenant-owned: there is no Merkai default field, and a value is
+//      as private as the record it sits on. If either ever ends up in
+//      the shared-or-tenant group, one workspace can read another's
+//      field names and values. See CustomField.cs for why values live
+//      in their own table rather than a JSON column.
 //  15. (071) QuoteMilestone — the billing schedule on a quote, "30% on
 //      signing, 40% on delivery, 30% on completion". Strictly
 //      tenant-owned: a schedule is never shared, so TenantId is not
@@ -148,6 +155,18 @@ public class FlowDbContext : DbContext
     /// every quote raised before 071 does.
     /// </summary>
     public DbSet<QuoteMilestone> QuoteMilestones => Set<QuoteMilestone>();
+
+    /// <summary>
+    /// 075. Strictly tenant-owned. What extra fields a workspace records
+    /// on a kind of record (EntityType = "Contact" in round A).
+    /// </summary>
+    public DbSet<CustomFieldDefinition> CustomFieldDefinitions => Set<CustomFieldDefinition>();
+
+    /// <summary>
+    /// 075. Strictly tenant-owned. One row per field per record that has
+    /// a value; no row means "not filled in".
+    /// </summary>
+    public DbSet<CustomFieldValue> CustomFieldValues => Set<CustomFieldValue>();
     public DbSet<User> Users => Set<User>();
     public DbSet<LeadChannel> LeadChannels { get; set; }
     public DbSet<LeadSource> LeadSources { get; set; }
@@ -322,6 +341,13 @@ public class FlowDbContext : DbContext
         // so it is deliberately NOT in the shared-or-tenant group with
         // Role, CompanyVertical, TaxRate and ProductCategory.
         b.Entity<QuoteMilestone>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Custom fields (075). Strict, both of them. A field definition is
+        // one workspace's private schema ("Credit limit", "Account
+        // manager's mobile"), and a value is as private as the contact it
+        // sits on. Neither has any business in the shared-or-tenant group.
+        b.Entity<CustomFieldDefinition>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<CustomFieldValue>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
         b.Entity<Invoice>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<InvoiceLine>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);

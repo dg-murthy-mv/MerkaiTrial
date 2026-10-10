@@ -44,13 +44,28 @@
 //
 // The API enforces all of this again; the flags here only decide which
 // buttons render.
+//
+// 079 — CUSTOM FIELDS
+//   • "Additional details" card on the Overview tab (_OverviewTab): every
+//     active Lead custom field, plus any retired field this lead still has
+//     a value in, through the shared _CustomFieldValues partial. Numbers in
+//     the tenant's number culture, dates in the tenant's pattern and never
+//     timezone-shifted. Its Edit link shows only when this lead can be
+//     edited — update permission AND not converted, the same rule as the
+//     header's Edit button. If the field list cannot be loaded the card
+//     says so; the rest of the page still renders.
+//   • OnPostConvertToDealAsync checked the "Deals.Create" policy by string.
+//     It uses UserCanCreate(Modules.Deals) now, like ConvertToDeal.cshtml.cs.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;
 using MerkaiTrial.Admin.Web.Services.Activities;
+using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -72,6 +87,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private readonly IAuthorizationService _authorizationService;
         private readonly ILogger<DetailModel> _logger;
         private readonly ILeadStatusService _statusService;
+        private readonly ICustomFieldService _customFields;     // 079
 
         protected override string ModuleName => Modules.Leads;
 
@@ -82,9 +98,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
          ICurrentUserService currentUserService,
          ICurrentTenantService tenantService,
          ILogger<DetailModel> logger,
-         ILeadStatusService statuses)
+         ILeadStatusService statuses,
+         ICustomFieldService customFields)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _leadService = leadService;
             _activityService = activityService;
             _currentUserService = currentUserService;
@@ -162,6 +180,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         // ── Timeline ──────────────────────────────────────────────────
         public List<TimelineItemDto> Timeline { get; set; } = new();
+
+        // ── 079: custom fields ────────────────────────────────────────
+        /// <summary>Every Lead custom field, retired ones included.</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Lead?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = TenantCtx.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            CanEdit      = CanUpdate && IsEditableState,
+            RecordId     = Lead?.Id ?? Guid.Empty,
+            EntityType   = CustomFieldEntityTypes.Lead,
+            EditPage     = "/Leads/Edit"
+        };
 
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
@@ -316,8 +354,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var timelineTask    = LoadTimelineAsync(tenantId, id);
                 var attachmentsTask = LoadAttachmentsAsync(tenantId, id);
                 var assigneesTask   = LoadAssigneesAsync();
+                var fieldsTask      = LoadCustomFieldsAsync();          // 079
 
-                await Task.WhenAll(notesTask, activitiesTask, timelineTask, attachmentsTask, assigneesTask);
+                await Task.WhenAll(notesTask, activitiesTask, timelineTask, attachmentsTask, assigneesTask, fieldsTask);
 
                 if (TaskInput.DueDate == default)
                     TaskInput.DueDate = _tenantService.UtcToLocal(DateTime.UtcNow)
@@ -704,8 +743,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             var permissionCheck = await ValidatePermissionAsync(Actions.Update);
             if (permissionCheck != null) return permissionCheck;
 
-            var canCreateDeal = await _authorizationService.AuthorizeAsync(User, "Deals.Create");
-            if (!canCreateDeal.Succeeded)
+            // 079 — the module constant, not the "Deals.Create" string.
+            if (!UserCanCreate(Modules.Deals))
             {
                 TempData["ErrorMessage"] = "You don't have permission to create deals.";
                 return RedirectToPage(new { id });
@@ -943,7 +982,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 LoadActivitiesAsync(tenantId, id),
                 LoadTimelineAsync(tenantId, id),
                 LoadAttachmentsAsync(tenantId, id),
-                LoadAssigneesAsync());
+                LoadAssigneesAsync(),
+                LoadCustomFieldsAsync());                               // 079
+        }
+
+        /// <summary>079. Retired fields included, so a value on a switched-off field still shows.</summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                    CustomFieldEntityTypes.Lead, includeInactive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load custom fields for the lead page");
+                CustomFieldDefinitions = new();
+                CustomFieldsLoadFailed = true;
+            }
         }
 
         /// <summary>

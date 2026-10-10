@@ -20,6 +20,12 @@
    matches" — see the note on ListToolbarVm.Carry. Submitting this form
    always starts at page 1 because the field simply is not here.
 
+   ── 076: FormId ─────────────────────────────────────────────────────
+
+   When the page sets Model.FormId the form gets that id, so inputs
+   outside it (the custom field filter panel) can submit with it through
+   form="…". A null id renders no attribute at all.
+
    ── NO NESTED FORMS ─────────────────────────────────────────────────
 
    The count on the right is a span, not a control, and the Clear link is
@@ -36,7 +42,7 @@
 </style>
 
 <div class="lt-bar">
-    <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+    <form method="get" id="@Model.FormId" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
 
         @* Carried through so a search does not reset the page size or
            move the user off the tab they were on. The page number is

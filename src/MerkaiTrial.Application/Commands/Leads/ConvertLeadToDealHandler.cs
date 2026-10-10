@@ -8,9 +8,28 @@
 // A rep who can't see a lead can't convert it either — a pasted id gets
 // "not found", the same as another tenant's lead.
 //
-// Nothing else changed.
+// 079 — CUSTOM FIELDS CARRY ACROSS
+//
+//   1. Mapped lead values are copied onto the contact and the new deal
+//      (LeadFieldMapper — the mapping is set per Lead field in Settings →
+//      Custom Fields → Leads). Staged before the final SaveChangesAsync,
+//      inside the transaction, so they commit with the deal or not at all.
+//      A REUSED contact (same email, or already linked) only has its EMPTY
+//      fields filled; what is already on it is never overwritten.
+//
+//   2. ★ THE DEAL'S DESCRIPTION NO LONGER FALLS BACK TO
+//      lead.CustomFieldsJson. When nobody typed a description, the old
+//      line `Description = dto.Description ?? lead.CustomFieldsJson`
+//      dropped the lead's raw JSON blob into the deal — text a customer
+//      could see on anything printed from the deal. Custom fields travel
+//      through the mapping now; an empty description stays empty.
+//
+//   3. The LeadConverted audit row records how many values were copied,
+//      and a contact CREATED here gets its own ContactCreated row (078b),
+//      as the deal already got DealCreated.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;     // 079
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
@@ -248,7 +267,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ContactId = contactId,
                     LeadId = dto.LeadId,
                     Title = dto.DealTitle,
-                    Description = dto.Description ?? lead.CustomFieldsJson,
+                    Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),   // 079 — note 2
                     Stage = dealStage,
                     ExpectedValue = dto.ExpectedValue,
                     Currency = currency,
@@ -280,6 +299,13 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (companyId.HasValue)
                     lead.ConvertedToCompanyId = companyId;
 
+                // ── STEP 5b (079): CARRY MAPPED CUSTOM FIELDS ACROSS ──────
+                // Onto the contact (filling blanks only if it already
+                // existed) and onto the new deal. Staged; saved below.
+                var copied = await LeadFieldMapper.CopyAsync(
+                    _db, dto.TenantId, lead.Id, contactId, contactWasCreated, deal.Id,
+                    dto.ConvertedBy ?? currentUser.FullName);
+
                 // ── STEP 6: SAVE ──────────────────────────────────────────────
 
                 await _db.SaveChangesAsync();
@@ -299,7 +325,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                         contactId,
                         companyId,
                         contactWasCreated,
-                        companyWasCreated
+                        companyWasCreated,
+                        customFieldsToContact = copied.ToContact,     // 079
+                        customFieldsToDeal    = copied.ToDeal
                     });
 
                 await _audit.WriteAsync(
@@ -312,6 +340,21 @@ namespace MerkaiTrial.Application.Commands.Leads
                         currency = deal.Currency,
                         fromLeadId = lead.Id
                     });
+
+                // 079 — a contact created here is a new record too (078b).
+                if (contactWasCreated)
+                {
+                    try
+                    {
+                        await _audit.WriteAsync(
+                            AuditAction.ContactCreated, AuditEntityType.Contact, contactId, dto.TenantId,
+                            new { name = lead.FullName, companyId, fromLeadId = lead.Id });
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogError(auditEx, "Contact {Id} was created by conversion but its audit row could not be written", contactId);
+                    }
+                }
 
                 _logger.LogInformation(
                     "Lead conversion complete: LeadId={LeadId} → DealId={DealId} ContactId={ContactId} CompanyId={CompanyId}",
@@ -326,6 +369,11 @@ namespace MerkaiTrial.Application.Commands.Leads
                     (false, true) => "Lead converted. New company created and linked to contact.",
                     _ => "Lead converted successfully."
                 };
+
+                // 079 — say so when details came across; it is the first
+                // thing a person checks on the new deal.
+                if (copied.Total > 0)
+                    message += $" {copied.Total} additional detail{(copied.Total == 1 ? "" : "s")} carried over.";
 
                 return new ConvertLeadToDealResultDto
                 {

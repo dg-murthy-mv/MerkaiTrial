@@ -16,6 +16,11 @@
        and "Won", so a tenant's own "Contract Signed" never showed it.
      • the Tasks tab button was not wrapped in <li class="nav-item">,
        which put it outside the tab list in the markup.
+
+   (077) "Additional details" — the deal's custom fields — sits above the
+   tabs, through the shared _CustomFieldValues partial (the contact page
+   uses the same one). It draws nothing when there are no fields and the
+   viewer cannot add any.
 *@
 
 <div class="container-fluid py-4">
@@ -117,6 +122,9 @@
     <!-- Main Content -->
     <div class="row">
         <div class="col-lg-8">
+
+            @* 077 — custom fields. *@
+            <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
 
             <!-- Tabs -->
             <ul class="nav nav-tabs mb-4" id="dealDetailTabs" role="tablist">

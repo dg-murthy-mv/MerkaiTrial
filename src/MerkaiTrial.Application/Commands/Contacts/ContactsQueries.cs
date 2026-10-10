@@ -6,9 +6,24 @@
 //   Bug 3 — DealCount now queries Deals table (was hardcoded 0)
 //   Bug 4 — ActiveCompanies counts companies that have contacts (was all companies)
 //   Bug 6 — GetContactLookupHandler added (flat list for dropdowns)
+//
+// 075 — GetContactByIdHandler also returns the contact's custom field
+//   values (ContactDto.CustomFieldValues), read through
+//   CustomFieldValueWriter.ReadAsync so the wire format has one author.
+//
+// 076 — GetContactsHandler: custom fields in search, custom field
+//   filters, list-column values, and the page size clamped server-side.
+//   The full note is above the handler.
+//
+// 077 — the custom field search, filter and column code moved into the
+//   shared CustomFieldListQuery, so the Deals list uses the SAME code.
+//   Behaviour is unchanged from 076.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +31,34 @@ using Microsoft.EntityFrameworkCore;
 namespace MerkaiTrial.Application.Commands.Contacts
 {
     // ==================== GET CONTACTS (PAGINATED) ====================
+    //
+    // 076 — CUSTOM FIELDS ON THE LIST (custom fields, Round B)
+    //
+    //   1. SEARCH also matches the contact's custom TEXT values, and the
+    //      LABELS of dropdown choices ("Gold" finds every contact whose
+    //      Licence tier is Gold, although the row stores a key).
+    //
+    //   2. FILTERS: CustomFilters, ANDed, one EXISTS subquery each against
+    //      CustomFieldValues — the reason values live in their own typed
+    //      table rather than a JSON column (see CustomField.cs). Numbers
+    //      compare as numbers and dates as dates, through filtered indexes.
+    //
+    //      A filter on a field that is unknown, deleted, switched off, of
+    //      another entity type, or with an operator that does not fit the
+    //      type, is DROPPED rather than refused. It is a filter, not a
+    //      write: a bookmarked URL that mentions a since-deleted field
+    //      should show the list, not an error. Tenant scope is never
+    //      dropped — every subquery carries v.TenantId == request.TenantId.
+    //
+    //   3. LIST COLUMNS: after paging, ONE query fetches the values of the
+    //      ShowInList fields for the contacts on this page only.
+    //
+    //   4. PAGE SIZE IS CLAMPED HERE (1–100), not just on the Razor page.
+    //      The API is callable directly; ten thousand rows to anything that
+    //      asks is the same gap open item 2 records for /api/leads.
+    //
+    //   5. A page past the end is pulled back to the last page, so deleting
+    //      the only contact on the last page does not leave an empty table.
 
     public class GetContactsQuery : ICommandHandler
     {
@@ -25,10 +68,15 @@ namespace MerkaiTrial.Application.Commands.Contacts
         public Guid? CompanyId { get; set; }
         public string? SearchTerm { get; set; }
         public bool? IsPrimary { get; set; }
+
+        /// <summary>076. ANDed custom field conditions. Empty = none.</summary>
+        public List<CustomFieldFilter> CustomFilters { get; set; } = new();
     }
 
     public class GetContactsHandler : ICommandHandler
     {
+        public const int MaxPageSize = 100;
+
         private readonly FlowDbContext _context;
         private readonly ILogger<GetContactsHandler> _logger;
 
@@ -44,9 +92,18 @@ namespace MerkaiTrial.Application.Commands.Contacts
         {
             try
             {
+                var tenantId = request.TenantId;
+                var pageSize = Math.Clamp(request.PageSize, 1, MaxPageSize);
+                var page     = Math.Max(request.PageNumber, 1);
+
+                // The ACTIVE custom fields for Contacts — needed for search,
+                // filters and columns. One small query. (077: shared helper.)
+                var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                    _context, tenantId, CustomFieldEntityTypes.Contact, cancellationToken);
+
                 var query = _context.Contacts
                     .AsNoTracking()
-                    .Where(c => c.TenantId == request.TenantId && !c.IsDeleted);
+                    .Where(c => c.TenantId == tenantId && !c.IsDeleted);
 
                 if (request.CompanyId.HasValue)
                     query = query.Where(c => c.CompanyId == request.CompanyId.Value);
@@ -54,26 +111,59 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 if (request.IsPrimary.HasValue)
                     query = query.Where(c => c.IsPrimary == request.IsPrimary.Value);
 
-                if (!string.IsNullOrEmpty(request.SearchTerm))
+                // ── 1. SEARCH ────────────────────────────────────────────
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                 {
-                    var search = request.SearchTerm.ToLower();
-                    query = query.Where(c =>
-                        c.FirstName.ToLower().Contains(search) ||
-                        (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
-                        (c.Email     != null && c.Email.ToLower().Contains(search)) ||
-                        (c.Phone     != null && c.Phone.Contains(search)) ||
-                        (c.Mobile    != null && c.Mobile.Contains(search)));
+                    var search = request.SearchTerm.Trim().ToLower();
+
+                    // Custom text values and dropdown choice labels (077:
+                    // CustomFieldListQuery). Null = no field could match.
+                    var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, search);
+
+                    if (cfMatches is null)
+                    {
+                        query = query.Where(c =>
+                            c.FirstName.ToLower().Contains(search) ||
+                            (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
+                            (c.Email     != null && c.Email.ToLower().Contains(search)) ||
+                            (c.Phone     != null && c.Phone.Contains(search)) ||
+                            (c.Mobile    != null && c.Mobile.Contains(search)));
+                    }
+                    else
+                    {
+                        query = query.Where(c =>
+                            c.FirstName.ToLower().Contains(search) ||
+                            (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
+                            (c.Email     != null && c.Email.ToLower().Contains(search)) ||
+                            (c.Phone     != null && c.Phone.Contains(search)) ||
+                            (c.Mobile    != null && c.Mobile.Contains(search)) ||
+                            cfMatches.Contains(c.Id));
+                    }
+                }
+
+                // ── 2. CUSTOM FIELD FILTERS ──────────────────────────────
+                foreach (var clause in CustomFieldListQuery.FilterClauses(_context, tenantId, defs, request.CustomFilters))
+                {
+                    // A local, so EF inlines the subquery (see CustomFieldListQuery).
+                    var ids = clause.EntityIds;
+                    query = clause.Exclude
+                        ? query.Where(c => !ids.Contains(c.Id))
+                        : query.Where(c => ids.Contains(c.Id));
                 }
 
                 var totalCount = await query.CountAsync(cancellationToken);
 
+                // ── 5. a page past the end → the last page ───────────────
+                var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
+                if (page > totalPages) page = totalPages;
+
                 // ✅ BUG 3 FIX: subquery for real DealCount per contact
                 var contacts = await query
-                    .Include(c => c.Company)
                     .OrderBy(c => c.FirstName)
                     .ThenBy(c => c.LastName)
-                    .Skip((request.PageNumber - 1) * request.PageSize)
-                    .Take(request.PageSize)
+                    .ThenBy(c => c.Id)                 // 076 — a stable order, so paging never repeats or skips a row
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
                     .Select(c => new ContactListItem
                     {
                         Id          = c.Id,
@@ -94,14 +184,22 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     })
                     .ToListAsync(cancellationToken);
 
+                // ── 3. LIST COLUMN VALUES, this page only ────────────────
+                var listValues = await CustomFieldListQuery.ListValuesAsync(
+                    _context, tenantId, defs, contacts.Select(c => c.Id).ToList(), cancellationToken);
+
+                foreach (var c in contacts)
+                    if (listValues.TryGetValue(c.Id, out var map))
+                        c.CustomFieldValues = map;
+
                 _logger.LogInformation("Found {Count} contacts (Total: {Total})",
                     contacts.Count, totalCount);
 
                 return new PaginatedResult<ContactListItem>
                 {
                     Items      = contacts,
-                    Page       = request.PageNumber,
-                    PageSize   = request.PageSize,
+                    Page       = page,
+                    PageSize   = pageSize,
                     TotalCount = totalCount
                 };
             }
@@ -190,6 +288,10 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 var dealCount = await _context.Deals
                     .CountAsync(d => d.ContactId == contact.Id && !d.IsDeleted, cancellationToken);
 
+                // 075 — custom field values, in the wire shape.
+                var customFieldValues = await CustomFieldValueWriter.ReadAsync(
+                    _context, request.TenantId, CustomFieldEntityTypes.Contact, contact.Id, cancellationToken);
+
                 return new ContactDto
                 {
                     Id           = contact.Id,
@@ -213,7 +315,8 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     CreatedAtUtc = contact.CreatedAtUtc,
                     CreatedBy    = contact.CreatedBy,
                     UpdatedAtUtc = contact.UpdatedAtUtc,
-                    UpdatedBy    = contact.UpdatedBy
+                    UpdatedBy    = contact.UpdatedBy,
+                    CustomFieldValues = customFieldValues   // 075
                 };
             }
             catch (Exception ex)

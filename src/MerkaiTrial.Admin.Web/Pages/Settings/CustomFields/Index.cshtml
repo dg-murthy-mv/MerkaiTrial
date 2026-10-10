@@ -1,0 +1,523 @@
+@page
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Settings.CustomFields.IndexModel
+@{
+    ViewData["Title"] = "Custom Fields";
+
+    // Adding wins over editing, matching the page model. Two forms on the
+    // page at once would duplicate every input id in them.
+    var adding  = Model.IsAdding && Model.CanCreate && !Model.LoadFailed;
+    var editing = adding ? Guid.Empty : (Model.EditId ?? Guid.Empty);
+}
+@* =====================================================================
+   Settings/CustomFields/Index.cshtml — NEW (075).
+
+   Under the tenant shell (Pages/_ViewStart → "_Layout", light theme).
+
+   Messages after a redirect are rendered by _Layout from TempData, once.
+   This page renders only Model.PageError — the message for a request
+   that RENDERS (a failed save that keeps the form open). It never
+   renders TempData itself: that is how two identical banners happen.
+   No auto-dismiss timer here either; the layout owns that.
+
+   The form is one partial-free block used for both add and edit, because
+   the two differ only in whether the type can be chosen. The type is
+   FIXED once a field exists — changing "number" to "date" would orphan
+   every stored value — so on edit it is shown, not offered.
+   ===================================================================== *@
+
+<style>
+    .cf-head { display:flex; align-items:flex-start; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+
+    .cf-tabs .nav-link { display:flex; align-items:center; gap:.4rem; }
+    .cf-tabs .nav-link.disabled { color:#94a3b8; }
+
+    .cf-row { border:1px solid #e5e8ec; border-radius:10px; background:#fff; padding:.7rem .9rem; margin-bottom:.55rem; }
+    .cf-row.inactive { background:#fbfcfd; }
+    .cf-row.inactive .cf-name { color:#64748b; }
+    .cf-row.editing { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.1); }
+
+    .cf-ico { width:2.3rem; height:2.3rem; border-radius:9px; flex-shrink:0;
+              display:flex; align-items:center; justify-content:center;
+              background:#eef2ff; color:#4f46e5; font-size:1.05rem; }
+    .cf-row.inactive .cf-ico { background:#f1f5f9; color:#94a3b8; }
+
+    .cf-name { font-weight:600; }
+    .cf-meta { font-size:.78rem; color:#94a3b8; }
+
+    .cf-ord { --bs-btn-padding-y:.1rem; --bs-btn-padding-x:.35rem; line-height:1; }
+
+    /* Type picker: cards, because the description is what helps somebody
+       choose between "Text" and "Dropdown". */
+    .cf-types { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:.5rem; }
+    .cf-types input { position:absolute; opacity:0; width:0; height:0; }
+    .cf-types label { display:block; height:100%; cursor:pointer; margin:0;
+                      border:1px solid #e5e8ec; border-radius:9px; padding:.55rem .65rem; background:#fff; }
+    .cf-types label:hover { border-color:#c7cdd4; }
+    .cf-types label strong { display:flex; align-items:center; gap:.4rem; font-size:.88rem; }
+    .cf-types label span { display:block; font-size:.74rem; color:#64748b; margin-top:.15rem; line-height:1.3; }
+    .cf-types input:checked + label { border-color:#4f46e5; box-shadow:0 0 0 2px rgba(79,70,229,.15); }
+    .cf-types input:focus-visible + label { outline:2px solid #4f46e5; outline-offset:2px; }
+
+    .cf-opt { display:flex; align-items:center; gap:.5rem; margin-bottom:.4rem; }
+    .cf-opt .form-control { flex:1 1 auto; }
+    .cf-opt label { white-space:nowrap; }
+
+    .cf-empty { padding:2rem 1rem; text-align:center; color:#94a3b8; }
+    .cf-empty i { font-size:2rem; color:#d7dde3; display:block; margin-bottom:.5rem; }
+
+    .cf-aside { background:#f8fafc; border:1px solid #e5e8ec; border-radius:10px; padding:1rem 1.1rem; }
+    .cf-aside h6 { font-size:.82rem; text-transform:uppercase; letter-spacing:.05em; color:#64748b; }
+    .cf-aside p { font-size:.85rem; color:#475569; margin-bottom:.6rem; }
+</style>
+
+<div class="cf-head">
+    <div class="flex-grow-1">
+        <h2 class="mb-1"><i class="bi bi-ui-checks-grid text-primary"></i> Custom fields</h2>
+        <p class="text-muted mb-0">
+            Record what your business needs that Merkai does not ask for out of the box —
+            a renewal date, a licence tier, a customer's GST status.
+        </p>
+    </div>
+    @if (Model.CanCreate && !adding && !Model.LoadFailed)
+    {
+        @if (Model.AtLimit)
+        {
+            <button type="button" class="btn btn-outline-secondary" disabled
+                    title="The most you can have is @Model.MaxFields. Delete one you no longer use first.">
+                <i class="bi bi-lock me-1"></i>Limit reached
+            </button>
+        }
+        else
+        {
+            <a asp-page="./Index" asp-all-route-data="@Model.StateRoute(adding: true)" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>Add field
+            </a>
+        }
+    }
+</div>
+
+@* ── Which kind of record ─────────────────────────────────────────── *@
+<ul class="nav nav-tabs cf-tabs mb-3">
+    @foreach (var entity in Model.PlannedEntities)
+    {
+        var enabled = Model.IsEntityEnabled(entity);
+        <li class="nav-item">
+            @if (enabled)
+            {
+                <a class="nav-link @(entity == Model.ActiveEntity ? "active" : "")"
+                   asp-page="./Index" asp-route-entity="@entity">
+                    <i class="bi @CustomFieldEntityTypes.Icon(entity)"></i>
+                    @CustomFieldEntityTypes.PluralLabel(entity)
+                </a>
+            }
+            else
+            {
+                <span class="nav-link disabled" aria-disabled="true"
+                      title="Custom fields on @CustomFieldEntityTypes.PluralLabel(entity).ToLowerInvariant() are coming in a later update.">
+                    <i class="bi @CustomFieldEntityTypes.Icon(entity)"></i>
+                    @CustomFieldEntityTypes.PluralLabel(entity)
+                    <span class="badge bg-light text-muted border">Coming soon</span>
+                </span>
+            }
+        </li>
+    }
+</ul>
+
+@if (!string.IsNullOrEmpty(Model.PageError))
+{
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.PageError</span>
+    </div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-8">
+
+        @* ── ADD FORM ──────────────────────────────────────────────── *@
+        @if (adding)
+        {
+            <form method="post" asp-page-handler="Add" class="cf-row editing" id="cfForm">
+                <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <strong><i class="bi bi-plus-circle me-1 text-primary"></i>New field on @Model.NounPlural</strong>
+                    <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                       class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
+                </div>
+
+                <label class="form-label">Type</label>
+                <div class="cf-types mb-3" role="radiogroup" aria-label="Field type">
+                    @foreach (var t in Model.FieldTypes)
+                    {
+                        var typeId = "cfType_" + t;
+                        <input type="radio" name="Input.FieldType" id="@typeId" value="@t"
+                               checked="@(Model.Input.FieldType == t)" data-cf-type />
+                        <label for="@typeId">
+                            <strong><i class="bi @CustomFieldTypes.Icon(t)"></i>@CustomFieldTypes.DisplayName(t)</strong>
+                            <span>@CustomFieldTypes.Description(t)</span>
+                        </label>
+                    }
+                </div>
+                <small class="text-muted d-block mb-3">
+                    The type cannot be changed later — the values people enter depend on it.
+                </small>
+
+                <partial name="_FieldSettings" model="Model" />
+
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-check-lg me-1"></i>Add field
+                    </button>
+                    <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                       class="btn btn-outline-secondary btn-sm">Cancel</a>
+                </div>
+            </form>
+        }
+
+        @if (Model.LoadFailed)
+        {
+            <div class="cf-empty">
+                <i class="bi bi-cloud-slash"></i>
+                <div>Your custom fields could not be loaded.</div>
+                <div class="small"><a asp-page="./Index" asp-route-entity="@Model.ActiveEntity">Try again</a></div>
+            </div>
+        }
+        else if (!Model.Fields.Any() && !adding)
+        {
+            <div class="cf-empty">
+                <i class="bi bi-ui-checks-grid"></i>
+                <div>No custom fields on @Model.NounPlural yet.</div>
+                @if (Model.CanCreate)
+                {
+                    <div class="small">
+                        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute(adding: true)">Add your first field</a>
+                        and it appears on every @Model.Noun form straight away.
+                    </div>
+                }
+            </div>
+        }
+
+        @foreach (var f in Model.Fields)
+        {
+            var isEditing = editing == f.Id && Model.CanUpdate;
+
+            if (isEditing)
+            {
+                <form method="post" asp-page-handler="Save" class="cf-row editing" id="cfForm">
+                    <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+                    <input type="hidden" name="Input.Id" value="@f.Id" />
+                    @* The type travels so the form shows the right sections
+                       after a failed save. The server ignores it on update. *@
+                    <input type="hidden" name="Input.FieldType" value="@f.FieldType" data-cf-type-fixed="@f.FieldType" />
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <strong>
+                            <i class="bi bi-pencil me-1 text-primary"></i>Editing &ldquo;@f.Label&rdquo;
+                            <span class="badge bg-light text-dark border ms-1">
+                                <i class="bi @CustomFieldTypes.Icon(f.FieldType) me-1"></i>@CustomFieldTypes.DisplayName(f.FieldType)
+                            </span>
+                        </strong>
+                        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                           class="btn btn-sm btn-link text-muted text-decoration-none">Cancel</a>
+                    </div>
+
+                    @if (f.ValueCount > 0)
+                    {
+                        <div class="alert alert-info py-2 px-3 small d-flex gap-2 align-items-start mb-3">
+                            <i class="bi bi-info-circle-fill mt-1"></i>
+                            <div>
+                                <strong>Filled in on @f.ValueCount @(f.ValueCount == 1 ? Model.Noun : Model.Noun + "s").</strong>
+                                Renaming the field keeps every value.
+                                @if (f.FieldType == CustomFieldTypes.Dropdown)
+                                {
+                                    <text>Renaming a choice updates it everywhere; removing a choice somebody has picked keeps it for them, marked retired.</text>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <partial name="_FieldSettings" model="Model" />
+
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-check-lg me-1"></i>Save changes
+                        </button>
+                        <a asp-page="./Index" asp-all-route-data="@Model.StateRoute()"
+                           class="btn btn-outline-secondary btn-sm">Cancel</a>
+                    </div>
+                </form>
+            }
+            else
+            {
+                <div class="cf-row @(f.IsActive ? "" : "inactive")">
+                    <div class="d-flex align-items-center gap-3">
+
+                        @if (Model.CanUpdate)
+                        {
+                            <div class="d-flex flex-column gap-1">
+                                <form method="post" asp-page-handler="Move" asp-route-id="@f.Id" asp-route-direction="up">
+                                    <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary cf-ord"
+                                            title="Move up" aria-label="Move @f.Label up" disabled="@Model.IsFirst(f.Id)">
+                                        <i class="bi bi-chevron-up"></i>
+                                    </button>
+                                </form>
+                                <form method="post" asp-page-handler="Move" asp-route-id="@f.Id" asp-route-direction="down">
+                                    <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary cf-ord"
+                                            title="Move down" aria-label="Move @f.Label down" disabled="@Model.IsLast(f.Id)">
+                                        <i class="bi bi-chevron-down"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        }
+
+                        <div class="cf-ico"><i class="bi @CustomFieldTypes.Icon(f.FieldType)"></i></div>
+
+                        <div class="flex-grow-1" style="min-width:0;">
+                            <div class="cf-name">
+                                @f.Label
+                                @if (f.IsRequired)
+                                {
+                                    <span class="badge bg-warning-subtle text-warning-emphasis border ms-1">Required</span>
+                                }
+                                @if (!f.IsActive)
+                                {
+                                    <span class="badge bg-secondary ms-1">Off</span>
+                                }
+                                @if (f.ShowInList && f.IsActive)
+                                {
+                                    <span class="badge bg-info-subtle text-info-emphasis border ms-1"
+                                          title="Shown as a column on the @Model.Noun list">
+                                        <i class="bi bi-layout-three-columns me-1"></i>On list
+                                    </span>
+                                }
+                            </div>
+                            <div class="cf-meta">
+                                @CustomFieldTypes.DisplayName(f.FieldType)
+                                @if (f.FieldType == CustomFieldTypes.Dropdown)
+                                {
+                                    var activeChoices = f.Options.Count(o => o.IsActive);
+                                    <text>&nbsp;·&nbsp; @activeChoices @(activeChoices == 1 ? "choice" : "choices")</text>
+                                }
+                                @if (f.FieldType == CustomFieldTypes.Number && f.DecimalPlaces > 0)
+                                {
+                                    <text>&nbsp;·&nbsp; @f.DecimalPlaces decimal @(f.DecimalPlaces == 1 ? "place" : "places")</text>
+                                }
+                                &nbsp;·&nbsp;
+                                @if (f.ValueCount == 0)
+                                {
+                                    <text>Not used yet</text>
+                                }
+                                else
+                                {
+                                    <text>Filled in on @f.ValueCount @(f.ValueCount == 1 ? Model.Noun : Model.Noun + "s")</text>
+                                }
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(f.HelpText))
+                            {
+                                <div class="cf-meta text-truncate" title="@f.HelpText">“@f.HelpText”</div>
+                            }
+                        </div>
+
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            @if (Model.CanUpdate)
+                            {
+                                <a asp-page="./Index" asp-all-route-data="@Model.StateRoute(editId: f.Id)"
+                                   class="btn btn-sm btn-outline-primary" title="Edit" aria-label="Edit @f.Label">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+
+                                <form method="post" asp-page-handler="Toggle" asp-route-id="@f.Id">
+                                    <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+                                    <button type="submit"
+                                            class="btn btn-sm @(f.IsActive ? "btn-outline-secondary" : "btn-outline-success")"
+                                            title="@(f.IsActive ? "Switch off — hide from forms, keep the values" : "Switch back on")"
+                                            aria-label="@(f.IsActive ? "Switch off" : "Switch on") @f.Label">
+                                        <i class="bi @(f.IsActive ? "bi-toggle-on" : "bi-toggle-off")"></i>
+                                    </button>
+                                </form>
+                            }
+                            @if (Model.CanDelete)
+                            {
+                                if (f.ValueCount == 0)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger"
+                                            title="Delete" aria-label="Delete @f.Label"
+                                            data-bs-toggle="modal" data-bs-target="#cfDelete-@f.Id">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    @* Disabled with a reason, not hidden: a missing
+                                       button reads as a permissions problem. *@
+                                    <span class="d-inline-block" tabindex="0"
+                                          title="Filled in on @f.ValueCount @(f.ValueCount == 1 ? Model.Noun : Model.Noun + "s") — switch it off instead.">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" disabled>
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </span>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @if (Model.CanDelete && f.ValueCount == 0)
+                {
+                    <div class="modal fade" id="cfDelete-@f.Id" tabindex="-1"
+                         aria-labelledby="cfDeleteLabel-@f.Id" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@f.Id" class="modal-content">
+                                <input type="hidden" name="entity" value="@Model.ActiveEntity" />
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="cfDeleteLabel-@f.Id">Delete &ldquo;@f.Label&rdquo;?</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p class="mb-0">
+                                        No @Model.Noun has a value in this field, so nothing is lost.
+                                        It disappears from every @Model.Noun form. You can add a field
+                                        with the same name again later.
+                                    </p>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                    <button type="submit" class="btn btn-danger">
+                                        <i class="bi bi-trash me-1"></i>Delete field
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                }
+            }
+        }
+    </div>
+
+    <div class="col-lg-4">
+        <div class="cf-aside">
+            <h6 class="mb-2">How these work</h6>
+            <p>
+                Fields appear in an <strong>Additional details</strong> section on the
+                @Model.Noun form and page, in the <strong>order</strong> set here.
+            </p>
+            <p>
+                <strong>Everybody who can see @Model.NounPlural</strong> sees these fields, and
+                everybody who can edit @Model.NounPlural can fill them in. Only people with
+                settings access can change the list itself.
+            </p>
+            <p>
+                <strong>Switching a field off</strong> hides it from forms and keeps every value
+                already recorded — the safe way to retire something. A field can only be
+                <strong>deleted</strong> while nobody has filled it in.
+            </p>
+            <p class="mb-0">
+                Dates are calendar dates and never shift between time zones. Numbers and dates
+                show in your workspace's own format.
+            </p>
+        </div>
+
+        @if (!Model.LoadFailed)
+        {
+            <div class="cf-aside mt-3">
+                <h6 class="mb-2">Fields on @Model.NounPlural</h6>
+                @{
+                    var pct = AuthorizedPageModel.QuotaPercent(Model.Fields.Count, Model.MaxFields);
+                    var bar = AuthorizedPageModel.QuotaBarClass(Model.Fields.Count, Model.MaxFields);
+                }
+                <div class="progress mb-2" style="height:6px;" role="progressbar"
+                     aria-valuenow="@Model.Fields.Count" aria-valuemin="0" aria-valuemax="@Model.MaxFields">
+                    <div class="progress-bar @bar" style="width:@pct%"></div>
+                </div>
+                <p class="mb-2 small">
+                    @Model.Fields.Count of @Model.MaxFields used, including switched-off fields.
+                </p>
+                <p class="mb-0 small">
+                    <i class="bi bi-layout-three-columns me-1"></i>
+                    @Model.ListColumnsUsed of @Model.MaxListColumns shown as list columns.
+                    <a asp-page="@Model.ListPage" class="ms-1">Open the list</a>
+                </p>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        // Type-dependent sections, and the dropdown option list.
+        //
+        // Delegated listeners on #cfForm, no inline handlers, and nothing
+        // server-provided is ever interpolated into this script: option
+        // names and labels only reach the page through Razor's encoding,
+        // and new rows are cloned from a <template>, not built from strings.
+        (function () {
+            'use strict';
+            var form = document.getElementById('cfForm');
+            if (!form) return;
+
+            function currentType() {
+                var fixed = form.querySelector('[data-cf-type-fixed]');
+                if (fixed) return fixed.getAttribute('data-cf-type-fixed');
+                var picked = form.querySelector('input[data-cf-type]:checked');
+                return picked ? picked.value : 'text';
+            }
+
+            function applyType() {
+                var type = currentType();
+                form.querySelectorAll('[data-cf-show]').forEach(function (el) {
+                    el.hidden = el.getAttribute('data-cf-show').split(' ').indexOf(type) < 0;
+                });
+            }
+
+            // Give every option row a contiguous index, in on-screen order,
+            // so the model binder sees Options[0], Options[1], ... with no
+            // gaps — a gap stops binding at that point and silently drops
+            // every row after it.
+            function reindex() {
+                form.querySelectorAll('[data-cf-opt]').forEach(function (row, i) {
+                    row.querySelectorAll('[data-cf-name]').forEach(function (el) {
+                        el.name = 'Input.Options[' + i + '].' + el.getAttribute('data-cf-name');
+                    });
+                });
+            }
+
+            form.addEventListener('change', function (e) {
+                if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-cf-type')) applyType();
+            });
+
+            form.addEventListener('click', function (e) {
+                var add = e.target.closest ? e.target.closest('[data-cf-add-option]') : null;
+                if (add) {
+                    e.preventDefault();
+                    var tpl = document.getElementById('cfOptTemplate');
+                    var list = form.querySelector('[data-cf-options]');
+                    if (!tpl || !list) return;
+                    var row = tpl.content.firstElementChild.cloneNode(true);
+                    list.appendChild(row);
+                    reindex();
+                    var input = row.querySelector('input[type=text]');
+                    if (input) input.focus();
+                    return;
+                }
+
+                var remove = e.target.closest ? e.target.closest('[data-cf-remove-option]') : null;
+                if (remove) {
+                    e.preventDefault();
+                    var r = remove.closest('[data-cf-opt]');
+                    if (r) r.remove();
+                    reindex();
+                }
+            });
+
+            form.addEventListener('submit', reindex);
+
+            applyType();
+            reindex();
+        })();
+    </script>
+}

@@ -7,9 +7,20 @@
 //   Bug 5 — tenantId param removed from methods where it was unused
 //           (controller resolves tenant server-side via ICurrentUserService)
 //   Bug 6 — GetCompaniesLookupAsync added, calls /api/contacts/companies-lookup
+//
+// 075 — Create and Update let an InvalidOperationException through
+//   WITHOUT logging it as an error. That is how the API's 400
+//   { error: "Renewal date must be a valid date." } arrives (IApiService
+//   converts it), and a person leaving a required field empty is not a
+//   system fault worth an ERROR line. The page shows the sentence.
+//
+// 076 — GetAllAsync takes optional custom field filters, sent as
+//   repeated ?cf= values. Optional and last, so every existing caller is
+//   unchanged.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Contacts
@@ -22,7 +33,8 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
             int pageSize = 10,
             Guid? companyId = null,
             string? searchTerm = null,
-            bool? isPrimary = null);
+            bool? isPrimary = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 076
 
         Task<ContactStatsDto> GetStatsAsync(Guid tenantId);
 
@@ -60,7 +72,8 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
             int pageSize = 10,
             Guid? companyId = null,
             string? searchTerm = null,
-            bool? isPrimary = null)
+            bool? isPrimary = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null)
         {
             try
             {
@@ -75,7 +88,11 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
                 if (!string.IsNullOrWhiteSpace(searchTerm))
                     queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm)}");
                 if (isPrimary.HasValue)
-                    queryParams.Add($"isPrimary={isPrimary.Value}");
+                    queryParams.Add($"isPrimary={isPrimary.Value.ToString().ToLowerInvariant()}");
+
+                // 076 — escaped as a whole: the value part is free text.
+                foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
+                    queryParams.Add($"cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}");
 
                 var query = string.Join("&", queryParams);
                 return await _api.GetAsync<PaginatedResult<ContactListItem>>($"/api/contacts?{query}");
@@ -185,6 +202,10 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
                 throw new InvalidOperationException(
                     "You have reached your plan's contact limit. Upgrade your plan to add more contacts.", ex);
             }
+            catch (InvalidOperationException)
+            {
+                throw;   // 075 — a sentence for the person; see header
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating contact");
@@ -203,6 +224,10 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
             catch (HttpRequestException ex) when (ex.Message.Contains("NotFound"))
             {
                 throw new KeyNotFoundException($"Contact {id} not found");
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // 075 — a sentence for the person; see header
             }
             catch (Exception ex)
             {

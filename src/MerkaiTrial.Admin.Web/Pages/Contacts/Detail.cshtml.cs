@@ -7,16 +7,54 @@
 // BUG 3 FIX (unchanged from before): ContactDeals loaded via
 // IDealService.GetByContactAsync(), replacing the hardcoded
 // "coming soon" placeholder in the view.
+//
+// 075 — CUSTOM FIELDS, AND THE STAGED FIXES FROM THE 074d REVIEW
+//
+//   1. "Additional details" card: every active custom field, plus any
+//      retired field this contact still has a value in, through the
+//      shared _CustomFieldValues partial. Numbers in the tenant's number
+//      culture, dates in the tenant's date pattern and NEVER shifted by
+//      timezone.
+//
+//   2. FormatDate / FormatDateTime / FormatCurrency(decimal) are GONE.
+//      They were second copies of what AuthorizedPageModel already
+//      provides, tenant-aware. (They did compile: overload resolution
+//      drops the one-argument copy for a two-argument call and finds the
+//      base FormatCurrency(decimal, int?). But two copies drift.)
+//
+//   3. CurrencySymbol and CurrencyCode are gone too. They hid the base
+//      class's properties of the same name (warning CS0108), and nothing
+//      read them; the layout reads the base ones.
+//
+//   4. ResolveCountryName's hardcoded table of fourteen countries is
+//      gone. The name comes from the Countries table via ICountryService,
+//      the way Companies/Detail does it.
+//
+//   5. THE DELETE FAILURE PATH. It set a [TempData] ErrorMessage and
+//      returned Page() — so the message appeared on the NEXT page, not
+//      this one — without calling InitializePermissionsAsync, so the
+//      Edit and Delete buttons vanished from that render, and with
+//      ContactDeals never loaded. It now redirects back to this page
+//      with the message in TempData, and the GET builds everything
+//      properly. One code path for rendering the page, not two.
+//
+//   6. Delete is confirmed in a Bootstrap modal, not confirm(). The old
+//      confirm() put the contact's name inside a JavaScript string in the
+//      page: a name with an apostrophe ("O'Brien") arrived HTML-encoded
+//      inside script and showed as &#x27; in the dialog.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages.Shared;
 using MerkaiTrial.Admin.Web.Services.Contacts;
+using MerkaiTrial.Admin.Web.Services.Countries;
+using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Deals;   // ContactDealItem
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
-using MerkaiTrial.Application.Services.Tenants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -25,16 +63,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
 {
     public class DetailModel : AuthorizedPageModel
     {
-        private readonly IContactService       _contactService;
-        private readonly IDealService          _dealService;       // ✅ BUG 3
-        private readonly ICurrentTenantService _tenantService;
+        private readonly IContactService     _contactService;
+        private readonly IDealService        _dealService;       // ✅ BUG 3
+        private readonly ICountryService     _countryService;    // 075
+        private readonly ICustomFieldService _customFields;      // 075
 
         protected override string ModuleName => Modules.Contacts;
 
         public DetailModel(
             IContactService         contactService,
             IDealService            dealService,                   // ✅ BUG 3
-            ICurrentTenantService   tenantService,
+            ICountryService         countryService,
+            ICustomFieldService     customFields,
             IAuthorizationService   authorizationService,
             ICurrentUserService     currentUserService,
             ILogger<DetailModel>    logger)
@@ -42,7 +82,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         {
             _contactService = contactService;
             _dealService    = dealService;                          // ✅ BUG 3
-            _tenantService  = tenantService;
+            _countryService = countryService;
+            _customFields   = customFields;
         }
 
         public ContactDto Contact { get; set; } = null!;
@@ -50,13 +91,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         // ✅ BUG 3: real deals for this contact
         public List<ContactDealItem> ContactDeals { get; set; } = new();
 
-        // Tenant
-        public string CurrencySymbol { get; private set; } = string.Empty;
-        public string CurrencyCode { get; private set; } = string.Empty;
-        public string TenantCountry { get; private set; } = string.Empty;
+        /// <summary>075. From the Countries table; the code itself if unknown.</summary>
+        public string CountryName { get; private set; } = "Not provided";
 
-        [TempData] public string? SuccessMessage { get; set; }
-        [TempData] public string? ErrorMessage { get; set; }
+        /// <summary>075. Every custom field for Contacts, retired ones included.</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>075. The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Contact?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = TenantCtx.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            CanEdit      = CanUpdate,
+            RecordId     = Contact?.Id ?? Guid.Empty,
+            EntityType   = CustomFieldEntityTypes.Contact,
+            EditPage     = "/Contacts/Edit"
+        };
 
         public async Task<IActionResult> OnGetAsync(Guid id)
         {
@@ -72,10 +127,6 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                 var tenantId = CurrentUserService.GetCurrentTenantId();
                 Contact = await _contactService.GetByIdAsync(tenantId, id);
 
-                CurrencySymbol = _tenantService.GetCurrencySymbol();
-                CurrencyCode = _tenantService.GetCurrencyCode();
-                TenantCountry = _tenantService.GetCountryName();
-
                 // ✅ BUG 3: load deals for this contact (non-fatal — don't break page if it fails)
                 try
                 {
@@ -85,6 +136,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                 {
                     Logger.LogWarning(ex, "Failed to load deals for contact {Id}", id);
                     ContactDeals = new();
+                }
+
+                // 075 — non-fatal, and says so on the page if it fails.
+                CountryName = await ContactFormOptions.CountryNameAsync(_countryService, Contact.Country, Logger);
+
+                try
+                {
+                    CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                        CustomFieldEntityTypes.Contact, includeInactive: true);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to load custom fields for contact {Id}", id);
+                    CustomFieldDefinitions = new();
+                    CustomFieldsLoadFailed = true;
                 }
 
                 return Page();
@@ -120,44 +186,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                 TempData["ErrorMessage"] = "Contact not found.";
                 return RedirectToPage("./Index");
             }
+            catch (InvalidOperationException ex)
+            {
+                // A refusal with a reason, written for the person.
+                TempData["ErrorMessage"] = ex.Message;
+                return RedirectToPage("./Detail", new { id });
+            }
             catch (Exception ex)
             {
+                // Back to the page through its own GET — see note 5.
                 Logger.LogError(ex, "Error deleting contact {Id}", id);
-                ErrorMessage = "Failed to delete contact. Please try again.";
-                var tenantId = CurrentUserService.GetCurrentTenantId();
-                Contact = await _contactService.GetByIdAsync(tenantId, id);
-                return Page();
+                TempData["ErrorMessage"] = "Failed to delete contact. Please try again.";
+                return RedirectToPage("./Detail", new { id });
             }
         }
 
         // ── VIEW HELPERS ──────────────────────────────────────────────────────
-
-        public string FormatDate(DateTime utcDate) => _tenantService.FormatDate(utcDate);
-        public string FormatDateTime(DateTime utcDate) => _tenantService.FormatDateTime(utcDate);
-        public string FormatCurrency(decimal amount) => _tenantService.FormatCurrency(amount);
-
-        public string ResolveCountryName(string? countryCode)
-        {
-            if (string.IsNullOrWhiteSpace(countryCode)) return "Not provided";
-            return countryCode.ToUpperInvariant() switch
-            {
-                "IN" => "India",
-                "TH" => "Thailand",
-                "PH" => "Philippines",
-                "AE" => "United Arab Emirates",
-                "SG" => "Singapore",
-                "MY" => "Malaysia",
-                "ID" => "Indonesia",
-                "VN" => "Vietnam",
-                "AU" => "Australia",
-                "GB" => "United Kingdom",
-                "US" => "United States",
-                "CN" => "China",
-                "JP" => "Japan",
-                "KR" => "South Korea",
-                _ => countryCode
-            };
-        }
+        // FormatDate, FormatDateTime and FormatCurrency come from
+        // AuthorizedPageModel — see note 2.
 
         public string GetDealStageBadgeClass(string stage) => stage switch
         {
@@ -170,6 +216,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             _ => "bg-secondary"
         };
 
+        /// <summary>
+        /// Plain UTC subtraction — the correct form. Both ends are UTC, so the
+        /// difference is right regardless of the tenant's timezone or any DST
+        /// change in between. (Companies/Detail now uses the same.)
+        /// </summary>
         public string GetRelativeTime(DateTime utcDateTime)
         {
             var timeSpan = DateTime.UtcNow - utcDateTime;

@@ -4,6 +4,20 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (077 — custom fields on deals)
+//  18. GET /api/deals takes repeated ?cf=<fieldId>~<op>~<value> custom
+//      field filters (CustomFieldFilterCodec), the same wire shape as
+//      /api/contacts. Capped before decoding.
+//  19. Create catches InvalidOperationException → 400 { error }. A refused
+//      custom field value — and the handler's existing "this workspace has
+//      no pipeline stages" — reached the browser as a 500 reading "Failed
+//      to create deal". The sentence was written for the person; now they
+//      see it.
+//  20. Policies.* constants instead of "Deals.Read"-style literals. They
+//      worked only because PermissionHandler compares case-insensitively;
+//      a typo in one would have denied silently. Same change 075 made on
+//      ContactsController.
+//
 // CHANGES (022 — actions on a transition)
 //  17. PUT {id}/stage returns 200 with the result of the step's actions
 //      instead of 204. The move itself is never in doubt by the time this
@@ -51,8 +65,10 @@
 //      (InvalidOperation) instead of a generic 500.
 // =====================================================================
 
+using MerkaiTrial.Application.Authorization;            // 077 — Policies.*
 using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;            // 077 — custom field filters
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
@@ -148,7 +164,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals - Get all deals for tenant with optional filters
         /// </summary>
         [HttpGet]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(typeof(IEnumerable<DealListItem>), 200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetAll(
@@ -157,11 +173,18 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] string? ownerUserId = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
+            [FromQuery(Name = "cf")] string[]? cf = null,          // 077
             CancellationToken cancellationToken = default)   // ✅ ADDED
         {
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
             try
             {
+                // 077 — custom field filters, capped before decoding.
+                var customFilters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        customFilters.Add(filter);
+
                 if (page < 1) page = 1;
                 // Was: > 100 → reset to 20, so asking for more returned LESS.
                 // Now clamps. 500 lets the Pipeline board and the dashboard
@@ -170,7 +193,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (pageSize > 500) pageSize = 500;
 
                 var result = await _getDealsHandler.HandleAsync(
-                    new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize));
+                    new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize, customFilters));
 
                 return Ok(result);
             }
@@ -185,7 +208,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id} - Get single deal detail
         /// </summary>
         [HttpGet("{id:guid}")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(typeof(DealDetailDto), 200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -220,7 +243,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals - Create new deal
         /// </summary>
         [HttpPost]
-        [Authorize(Policy = "Deals.Create")]
+        [Authorize(Policy = Policies.DealsCreate)]
         [ProducesResponseType(typeof(DealDto), 201)]
         [ProducesResponseType(400)]
         [ProducesResponseType(422)]
@@ -257,6 +280,10 @@ namespace MerkaiTrial.WebApi.Controllers
                     limit = ex.Limit
                 });
             }
+            catch (InvalidOperationException ex)                // 077 — see change 19
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating deal for tenant {TenantId}", dto.TenantId);
@@ -268,7 +295,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// PUT /api/deals/{id} - Update deal
         /// </summary>
         [HttpPut("{id:guid}")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
@@ -321,7 +348,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// DELETE /api/deals/{id} - Delete deal
         /// </summary>
         [HttpDelete("{id:guid}")]
-        [Authorize(Policy = "Deals.Delete")]
+        [Authorize(Policy = Policies.DealsDelete)]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -363,7 +390,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// message a rep sees is written once and both callers get it.
         /// </summary>
         [HttpPut("{id:guid}/stage")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(typeof(MoveDealStageResult), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
@@ -431,7 +458,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// a deal that is already closed.
         /// </summary>
         [HttpPatch("{dealId:guid}/stage")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]
         [ProducesResponseType(403)]
@@ -489,7 +516,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// way in, so a stale page cannot talk its way past a rule.
         /// </summary>
         [HttpGet("{id:guid}/transitions")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(typeof(DealTransitionsDto), 200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -518,7 +545,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id}/stage-history - Get stage change history
         /// </summary>
         [HttpGet("{id:guid}/stage-history")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetStageHistory(
@@ -545,7 +572,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/sources - Get deal sources for dropdown
         /// </summary>
         [HttpGet("sources")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetSources(
@@ -570,7 +597,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id}/notes - Get notes for a deal
         /// </summary>
         [HttpGet("{id:guid}/notes")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetNotes(
@@ -594,7 +621,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/notes - Add note to deal
         /// </summary>
         [HttpPost("{id:guid}/notes")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(500)]
@@ -634,7 +661,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id}/activities - Get activities for a deal
         /// </summary>
         [HttpGet("{id:guid}/activities")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetActivities(
@@ -658,7 +685,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/activities - Add activity to deal
         /// </summary>
         [HttpPost("{id:guid}/activities")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(500)]
@@ -698,7 +725,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id}/reminders - Get reminders for a deal
         /// </summary>
         [HttpGet("{id:guid}/reminders")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetReminders(
@@ -722,7 +749,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/reminders - Add reminder to deal
         /// </summary>
         [HttpPost("{id:guid}/reminders")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(500)]
@@ -760,7 +787,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/reminders/{reminderId}/complete - Complete a reminder
         /// </summary>
         [HttpPost("{id:guid}/reminders/{reminderId:guid}/complete")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [ProducesResponseType(200)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -796,7 +823,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/{id}/attachments - Get attachments for a deal
         /// </summary>
         [HttpGet("{id:guid}/attachments")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetAttachments(
@@ -824,7 +851,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/attachments - Upload attachment to deal
         /// </summary>
         [HttpPost("{id:guid}/attachments")]
-        [Authorize(Policy = "Deals.Update")]
+        [Authorize(Policy = Policies.DealsUpdate)]
         [RequestSizeLimit(10 * 1024 * 1024)]
         [ProducesResponseType(200)]
         [ProducesResponseType(400)]
@@ -872,7 +899,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// DELETE /api/deals/{id}/attachments/{attachmentId} - Delete attachment by deal context
         /// </summary>
         [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
-        [Authorize(Policy = "Deals.Delete")]
+        [Authorize(Policy = Policies.DealsDelete)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -909,7 +936,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// DELETE /api/deals/attachments/{attachmentId} - Delete attachment direct (no deal context needed)
         /// </summary>
         [HttpDelete("attachments/{attachmentId:guid}")]
-        [Authorize(Policy = "Deals.Delete")]
+        [Authorize(Policy = Policies.DealsDelete)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
@@ -946,7 +973,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// GET /api/deals/by-contact/{contactId} - Get deals linked to a contact
         /// </summary>
         [HttpGet("by-contact/{contactId:guid}")]
-        [Authorize(Policy = "Deals.Read")]
+        [Authorize(Policy = Policies.DealsRead)]
         [ProducesResponseType(200)]
         [ProducesResponseType(500)]
         public async Task<IActionResult> GetByContact(

@@ -2,6 +2,9 @@
    OVERVIEW TAB - Basic Contact and Lead Information
    Location: MerkaiTrial.Admin.Web/Pages/Leads/_OverviewTab.cshtml
    Change: Added Vertical/Industry field in Lead Details card
+   079: "Additional details" — the workspace's Lead custom fields, through
+        the shared _CustomFieldValues partial, after Lead Details. Hidden
+        entirely when there are none and the person cannot add any.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
 
@@ -188,3 +191,6 @@
         </div>
     </div>
 </div>
+
+@* 079 — custom fields. Edit link only when the lead can be edited. *@
+<partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />

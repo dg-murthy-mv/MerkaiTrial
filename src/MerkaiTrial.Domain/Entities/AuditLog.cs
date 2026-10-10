@@ -47,7 +47,27 @@ namespace MerkaiTrial.Domain.Entities
         /// </summary>
         public const string TenantProfileUpdated = "TenantProfileUpdated";
 
+        // ── Contacts and companies ────────────────────────────────────
+        //
+        // 078b — Created and Updated join Deleted, matching the rule below
+        // ("Audited: creation, deletion … Field-level edits are audited as
+        // one row with the changed fields in Data"). Until now a contact
+        // or company could be created or rewritten with no trace at all.
+        //
+        // Data on Created: { name } plus non-personal context (company
+        // vertical/country, a contact's companyId).
+        // Data on Updated: { name, changed: ["name", "country", …] } —
+        // the NAMES of the changed fields, never their values. A contact's
+        // email and phone, or a company's tax number, must not be copied
+        // into a log many people can read (see AuditLog.Data). A change to
+        // any custom field value shows as the single name "customFields".
+        //
+        // The longest is 14 characters, inside the 32 allowed.
+        public const string ContactCreated = "ContactCreated";
+        public const string ContactUpdated = "ContactUpdated";
         public const string ContactDeleted = "ContactDeleted";
+        public const string CompanyCreated = "CompanyCreated";
+        public const string CompanyUpdated = "CompanyUpdated";
         public const string CompanyDeleted = "CompanyDeleted";
 
         public const string ProductPriceChanged = "ProductPriceChgd";
@@ -172,6 +192,20 @@ namespace MerkaiTrial.Domain.Entities
         /// appear in their list, and that is worth being able to date.
         /// </summary>
         public const string ProductCategoriesAdopted = "ProdCatsAdopted";
+
+        // ── Custom fields (075) ───────────────────────────────────────
+        //
+        // The DEFINITIONS are audited, the values are not. Adding,
+        // retiring or deleting a field changes what every record in the
+        // workspace carries, and "who added 'Credit limit' and made it
+        // required" is a question somebody will ask. A value typed into
+        // one contact is an ordinary record edit, like a phone number.
+        //
+        // Data on each: label, type, required, active — never values.
+        // The longest is 18 characters, inside the 32 allowed.
+        public const string CustomFieldCreated = "CustomFieldCreated";
+        public const string CustomFieldUpdated = "CustomFieldUpdated";
+        public const string CustomFieldDeleted = "CustomFieldDeleted";
     }
 
     public class AuditLog
@@ -231,5 +265,8 @@ namespace MerkaiTrial.Domain.Entities
 
         /// <summary>068. A row in dbo.ProductCategories.</summary>
         public const string ProductCategory = "ProductCategory";
+
+        /// <summary>075. A row in dbo.CustomFieldDefinitions.</summary>
+        public const string CustomField = "CustomField";
     }
 }

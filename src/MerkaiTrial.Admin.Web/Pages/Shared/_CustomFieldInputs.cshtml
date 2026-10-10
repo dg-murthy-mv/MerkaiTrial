@@ -1,0 +1,165 @@
+@using MerkaiTrial.Admin.Web.Pages.Shared
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Shared.CustomFieldFormVm
+@* =====================================================================
+   Pages/Shared/_CustomFieldInputs.cshtml — NEW (075).
+
+   The custom field inputs, rendered INSIDE the record's form by both
+   Contacts/Create and Contacts/Edit (and, from round C, Companies).
+
+       <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
+
+   One partial, never two copies — see CustomFieldComponents.cs.
+
+   WHAT EACH TYPE POSTS (the invariant "wire" shape, whatever language
+   the browser is in):
+     text      the text            date      yyyy-MM-dd
+     number    1250.5              dropdown  the option KEY, never the label
+     checkbox  "true" when ticked; "false" from the hidden input otherwise
+
+   No script. Every input is a native control, so there is nothing for a
+   field label to be interpolated into: labels and help text only ever
+   reach the page through Razor's HTML encoding.
+
+   Nothing here renders a <form>; it sits inside the page's own.
+   ===================================================================== *@
+
+@if (Model.LoadFailed)
+{
+    @* Not dismissible, on purpose. Somebody who came here to change a
+       renewal date must not lose the only sentence explaining why the
+       field is missing. *@
+    <div class="alert alert-warning d-flex gap-2 align-items-start mt-3 mb-0">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <div class="small">
+            <strong>Your custom fields could not be loaded, so they are not on this form.</strong>
+            Saving now changes only the fields above — anything already recorded in a custom field is kept.
+            Reload the page to try again.
+        </div>
+    </div>
+}
+else if (Model.Fields.Count > 0)
+{
+    <div class="cf-block mt-4 pt-3 border-top">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0">
+                <i class="bi bi-ui-checks-grid text-primary me-1"></i>Additional details
+            </h6>
+            @if (Model.CanConfigure)
+            {
+                <a asp-page="/Settings/CustomFields/Index" asp-route-entity="@Model.EntityType"
+                   class="small text-decoration-none" target="_blank" rel="noopener">
+                    <i class="bi bi-gear me-1"></i>Manage fields
+                </a>
+            }
+        </div>
+
+        <div class="row g-3">
+            @foreach (var f in Model.Fields)
+            {
+                var key      = f.Id.ToString();
+                var name     = $"{Model.FieldPrefix}[{key}]";
+                var inputId  = "cf_" + f.Id.ToString("N");
+                var helpId   = inputId + "_help";
+                var required = f.IsRequired && CustomFieldTypes.SupportsRequired(f.FieldType);
+                var error    = CustomFieldForm.ErrorFor(ViewData.ModelState, Model.FieldPrefix, f.Id);
+                var invalid  = error is null ? "" : " is-invalid";
+
+                // Whole class strings are built here rather than gluing an
+                // expression onto the end of a literal class name: text
+                // directly before an at-sign reads to Razor like an e-mail
+                // address, and that is a parse rule nobody should have to
+                // remember while reading a view.
+                var checkClass  = "form-check-input" + invalid;
+                var inputClass  = "form-control" + invalid;
+                var selectClass = "form-select" + invalid;
+                var hasHelp  = !string.IsNullOrWhiteSpace(f.HelpText);
+
+                string? value = null;
+                Model.Values.TryGetValue(key, out value);
+
+                <div class="@(f.FieldType == CustomFieldTypes.Text ? "col-md-12" : "col-md-6")">
+
+                    @if (f.FieldType == CustomFieldTypes.Checkbox)
+                    {
+                        <div class="form-check form-switch mt-md-4">
+                            @* Checkbox first, hidden "false" second: a single-value
+                               binder takes the FIRST value posted under a name. *@
+                            <input class="@checkClass" type="checkbox" role="switch"
+                                   id="@inputId" name="@name" value="true"
+                                   checked="@(value == "true")"
+                                   aria-describedby="@(hasHelp ? helpId : null)" />
+                            <input type="hidden" name="@name" value="false" />
+                            <label class="form-check-label" for="@inputId">@f.Label</label>
+                        </div>
+                    }
+                    else
+                    {
+                        <label class="form-label" for="@inputId">
+                            @f.Label
+                            @if (required)
+                            {
+                                <span class="text-danger" aria-hidden="true">*</span>
+                            }
+                        </label>
+
+                        @switch (f.FieldType)
+                        {
+                            case CustomFieldTypes.Number:
+                                <input type="number" class="@inputClass" id="@inputId" name="@name"
+                                       value="@value" step="@CustomFieldForm.StepFor(f.DecimalPlaces)"
+                                       inputmode="decimal" autocomplete="off"
+                                       required="@required"
+                                       aria-describedby="@(hasHelp ? helpId : null)" />
+                                break;
+
+                            case CustomFieldTypes.Date:
+                                <input type="date" class="@inputClass" id="@inputId" name="@name"
+                                       value="@value" min="1900-01-01" max="2199-12-31"
+                                       required="@required"
+                                       aria-describedby="@(hasHelp ? helpId : null)" />
+                                break;
+
+                            case CustomFieldTypes.Dropdown:
+                                <select class="@selectClass" id="@inputId" name="@name"
+                                        required="@required"
+                                        aria-describedby="@(hasHelp ? helpId : null)">
+                                    <option value="">— Choose —</option>
+                                    @foreach (var o in f.Options)
+                                    {
+                                        @* A retired choice is listed only on the record
+                                           that already holds it, so an ordinary save
+                                           keeps it instead of silently clearing it. *@
+                                        if (o.IsActive || o.Key == value)
+                                        {
+                                            <option value="@o.Key" selected="@(o.Key == value)">
+                                                @(o.IsActive ? o.Label : o.Label + " (retired)")
+                                            </option>
+                                        }
+                                    }
+                                </select>
+                                break;
+
+                            default:
+                                <input type="text" class="@inputClass" id="@inputId" name="@name"
+                                       value="@value" maxlength="@CustomFieldLimits.TextValueMaxLength"
+                                       autocomplete="off"
+                                       required="@required"
+                                       aria-describedby="@(hasHelp ? helpId : null)" />
+                                break;
+                        }
+                    }
+
+                    @if (hasHelp)
+                    {
+                        <small class="text-muted d-block" id="@helpId">@f.HelpText</small>
+                    }
+                    @if (error is not null)
+                    {
+                        <span class="text-danger small d-block">@error</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}

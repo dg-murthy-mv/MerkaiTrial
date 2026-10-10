@@ -12,10 +12,20 @@
 //   6.  Fixed DeleteAttachmentAsync — replaced Guid.Empty hack with clean
 //       direct endpoint (api/deals/attachments/{id}) which exists in controller
 //   7.  Added section headers matching LeadService structure
+//
+// 077 — CUSTOM FIELDS
+//   8.  GetAllAsync takes optional custom field filters, sent as repeated
+//       ?cf= values. Optional and last, so every existing caller (the
+//       dashboard, reports, the quote pages) is unchanged.
+//   9.  CreateAsync / UpdateAsync let an InvalidOperationException through
+//       WITHOUT an ERROR log. That is how the API's 400 { error } arrives
+//       ("Contract term is required."), and a person leaving a required
+//       field empty is not a system fault.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Application.Commands.Deals;
+using MerkaiTrial.Application.Configuration;   // 077
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Deals
@@ -24,7 +34,8 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
     {
         // Core CRUD
         Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
-            string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20);
+            string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 077
         Task<DealDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<DealDetailDto> GetDetailAsync(Guid tenantId, Guid id);
         Task<DealDto> CreateAsync(CreateDealDto dto);
@@ -74,14 +85,19 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
         // ==================== CORE CRUD ====================
 
         public async Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
-            string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20)
+            string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null)
         {
             try
             {
                 var query = $"api/deals?tenantId={tenantId}&page={page}&pageSize={pageSize}";
-                if (!string.IsNullOrEmpty(stage)) query += $"&stage={stage}";
+                if (!string.IsNullOrEmpty(stage)) query += $"&stage={Uri.EscapeDataString(stage)}";
                 if (!string.IsNullOrEmpty(search)) query += $"&search={Uri.EscapeDataString(search)}";
-                if (!string.IsNullOrEmpty(ownerUserId)) query += $"&ownerUserId={ownerUserId}";
+                if (!string.IsNullOrEmpty(ownerUserId)) query += $"&ownerUserId={Uri.EscapeDataString(ownerUserId)}";
+
+                // 077 — escaped as a whole: the value part is free text.
+                foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
+                    query += $"&cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}";
 
                 return await _api.GetAsync<GetDealsResponse>(query);
             }
@@ -132,6 +148,10 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
                 throw new InvalidOperationException(
                     "You have reached your plan's deal limit. Upgrade your plan to add more deals.", ex);
             }
+            catch (InvalidOperationException)
+            {
+                throw;   // 077 — a sentence for the person; see the header
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating deal for tenant {TenantId}", dto.TenantId);
@@ -144,6 +164,10 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
             try
             {
                 await _api.PutVoidAsync($"api/deals/{id}?tenantId={tenantId}", dto);
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // 077 — a sentence for the person; see the header
             }
             catch (Exception ex)
             {

@@ -10,6 +10,19 @@
 //      Appended with a default, so every existing construction of this
 //      record still compiles.
 //
+// CHANGES (077 — custom fields on deals)
+//   ✅ DealListItem, DealDetailDto and DealDto carry CustomFieldValues as a
+//      BODY property (init), not a new positional parameter. Every existing
+//      `new DealListItem(...)` / `new DealDetailDto(...)` keeps compiling,
+//      and System.Text.Json fills init properties after the constructor.
+//      DealListItem's holds only the LIST-COLUMN fields; the other two hold
+//      every stored value on the deal.
+//   ✅ CreateDealDto / UpdateDealDto.CustomFields — null means "say nothing
+//      about custom fields", which is what lead conversion, imports and
+//      every caller written before 077 send. See CustomFieldValueWriter.
+//   ✅ GetDealsRequest.CustomFilters — trailing and defaulted, so every
+//      positional construction elsewhere still compiles.
+//
 // Stage values are NOT canonical here any more — PipelineStages is the
 // source of truth per tenant. DealStages below survives only as the seed
 // vocabulary and as CreateDealDto's fallback; see the note on it.
@@ -34,7 +47,11 @@ namespace MerkaiTrial.Application.DTOs
         string? OwnerName,
         string? OwnerInitials,
         int Probability
-    );
+    )
+    {
+        /// <summary>077. List-column custom field values, field id → wire value.</summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+    }
 
     public record TimelineItemDto(
         Guid Id,
@@ -52,7 +69,8 @@ namespace MerkaiTrial.Application.DTOs
         string? Search = null,
         string? OwnerUserId = null,
         int Page = 1,
-        int PageSize = 20
+        int PageSize = 20,
+        List<CustomFieldFilter>? CustomFilters = null      // 077 — ANDed; null = none
     );
 
     public record GetDealsResponse(
@@ -93,7 +111,11 @@ namespace MerkaiTrial.Application.DTOs
         // ✅ Vertical — inherited from Lead on conversion, editable on Edit page
         Guid? VerticalId,
         string? VerticalName
-    );
+    )
+    {
+        /// <summary>077. Every stored custom field value on this deal, field id → wire value.</summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+    }
 
     // ==================== SUMMARY (used by GetByIdAsync) ====================
 
@@ -122,7 +144,15 @@ namespace MerkaiTrial.Application.DTOs
         string? CreatedBy,
         DateTime? UpdatedAtUtc,
         string? UpdatedBy
-    );
+    )
+    {
+        /// <summary>
+        /// 077. Every stored custom field value on this deal. Filled when the
+        /// JSON comes from GET api/deals/{id} — which is what
+        /// DealService.GetByIdAsync actually calls, so the Edit page gets it.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+    }
 
     // ==================== CREATE ====================
 
@@ -155,6 +185,9 @@ namespace MerkaiTrial.Application.DTOs
 
         // ✅ Vertical — set from Lead on conversion, optional on manual create
         public Guid? VerticalId { get; set; }
+
+        /// <summary>077. Null = say nothing about custom fields (lead conversion, imports).</summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     // ==================== UPDATE ====================
@@ -182,6 +215,11 @@ namespace MerkaiTrial.Application.DTOs
         public Guid? VerticalId { get; set; }
         public string? ReopenReason { get; set; }
 
+        /// <summary>
+        /// 077. Null = say nothing about custom fields. A map states values;
+        /// an absent key is left alone, an empty value clears that field.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     // ==================== NOTES ====================

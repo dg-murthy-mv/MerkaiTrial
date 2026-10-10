@@ -3,6 +3,21 @@
 @{
     ViewData["Title"] = "Create Contact";
 }
+@* =====================================================================
+   Contacts/Create.cshtml
+
+   075:
+   • "Additional details" — the workspace's custom fields, through the
+     shared _CustomFieldInputs partial (the same one Edit renders).
+   • Country is a dropdown of the Countries table, not a free text box.
+   • The error banner is NOT dismissible and has no timer of its own: it
+     explains why the form did not save, so it must stay until the
+     person has read it. The layout owns every auto-dismiss.
+   • A summary of field errors at the top of the form, because a
+     required custom field at the bottom of a long form is easy to miss.
+   • Placeholders no longer assume Thailand or the US — the phone and
+     city hints were "+1 234 567 8900" and "Bangkok" for every tenant.
+   ===================================================================== *@
 
 <!-- Page Header -->
 <div class="mb-4">
@@ -17,12 +32,11 @@
     </h2>
 </div>
 
-<!-- Alert Messages -->
 @if (!string.IsNullOrEmpty(Model.ErrorMessage))
 {
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.ErrorMessage</span>
     </div>
 }
 
@@ -35,6 +49,14 @@
             </div>
             <div class="card-body">
                 <form method="post">
+                    @if (!ViewData.ModelState.IsValid)
+                    {
+                        <div class="alert alert-warning py-2 px-3 small d-flex gap-2 align-items-start mb-3" role="alert">
+                            <i class="bi bi-exclamation-circle-fill mt-1"></i>
+                            <span>Some fields need attention — they are marked below.</span>
+                        </div>
+                    }
+
                     <div class="row g-3">
                         <!-- Company -->
                         <div class="col-md-12">
@@ -80,23 +102,24 @@
                         <!-- Phone -->
                         <div class="col-md-6">
                             <label asp-for="Input.Phone" class="form-label">Phone</label>
-                            <input asp-for="Input.Phone" type="tel" class="form-control" placeholder="+1 234 567 8900" />
+                            <input asp-for="Input.Phone" type="tel" class="form-control" placeholder="Include the country code, e.g. +91" />
                             <span asp-validation-for="Input.Phone" class="text-danger"></span>
                         </div>
 
                         <!-- Mobile -->
                         <div class="col-md-6">
                             <label asp-for="Input.Mobile" class="form-label">Mobile</label>
-                            <input asp-for="Input.Mobile" type="tel" class="form-control" placeholder="+1 234 567 8900" />
+                            <input asp-for="Input.Mobile" type="tel" class="form-control" placeholder="Include the country code, e.g. +63" />
                             <span asp-validation-for="Input.Mobile" class="text-danger"></span>
                         </div>
 
                         <!-- Country -->
                         <div class="col-md-6">
-                            <label asp-for="Input.Country" class="form-label">Country Code</label>
-                            <input asp-for="Input.Country" class="form-control" placeholder="TH, US, IN" maxlength="5" />
+                            <label asp-for="Input.Country" class="form-label">Country</label>
+                            <select asp-for="Input.Country" asp-items="Model.CountryOptions" class="form-select">
+                                <option value="">-- Not set --</option>
+                            </select>
                             <span asp-validation-for="Input.Country" class="text-danger"></span>
-                            <small class="text-muted">Use 2-letter country code (e.g., TH, US, IN)</small>
                         </div>
 
                         <!-- Address -->
@@ -109,14 +132,14 @@
                         <!-- City -->
                         <div class="col-md-6">
                             <label asp-for="Input.City" class="form-label">City</label>
-                            <input asp-for="Input.City" class="form-control" placeholder="Bangkok" />
+                            <input asp-for="Input.City" class="form-control" />
                             <span asp-validation-for="Input.City" class="text-danger"></span>
                         </div>
 
                         <!-- Postal Code -->
                         <div class="col-md-6">
                             <label asp-for="Input.PostalCode" class="form-label">Postal Code</label>
-                            <input asp-for="Input.PostalCode" class="form-control" placeholder="10110" />
+                            <input asp-for="Input.PostalCode" class="form-control" />
                             <span asp-validation-for="Input.PostalCode" class="text-danger"></span>
                         </div>
 
@@ -138,6 +161,9 @@
                             <small class="text-muted">Primary contacts are highlighted in lists and reports</small>
                         </div>
                     </div>
+
+                    @* 075 — the workspace's own fields. Shared with Edit. *@
+                    <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
 
                     <hr class="my-4" />
 
@@ -164,10 +190,10 @@
             </div>
             <div class="card-body">
                 <ul class="small mb-0 ps-3">
-                    <li class="mb-2">Only <strong>First Name</strong> is required</li>
+                    <li class="mb-2">Only <strong>First Name</strong> is required, plus any additional details marked <span class="text-danger">*</span></li>
                     <li class="mb-2">Link to a company for better organization</li>
                     <li class="mb-2">Mark important contacts as <strong>Primary</strong></li>
-                    <li class="mb-2">Use country codes (TH, US, IN) for consistency</li>
+                    <li class="mb-2">Save phone numbers with the country code so they dial from anywhere</li>
                     <li>Add notes for context and reminders</li>
                 </ul>
             </div>

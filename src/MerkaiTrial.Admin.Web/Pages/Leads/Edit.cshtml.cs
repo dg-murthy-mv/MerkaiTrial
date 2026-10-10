@@ -61,11 +61,41 @@
 //
 //     An owner is only re-validated when it CHANGES, so a lead owned by
 //     someone since deactivated can still have its phone number fixed.
+//
+// 079 — CUSTOM FIELDS, AND THE TEMPDATA TRAP
+//
+//   1. CUSTOM FIELDS. Active Lead fields render through the shared
+//      _CustomFieldInputs partial, pre-filled from the lead's stored values
+//      (LeadDetailDto.CustomFieldValues), checked here first, and sent as
+//      UpdateLeadDto.CustomFields. Only ACTIVE fields are on the form and
+//      only active fields are sent, so a RETIRED field's value is absent
+//      from the map — and absent means "leave alone". If the field list
+//      cannot be loaded, CustomFields is sent as NULL and only the
+//      standard fields are saved.
+//
+//   2. ★ A REFUSED SAVE SHOWED ITS MESSAGE TWICE — once now, once later.
+//      The InvalidOperationException catch put the sentence in ModelState
+//      (shown on this page) AND in [TempData] ErrorMessage, which the
+//      layout then showed AGAIN on the next page. The generic catch set
+//      only the TempData one, so that message appeared one page late and
+//      never here. Both now use ModelState only; the property is gone.
+//
+//   3. THE COUNTRY → CURRENCY HELPER USES REAL DATA (same as Create): each
+//      country's own currency, and symbols from CurrencyConfiguration
+//      instead of the page's hardcoded table (which drew AED as د.إ, unlike
+//      the quote PDF). CurrencySymbolFor now delegates to it.
+//
+//   4. A converted lead opened by URL is sent back to its page with a
+//      reason, as the Edit buttons are already hidden for it. The API
+//      refuses nothing here today, so the page is the guard that matters.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;
+using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -79,6 +109,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
     public class EditModel : AuthorizedPageModel
     {
         private readonly ILeadService _leadService;
+        private readonly ICustomFieldService _customFields;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly ILogger<EditModel> _logger;
@@ -88,6 +119,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public EditModel(
             ILeadService leadService,
+            ICustomFieldService customFields,
             IAuthorizationService authorizationService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
@@ -96,6 +128,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             : base(authorizationService, currentUserService, logger)
         {
             _leadService = leadService;
+            _customFields = customFields;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _metaService = metaService;
@@ -107,7 +140,30 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         [BindProperty]
         public InputModel Input { get; set; } = new();
-        public string CountryCodesJson { get; set; } = "{}";
+
+        /// <summary>079. Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>079. Country id → its currency code, for the sync script.</summary>
+        public string CountryCurrencyJson { get; private set; } = "{}";
+
+        /// <summary>079. Currency code → symbol, from CurrencyConfiguration.</summary>
+        public string SymbolsJson { get; private set; } = "{}";
+
+        /// <summary>079. Active custom fields for Leads, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>079. The model for _CustomFieldInputs.</summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Lead
+        };
         public List<SelectListItem> ChannelOptions { get; set; } = new();
         public List<SelectListItem> SourceOptions { get; set; } = new();
         public List<SelectListItem> SalesTeamOptions { get; set; } = new();
@@ -115,13 +171,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public List<SelectListItem> CurrencyOptions { get; set; } = new();
         public List<SelectListItem> VerticalOptions { get; set; } = new();
 
-        public string TenantCurrencySymbol { get; private set; } = "₹";
-        public string TenantCurrency { get; private set; } = "INR";
+        public string TenantCurrency { get; private set; } = string.Empty;
 
         /// <summary>(031) The workspace's ISO country code, for the country default.</summary>
-        public string TenantCountryCode { get; private set; } = "IN";
-
-        [TempData] public string? ErrorMessage { get; set; }
+        public string TenantCountryCode { get; private set; } = string.Empty;
 
         public class InputModel
         {
@@ -204,6 +257,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     return RedirectToPage("./Index");
                 }
 
+                // 079 — note 4. Redirect, so TempData is the right carrier.
+                if (lead.IsConverted)
+                {
+                    TempData["ErrorMessage"] = "This lead has been converted, so it can't be edited. Make changes on its deal.";
+                    return RedirectToPage("./Detail", new { id });
+                }
+
                 Input = new InputModel
                 {
                     FullName = lead.FullName,
@@ -227,7 +287,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     OwnerUserId = lead.OwnerUserId
                 };
 
+                // 079 — what the custom inputs start with.
+                CustomFields = CustomFieldForm.FromStored(lead.CustomFieldValues);
+
                 await LoadDropdownsAsync();
+                await LoadCustomFieldsAsync();
                 return Page();
             }
             catch (KeyNotFoundException)
@@ -245,21 +309,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public async Task<IActionResult> OnPostAsync()
         {
+            // Defense in depth — see same note in Leads/Create.cshtml.cs
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            await InitializePermissionsAsync();
+            LoadTenantContext();
+            await LoadDropdownsAsync();
+            await LoadCustomFieldsAsync();
+
+            // 079 — each custom field's message under its own input.
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
+            if (!ModelState.IsValid)
+                return Page();
+
             try
             {
-                // Defense in depth — see same note in Leads/Create.cshtml.cs
-                var permissionCheck = await ValidatePermissionAsync(Actions.Update);
-                if (permissionCheck != null) return permissionCheck;
-
-                await InitializePermissionsAsync();
-                LoadTenantContext();
-
-                if (!ModelState.IsValid)
-                {
-                    await LoadDropdownsAsync();
-                    return Page();
-                }
-
                 var dto = new UpdateLeadDto(
                     TenantId: _currentUserService.GetCurrentTenantId(),
                     LeadId: Id,
@@ -276,7 +342,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     Score: Input.Score,
                     EstimatedValue: Input.EstimatedValue,
                     OwnerUserId: Input.OwnerUserId
-                );
+                )
+                {
+                    // 079 — null when the field list could not be loaded.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
+                };
 
                 await _leadService.UpdateAsync(dto);
 
@@ -300,28 +372,39 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 _logger.LogInformation("Lead {Id} update refused: {Message}", Id, ex.Message);
 
+                // 079 — ModelState only (note 2). Shown once, here.
                 ModelState.AddModelError(string.Empty, ex.Message);
-                ErrorMessage = ex.Message;
-
-                LoadTenantContext();
-                await LoadDropdownsAsync();
                 return Page();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating lead {Id}", Id);
-                ErrorMessage = "Failed to update lead. Please try again.";
-                LoadTenantContext();
-                await LoadDropdownsAsync();
+                ModelState.AddModelError(string.Empty, "Failed to update the lead. Please try again.");
                 return Page();
+            }
+        }
+
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Lead, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the Edit Lead form");
+                ActiveCustomFields = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
             }
         }
 
         private void LoadTenantContext()
         {
-            TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
-            TenantCurrency       = _tenantService.GetCurrencyCode();
-            TenantCountryCode    = _tenantService.GetCountryCode();
+            TenantCurrency    = _tenantService.GetCurrencyCode();
+            TenantCountryCode = _tenantService.GetCountryCode();
         }
 
         /// <summary>
@@ -330,18 +413,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         /// the code — printing ₹ beside a dollar figure is worse than printing
         /// "USD".
         /// </summary>
-        public string CurrencySymbolFor(string? code) => (code ?? string.Empty).ToUpperInvariant() switch
-        {
-            "INR" => "₹",
-            "THB" => "฿",
-            "PHP" => "₱",
-            "AED" => "د.إ",
-            "USD" => "$",
-            "EUR" => "€",
-            "GBP" => "£",
-            ""    => TenantCurrencySymbol,
-            _     => code!.ToUpperInvariant()
-        };
+        public string CurrencySymbolFor(string? code)
+            => CurrencyConfiguration.GetCurrencySymbol(string.IsNullOrWhiteSpace(code) ? TenantCurrency : code);   // 079
 
         private async Task LoadDropdownsAsync()
         {
@@ -413,17 +486,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                         Input.CountryId = tenantCountry.Id;
                 }
 
-                CountryCodesJson = System.Text.Json.JsonSerializer.Serialize(
-                    countries.ToDictionary(
-                        c => c.Id.ToString(),
-                        c => c.Code ?? ""
-                    )
-                );
+                // 079 — each country's own currency, not a hardcoded table.
+                CountryCurrencyJson = System.Text.Json.JsonSerializer.Serialize(
+                    countries
+                        .Where(c => !string.IsNullOrWhiteSpace(c.CurrencyCode))
+                        .ToDictionary(c => c.Id.ToString(), c => c.CurrencyCode.Trim().ToUpperInvariant()));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load countries");
-                CountryCodesJson = "{}";
+                CountryCurrencyJson = "{}";
             }
 
             try
@@ -435,8 +507,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     Text = c.Code,
                     Selected = string.Equals(c.Code, Input.CurrencyId, StringComparison.OrdinalIgnoreCase)
                 }).ToList();
+
+                // 079 — symbols from the one currency table.
+                SymbolsJson = System.Text.Json.JsonSerializer.Serialize(
+                    currencies
+                        .Where(c => !string.IsNullOrWhiteSpace(c.Code))
+                        .GroupBy(c => c.Code.Trim().ToUpperInvariant())
+                        .ToDictionary(g => g.Key, g => CurrencyConfiguration.GetCurrencySymbol(g.Key)));
             }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to load currencies"); }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load currencies");
+                SymbolsJson = "{}";
+            }
 
             try
             {

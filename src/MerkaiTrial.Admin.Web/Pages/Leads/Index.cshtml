@@ -1,6 +1,7 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages
 @using MerkaiTrial.Admin.Web.Pages.Leads
+@using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Leads.IndexModel
 @{
     ViewData["Title"] = "Leads";
@@ -12,12 +13,7 @@
     // The quota only earns space on the page once it is close to mattering.
     var quotaTight = quotaPct >= 75;
 
-    var hasSearch = !string.IsNullOrWhiteSpace(Model.SearchTerm)
-                 || !string.IsNullOrWhiteSpace(Model.AssignedToFilter);
-
     var p = Model.PaginatedLeads;
-    var firstRow = p.TotalCount == 0 ? 0 : (p.Page - 1) * p.PageSize + 1;
-    var lastRow  = Math.Min(p.Page * p.PageSize, p.TotalCount);
 
     // Initials for the row avatar, from whatever the name gives us.
     static string Initials(string? name)
@@ -74,6 +70,18 @@
    Consistency is the other half of this: the toolbar, the pinned actions
    column, the muted table chrome and the empty states are now the same
    shapes as Quotes and Pipeline, so the three list pages read as one app.
+
+   079 — CUSTOM FIELDS
+   • Up to four Lead custom fields as columns, after Status.
+   • _CustomFieldFilterPanel under the toolbar. Its inputs join the
+     toolbar's form (id="leadsFilter"), so one Filter button applies search,
+     owner and custom filters together.
+   • Tabs, the pager and the delete form carry EVERY filter from one
+     dictionary on the page model — a custom filter is never dropped by
+     changing tab or page. The pager is the shared _Pager, with a page size.
+   • A failed load shows Model.PageError on this response (it was
+     TempData, so it appeared one page late).
+   • An empty FILTERED list says so and offers to clear.
    ===================================================================== *@
 
 <style>
@@ -167,6 +175,10 @@
     .lx-acts { display: flex; gap: .25rem; justify-content: flex-end; }
     .lx-acts .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .45rem; }
 
+    /* 079 — custom field columns */
+    .lx-cf { max-width: 12rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lx-cf-head i { opacity: .55; }
+
     .lx-empty { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
     .lx-empty i.big { font-size: 2.4rem; color: #d7dde3; display: block; margin-bottom: .6rem; }
 
@@ -227,6 +239,16 @@
         </div>
     </div>
 
+    @* 079 — a failed load, for THIS response only. Messages after a
+       redirect come from _Layout, once. *@
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
+
     @* Drawn only when the quota is actually close. At 10 of 2000 a
        full-width progress track says nothing you can act on. *@
     @if (quotaTight)
@@ -254,9 +276,11 @@
     @* Was a full card with stacked labels, about 130px tall for two
        inputs. Same strip as the Quotes and Pipeline toolbars. *@
     <div class="lx-bar">
-        <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
-            @* Keeps the selected tab when searching. *@
+        <form method="get" id="@IndexModel.FilterFormId" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+            @* Keeps the selected tab and page size when searching. The page
+               NUMBER is never carried: a new search starts at page 1. *@
             <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
+            <input type="hidden" name="PageSize" value="@Model.PageSize" />
 
             <div class="input-group input-group-sm" style="width:280px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -278,9 +302,9 @@
                 <i class="bi bi-funnel me-1"></i>Filter
             </button>
 
-            @if (hasSearch)
+            @if (Model.HasSearch)
             {
-                <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter"
+                <a asp-page="./Index" asp-all-route-data="Model.ClearSearchRoute()"
                    class="btn btn-sm btn-link px-1">Clear</a>
             }
         </form>
@@ -288,10 +312,13 @@
         <span class="lx-count ms-auto">
             @if (p.TotalCount > 0)
             {
-                <text>Showing @firstRow–@lastRow of @p.TotalCount</text>
+                <text>Showing @Model.FirstRow–@Model.LastRow of @p.TotalCount</text>
             }
         </span>
     </div>
+
+    @* 079 — filter on any active Lead custom field. *@
+    <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
     <div class="lx-shell">
 
@@ -299,8 +326,7 @@
         <div class="lx-tabs">
             <a class="lx-tab @(Model.IsActiveTab ? "on" : "")"
                asp-page="./Index"
-               asp-route-searchTerm="@Model.SearchTerm"
-               asp-route-assignedToFilter="@Model.AssignedToFilter"
+               asp-all-route-data="Model.TabRoute(null)"
                title="Everything still being worked — hides converted and not-pursuing leads">
                 <i class="bi bi-lightning-charge-fill"></i>Active
                 <span class="n">@Model.ActiveCount</span>
@@ -311,9 +337,7 @@
                 var on = Model.IsStatusTab(s.Key);
                 <a class="lx-tab @(on ? "on" : "") @(s.IsActive ? "" : "retired")"
                    asp-page="./Index"
-                   asp-route-statusFilter="@s.Key"
-                   asp-route-searchTerm="@Model.SearchTerm"
-                   asp-route-assignedToFilter="@Model.AssignedToFilter"
+                   asp-all-route-data="Model.TabRoute(s.Key)"
                    title="@(s.IsActive ? s.Name : s.Name + " (retired)")">
                     <i class="bi bi-circle-fill dot @IndexModel.CategoryDotClass(s.Category)"></i>@s.Name
                     <span class="n">@s.LeadCount</span>
@@ -322,9 +346,7 @@
 
             <a class="lx-tab @(Model.IsAllTab ? "on" : "")"
                asp-page="./Index"
-               asp-route-statusFilter="@IndexModel.AllTab"
-               asp-route-searchTerm="@Model.SearchTerm"
-               asp-route-assignedToFilter="@Model.AssignedToFilter">
+               asp-all-route-data="Model.TabRoute(IndexModel.AllTab)">
                 All<span class="n">@Model.AllCount</span>
             </a>
         </div>
@@ -341,6 +363,12 @@
                             <th>Channel</th>
                             <th>Source</th>
                             <th>Status</th>
+                            @foreach (var col in Model.ListColumns)
+                            {
+                                <th class="lx-cf-head">
+                                    <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1" aria-hidden="true"></i>@col.Label
+                                </th>
+                            }
                             <th>
                                 Score
                                 @if (!Model.HasFeature("lead_scoring"))
@@ -411,6 +439,25 @@
                                         @Model.StatusName(lead.Status)
                                     </span>
                                 </td>
+
+                                @foreach (var col in Model.ListColumns)
+                                {
+                                    var shown = Model.ColumnValue(lead, col);
+                                    <td class="lx-cf" title="@shown">
+                                        @if (string.IsNullOrEmpty(shown))
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else if (col.FieldType == CustomFieldTypes.Checkbox)
+                                        {
+                                            <i class="bi bi-check-lg text-success" aria-label="Yes"></i>
+                                        }
+                                        else
+                                        {
+                                            @shown
+                                        }
+                                    </td>
+                                }
 
                                 <td>
                                     @if (Model.HasFeature("lead_scoring"))
@@ -495,70 +542,34 @@
                 </table>
             </div>
 
-            @* ── pager ──────────────────────────────────────────── *@
-            @if (p.TotalPages > 1)
-            {
-                <div class="lx-foot">
-                    <span class="lx-count">Page @p.Page of @p.TotalPages</span>
-                    <nav aria-label="Lead pages">
-                        <ul class="pagination pagination-sm mb-0">
-                            <li class="page-item @(p.Page <= 1 ? "disabled" : "")">
-                                <a class="page-link" asp-page="./Index"
-                                   asp-route-pageNumber="@(p.Page - 1)"
-                                   asp-route-searchTerm="@Model.SearchTerm"
-                                   asp-route-statusFilter="@Model.StatusFilter"
-                                   asp-route-assignedToFilter="@Model.AssignedToFilter"
-                                   aria-label="Previous page">
-                                    <i class="bi bi-chevron-left"></i>
-                                </a>
-                            </li>
-
-                            @for (var i = 1; i <= p.TotalPages; i++)
-                            {
-                                if (i == 1 || i == p.TotalPages || (i >= p.Page - 2 && i <= p.Page + 2))
-                                {
-                                    <li class="page-item @(i == p.Page ? "active" : "")">
-                                        <a class="page-link" asp-page="./Index"
-                                           asp-route-pageNumber="@i"
-                                           asp-route-searchTerm="@Model.SearchTerm"
-                                           asp-route-statusFilter="@Model.StatusFilter"
-                                           asp-route-assignedToFilter="@Model.AssignedToFilter">@i</a>
-                                    </li>
-                                }
-                                else if (i == p.Page - 3 || i == p.Page + 3)
-                                {
-                                    <li class="page-item disabled"><span class="page-link">…</span></li>
-                                }
-                            }
-
-                            <li class="page-item @(p.Page >= p.TotalPages ? "disabled" : "")">
-                                <a class="page-link" asp-page="./Index"
-                                   asp-route-pageNumber="@(p.Page + 1)"
-                                   asp-route-searchTerm="@Model.SearchTerm"
-                                   asp-route-statusFilter="@Model.StatusFilter"
-                                   asp-route-assignedToFilter="@Model.AssignedToFilter"
-                                   aria-label="Next page">
-                                    <i class="bi bi-chevron-right"></i>
-                                </a>
-                            </li>
-                        </ul>
-                    </nav>
-                </div>
-            }
+            @* ── pager (079: the shared one) ───────────────────────── *@
+            @* Every page link carries the tab, search, owner and custom
+               filters (Model.FilterRoute), and it offers a page size. *@
+            <partial name="_Pager" model="Model.Pager" />
         }
         else
         {
             <div class="lx-empty">
-                @if (hasSearch)
+                @if (!string.IsNullOrEmpty(Model.PageError))
+                {
+                    <i class="bi bi-cloud-slash big"></i>
+                    <div class="fw-semibold text-body mb-1">The list could not be loaded</div>
+                    <div class="small">
+                        <a asp-page="./Index" asp-all-route-data="Model.StateRoute()">Try again</a>
+                    </div>
+                }
+                else if (Model.IsFiltered)
                 {
                     <i class="bi bi-search big"></i>
-                    <div class="fw-semibold text-body mb-1">Nothing matches that search</div>
+                    <div class="fw-semibold text-body mb-1">Nothing matches these filters</div>
                     <div class="small">
                         No lead in <strong>@Model.CurrentTabName</strong> matches.
-                        <a asp-page="./Index" asp-route-statusFilter="@IndexModel.AllTab"
-                           asp-route-searchTerm="@Model.SearchTerm"
-                           asp-route-assignedToFilter="@Model.AssignedToFilter">Search every lead</a>,
-                        or <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter">clear the search</a>.
+                        @if (!Model.IsAllTab)
+                        {
+                            <a asp-page="./Index" asp-all-route-data="Model.TabRoute(IndexModel.AllTab)">Search every lead</a><text>,</text>
+                        }
+                        or <a asp-page="./Index" asp-route-StatusFilter="@Model.StatusFilter"
+                              asp-route-PageSize="@Model.PageSize">clear the search and filters</a>.
                     </div>
                 }
                 else if (Model.AllCount > 0 || !Model.IsActiveTab)
@@ -595,9 +606,14 @@
 
 @* (031) The delete form keeps the tab so OnPostDelete's
    RedirectToPage(new { StatusFilter }) lands back where the user was. *@
+@* 079 — carries the whole list state (tab, search, owner, custom filters,
+   page, size), so the redirect lands exactly where the user was. *@
 <form method="post" asp-page-handler="Delete" id="leadDeleteForm" class="d-none">
     <input type="hidden" name="id" id="leadDeleteId" />
-    <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
+    @foreach (var keep in Model.StateRoute())
+    {
+        <input type="hidden" name="@keep.Key" value="@keep.Value" />
+    }
 </form>
 
 @section Scripts {

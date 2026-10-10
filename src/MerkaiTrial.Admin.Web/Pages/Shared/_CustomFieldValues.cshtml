@@ -1,0 +1,117 @@
+@using MerkaiTrial.Admin.Web.Pages.Shared
+@using MerkaiTrial.Application.Configuration
+@model MerkaiTrial.Admin.Web.Pages.Shared.CustomFieldDisplayVm
+@* =====================================================================
+   Pages/Shared/_CustomFieldValues.cshtml — NEW (075).
+
+   The read-only "Additional details" card on a record's Detail page.
+
+       <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
+
+   Shows every ACTIVE field — with its value, or "Not provided" — and any
+   RETIRED field that still holds a value on this record, marked
+   "Retired". A retired field with nothing in it is not shown: it has
+   nothing to say about this contact.
+
+   Numbers use the tenant's number culture (lakh grouping for en-IN),
+   dates the tenant's date pattern, and dates are NEVER timezone-shifted:
+   a renewal date is a calendar date, not an instant. All formatting is
+   in CustomFieldFormatter, so the list page in round B will match.
+   ===================================================================== *@
+
+@{
+    var visible = Model.Visible.ToList();
+}
+
+@if (Model.LoadFailed)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body small text-muted d-flex gap-2 align-items-center">
+            <i class="bi bi-exclamation-triangle text-warning"></i>
+            Additional details could not be loaded. Reload the page to try again.
+        </div>
+    </div>
+}
+else if (visible.Count > 0)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-ui-checks-grid me-2"></i>Additional details</h5>
+            <div class="d-flex gap-3 small">
+                @if (Model.CanEdit)
+                {
+                    <a asp-page="@Model.EditPage" asp-route-id="@Model.RecordId" class="text-decoration-none">
+                        <i class="bi bi-pencil me-1"></i>Edit
+                    </a>
+                }
+                @if (Model.CanConfigure)
+                {
+                    <a asp-page="/Settings/CustomFields/Index" asp-route-entity="@Model.EntityType"
+                       class="text-decoration-none text-muted">
+                        <i class="bi bi-gear me-1"></i>Manage fields
+                    </a>
+                }
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                @foreach (var f in visible)
+                {
+                    string? wire = null;
+                    if (Model.Values.TryGetValue(f.Id, out var stored)) wire = stored;
+
+                    var shown = CustomFieldFormatter.Display(f, wire, Model.Culture, Model.DateFormat);
+
+                    <div class="col-md-6 mb-3">
+                        <label class="text-muted small mb-1 d-flex align-items-center gap-1">
+                            <i class="bi @CustomFieldTypes.Icon(f.FieldType)" aria-hidden="true"></i>
+                            @f.Label
+                            @if (!f.IsActive)
+                            {
+                                <span class="badge bg-light text-muted border ms-1"
+                                      title="This field has been switched off. The value is kept on record.">Retired</span>
+                            }
+                        </label>
+                        <div class="fw-semibold">
+                            @if (f.FieldType == CustomFieldTypes.Checkbox)
+                            {
+                                if (wire == "true")
+                                {
+                                    <span class="badge bg-success-subtle text-success-emphasis border">
+                                        <i class="bi bi-check-lg me-1"></i>Yes
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-light text-muted border">No</span>
+                                }
+                            }
+                            else if (string.IsNullOrEmpty(shown))
+                            {
+                                <span class="text-muted fw-normal">Not provided</span>
+                            }
+                            else
+                            {
+                                @shown
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+else if (Model.CanConfigure)
+{
+    @* No fields at all, shown only to somebody who can add some — a
+       rep with nothing to configure does not need an empty card. *@
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body small text-muted d-flex gap-2 align-items-center">
+            <i class="bi bi-ui-checks-grid"></i>
+            <span>
+                Need to record something that is not here — a renewal date, a licence tier?
+                <a asp-page="/Settings/CustomFields/Index" asp-route-entity="@Model.EntityType">Add a custom field</a>.
+            </span>
+        </div>
+    </div>
+}

@@ -1228,6 +1228,19 @@
                             <i class="bi bi-tags"></i> Product Categories
                         </a>
 
+                        @* 075. Custom Fields — the extra fields a workspace
+                           records on contacts (and, from round C, companies).
+                           Under settings.* for the same reason as Product
+                           Categories above: filling a field in is part of
+                           editing a contact, but DECIDING which fields exist
+                           reshapes every contact form in the workspace. The
+                           page and the API's write endpoints carry the same
+                           gate, so the link and the page agree. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/CustomFields") ? "active" : "")"
+                           asp-page="/Settings/CustomFields/Index">
+                            <i class="bi bi-ui-checks-grid"></i> Custom Fields
+                        </a>
+
                         @* 038a. This copy is for ADMINS — they are the ones
                            who want the Email log tab, and this is where they
                            look for it. Everyone else reaches the same page's

@@ -4,7 +4,9 @@
 // NEW FILE. Everything Admin.Web's Program.cs used to register, grouped
 // by area. Same services, same lifetimes.
 //
-// (017) + IQuoteApprovalService — the only change in this version.
+// (017) + IQuoteApprovalService.
+// (075) + ICustomFieldService — custom fields, Round A. See the note
+//       beside the registration line.
 //
 // WHY THE MODULE SERVICES ARE STILL A LIST (not a scan)
 //   They are thin wrappers over IApiService. A naming-convention scan
@@ -31,6 +33,7 @@ using MerkaiTrial.Admin.Web.Services.Companies;
 using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Admin.Web.Services.Countries;
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 075
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -236,6 +239,15 @@ public static class AdminWebServiceRegistration
         // products list — which is the worst shape of DI failure, because
         // it looks like a page bug rather than a missing registration.
         services.AddScoped<IProductCategoryService, ProductCategoryService>();
+
+        // 075 — custom fields.
+        //
+        // Read by Contacts/Create, Edit and Detail for the field list, and
+        // read and written by Settings/CustomFields. Same warning as the two
+        // above: without this line the app starts normally and then throws
+        // "Unable to resolve service for type 'ICustomFieldService'" the
+        // first time anybody opens a contact.
+        services.AddScoped<ICustomFieldService, CustomFieldService>();
 
         // Workspace settings
         services.AddScoped<IUserService, UserService>();

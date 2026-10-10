@@ -21,9 +21,24 @@
 //   holding a date rather than a moment has no timezone to shift by.
 //   Pass Dates here and every lead created in the last seven hours of a
 //   period would land in the next one.
+//
+// 079 — CUSTOM FIELDS ON LEADS
+//   • GetPaginatedAsync takes optional custom field filters, sent as
+//     repeated ?cf= values, each escaped as a whole (the value part is
+//     free text). Optional and LAST, so every existing caller is unchanged.
+//   • The STATUS filter is escaped now, on the list and on the export. It
+//     went into the URL raw; the Active tab sends a comma-separated key
+//     list, and a status key with "&" or "#" in it would have cut the
+//     query string short.
+//   • Create and Update let an InvalidOperationException through WITHOUT
+//     an ERROR log line. That is how the API's 400 { error: "Renewal date
+//     must be a valid date." } arrives (IApiService converts it), and a
+//     person leaving a required field empty is not a system fault. The
+//     page shows the sentence.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Application.Configuration;   // 079 — CustomFieldFilterCodec
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Domain.Enums;
 
@@ -48,7 +63,8 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             int pageSize,
             string? searchTerm = null,
             string? status = null,
-            string? assignedTo = null);
+            string? assignedTo = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 079
         /// <summary>
         /// 047: the two dates are optional and TRAILING, so every existing
         /// GetStatsAsync(tenantId) call still compiles and still means all
@@ -120,6 +136,10 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                 // Surface plan limit as a friendly message for the UI
                 throw new InvalidOperationException(
                     "You have reached your plan's lead limit. Upgrade your plan to add more leads.", ex);
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // 079 — a sentence for the person; see the header
             }
             catch (Exception ex)
             {
@@ -203,6 +223,10 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             {
                 return await _api.PutAsync<LeadDetailDto>($"/api/leads/{dto.LeadId}", dto);
             }
+            catch (InvalidOperationException)
+            {
+                throw;   // 079 — a sentence for the person; see the header
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating lead {LeadId}", dto.LeadId);
@@ -245,7 +269,8 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             int pageSize,
             string? searchTerm = null,
             string? status = null,
-            string? assignedTo = null)
+            string? assignedTo = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null)
         {
             try
             {
@@ -256,11 +281,15 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                 };
 
                 if (!string.IsNullOrWhiteSpace(searchTerm))
-                    queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm)}");
+                    queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm.Trim())}");
                 if (!string.IsNullOrWhiteSpace(status))
-                    queryParams.Add($"status={status}");
+                    queryParams.Add($"status={Uri.EscapeDataString(status)}");          // 079 — was raw
                 if (!string.IsNullOrWhiteSpace(assignedTo))
                     queryParams.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+
+                // 079 — escaped as a whole: the value part is free text.
+                foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
+                    queryParams.Add($"cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}");
 
                 var query = string.Join("&", queryParams);
                 return await _api.GetAsync<PaginatedResult<LeadListItem>>($"/api/leads?{query}");
@@ -540,7 +569,7 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                 if (!string.IsNullOrWhiteSpace(search))
                     queryParams.Add($"search={Uri.EscapeDataString(search)}");
                 if (!string.IsNullOrWhiteSpace(status))
-                    queryParams.Add($"status={status}");
+                    queryParams.Add($"status={Uri.EscapeDataString(status)}");          // 079 — was raw
                 if (!string.IsNullOrWhiteSpace(assignedTo))
                     queryParams.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
 

@@ -4,6 +4,20 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (077 — custom fields on deals)
+//   ✅ CreateDealHandler / UpdateDealHandler stage the deal's custom field
+//      values through CustomFieldValueWriter BEFORE their SaveChangesAsync,
+//      so the deal and its fields commit together or not at all. A null
+//      map — lead conversion, imports, every caller before 077 — skips it.
+//      On Update it runs BEFORE the stage block, so a refused value throws
+//      before any stage-change audit row is written.
+//   ✅ GetDealDetailHandler returns every stored value (DealDetailDto.
+//      CustomFieldValues); GetDealsHandler returns the list-column values,
+//      searches custom text and dropdown labels, and applies custom field
+//      filters — through CustomFieldListQuery, the same code the Contacts
+//      list uses. Record visibility is applied FIRST, as before: the custom
+//      field subqueries only ever narrow what the user may already see.
+//
 // CHANGES (022 — actions on a transition)
 //   ✅ UpdateDealStageHandler and TransitionDealStageHandler run the
 //      configured actions AFTER the move is committed. A follow-up task
@@ -76,7 +90,9 @@
 //     plan quota bar — the list itself is scoped.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;     // 077
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;            // 077
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;
@@ -345,16 +361,39 @@ namespace MerkaiTrial.Application.Commands.Deals
             if (!string.IsNullOrEmpty(request.Stage))
                 query = query.Where(x => x.Deal.Stage == request.Stage);
 
-            if (!string.IsNullOrEmpty(request.Search))
+            // 077 — the ACTIVE custom fields for deals: search, filters, columns.
+            var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                _db, tenantId, CustomFieldEntityTypes.Deal);
+
+            if (!string.IsNullOrWhiteSpace(request.Search))
             {
-                var q = request.Search.ToLower();
-                query = query.Where(x =>
-                    x.Deal.Title.ToLower().Contains(q) ||
-                    (x.Company != null && x.Company.Name.ToLower().Contains(q)));
+                var q = request.Search.Trim().ToLower();
+
+                // 077 — custom text values and dropdown choice labels too.
+                var cfMatches = CustomFieldListQuery.SearchMatches(_db, tenantId, defs, q);
+
+                query = cfMatches is null
+                    ? query.Where(x =>
+                        x.Deal.Title.ToLower().Contains(q) ||
+                        (x.Company != null && x.Company.Name.ToLower().Contains(q)))
+                    : query.Where(x =>
+                        x.Deal.Title.ToLower().Contains(q) ||
+                        (x.Company != null && x.Company.Name.ToLower().Contains(q)) ||
+                        cfMatches.Contains(x.Deal.Id));
             }
 
             if (!string.IsNullOrEmpty(request.OwnerUserId))
                 query = query.Where(x => x.Deal.OwnerUserId == request.OwnerUserId);
+
+            // 077 — custom field filters, ANDed. A local per clause so EF
+            // inlines the subquery (see CustomFieldListQuery).
+            foreach (var clause in CustomFieldListQuery.FilterClauses(_db, tenantId, defs, request.CustomFilters))
+            {
+                var ids = clause.EntityIds;
+                query = clause.Exclude
+                    ? query.Where(x => !ids.Contains(x.Deal.Id))
+                    : query.Where(x => ids.Contains(x.Deal.Id));
+            }
 
             var total = await query.CountAsync();
 
@@ -381,6 +420,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             // OrdinalIgnoreCase so DD100003-... and dd100003-... both match
             var ownerMap = owners.ToDictionary(u => u.Id, StringComparer.OrdinalIgnoreCase);
 
+            // 077 — list-column values for the deals on this page only.
+            var listValues = await CustomFieldListQuery.ListValuesAsync(
+                _db, tenantId, defs, rows.Select(x => x.Deal.Id).ToList());
+
             var items = rows.Select(x =>
             {
                 ownerMap.TryGetValue(x.Deal.OwnerUserId ?? "", out var owner);
@@ -402,7 +445,12 @@ namespace MerkaiTrial.Application.Commands.Deals
                     ownerName,
                     ownerInitials,
                     x.Deal.Probability
-                );
+                )
+                {
+                    CustomFieldValues = listValues.TryGetValue(x.Deal.Id, out var cf)
+                        ? cf
+                        : new Dictionary<Guid, string>()
+                };
             }).ToList();
 
             return new GetDealsResponse(items, total, request.Page, request.PageSize, quotaUsed);
@@ -469,6 +517,10 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var d = row.Deal;
 
+            // 077 — every stored custom field value, retired fields included.
+            var customFieldValues = await CustomFieldValueWriter.ReadAsync(
+                _db, d.TenantId, CustomFieldEntityTypes.Deal, d.Id, CancellationToken.None);
+
             return new DealDetailDto(
                 d.Id,
                 d.TenantId.ToString(),
@@ -497,7 +549,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 // ✅ Vertical
                 d.VerticalId,
                 row.Vertical?.Name
-            );
+            )
+            {
+                CustomFieldValues = customFieldValues      // 077
+            };
         }
     }
 
@@ -646,6 +701,13 @@ namespace MerkaiTrial.Application.Commands.Deals
             };
 
             _db.Deals.Add(deal);
+
+            // 077 — same unit of work as the deal. A refused value throws
+            // here, before anything (the deal, its history row, the
+            // assignment notification) is saved.
+            await CustomFieldValueWriter.ApplyAsync(
+                _db, tenantGuid, CustomFieldEntityTypes.Deal, deal.Id,
+                dto.CustomFields, deal.CreatedBy, isNew: true, CancellationToken.None);
 
             _db.DealStageHistory.Add(new DealStageHistory
             {
@@ -821,6 +883,14 @@ namespace MerkaiTrial.Application.Commands.Deals
                 if (sourceExists)
                     deal.SourceId = dto.SourceId.Value;
             }
+
+            // ── 077: custom fields ───────────────────────────────────────
+            // BEFORE the stage block on purpose: that block writes an audit
+            // row as it goes, and a value refused after it would leave an
+            // audit entry for a stage move that never saved.
+            await CustomFieldValueWriter.ApplyAsync(
+                _db, tenantGuid, CustomFieldEntityTypes.Deal, deal.Id,
+                dto.CustomFields, currentUser.FullName, isNew: false, CancellationToken.None);
 
             // ── Stage change + history ───────────────────────────────────
             // A stage the tenant does not have is an ERROR rather than a

@@ -5,9 +5,32 @@
 // FIXES:
 //   Bug 1 — /lookup now returns List<ContactListItem> (was returning companies)
 //   Bug 6 — /companies-lookup added as dedicated company dropdown endpoint
+//
+// 075:
+//   • Policies.* constants instead of string literals ("Contacts.read").
+//     The literals worked only because PermissionHandler compares
+//     case-insensitively; a typo in one would have denied silently.
+//     (Handoff open item 6.)
+//   • Create and Update pass CustomFields through to the handlers.
+//   • A refused custom field value comes back as 400 { error: "..." }
+//     with the sentence for the person in it — IApiService turns that
+//     into an InvalidOperationException carrying the same sentence, so
+//     the page can show "Renewal date must be a valid date." instead of
+//     "An error occurred". Before this, every failure was a bare 500.
+//   • Update's KeyNotFound is now caught before the generic handler, as
+//     before, and the new InvalidOperationException catch sits between
+//     them.
+//
+// 076:
+//   • GET /api/contacts takes repeated ?cf=<fieldId>~<op>~<value> custom
+//     field filters (CustomFieldFilterCodec). Unreadable ones are skipped
+//     here; the handler drops any that do not fit the field. The page
+//     size is clamped in the handler.
 // =====================================================================
 
+using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Contacts;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
@@ -61,7 +84,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── GET ALL (PAGINATED) ───────────────────────────────────────────────
 
         [HttpGet]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(PaginatedResult<ContactListItem>), 200)]
         public async Task<IActionResult> GetAll(
             [FromQuery] int pageNumber = 1,
@@ -69,11 +92,20 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] Guid? companyId = null,
             [FromQuery] string? searchTerm = null,
             [FromQuery] bool? isPrimary = null,
+            [FromQuery(Name = "cf")] string[]? cf = null,           // 076
             CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
+
+                // 076 — custom field filters. Capped before decoding, so a
+                // request with ten thousand ?cf= values costs nothing.
+                var customFilters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        customFilters.Add(filter);
+
                 var query = new GetContactsQuery
                 {
                     TenantId   = tenantId,
@@ -81,7 +113,8 @@ namespace MerkaiTrial.WebApi.Controllers
                     PageSize   = pageSize,
                     CompanyId  = companyId,
                     SearchTerm = searchTerm,
-                    IsPrimary  = isPrimary
+                    IsPrimary  = isPrimary,
+                    CustomFilters = customFilters
                 };
 
                 var result = await _getContacts.Handle(query, cancellationToken);
@@ -97,7 +130,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── GET BY ID ─────────────────────────────────────────────────────────
 
         [HttpGet("{id:guid}")]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(ContactDto), 200)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken = default)
@@ -123,7 +156,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── STATS ─────────────────────────────────────────────────────────────
 
         [HttpGet("stats")]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(ContactStatsDto), 200)]
         public async Task<IActionResult> GetStats(CancellationToken cancellationToken = default)
         {
@@ -145,7 +178,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ✅ BUG 6 FIX: this is the real contact lookup used by IContactService
 
         [HttpGet("lookup")]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(List<ContactListItem>), 200)]
         public async Task<IActionResult> GetLookup(CancellationToken cancellationToken = default)
         {
@@ -167,7 +200,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ✅ BUG 1 FIX: moved company lookup to its own dedicated route
 
         [HttpGet("companies-lookup")]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(List<CompanyListItem>), 200)]
         public async Task<IActionResult> GetCompaniesLookup(CancellationToken cancellationToken = default)
         {
@@ -188,7 +221,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── BY COMPANY ────────────────────────────────────────────────────────
 
         [HttpGet("by-company/{companyId:guid}")]
-        [Authorize(Policy = "Contacts.read")]
+        [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(List<ContactListItem>), 200)]
         public async Task<IActionResult> GetByCompany(Guid companyId, CancellationToken cancellationToken = default)
         {
@@ -209,7 +242,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── CREATE ────────────────────────────────────────────────────────────
 
         [HttpPost]
-        [Authorize(Policy = "Contacts.create")]
+        [Authorize(Policy = Policies.ContactsCreate)]
         [ProducesResponseType(typeof(ContactDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(422)]
@@ -241,7 +274,8 @@ namespace MerkaiTrial.WebApi.Controllers
                     PostalCode = dto.PostalCode,
                     Notes      = dto.Notes,
                     IsPrimary  = dto.IsPrimary,
-                    CreatedBy  = currentUser.FullName
+                    CreatedBy  = currentUser.FullName,
+                    CustomFields = dto.CustomFields      // 075 — null = say nothing
                 };
 
                 var contact = await _createContact.Handle(command, cancellationToken);
@@ -261,6 +295,10 @@ namespace MerkaiTrial.WebApi.Controllers
                     limit = ex.Limit
                 });
             }
+            catch (InvalidOperationException ex)               // 075 — custom field values
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating contact");
@@ -271,7 +309,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── UPDATE ────────────────────────────────────────────────────────────
 
         [HttpPut("{id:guid}")]
-        [Authorize(Policy = "Contacts.update")]
+        [Authorize(Policy = Policies.ContactsUpdate)]
         [ProducesResponseType(typeof(ContactDto), 200)]
         [ProducesResponseType(400)]
         [ProducesResponseType(404)]
@@ -308,7 +346,8 @@ namespace MerkaiTrial.WebApi.Controllers
                     PostalCode = dto.PostalCode,
                     Notes      = dto.Notes,
                     IsPrimary  = dto.IsPrimary,
-                    UpdatedBy  = currentUser.FullName
+                    UpdatedBy  = currentUser.FullName,
+                    CustomFields = dto.CustomFields      // 075 — null = say nothing
                 };
 
                 await _updateContact.Handle(command, cancellationToken);
@@ -323,6 +362,10 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 return NotFound();
             }
+            catch (InvalidOperationException ex)               // 075 — custom field values
+            {
+                return BadRequest(new { error = ex.Message });
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating contact {Id}", id);
@@ -333,7 +376,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── DELETE ────────────────────────────────────────────────────────────
 
         [HttpDelete("{id:guid}")]
-        [Authorize(Policy = "Contacts.delete")]
+        [Authorize(Policy = Policies.ContactsDelete)]
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken = default)

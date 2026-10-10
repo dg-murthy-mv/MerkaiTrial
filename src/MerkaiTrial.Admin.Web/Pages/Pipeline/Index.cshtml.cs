@@ -4,6 +4,23 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (077 — custom fields on deals):
+//   ✅ Deal custom fields marked "Show on the list" (up to four) are
+//      columns in the TABLE view and short lines on each BOARD card, in the
+//      tenant's number and date format.
+//   ✅ "Filter by additional details" — the shared _CustomFieldFilterPanel
+//      the Contacts list uses. Its inputs join the board's own filter form
+//      (#pbFilter) through form="pbFilter", so Apply sends the search, the
+//      stage, the owner and the custom filters in one GET, and the board
+//      and the table both honour them.
+//   ✅ The search box also finds custom text values and dropdown choice
+//      names (done by the API, through the shared CustomFieldListQuery).
+//   ✅ A failed LOAD set [TempData] ErrorMessage and then RENDERED, so the
+//      message showed on the next page instead of this one. It is
+//      PageError now, an ordinary property the view shows. ErrorMessage
+//      stays for OnPostUpdateStageAsync, whose JSON is followed by a
+//      reload — the one case TempData is right for.
+//
 // CHANGES (022):
 //   ✅ A follow-up the step could not create survives the board's reload
 //      via TempData, instead of disappearing with the page.
@@ -55,12 +72,15 @@
 //      — kept _tenantService only, removed _currentTenantService everywhere
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;              // 077
+using MerkaiTrial.Admin.Web.Services.CustomFields;     // 077
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;           // 077
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -81,6 +101,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ILogger<IndexModel> _logger;
         private readonly IPipelineStageService _stageService;
         private readonly IPipelineRuleService _ruleService;             // ✅ 019
+        private readonly ICustomFieldService _customFields;             // 077
+
+        /// <summary>077. The board's filter form; the custom filter panel's inputs submit with it.</summary>
+        public const string FilterFormId = "pbFilter";
 
         protected override string ModuleName => Modules.Deals;
 
@@ -94,7 +118,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             IAuthorizationService authorizationService,
             ILogger<IndexModel> logger,
             IPipelineStageService stageService,
-            IPipelineRuleService ruleService)                           // ✅ 019
+            IPipelineRuleService ruleService,                           // ✅ 019
+            ICustomFieldService customFields)                           // 077
             : base(authorizationService, currentUserService, logger)
         {
             _dealService = dealService;
@@ -106,6 +131,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _logger = logger;
             _stageService = stageService;
             _ruleService = ruleService;
+            _customFields = customFields;
         }
 
         // ── View Properties ────────────────────────────────────────────
@@ -165,8 +191,43 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         [BindProperty(SupportsGet = true)] public string? StageFilter { get; set; }
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
 
+        /// <summary>
+        /// For the stage-move JSON handler only, whose response is followed
+        /// by a reload — the next request, which is exactly where TempData
+        /// shows. A failed page LOAD uses PageError instead.
+        /// </summary>
         [TempData] public string? ErrorMessage { get; set; }
         [TempData] public string? SuccessMessage { get; set; }
+
+        /// <summary>077. Shown on THIS response — a board that failed to load.</summary>
+        public string? PageError { get; private set; }
+
+        // ── 077: custom fields ─────────────────────────────────────────
+
+        /// <summary>Active Deal custom fields shown as list columns, in order.</summary>
+        public List<CustomFieldDefinitionDto> ListColumns { get; private set; } = new();
+
+        /// <summary>The custom field filters: parsed, checked, ready for the API and the panel.</summary>
+        public CustomFieldListFilterState CustomFilters { get; private set; } = new();
+
+        private System.Globalization.CultureInfo? _culture;
+        private string? _dateFormat;
+
+        /// <summary>A list-column value as a person reads it. Empty when not filled in.</summary>
+        public string ColumnValue(DealListItem deal, CustomFieldDefinitionDto field)
+        {
+            _culture    ??= CustomFieldFormatter.ResolveCulture(CultureName);
+            _dateFormat ??= _tenantService.GetDateFormat();
+
+            deal.CustomFieldValues.TryGetValue(field.Id, out var wire);
+
+            // An unticked checkbox has no value; on a list, blank says "no"
+            // more quietly than a column full of the word.
+            if (field.FieldType == CustomFieldTypes.Checkbox)
+                return wire == "true" ? "Yes" : string.Empty;
+
+            return CustomFieldFormatter.Display(field, wire, _culture, _dateFormat);
+        }
 
         // ── GET ────────────────────────────────────────────────────────
         public async Task<IActionResult> OnGetAsync()
@@ -183,13 +244,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 TenantCurrencyCode = _tenantService.GetCurrencyCode();
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
 
+                // 077 — custom fields first: the filters go into the deals call.
+                await LoadCustomFieldsAsync();
+
                 _logger.LogInformation(
                     "Loading pipeline for TenantId={TenantId} Currency={Currency}",
                     tenantId, TenantCurrencyCode);
 
                 var dealsTask = _dealService.GetAllAsync(tenantId, stage: StageFilter,
                                         search: SearchTerm, ownerUserId: OwnerFilter,
-                                        pageSize: 500);
+                                        pageSize: 500,
+                                        customFilters: CustomFilters.Filters);   // 077
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
                 var stagesTask = _stageService.GetAsync(activeOnly: true);
                 var rulesTask = _ruleService.GetAsync();
@@ -217,7 +282,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load pipeline");
-                ErrorMessage = "Failed to load pipeline. Please try again.";
+                PageError = "Failed to load pipeline. Please try again.";      // 077 — not TempData
                 Deals = new();
                 SalesTeam = new();
                 DealQuoteStatus = new();
@@ -369,6 +434,52 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             if (into.Any(t => t.RequiresNote))          hints.Add("a note");
 
             return hints;
+        }
+
+        // ── 077: custom fields ─────────────────────────────────────────
+
+        /// <summary>
+        /// The Deal custom fields, the list columns, and the filters read
+        /// from the query string. Non-fatal: the board works without them,
+        /// and the panel says why they are missing.
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            List<CustomFieldDefinitionDto> fields;
+            var failed = false;
+            try
+            {
+                fields = await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Deal, includeInactive: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the pipeline");
+                fields = new List<CustomFieldDefinitionDto>();
+                failed = true;
+            }
+
+            ListColumns = fields
+                .Where(f => f.IsActive && f.ShowInList)
+                .OrderBy(f => f.SortOrder)
+                .Take(CustomFieldLimits.MaxListColumns)
+                .ToList();
+
+            CustomFilters = CustomFieldListFilterState.Parse(Request.Query, fields);
+            CustomFilters.FormId     = FilterFormId;
+            CustomFilters.PageRoute  = "/Pipeline/Index";
+            CustomFilters.LoadFailed = failed;
+            CustomFilters.Noun       = "deal";
+            CustomFilters.Culture    = CustomFieldFormatter.ResolveCulture(CultureName);
+            CustomFilters.DateFormat = _tenantService.GetDateFormat();
+
+            // "Clear these" keeps the board's own filters and the view.
+            var clear = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(SearchTerm))  clear[nameof(SearchTerm)]  = SearchTerm.Trim();
+            if (!string.IsNullOrWhiteSpace(StageFilter)) clear[nameof(StageFilter)] = StageFilter;
+            if (!string.IsNullOrWhiteSpace(OwnerFilter)) clear[nameof(OwnerFilter)] = OwnerFilter;
+            var view = Request.Query["View"].ToString();
+            if (string.Equals(view, "table", StringComparison.OrdinalIgnoreCase)) clear["View"] = "table";
+            CustomFilters.ClearRoute = clear;
         }
 
         // ── Load Quote Status for Kanban Cards ─────────────────────────

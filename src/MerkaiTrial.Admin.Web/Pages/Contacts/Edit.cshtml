@@ -3,6 +3,20 @@
 @{
     ViewData["Title"] = "Edit Contact";
 }
+@* =====================================================================
+   Contacts/Edit.cshtml
+
+   075:
+   • "Additional details" — the workspace's custom fields, through the
+     shared _CustomFieldInputs partial (the same one Create renders),
+     pre-filled from what is stored. Retired fields are not on the form,
+     and their values are left untouched by a save.
+   • Country is a dropdown of the Countries table; a stored value the
+     table does not know is still offered, so saving never changes it.
+   • The error banner is not dismissible and has no timer of its own —
+     the layout owns every auto-dismiss.
+   • A summary line when any field needs attention.
+   ===================================================================== *@
 
 <!-- Page Header -->
 <div class="mb-4">
@@ -18,12 +32,11 @@
     </h2>
 </div>
 
-<!-- Alert Messages -->
 @if (!string.IsNullOrEmpty(Model.ErrorMessage))
 {
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.ErrorMessage</span>
     </div>
 }
 
@@ -37,6 +50,14 @@
             <div class="card-body">
                 <form method="post">
                     <input type="hidden" asp-for="Id" />
+
+                    @if (!ViewData.ModelState.IsValid)
+                    {
+                        <div class="alert alert-warning py-2 px-3 small d-flex gap-2 align-items-start mb-3" role="alert">
+                            <i class="bi bi-exclamation-circle-fill mt-1"></i>
+                            <span>Some fields need attention — they are marked below.</span>
+                        </div>
+                    }
 
                     <div class="row g-3">
                         <!-- Company -->
@@ -96,10 +117,11 @@
 
                         <!-- Country -->
                         <div class="col-md-6">
-                            <label asp-for="Input.Country" class="form-label">Country Code</label>
-                            <input asp-for="Input.Country" class="form-control" maxlength="5" />
+                            <label asp-for="Input.Country" class="form-label">Country</label>
+                            <select asp-for="Input.Country" asp-items="Model.CountryOptions" class="form-select">
+                                <option value="">-- Not set --</option>
+                            </select>
                             <span asp-validation-for="Input.Country" class="text-danger"></span>
-                            <small class="text-muted">Use 2-letter country code (e.g., TH, US, IN)</small>
                         </div>
 
                         <!-- Address -->
@@ -141,6 +163,9 @@
                             <small class="text-muted">Primary contacts are highlighted in lists and reports</small>
                         </div>
                     </div>
+
+                    @* 075 — the workspace's own fields. Shared with Create. *@
+                    <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
 
                     <hr class="my-4" />
 
@@ -188,7 +213,7 @@
             <div class="card-body">
                 <ul class="small mb-0 ps-3">
                     <li class="mb-2">Keep contact information up to date</li>
-                    <li class="mb-2">Use consistent formatting for phone numbers</li>
+                    <li class="mb-2">Save phone numbers with the country code so they dial from anywhere</li>
                     <li>Add notes for important context</li>
                 </ul>
             </div>

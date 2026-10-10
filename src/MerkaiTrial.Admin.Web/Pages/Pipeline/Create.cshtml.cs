@@ -3,6 +3,22 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (077 — custom fields on deals)
+//
+//   1. The workspace's active Deal custom fields render in an "Additional
+//      details" card through the shared _CustomFieldInputs partial (the
+//      same one the contact forms use), are checked here first so each
+//      message lands under its own input, and travel to the API as
+//      CreateDealDto.CustomFields. The API checks them again.
+//
+//   2. A REFUSED SAVE NO LONGER SETS [TempData] ErrorMessage AND RENDERS.
+//      A [TempData] property set on a request that returns Page() is
+//      saved for the NEXT request — so the API's sentence ("Contract term
+//      is required.") turned up on whatever page the person opened after
+//      this one, and nothing showed here. It goes into ModelState now and
+//      the view shows it above the form. SuccessMessage still uses
+//      TempData, correctly: it is set right before a redirect.
+//
 // CHANGES (030)
 //
 //   1. THE CLOSE DATE WAS STORED A DAY EARLY. The old line was
@@ -46,7 +62,9 @@
 //   had not chosen.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;              // 077
 using MerkaiTrial.Admin.Web.Services.Companies;
+using MerkaiTrial.Admin.Web.Services.CustomFields;     // 077
 using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.Deals;
@@ -55,6 +73,7 @@ using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;           // 077
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -86,6 +105,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly ICurrentTenantService    _currentTenantService;
         private readonly IMetaService             _metaService;
         private readonly IPipelineStageService    _stageService;
+        private readonly ICustomFieldService      _customFields;     // 077
         private readonly ILogger<CreateModel>     _logger;
 
         protected override string ModuleName => Modules.Deals;
@@ -100,6 +120,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ICurrentTenantService currentTenantService,
             IMetaService          metaService,
             IPipelineStageService stageService,
+            ICustomFieldService   customFields,                       // 077
             IAuthorizationService authorizationService,
             ILogger<CreateModel>  logger)
             : base(authorizationService, currentUserService, logger)
@@ -113,6 +134,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _currentTenantService = currentTenantService;
             _metaService          = metaService;
             _stageService         = stageService;
+            _customFields         = customFields;
             _logger               = logger;
         }
 
@@ -141,7 +163,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public string TenantTaxLabel       { get; set; } = "Tax";
 
         [TempData] public string? SuccessMessage { get; set; }
+
+        /// <summary>
+        /// For REDIRECTS only (a form that could not load sends you back to
+        /// the pipeline). A refused save renders, so its message goes into
+        /// ModelState instead — see change 2 in the header.
+        /// </summary>
         [TempData] public string? ErrorMessage   { get; set; }
+
+        // ── 077: custom fields ────────────────────────────────────────
+
+        /// <summary>Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>Active Deal custom fields, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Deal
+        };
 
         // ── Input Model ───────────────────────────────────────────────
         public class DealInputModel
@@ -275,6 +322,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     Text  = u.FullName
                 }).ToList();
 
+                await LoadCustomFieldsAsync();      // 077
+
                 try
                 {
                     var verticals = await _metaService.GetVerticalsAsync();
@@ -304,6 +353,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         {
             var check = await ValidatePermissionAsync(Actions.Create);
             if (check != null) return check;
+
+            // 077 — each custom field's message under its own input.
+            await LoadCustomFieldsAsync();
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
 
             if (!ModelState.IsValid)
             {
@@ -347,7 +400,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     SourceId             = Input.SourceId,
                     VerticalId           = Input.VerticalId,
                     Tags                 = Input.Tags,
-                    CreatedBy            = currentUser.FullName
+                    CreatedBy            = currentUser.FullName,
+
+                    // 077 — null when the field list could not be loaded: the
+                    // form had no custom inputs, so say nothing about them.
+                    CustomFields         = CustomFieldsLoadFailed
+                                            ? null
+                                            : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
                 };
 
                 var createdDeal = await _dealService.CreateAsync(createDto);
@@ -360,14 +419,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 // A refused stage or a missing pipeline — the message is
                 // written for the user, so show it rather than swallowing it.
                 _logger.LogWarning(ex, "Deal creation refused");
-                ErrorMessage = ex.Message;
+                ModelState.AddModelError(string.Empty, ex.Message);    // 077 — not TempData
                 await OnGetAsync();
                 return Page();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create deal");
-                ErrorMessage = "Failed to create deal. Please try again.";
+                ModelState.AddModelError(string.Empty, "Failed to create deal. Please try again.");
                 await OnGetAsync();
                 return Page();
             }
@@ -380,5 +439,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         /// </summary>
         public int GetStageProbability(string stageKey) =>
             Stages.FirstOrDefault(s => s.Key == stageKey)?.Probability ?? 0;
+
+        /// <summary>077. Non-fatal: the form still works, and says why the fields are missing.</summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Deal, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the New Deal form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
+            }
+        }
     }
 }

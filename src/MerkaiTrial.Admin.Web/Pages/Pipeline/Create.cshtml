@@ -45,6 +45,11 @@
       sales opportunity to your pipeline", above a 2rem-padded card,
       before any of the form.
 
+   077 — "Additional details": the workspace's Deal custom fields through
+   the shared _CustomFieldInputs partial, in a card of their own before
+   the buttons. A refused save shows the API's sentence in the summary at
+   the top (ModelState), not in TempData — see Create.cshtml.cs.
+
    5. THE STAGE BADGES WERE <div>s WITH click HANDLERS. Not focusable, no
       accessible name, invisible to the keyboard. They are radio inputs
       now, which also means the choice survives with scripting off — and
@@ -109,7 +114,31 @@
     <p class="pc-sub">A deal is an opportunity you're working. It starts where your workspace says deals start.</p>
 
     @* Model.ErrorMessage is [TempData] and _Layout renders it once, globally.
-       The old page rendered it here as well, so a failure showed twice. *@
+       The old page rendered it here as well, so a failure showed twice.
+
+       077: a refused SAVE renders this page, so its message is in
+       ModelState under the empty key, shown here. Field errors (including
+       custom fields) show under their own inputs; this line says there
+       are some, because a required custom field sits at the bottom. *@
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="alert alert-warning d-flex gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <div>
+                @if (ViewData.ModelState[string.Empty]?.Errors.Count > 0)
+                {
+                    @foreach (var err in ViewData.ModelState[string.Empty]!.Errors)
+                    {
+                        <div>@err.ErrorMessage</div>
+                    }
+                }
+                else
+                {
+                    <div>Some fields need attention — they are marked below.</div>
+                }
+            </div>
+        </div>
+    }
 
     <form method="post" id="pcForm">
         @Html.AntiForgeryToken()
@@ -329,6 +358,18 @@
                 </div>
             </div>
         </div>
+
+        @* 077 — the workspace's own fields. Shared with Edit, and with the
+           contact forms. The card is drawn only when there is something
+           to show (fields, or a sentence saying they could not load). *@
+        @if (Model.ActiveCustomFields.Count > 0 || Model.CustomFieldsLoadFailed)
+        {
+            <div class="pc-card">
+                <div class="bd pt-0">
+                    <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
+                </div>
+            </div>
+        }
 
         <div class="pc-bar">
             <a asp-page="./Index" class="btn btn-outline-secondary">Cancel</a>

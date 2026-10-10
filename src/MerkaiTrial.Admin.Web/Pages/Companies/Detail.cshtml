@@ -3,6 +3,28 @@
 @{
     ViewData["Title"] = "Company Details";
 }
+@* =====================================================================
+   Companies/Detail.cshtml
+
+   078:
+   • "Additional details" — the workspace's custom fields for Companies,
+     through the shared _CustomFieldValues partial, under Company
+     Information on the Overview tab. Hidden entirely when there are none
+     and the person cannot add any.
+   • "Add Contact" uses Model.CanCreateContacts (Modules.Contacts) instead
+     of the string literal "contacts".
+   • Still no TempData banners here: _Layout shows SuccessMessage and
+     ErrorMessage once for every page.
+
+   075 (the staged fixes from the 074d review):
+   • The page's own TempData alert blocks are GONE — _Layout renders
+     them once for every page, so these drew a second identical banner.
+   • The page's own auto-dismiss timer is GONE — it double-closed the
+     layout's alerts, the crash 074a–074d chased.
+   • Delete opens its modal with data-bs-toggle; there is no page script.
+   • The vertical shows VerticalDisplayName, which the page model was
+     computing and nothing was reading.
+   ===================================================================== *@
 
 <div class="container-fluid py-4">
 
@@ -18,7 +40,7 @@
                 <p class="text-muted mb-0">
                     <i class="bi bi-globe me-1"></i>@Model.CountryName
                     •
-                    <span class="badge bg-info">@Model.Company.Vertical</span>
+                    <span class="badge bg-info">@Model.VerticalDisplayName</span>
                 </p>
             </div>
         </div>
@@ -34,7 +56,8 @@
             @* ✅ Delete — only if has delete permission (was missing from original!) *@
             @if (Model.CanDelete)
             {
-                <button type="button" class="btn btn-outline-danger" onclick="confirmDelete()">
+                <button type="button" class="btn btn-outline-danger"
+                        data-bs-toggle="modal" data-bs-target="#deleteModal">
                     <i class="bi bi-trash"></i>
                     <span class="d-none d-sm-inline"> Delete</span>
                 </button>
@@ -46,23 +69,7 @@
         </div>
     </div>
 
-    @* ✅ Alert messages — added (were completely missing) *@
-    @if (TempData["SuccessMessage"] is string successMsg)
-    {
-        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
-            <i class="bi bi-check-circle-fill"></i>
-            <span>@successMsg</span>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
-    @if (TempData["ErrorMessage"] is string errorMsg)
-    {
-        <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
-            <i class="bi bi-exclamation-circle-fill"></i>
-            <span>@errorMsg</span>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
+    @* Success and error messages are rendered by _Layout, once. *@
 
     <!-- Tabs -->
     <ul class="nav nav-tabs mb-4">
@@ -85,7 +92,7 @@
         <div class="tab-pane fade show active" id="overview">
             <div class="row g-4">
                 <div class="col-lg-8">
-                    <div class="card border-0 shadow-sm">
+                    <div class="card border-0 shadow-sm mb-4">
                         <div class="card-header bg-primary text-white">
                             <h5 class="mb-0"><i class="bi bi-building me-2"></i>Company Information</h5>
                         </div>
@@ -97,7 +104,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="text-muted small">Vertical</label>
-                                    <div><span class="badge bg-info fs-6">@Model.Company.Vertical</span></div>
+                                    <div><span class="badge bg-info fs-6">@Model.VerticalDisplayName</span></div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="text-muted small">Country</label>
@@ -122,6 +129,10 @@
                             </div>
                         </div>
                     </div>
+
+                    @* 078 — custom fields. Hidden entirely when there are none
+                       and the person cannot add any. *@
+                    <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
                 </div>
 
                 <div class="col-lg-4">
@@ -192,7 +203,7 @@
                         <i class="bi bi-people fs-1 text-muted d-block mb-3"></i>
                         <p class="text-muted mb-0">No contacts found for this company.</p>
                         @* ✅ Add Contact link — only if has create permission *@
-                        @if (Model.UserCanCreate("Contacts"))
+                        @if (Model.CanCreateContacts)
                         {
                             <a asp-page="/Contacts/Create"
                                asp-route-companyId="@Model.Company.Id"
@@ -207,8 +218,10 @@
     </div>
 </div>
 
-<!-- Delete Confirmation Modal (was missing entirely) -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
+<!-- Delete Confirmation Modal -->
+@if (Model.CanDelete)
+{
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-danger text-white">
@@ -240,17 +253,4 @@
         </div>
     </div>
 </div>
-
-@section Scripts {
-    <script>
-        setTimeout(function () {
-            document.querySelectorAll('.alert-dismissible').forEach(function (el) {
-                bootstrap.Alert.getOrCreateInstance(el).close();
-            });
-        }, 5000);
-
-        function confirmDelete() {
-            new bootstrap.Modal(document.getElementById('deleteModal')).show();
-        }
-    </script>
 }

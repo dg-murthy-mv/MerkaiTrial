@@ -62,13 +62,33 @@
 //     handler inside Detail.cshtml.cs, which nothing submits to.
 //   • Both handlers gated behind Leads.Update AND Deals.Create
 //     (cross-module — converting updates the lead and creates a Deal).
+//
+// 079 — WHAT CARRIES ACROSS, SHOWN BEFORE IT HAPPENS
+//
+//   1. "Additional details carried over": every mapped Lead custom field
+//      that has a value on THIS lead, with where it will land — "Contact ·
+//      Budget", "Deal · Budget". The mapping is set per Lead field in
+//      Settings → Custom Fields → Leads, and the API applies exactly this
+//      list (LeadFieldMapper). Targets that are switched off are left out
+//      here because the API skips them too.
+//   2. If the lead has custom values but none are mapped, a one-line hint
+//      says so, with a link to set it up for people who can open Settings.
+//   3. Deal fields marked REQUIRED that nothing fills are named, so it is
+//      no surprise when the deal's Edit page asks for them later.
+//   4. SymbolFor uses CurrencyConfiguration — the page's own table drew
+//      AED as د.إ, unlike the quote PDF and every other screen.
+//   Loading the field lists is non-fatal: if it fails the card is simply
+//   not shown and the conversion still works.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;
+using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -84,6 +104,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private readonly ILeadService _leadService;
         private readonly ILeadStatusService _statusService;      // (031)
         private readonly IPipelineStageService _stageService;    // (031)
+        private readonly ICustomFieldService _customFields;      // 079
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly ILogger<ConvertToDealModel> _logger;
@@ -94,6 +115,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             ILeadService leadService,
             ILeadStatusService statusService,
             IPipelineStageService stageService,
+            ICustomFieldService customFields,
             IAuthorizationService authorizationService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
@@ -103,6 +125,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             _leadService = leadService;
             _statusService = statusService;
             _stageService = stageService;
+            _customFields = customFields;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
             _logger = logger;
@@ -138,6 +161,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         [TempData] public string? ErrorMessage { get; set; }
         [TempData] public string? SuccessMessage { get; set; }
+
+        // ── 079: what carries across ──────────────────────────────────
+
+        /// <summary>One mapped lead value and where it lands.</summary>
+        public sealed record CarryOverItem(string LeadLabel, string Value, string? ToContact, string? ToDeal);
+
+        /// <summary>Mapped Lead fields with a value on this lead (note 1).</summary>
+        public List<CarryOverItem> CarryOver { get; private set; } = new();
+
+        /// <summary>Lead fields with a value here but no mapping (note 2).</summary>
+        public int UnmappedValueCount { get; private set; }
+
+        /// <summary>Required Deal fields nothing fills (note 3).</summary>
+        public List<string> RequiredDealFieldsNotFilled { get; private set; } = new();
+
+        public bool CanConfigureFields => UserCanRead(Modules.Settings);
 
         public class ConvertInputModel
         {
@@ -235,6 +274,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 EstimatedValue = lead.ExpectedValue;
                 LeadStatusName = await StatusNameAsync(lead.Status);
                 DealCurrency   = ResolveCurrency(lead.Currency);
+                await LoadCarryOverAsync(lead);                         // 079
 
                 // Start where the tenant says deals start.
                 var start = Stages.FirstOrDefault(s => s.IsDefault) ?? Stages.FirstOrDefault();
@@ -446,6 +486,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 EstimatedValue = lead.ExpectedValue;
                 LeadStatusName = await StatusNameAsync(lead.Status);
                 DealCurrency   = ResolveCurrency(lead.Currency);
+                await LoadCarryOverAsync(lead);                         // 079
             }
             catch (Exception ex)
             {
@@ -453,21 +494,94 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             }
         }
 
+        private async Task<List<CustomFieldDefinitionDto>> TryGetFieldsAsync(string entityType)
+        {
+            try
+            {
+                return await _customFields.GetDefinitionsAsync(entityType, includeInactive: false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not load {Entity} custom fields for the conversion preview", entityType);
+                return new List<CustomFieldDefinitionDto>();
+            }
+        }
+
+        /// <summary>
+        /// 079. What LeadFieldMapper will copy for this lead, worked out from
+        /// the same three field lists. Never throws — on any failure the card
+        /// is simply not shown.
+        /// </summary>
+        private async Task LoadCarryOverAsync(LeadDetailDto lead)
+        {
+            CarryOver = new();
+            UnmappedValueCount = 0;
+            RequiredDealFieldsNotFilled = new();
+
+            try
+            {
+                var leadFields    = await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Lead, includeInactive: true);
+                // Each target list on its own: someone who may convert but not
+                // read contacts still sees what lands on the deal.
+                var contactFields = await TryGetFieldsAsync(CustomFieldEntityTypes.Contact);
+                var dealFields    = await TryGetFieldsAsync(CustomFieldEntityTypes.Deal);
+
+                var contactById = contactFields.Where(f => f.IsActive).ToDictionary(f => f.Id);
+                var dealById    = dealFields.Where(f => f.IsActive).ToDictionary(f => f.Id);
+
+                var culture    = CustomFieldFormatter.ResolveCulture(CultureName);
+                var dateFormat = TenantCtx.GetDateFormat();
+                var filledDeal = new HashSet<Guid>();
+
+                foreach (var f in leadFields)
+                {
+                    if (!lead.CustomFieldValues.TryGetValue(f.Id, out var wire) || string.IsNullOrEmpty(wire))
+                        continue;
+
+                    string? toContact = null, toDeal = null;
+
+                    if (f.MapToContactFieldId is { } c && contactById.TryGetValue(c, out var ct) && ct.FieldType == f.FieldType)
+                        toContact = ct.Label;
+
+                    if (f.MapToDealFieldId is { } d && dealById.TryGetValue(d, out var dt) && dt.FieldType == f.FieldType)
+                    {
+                        toDeal = dt.Label;
+                        filledDeal.Add(dt.Id);
+                    }
+
+                    if (toContact is null && toDeal is null)
+                    {
+                        UnmappedValueCount++;
+                        continue;
+                    }
+
+                    CarryOver.Add(new CarryOverItem(f.Label, CustomFieldFormatter.Display(f, wire, culture, dateFormat), toContact, toDeal));
+                }
+
+                RequiredDealFieldsNotFilled = dealFields
+                    .Where(f => f.IsActive && f.IsRequired && !filledDeal.Contains(f.Id))
+                    .OrderBy(f => f.SortOrder)
+                    .Select(f => f.Label)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not work out the custom fields carried over for lead {LeadId}", lead.Id);
+                CarryOver = new();
+                UnmappedValueCount = 0;
+                RequiredDealFieldsNotFilled = new();
+            }
+        }
+
         // ── view helpers ──────────────────────────────────────────────
 
-        /// <summary>Symbol for an ISO code. Unknown codes come back as the code.</summary>
-        public string SymbolFor(string? code) => (code ?? string.Empty).ToUpperInvariant() switch
-        {
-            "INR" => "₹",
-            "THB" => "฿",
-            "PHP" => "₱",
-            "AED" => "د.إ",
-            "USD" => "$",
-            "EUR" => "€",
-            "GBP" => "£",
-            ""    => TenantCurrencySymbol,
-            _     => code!.ToUpperInvariant()
-        };
+        /// <summary>
+        /// Symbol for an ISO code, from the app's one currency table (079 —
+        /// note 4). Unknown codes come back as the code; no code at all
+        /// falls back to the workspace's symbol.
+        /// </summary>
+        public string SymbolFor(string? code)
+            => string.IsNullOrWhiteSpace(code) ? TenantCurrencySymbol : CurrencyConfiguration.GetCurrencySymbol(code);
 
         public string StageBadgeClass(StageCategory category) => category switch
         {

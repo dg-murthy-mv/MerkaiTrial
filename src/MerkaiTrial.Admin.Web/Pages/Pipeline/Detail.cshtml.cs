@@ -4,6 +4,20 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 078 — GetCurrencySymbol is GONE. Nothing called it (the view formats
+//   money through the base class), and it was one more hardcoded symbol
+//   table that disagreed with CurrencyConfiguration (AED as د.إ).
+//
+// CHANGES (077 — custom fields on deals)
+//   • "Additional details" card above the tabs: every active Deal custom
+//     field, plus any retired field this deal still has a value in, through
+//     the shared _CustomFieldValues partial. Numbers in the tenant's
+//     culture, dates in the tenant's pattern and never timezone-shifted.
+//     Its Edit link appears only when this deal can be edited (open, and
+//     the viewer has deals.update) — the same rule as the header's button.
+//   • Loaded in parallel with the rest; a failure costs the card, not the
+//     page, and the card says so.
+//
 // CHANGES (030)
 //   • A DELETED OR OUT-OF-SCOPE DEAL 500'd THE PAGE. Deal is declared
 //     `= null!` and OnGetAsync assigned whatever GetDetailAsync returned
@@ -55,13 +69,16 @@
 // (IsFromLead). Those are editable under the same rules as any other.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;              // 077
 using MerkaiTrial.Admin.Web.Services.Activities;
+using MerkaiTrial.Admin.Web.Services.CustomFields;     // 077
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Configuration;           // 077
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -84,6 +101,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly IPipelineStageService _stageService;
         private readonly IPipelineRuleService _ruleService;          // 020
         private readonly IDealStageService _dealStageService;        // 020
+        private readonly ICustomFieldService _customFields;          // 077
         protected override string ModuleName => Modules.Deals;
 
         public DetailModel(
@@ -96,7 +114,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             ILogger<DetailModel> logger,
             IPipelineStageService stageService,
             IPipelineRuleService ruleService,                        // 020
-            IDealStageService dealStageService)                      // 020
+            IDealStageService dealStageService,                      // 020
+            ICustomFieldService customFields)                        // 077
             : base(authorizationService, currentUserService, logger)
         {
             _dealService          = dealService;
@@ -108,6 +127,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _stageService         = stageService;
             _ruleService          = ruleService;
             _dealStageService     = dealStageService;
+            _customFields         = customFields;
         }
 
         // ==================== PAGE PROPERTIES ====================
@@ -124,6 +144,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<ActivityDto> Tasks      => AllActivities.Where(a =>  a.IsTask).ToList();
 
         public List<PipelineStageDto> Stages { get; set; } = new();
+
+        // ── 077: custom fields ────────────────────────────────────────
+
+        /// <summary>Every Deal custom field, retired ones included (they show if this deal has a value).</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Deal?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = _currentTenantService.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            CanEdit      = CanUpdate && IsEditableState,
+            RecordId     = Deal?.Id ?? Guid.Empty,
+            EntityType   = CustomFieldEntityTypes.Deal,
+            EditPage     = "/Pipeline/Edit"
+        };
 
         /// <summary>
         /// 020 — the moves this deal can make from where it is, each
@@ -326,9 +367,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var activitiesTask   = LoadActivitiesAsync(tenantId, id);
                 var assigneesTask    = LoadAssigneesAsync();
                 var transitionsTask  = LoadTransitionsAsync(id);
+                var customFieldsTask = LoadCustomFieldsAsync();          // 077
 
                 await Task.WhenAll(notesTask, stageHistoryTask, stagesTask, attachmentsTask,
-                                   activitiesTask, assigneesTask, transitionsTask);
+                                   activitiesTask, assigneesTask, transitionsTask, customFieldsTask);
 
                 Notes        = await notesTask;
                 StageHistory = await stageHistoryTask;
@@ -846,6 +888,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
         }
 
+        /// <summary>077. A failure costs the card, not the page.</summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                    CustomFieldEntityTypes.Deal, includeInactive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load custom fields for the deal page");
+                CustomFieldDefinitions = new();
+                CustomFieldsLoadFailed = true;
+            }
+        }
+
         private async Task LoadAssigneesAsync()
         {
             try { Assignees = await _activityService.GetAssigneesAsync(); }
@@ -1079,21 +1137,5 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             };
         }
 
-
-        public string GetCurrencySymbol(string? currencyCode)
-        {
-            var code = currencyCode ?? _currentTenantService.GetCurrencyCode();
-            return code switch
-            {
-                "INR" => "₹",
-                "USD" => "$",
-                "EUR" => "€",
-                "GBP" => "£",
-                "THB" => "฿",
-                "PHP" => "₱",
-                "AED" => "د.إ",
-                _ => code
-            };
-        }
     }
 }

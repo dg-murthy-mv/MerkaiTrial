@@ -13,7 +13,9 @@
     var barClass = AuthorizedPageModel.QuotaBarClass(Model.DealQuotaUsed, Model.MaxDeals);
     var hasFilter = !string.IsNullOrWhiteSpace(Model.SearchTerm)
                  || !string.IsNullOrWhiteSpace(Model.StageFilter)
-                 || !string.IsNullOrWhiteSpace(Model.OwnerFilter);
+                 || !string.IsNullOrWhiteSpace(Model.OwnerFilter)
+                 || Model.CustomFilters.HasAny;                       // 077
+    var cfCols = Model.ListColumns;                                   // 077
 }
 @* =====================================================================
    PIPELINE BOARD (030)
@@ -83,6 +85,16 @@
       (so the totals catch up), which threw a table-view user back to the
       board every time. The choice is remembered now, and an early script
       sets it before the first paint so there is no flash.
+
+   077 — CUSTOM FIELDS
+     • List-column custom fields are columns in the TABLE and short
+       "Label: value" lines on each BOARD card (only the filled-in ones,
+       so a card never grows a list of dashes).
+     • _CustomFieldFilterPanel under the toolbar. Its inputs carry
+       form="pbFilter", so the toolbar's Apply and the panel's Apply send
+       one GET with everything; the View hidden field rides along, so a
+       table user stays on the table.
+     • PageError: a board that failed to load says so here, now.
 
    7. "Total Deals" SAT BESIDE A QUOTA BAR COUNTING SOMETHING ELSE.
       TotalDeals is the deals THIS user can see; DealQuotaUsed is the
@@ -174,6 +186,11 @@
             display: block; }
     .pb-q.ok { background: #dcfce7; color: #15803d; }
     .pb-q.sent { background: #dbeafe; color: #1d4ed8; }
+
+    /* 077 — custom field lines on a card */
+    .pb-cf { margin-top: .35rem; font-size: .72rem; color: #64748b; line-height: 1.35; }
+    .pb-cf div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pb-cf .k { color: #94a3b8; }
 
     /* ── table ──────────────────────────────────────────────────── */
     .pb-shell { border: 1px solid #e9ecef; border-radius: 12px; background: #fff; overflow: hidden; }
@@ -270,6 +287,14 @@
         </div>
     </div>
 
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
+
     @* Where a refused drag explains itself. Hidden until needed. *@
     <div id="pbRefused" class="alert alert-warning alert-dismissible pb-hidden" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -343,10 +368,10 @@
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="pbFilter">
             <input type="hidden" name="View" value="board" class="pb-view-field" />
 
-            <div class="input-group input-group-sm" style="width:230px;">
+            <div class="input-group input-group-sm" style="width:260px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="search" name="SearchTerm" value="@Model.SearchTerm" class="form-control"
-                       placeholder="Deal or company" aria-label="Search deals" autocomplete="off" />
+                       placeholder="Deal, company or any text detail" aria-label="Search deals" autocomplete="off" />
             </div>
 
             <select name="StageFilter" class="form-select form-select-sm" style="width:auto;"
@@ -404,6 +429,9 @@
             }
         </div>
     </div>
+
+    @* 077 — filter by the deal's custom fields. Joins #pbFilter. *@
+    <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
     @if (!stages.Any())
     {
@@ -499,6 +527,26 @@
 
                                     <div class="amt">@Model.FormatCurrency(deal.ExpectedValue, 0)</div>
 
+                                    @* 077 — filled-in list-column fields only. *@
+                                    @if (cfCols.Count > 0)
+                                    {
+                                        var shownCf = cfCols
+                                            .Select(c => (Field: c, Text: Model.ColumnValue(deal, c)))
+                                            .Where(x => !string.IsNullOrEmpty(x.Text))
+                                            .ToList();
+                                        if (shownCf.Count > 0)
+                                        {
+                                            <div class="pb-cf">
+                                                @foreach (var x in shownCf)
+                                                {
+                                                    <div title="@x.Field.Label: @x.Text">
+                                                        <span class="k">@x.Field.Label:</span> @x.Text
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    }
+
                                     <div class="meta">
                                         <span class="own">
                                             <span class="pb-av">@deal.OwnerInitials</span>
@@ -546,6 +594,10 @@
                             <th class="n">Prob.</th>
                             <th>Owner</th>
                             <th>Closes</th>
+                            @foreach (var col in cfCols)
+                            {
+                                <th>@col.Label</th>
+                            }
                             <th class="q-stick text-end">Actions</th>
                         </tr>
                     </thead>
@@ -553,7 +605,7 @@
                         @if (!Model.Deals.Any())
                         {
                             <tr>
-                                <td colspan="8" class="pb-empty">
+                                <td colspan="@(8 + cfCols.Count)" class="pb-empty">
                                     @if (hasFilter)
                                     {
                                         <text>No deals match those filters.</text>
@@ -581,6 +633,24 @@
                                 <td class="n">@deal.Probability%</td>
                                 <td><div class="pb-clip">@deal.OwnerName</div></td>
                                 <td class="d">@Model.FormatDate(deal.ExpectedCloseDateUtc)</td>
+                                @foreach (var col in cfCols)
+                                {
+                                    var shown = Model.ColumnValue(deal, col);
+                                    <td>
+                                        @if (string.IsNullOrEmpty(shown))
+                                        {
+                                            <span class="text-muted">-</span>
+                                        }
+                                        else if (col.FieldType == MerkaiTrial.Application.Configuration.CustomFieldTypes.Checkbox)
+                                        {
+                                            <i class="bi bi-check-lg text-success" aria-label="Yes"></i>
+                                        }
+                                        else
+                                        {
+                                            <div class="pb-clip" title="@shown">@shown</div>
+                                        }
+                                    </td>
+                                }
                                 <td class="q-stick text-end">
                                     <div class="d-flex gap-1 justify-content-end">
                                         <a asp-page="/Pipeline/Detail" asp-route-id="@deal.Id"
