@@ -14,6 +14,7 @@
     <Folder Include="Commands\Meta\" />
     <Folder Include="Commands\LeadStatuses\" />
     <Folder Include="Commands\CustomFields\" />
+    <Folder Include="Commands\InboundEmails\" />
     <Folder Include="Commands\Notifications\" />
     <Folder Include="Commands\RecordVisibility\" />
     <Folder Include="Commands\PipelineStages\" />
@@ -23,6 +24,7 @@
     <Folder Include="Common\" />
     <Folder Include="Queries\" />
     <Folder Include="Services\Fiscal\" />
+    <Folder Include="Services\Inbound\" />
     <Folder Include="Services\Notifications\" />
     <Folder Include="Services\Pdf\" />
     <Folder Include="Services\Tenants\" />

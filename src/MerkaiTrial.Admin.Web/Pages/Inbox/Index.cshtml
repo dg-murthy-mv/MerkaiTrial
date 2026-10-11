@@ -1,0 +1,202 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Inbox.IndexModel
+@{
+    ViewData["Title"] = "Inbox";
+}
+@* =====================================================================
+   Inbox/Index.cshtml — NEW (083). Received email nobody has filed yet.
+
+   PATTERNS: no Bootstrap includes, no TempData alert block (the layout
+   renders those), @@ inside <style>, no inline onclick with data in it.
+   ===================================================================== *@
+
+<style>
+    .ib-wrap { max-width: 1000px; }
+    .ib-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .ib-tabs { display: inline-flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+    .ib-tab { color: #475569; font-size: 13px; font-weight: 500; padding: 6px 14px; border-radius: 6px; text-decoration: none; white-space: nowrap; }
+    .ib-tab:hover { color: #1e293b; }
+    .ib-tab.active { background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.12); }
+    .ib-list { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden; }
+    .ib-row { display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border-bottom: 1px solid #f1f5f9; }
+    .ib-row:last-child { border-bottom: 0; }
+    .ib-row:hover { background: #f8fafc; }
+    .ib-ico { width: 34px; height: 34px; border-radius: 8px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; flex: 0 0 34px; font-size: 15px; }
+    .ib-main { flex: 1 1 auto; min-width: 0; text-decoration: none; color: inherit; }
+    .ib-who { font-size: 14px; font-weight: 600; color: #0f172a; }
+    .ib-subject { font-size: 13.5px; color: #1e293b; }
+    .ib-snippet { font-size: 12.5px; color: #64748b; }
+    .ib-when { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+    .ib-empty { padding: 56px 20px; text-align: center; color: #64748b; }
+    .ib-empty i { font-size: 34px; color: #cbd5e1; display: block; margin-bottom: 10px; }
+    @@media (max-width: 575.98px) { .ib-actions { display: none; } }
+</style>
+
+<div class="ib-wrap">
+    <div class="ib-head">
+        <div class="me-auto">
+            <h1 class="lf-page-title mb-1">Inbox</h1>
+            <p class="text-muted mb-0 small">
+                Email that came in but doesn't match any lead, deal or contact yet. Open one to file it —
+                once it's filed, it shows on that record and the owner is told.
+            </p>
+        </div>
+        @if (Model.UserCanRead(MerkaiTrial.Application.Authorization.Modules.Settings))
+        {
+            <a asp-page="/Settings/InboundEmail/Index" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-gear me-1"></i>Inbound email settings
+            </a>
+        }
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <div class="ib-tabs">
+            <a class="ib-tab @(Model.CurrentStatus == "unmatched" ? "active" : "")" asp-page="./Index" asp-route-status="unmatched">
+                Needs filing <span class="badge bg-warning text-dark ms-1">@Model.Data.UnmatchedCount</span>
+            </a>
+            <a class="ib-tab @(Model.CurrentStatus == "dismissed" ? "active" : "")" asp-page="./Index" asp-route-status="dismissed">
+                Dismissed <span class="badge bg-secondary ms-1">@Model.Data.DismissedCount</span>
+            </a>
+            <a class="ib-tab @(Model.CurrentStatus == "problems" ? "active" : "")" asp-page="./Index" asp-route-status="problems">Couldn't download</a>
+            <a class="ib-tab @(Model.CurrentStatus == "all" ? "active" : "")" asp-page="./Index" asp-route-status="all">All email</a>
+        </div>
+
+        <form method="get" class="ms-auto">
+            <input type="hidden" name="status" value="@Model.CurrentStatus" />
+            <div class="input-group input-group-sm" style="max-width:300px;">
+                <input type="search" name="search" value="@Model.Search" class="form-control"
+                       placeholder="Sender or subject" maxlength="100" aria-label="Search the inbox" />
+                <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+            </div>
+        </form>
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-triangle"></i><span>@Model.LoadError</span>
+        </div>
+    }
+
+    <div class="ib-list">
+        @if (Model.Data.Items.Count == 0)
+        {
+            <div class="ib-empty">
+                <i class="bi bi-inbox"></i>
+                @if (!string.IsNullOrWhiteSpace(Model.Search))
+                {
+                    <div>Nothing matches “@Model.Search”.</div>
+                    <a class="small" asp-page="./Index" asp-route-status="@Model.CurrentStatus">Clear the search</a>
+                }
+                else if (Model.CurrentStatus == "unmatched")
+                {
+                    <div><strong>All filed.</strong> Nothing is waiting.</div>
+                    <div class="small mt-1">
+                        Replies to quote emails, and email your team BCCs or forwards to the workspace address,
+                        are filed automatically. Only the ones that match nobody land here.
+                    </div>
+                }
+                else
+                {
+                    <div>Nothing here.</div>
+                }
+            </div>
+        }
+        else
+        {
+            @foreach (var e in Model.Data.Items)
+            {
+                <div class="ib-row">
+                    <div class="ib-ico"><i class="bi @e.DirectionIcon"></i></div>
+
+                    <a class="ib-main" asp-page="/Emails/View" asp-route-id="@e.Id">
+                        <div class="d-flex justify-content-between gap-2">
+                            <div class="ib-who text-truncate">
+                                @e.WithDisplay
+                                @if (!string.IsNullOrWhiteSpace(e.ForwardedByName))
+                                {
+                                    <span class="text-muted small fw-normal">· @e.DirectionLabel.ToLowerInvariant() by @e.ForwardedByName</span>
+                                }
+                            </div>
+                            <span class="ib-when" title="@Model.FormatDateTime(e.ReceivedAtUtc)">@Model.FormatDateTime(e.ReceivedAtUtc)</span>
+                        </div>
+                        <div class="ib-subject text-truncate">@e.Subject</div>
+                        @if (!string.IsNullOrWhiteSpace(e.Snippet))
+                        {
+                            <div class="ib-snippet text-truncate">@e.Snippet</div>
+                        }
+                        <div class="d-flex flex-wrap gap-1 mt-1">
+                            @if (e.Status == "Matched")
+                            {
+                                <span class="badge bg-success-subtle text-success-emphasis">Filed</span>
+                            }
+                            @if (e.AttachmentCount > 0)
+                            {
+                                <span class="badge bg-light text-dark border"><i class="bi bi-paperclip"></i> @e.AttachmentCount</span>
+                            }
+                            @if (e.IsAutoReply)
+                            {
+                                <span class="badge bg-light text-muted border">Auto-reply</span>
+                            }
+                            @if (e.SenderVerified == false)
+                            {
+                                <span class="badge bg-warning-subtle text-warning-emphasis"><i class="bi bi-shield-exclamation"></i> Unverified sender</span>
+                            }
+                            @if (e.IsStillProcessing)
+                            {
+                                <span class="badge bg-info-subtle text-info-emphasis">Still downloading…</span>
+                            }
+                            @if (e.ProcessingState == "Failed")
+                            {
+                                <span class="badge bg-danger-subtle text-danger-emphasis">Text not downloaded</span>
+                            }
+                        </div>
+                    </a>
+
+                    @if (Model.CanUpdate)
+                    {
+                        <div class="ib-actions">
+                            @if (e.Status == "Dismissed")
+                            {
+                                <form method="post" asp-page-handler="Restore" asp-route-id="@e.Id"
+                                      asp-route-status="@Model.CurrentStatus" asp-route-search="@Model.Search" asp-route-skip="@Model.Skip">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Restore">
+                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                    </button>
+                                </form>
+                            }
+                            else if (e.Status == "Unmatched")
+                            {
+                                <form method="post" asp-page-handler="Dismiss" asp-route-id="@e.Id"
+                                      asp-route-status="@Model.CurrentStatus" asp-route-search="@Model.Search" asp-route-skip="@Model.Skip">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Not a customer email — dismiss">
+                                        <i class="bi bi-archive"></i>
+                                    </button>
+                                </form>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    @if (Model.HasPrevious || Model.Data.HasMore)
+    {
+        <div class="d-flex justify-content-between mt-3">
+            @if (Model.HasPrevious)
+            {
+                <a class="btn btn-sm btn-outline-secondary" asp-page="./Index" asp-route-status="@Model.CurrentStatus"
+                   asp-route-search="@Model.Search" asp-route-skip="@Model.PreviousSkip"><i class="bi bi-chevron-left"></i> Newer</a>
+            }
+            else { <span></span> }
+
+            @if (Model.Data.HasMore)
+            {
+                <a class="btn btn-sm btn-outline-secondary" asp-page="./Index" asp-route-status="@Model.CurrentStatus"
+                   asp-route-search="@Model.Search" asp-route-skip="@Model.NextSkip">Older <i class="bi bi-chevron-right"></i></a>
+            }
+            else { <span></span> }
+        </div>
+    }
+</div>

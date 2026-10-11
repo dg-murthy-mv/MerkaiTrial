@@ -23,6 +23,11 @@
 //   ✅ GetDealsRequest.CustomFilters — trailing and defaulted, so every
 //      positional construction elsewhere still compiles.
 //
+// CHANGES (083 — inbound email)
+//   ✅ TimelineItemDto.Url — trailing and defaulted, so every existing
+//      construction still compiles. Set for an "Email" item, which links
+//      to the email page; null for everything else, as before.
+//
 // Stage values are NOT canonical here any more — PipelineStages is the
 // source of truth per tenant. DealStages below survives only as the seed
 // vocabulary and as CreateDealDto's fallback; see the note on it.
@@ -61,7 +66,8 @@ namespace MerkaiTrial.Application.DTOs
         DateTime Date,
         string? CreatedBy,
         string Icon,        // e.g. "bi-telephone"
-        string BadgeClass   // e.g. "bg-success"
+        string BadgeClass,  // e.g. "bg-success"
+        string? Url = null  // 083 — where the item opens; only emails have one
     );
     public record GetDealsRequest(
         string TenantId,

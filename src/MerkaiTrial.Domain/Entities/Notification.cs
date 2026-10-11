@@ -63,7 +63,14 @@ namespace MerkaiTrial.Domain.Entities
         LeadAssigned = 6,
 
         /// <summary>A deal was assigned to someone.</summary>
-        DealAssigned = 7
+        DealAssigned = 7,
+
+        /// <summary>
+        /// 083. A customer emailed about one of my records — a reply to a
+        /// quote, a new message from a known contact, or one a colleague
+        /// forwarded to the workspace address.
+        /// </summary>
+        CustomerEmailReceived = 8
     }
 
     public class Notification

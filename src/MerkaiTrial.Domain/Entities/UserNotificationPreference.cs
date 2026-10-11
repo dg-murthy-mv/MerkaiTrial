@@ -17,6 +17,12 @@
 //   existing user nothing for it, because their row set predates it. This
 //   way a new event type picks up its default for everyone immediately.
 //
+// 083 — CustomerEmailReceived: in the app, NOT by email, by default. A
+// quote email's Reply-To carries BOTH the tracked address and the
+// workspace's own reply-to mailbox, so the customer's reply still lands
+// in that inbox as it always did. An email notification on top would be
+// the same message twice.
+//
 // WHY EMAIL DEFAULTS ARE MOSTLY OFF
 //   The fastest way to make people ignore your product's email is to send
 //   them one for everything. Only the two approval events default to
@@ -116,6 +122,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.QuoteSent,
             NotificationEventType.QuoteAccepted,
             NotificationEventType.QuoteRejected,
+            NotificationEventType.CustomerEmailReceived,     // 083
             NotificationEventType.DealStageChanged,
             NotificationEventType.DealAssigned,
             NotificationEventType.LeadAssigned
@@ -132,6 +139,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.DealStageChanged       => "One of my deals changes stage",
             NotificationEventType.LeadAssigned           => "A lead is assigned to me",
             NotificationEventType.DealAssigned           => "A deal is assigned to me",
+            NotificationEventType.CustomerEmailReceived  => "A customer emails about one of my records",
             _                                             => eventType.ToString()
         };
 
@@ -143,6 +151,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.QuoteSent              => "Quotes",
             NotificationEventType.QuoteAccepted          => "Quotes",
             NotificationEventType.QuoteRejected          => "Quotes",
+            NotificationEventType.CustomerEmailReceived  => "Email",
             _                                             => "Deals and leads"
         };
     }

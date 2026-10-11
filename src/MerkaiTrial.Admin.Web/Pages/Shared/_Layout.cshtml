@@ -1004,7 +1004,7 @@
                     </a>
                 }
                 <!-- CUSTOMERS & SALES -->
-                @if (CanNav("companies") || CanNav("contacts") || CanNav("products") || CanNav("leads"))
+                @if (CanNav("companies") || CanNav("contacts") || CanNav("products") || CanNav("leads") || CanNav("inbox"))
                 {
                     <div class="lf-nav-section">CUSTOMERS &amp; SALES</div>
 
@@ -1014,6 +1014,19 @@
                         <a class="lf-nav-item @(IsActive("/Leads") ? "active" : "")"
                            asp-page="/Leads/Index">
                             <i class="bi bi-funnel"></i> Leads
+                        </a>
+                    }
+
+                    @* 083. Inbox — received email that matched no record. Gated on
+                       the new "inbox" module, which nobody holds until an admin
+                       grants it. The count is fetched once by the script at the
+                       bottom of this file, so a page never waits for it. *@
+                    @if (CanNav("inbox"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Inbox") || IsActive("/Emails") ? "active" : "")"
+                           asp-page="/Inbox/Index">
+                            <i class="bi bi-inbox"></i> Inbox
+                            <span class="lf-badge" id="lfInboxCount" hidden></span>
                         </a>
                     }
 
@@ -1253,6 +1266,14 @@
                         <a class="lf-nav-item @(IsActive("/Settings/Notifications") ? "active" : "")"
                            asp-page="/Settings/Notifications/Index">
                             <i class="bi bi-bell"></i> Notifications
+                        </a>
+
+                        @* 083. The workspace's receiving address and the setup
+                           checklist. Settings, like Company Profile: it is about
+                           how the workspace is wired, not a rep's day. *@
+                        <a class="lf-nav-item @(IsActive("/Settings/InboundEmail") ? "active" : "")"
+                           asp-page="/Settings/InboundEmail/Index">
+                            <i class="bi bi-envelope-arrow-down"></i> Inbound Email
                         </a>
                     }
 
@@ -1817,6 +1838,71 @@
             } else {
                 poll();
             }
+        })();
+    </script>
+
+    @*
+        083 — two small shared behaviours.
+
+        [data-copy]: any button carrying data-copy="text" copies it and says
+        so for two seconds. Delegated, so partials (the Emails section on
+        a record) need no script of their own. The text is read from the
+        attribute, never interpolated into script.
+
+        The Inbox badge: one fetch when the page loads, and only when the
+        Inbox link is on the page at all (i.e. the person can use it).
+    *@
+    <script>
+        (function () {
+            document.addEventListener('click', function (ev) {
+                var btn = ev.target.closest('[data-copy]');
+                if (!btn) return;
+                var text = btn.getAttribute('data-copy') || '';
+                var original = btn.innerHTML;
+
+                function done(ok) {
+                    btn.textContent = ok ? 'Copied' : 'Press Ctrl+C';
+                    setTimeout(function () { btn.innerHTML = original; }, 2000);
+                }
+
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+                } else {
+                    var area = document.createElement('textarea');
+                    area.value = text;
+                    area.setAttribute('readonly', '');
+                    area.style.position = 'fixed';
+                    area.style.opacity = '0';
+                    document.body.appendChild(area);
+                    area.select();
+                    var ok = false;
+                    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                    document.body.removeChild(area);
+                    done(ok);
+                }
+            });
+
+            var badge = document.getElementById('lfInboxCount');
+            if (!badge) return;
+
+            fetch('@Url.Page("/Inbox/Index", "Count")', {
+                headers: { 'Accept': 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store'
+            })
+            .then(function (r) {
+                var ct = r.headers.get('content-type') || '';
+                if (!r.ok || ct.indexOf('json') < 0) throw new Error('no count');
+                return r.json();
+            })
+            .then(function (d) {
+                var n = (d && d.unmatched) || 0;
+                if (n > 0) {
+                    badge.textContent = n > 99 ? '99+' : String(n);
+                    badge.hidden = false;
+                }
+            })
+            .catch(function () { /* a missing badge is not worth a console error */ });
         })();
     </script>
 

@@ -1,0 +1,417 @@
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Emails.ViewModel
+@{
+    ViewData["Title"] = Model.Email.Subject;
+    var e = Model.Email;
+}
+@* =====================================================================
+   Emails/View.cshtml — NEW (083). One received email.
+
+   PATTERNS (same as every page since 028):
+     • No Bootstrap CSS/JS — _Layout loads both.
+     • No TempData alert block — _Layout renders those once.
+     • @@ escaping inside <style>.
+     • No inline onclick with interpolated text: confirms are delegated
+       and read their message from data-confirm.
+
+   THE BODY: the email's HTML goes into <iframe sandbox srcdoc="…">.
+   Razor encodes the attribute; the browser decodes it into a document
+   with its own opaque origin, no scripts, no forms, and a CSP that
+   blocks remote content. See the page model's header.
+   ===================================================================== *@
+
+<style>
+    .ev-wrap { max-width: 1200px; }
+    .ev-subject { font-family: var(--font-display); font-size: 21px; font-weight: 700; color: #0f172a; margin: 0 0 6px; word-break: break-word; }
+    .ev-meta { font-size: 13px; color: #475569; }
+    .ev-meta dt { font-weight: 500; color: #94a3b8; width: 56px; flex: 0 0 56px; }
+    .ev-meta dd { margin: 0; word-break: break-word; }
+    .ev-meta .row-x { display: flex; gap: 8px; margin-bottom: 2px; }
+    .ev-frame { width: 100%; height: 60vh; min-height: 320px; border: 0; resize: vertical; display: block; background: #fff; }
+    .ev-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.55; color: #1e293b; margin: 0; padding: 16px; max-height: 70vh; overflow: auto; }
+    .ev-chip {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e2e8f0;
+        border-radius: 8px; text-decoration: none; color: #0f172a; font-size: 13.5px; margin-bottom: 6px;
+    }
+    a.ev-chip:hover { background: #f8fafc; }
+    .ev-chip .k { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; margin-left: auto; }
+    .ev-target { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .ev-target:last-child { border-bottom: 0; }
+    .ev-target .nm { font-size: 13.5px; font-weight: 500; color: #0f172a; }
+    .ev-target .dt { font-size: 12px; color: #64748b; }
+    .ev-file { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-decoration: none; color: inherit; }
+    .ev-file:last-child { border-bottom: 0; }
+    .ev-file:hover { background: #f8fafc; }
+    .ev-file i { font-size: 20px; color: #6366f1; }
+    @@media (max-width: 991.98px) { .ev-frame { height: 50vh; } }
+</style>
+
+<div class="ev-wrap">
+
+    <div class="mb-3">
+        @if (Model.UserCanRead(MerkaiTrial.Application.Authorization.Modules.Inbox))
+        {
+            <a asp-page="/Inbox/Index" class="text-decoration-none small"><i class="bi bi-arrow-left"></i> Inbox</a>
+        }
+    </div>
+
+    <div class="row g-4">
+        @* ── The email ─────────────────────────────────────────────── *@
+        <div class="col-lg-8">
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <span class="badge @(e.Direction == "SentByUser" ? "bg-success-subtle text-success-emphasis" : "bg-primary-subtle text-primary-emphasis")">
+                            @(e.Direction switch { "SentByUser" => "Sent by your team (BCC)", "Forwarded" => "Forwarded", _ => "Received" })
+                        </span>
+                        @if (e.Status == "Unmatched")
+                        {
+                            <span class="badge bg-warning-subtle text-warning-emphasis">Not filed yet</span>
+                        }
+                        else if (e.Status == "Dismissed")
+                        {
+                            <span class="badge bg-light text-muted border">Dismissed</span>
+                        }
+                        @if (e.IsAutoReply)
+                        {
+                            <span class="badge bg-light text-muted border">Auto-reply</span>
+                        }
+                    </div>
+
+                    <h1 class="ev-subject">@e.Subject</h1>
+
+                    <div class="ev-meta">
+                        <div class="row-x"><dt>From</dt><dd>
+                            <strong>@e.FromDisplay</strong>
+                            @if (!string.IsNullOrWhiteSpace(e.FromName))
+                            {
+                                <span class="text-muted">&lt;@e.FromAddress&gt;</span>
+                            }
+                        </dd></div>
+                        @if (e.Direction == "Forwarded" && !string.IsNullOrWhiteSpace(e.CounterpartAddress))
+                        {
+                            <div class="row-x"><dt>Customer</dt><dd>@e.CounterpartAddress <span class="text-muted">(read from the forwarded message)</span></dd></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(e.ToAddresses))
+                        {
+                            <div class="row-x"><dt>To</dt><dd>@e.ToAddresses</dd></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(e.CcAddresses))
+                        {
+                            <div class="row-x"><dt>Cc</dt><dd>@e.CcAddresses</dd></div>
+                        }
+                        <div class="row-x"><dt>Date</dt><dd>@Model.FormatDateTime(e.ReceivedAtUtc)</dd></div>
+                    </div>
+                </div>
+            </div>
+
+            @if (e.IsStillProcessing)
+            {
+                <div class="alert alert-info d-flex gap-2 align-items-start">
+                    <i class="bi bi-hourglass-split mt-1"></i>
+                    <div>
+                        <strong>Still being downloaded from Resend.</strong>
+                        The text and attachments usually arrive within a minute — refresh to see them.
+                        @if (!string.IsNullOrWhiteSpace(e.ProcessingError))
+                        {
+                            <div class="small mt-1 text-muted">Last attempt: @e.ProcessingError</div>
+                        }
+                    </div>
+                </div>
+            }
+            else if (e.ProcessingState == "Failed")
+            {
+                <div class="alert alert-warning d-flex gap-2 align-items-start">
+                    <i class="bi bi-exclamation-triangle mt-1"></i>
+                    <div>
+                        <strong>The message text could not be downloaded.</strong>
+                        The sender and subject are shown; the full email is still in your Resend dashboard under Receiving.
+                        @if (!string.IsNullOrWhiteSpace(e.ProcessingError))
+                        {
+                            <div class="small mt-1 text-muted">@e.ProcessingError</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (e.SenderVerified == false)
+            {
+                <div class="alert alert-warning d-flex gap-2 align-items-start">
+                    <i class="bi bi-shield-exclamation mt-1"></i>
+                    <div>
+                        <strong>The sender could not be verified.</strong>
+                        The domain this claims to come from did not vouch for it, so it may not be from who it says.
+                        Don't act on payment or bank-detail requests in it without checking by phone.
+                        @if (!string.IsNullOrWhiteSpace(e.AuthSummary))
+                        {
+                            <div class="small mt-1 text-muted">@e.AuthSummary</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="card mb-3">
+                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <span><i class="bi bi-envelope-paper me-2 text-primary"></i>Message</span>
+                    @if (Model.HasHtml)
+                    {
+                        <div class="btn-group btn-group-sm" role="group" aria-label="How to show the message">
+                            <a class="btn @(Model.ShowHtml ? "btn-secondary" : "btn-outline-secondary")"
+                               asp-page="./View" asp-route-id="@e.Id" asp-route-tab="html" asp-route-images="@Model.Images">Formatted</a>
+                            <a class="btn @(!Model.ShowHtml ? "btn-secondary" : "btn-outline-secondary")"
+                               asp-page="./View" asp-route-id="@e.Id" asp-route-tab="text">Plain text</a>
+                        </div>
+                    }
+                </div>
+
+                @if (Model.ShowHtml)
+                {
+                    @if (Model.HasBlockedImages)
+                    {
+                        <div class="px-3 py-2 small bg-light border-bottom d-flex flex-wrap gap-2 align-items-center">
+                            <i class="bi bi-image text-muted"></i>
+                            <span class="text-muted">Pictures from the internet are hidden — senders use them to see when you open an email.</span>
+                            <a asp-page="./View" asp-route-id="@e.Id" asp-route-tab="html" asp-route-images="true">Show pictures</a>
+                        </div>
+                    }
+                    <iframe class="ev-frame"
+                            title="Email message"
+                            sandbox="allow-popups allow-popups-to-escape-sandbox"
+                            referrerpolicy="no-referrer"
+                            srcdoc="@Model.SrcDoc"></iframe>
+                }
+                else if (!string.IsNullOrWhiteSpace(e.BodyText))
+                {
+                    <pre class="ev-text">@e.BodyText</pre>
+                }
+                else
+                {
+                    <div class="text-muted text-center py-5">
+                        @(e.IsStillProcessing ? "The message text has not arrived yet." : "This email has no text.")
+                    </div>
+                }
+            </div>
+
+            @if (e.Attachments.Count > 0 || !string.IsNullOrWhiteSpace(e.AttachmentNote))
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-paperclip me-2 text-primary"></i>Attachments
+                        <span class="badge bg-secondary ms-1">@e.Attachments.Count</span>
+                    </div>
+                    @foreach (var f in e.Attachments)
+                    {
+                        <a class="ev-file" href="@f.DownloadUrl" target="_blank" rel="noopener" download="@f.FileName">
+                            <i class="bi @MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.FileIcon(f.MimeType)"></i>
+                            <div class="flex-grow-1 text-truncate">
+                                <div class="small fw-semibold text-truncate">@f.FileName</div>
+                                <div class="small text-muted">@MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.FileSize(f.FileSize)</div>
+                            </div>
+                            <i class="bi bi-download text-muted" style="font-size:15px;"></i>
+                        </a>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(e.AttachmentNote))
+                    {
+                        <div class="px-3 py-2 small text-muted border-top">
+                            <i class="bi bi-info-circle me-1"></i>@e.AttachmentNote
+                        </div>
+                    }
+                    @if (e.Attachments.Count > 0 && e.Links.Any(l => l.EntityType is "Lead" or "Deal"))
+                    {
+                        <div class="px-3 py-2 small text-muted border-top">
+                            <i class="bi bi-check2-circle me-1"></i>A copy of each file is also on the lead's / deal's Attachments tab.
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @* ── Where it is filed, and filing it ──────────────────────── *@
+        <div class="col-lg-4">
+
+            <div class="card mb-3">
+                <div class="card-header"><i class="bi bi-diagram-2 me-2 text-primary"></i>Filed on</div>
+                <div class="card-body">
+                    @if (e.Links.Count == 0)
+                    {
+                        <p class="text-muted small mb-0">
+                            Not filed on any record yet.
+                            @if (e.CanLink)
+                            {
+                                <text>Find the right one below.</text>
+                            }
+                        </p>
+                    }
+                    else
+                    {
+                        @foreach (var l in e.Links)
+                        {
+                            if (l.CanOpen)
+                            {
+                                <a class="ev-chip" asp-page="@MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.LinkPage(l.EntityType)" asp-route-id="@l.EntityId">
+                                    <i class="bi @MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.LinkIcon(l.EntityType)"></i>
+                                    <span class="text-truncate">@l.Name</span>
+                                    <span class="k">@l.EntityType</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="ev-chip">
+                                    <i class="bi @MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.LinkIcon(l.EntityType)"></i>
+                                    <span class="text-truncate">@l.Name</span>
+                                    <span class="k">@l.EntityType</span>
+                                </div>
+                            }
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(Model.HowFiled))
+                        {
+                            <p class="small text-muted mt-2 mb-0">@Model.HowFiled</p>
+                        }
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(e.MatchNote))
+                    {
+                        <div class="alert alert-light border small mt-3 mb-0 py-2">
+                            <i class="bi bi-info-circle me-1"></i>@e.MatchNote
+                        </div>
+                    }
+
+                    @if (e.CanLink && e.Links.Count > 0)
+                    {
+                        <form method="post" asp-page-handler="Unlink" asp-route-id="@e.Id" class="mt-3 js-confirm"
+                              data-confirm="Take this email off these records and put it back in the Inbox? Copies of its files already on a lead or deal stay there.">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                                <i class="bi bi-x-circle me-1"></i>Unfile — back to the Inbox
+                            </button>
+                        </form>
+                    }
+                </div>
+            </div>
+
+            @if (e.CanLink)
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="bi bi-link-45deg me-2 text-primary"></i>@(e.Links.Count == 0 ? "File on a record" : "Move to another record")
+                    </div>
+                    <div class="card-body">
+                        <form method="get" class="mb-2">
+                            <div class="input-group input-group-sm">
+                                <input type="search" name="q" value="@Model.Q" class="form-control"
+                                       placeholder="Name, email or company" minlength="2" maxlength="100" aria-label="Search records" />
+                                <button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button>
+                            </div>
+                        </form>
+
+                        @if (Model.TargetsLoadFailed)
+                        {
+                            <p class="small text-danger mb-0">The search could not be run just now.</p>
+                        }
+                        else if (Model.Targets.Count == 0)
+                        {
+                            <p class="small text-muted mb-0">
+                                @if (Model.Searched)
+                                {
+                                    <text>Nothing matches “@Model.Q”.</text>
+                                }
+                                else
+                                {
+                                    <text>Search for the lead, deal or contact this email is about.</text>
+                                }
+                            </p>
+                        }
+                        else
+                        {
+                            @if (!Model.Searched)
+                            {
+                                <p class="small text-muted mb-1">Others at the same company:</p>
+                            }
+                            @foreach (var t in Model.Targets)
+                            {
+                                <div class="ev-target">
+                                    <i class="bi @MerkaiTrial.Admin.Web.Pages.Emails.ViewModel.LinkIcon(t.EntityType) text-muted"></i>
+                                    <div class="flex-grow-1 text-truncate">
+                                        <div class="nm text-truncate">
+                                            @t.Name
+                                            @if (t.EmailMatches)
+                                            {
+                                                <span class="badge bg-success-subtle text-success-emphasis ms-1">same email</span>
+                                            }
+                                        </div>
+                                        <div class="dt text-truncate">@(t.EntityType + (string.IsNullOrWhiteSpace(t.Detail) ? "" : " · " + t.Detail))</div>
+                                    </div>
+                                    <form method="post" asp-page-handler="Link" asp-route-id="@e.Id">
+                                        <input type="hidden" name="entityType" value="@t.EntityType" />
+                                        <input type="hidden" name="entityId" value="@t.EntityId" />
+                                        <button type="submit" class="btn btn-sm btn-primary">File here</button>
+                                    </form>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (Model.CanCreateLead || e.CanDismiss || e.CanDelete)
+            {
+                <div class="card mb-3">
+                    <div class="card-header"><i class="bi bi-lightning me-2 text-primary"></i>Actions</div>
+                    <div class="card-body d-grid gap-2">
+                        @if (Model.CanCreateLead)
+                        {
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Leads/Create" asp-route-fromEmail="@e.Id">
+                                <i class="bi bi-person-plus me-1"></i>Create a lead from this email
+                            </a>
+                        }
+
+                        @if (e.CanDismiss)
+                        {
+                            if (e.Status == "Dismissed")
+                            {
+                                <form method="post" asp-page-handler="Restore" asp-route-id="@e.Id">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                                    </button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="Dismiss" asp-route-id="@e.Id">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100"
+                                            title="Spam, a newsletter, anything that isn't about a customer">
+                                        <i class="bi bi-archive me-1"></i>Not a customer email — dismiss
+                                    </button>
+                                </form>
+                            }
+                        }
+
+                        @if (e.CanDelete)
+                        {
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@e.Id" class="js-confirm"
+                                  data-confirm="Delete this email and its attachments? This cannot be undone. Copies already on a lead's or deal's Attachments tab are kept.">
+                                <button type="submit" class="btn btn-sm btn-outline-danger w-100">
+                                    <i class="bi bi-trash me-1"></i>Delete
+                                </button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Delegated; the message comes from data-confirm, never from
+        // interpolated markup.
+        document.addEventListener('submit', function (ev) {
+            var form = ev.target.closest('form.js-confirm');
+            if (!form) return;
+            var message = form.getAttribute('data-confirm');
+            if (message && !window.confirm(message)) ev.preventDefault();
+        });
+    </script>
+}

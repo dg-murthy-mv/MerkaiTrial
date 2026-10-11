@@ -42,6 +42,12 @@
 //      confirm() put the contact's name inside a JavaScript string in the
 //      page: a name with an apostrophe ("O'Brien") arrived HTML-encoded
 //      inside script and showed as &#x27; in the dialog.
+//
+// 083 — EMAILS
+//   An "Emails" card: everything filed on this contact — replies to quotes
+//   on their deals, emails they sent in, emails the team BCC'd to them —
+//   through the shared _RecordEmails partial. Non-fatal like the deals
+//   card above it: a failure says so on the card, the page still renders.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
@@ -50,6 +56,7 @@ using MerkaiTrial.Admin.Web.Services.Contacts;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.InboundEmails;   // 083
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Deals;   // ContactDealItem
 using MerkaiTrial.Application.Configuration;
@@ -67,6 +74,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         private readonly IDealService        _dealService;       // ✅ BUG 3
         private readonly ICountryService     _countryService;    // 075
         private readonly ICustomFieldService _customFields;      // 075
+        private readonly IInboundEmailService _emails;           // 083
 
         protected override string ModuleName => Modules.Contacts;
 
@@ -75,6 +83,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             IDealService            dealService,                   // ✅ BUG 3
             ICountryService         countryService,
             ICustomFieldService     customFields,
+            IInboundEmailService    emails,                         // 083
             IAuthorizationService   authorizationService,
             ICurrentUserService     currentUserService,
             ILogger<DetailModel>    logger)
@@ -84,6 +93,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             _dealService    = dealService;                          // ✅ BUG 3
             _countryService = countryService;
             _customFields   = customFields;
+            _emails         = emails;
         }
 
         public ContactDto Contact { get; set; } = null!;
@@ -97,6 +107,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         /// <summary>075. Every custom field for Contacts, retired ones included.</summary>
         public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
         public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>083. The Emails card.</summary>
+        public RecordEmailsVm RecordEmails { get; private set; } = new();
 
         /// <summary>075. The model for _CustomFieldValues.</summary>
         public CustomFieldDisplayVm CustomFieldDisplay => new()
@@ -152,6 +165,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                     CustomFieldDefinitions = new();
                     CustomFieldsLoadFailed = true;
                 }
+
+                // 083 — never throws; a failure shows on the card.
+                RecordEmails = await RecordEmailsVm.LoadAsync(
+                    _emails, "Contact", id, "contact", FormatDateTime, Logger);
 
                 return Page();
             }

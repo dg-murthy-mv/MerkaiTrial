@@ -31,6 +31,13 @@ public static class ModuleCatalog
     private static readonly string[] ReadOnly = { "read" };
 
     /// <summary>
+    /// 083. Read / update / delete with no create — for the shared inbox,
+    /// where email ARRIVES and nobody creates it. Offering a "create"
+    /// checkbox that no call site checks is exactly the Reports bug above.
+    /// </summary>
+    private static readonly string[] NoCreate = { "read", "update", "delete" };
+
+    /// <summary>
     /// Every module the application actually enforces. Keys are lowercase
     /// and match Modules.* below.
     ///
@@ -46,6 +53,13 @@ public static class ModuleCatalog
         new("contacts",  "Contacts",  "bi-people",             "CUSTOMERS & SALES", 11, Crud),
         new("products",  "Products",  "bi-box-seam",           "CUSTOMERS & SALES", 12, Crud),
         new("leads",     "Leads",     "bi-funnel",             "CUSTOMERS & SALES", 13, Crud),
+
+        // 083. Received email that matched no record, waiting for someone
+        // to file it. Separate from leads/deals on purpose: an unmatched
+        // email could be from anyone about anything, so reading the pile
+        // is a different trust level from working your own pipeline.
+        // Emails filed on a record follow that record's permission instead.
+        new("inbox",     "Shared Inbox", "bi-inbox",           "CUSTOMERS & SALES", 14, NoCreate),
 
         // ── Sales Pipeline ───────────────────────────────────────────
         new("deals",     "Pipeline",  "bi-kanban",             "Sales Pipeline", 20, Crud),

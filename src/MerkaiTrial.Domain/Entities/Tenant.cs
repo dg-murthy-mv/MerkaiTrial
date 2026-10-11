@@ -4,7 +4,7 @@
 // Columns: Id, TenantKey, Name, DefaultCurrency, PreferredLanguage,
 //          Timezone, Plan, IsActive, Domain, FromEmail, ReplyToEmail,
 //          PaymentProvider, PaymentConfigJson, Phone, CountryId,
-//          PublicLinkSecret,
+//          PublicLinkSecret, InboundAlias (083),
 //          CreatedAtUtc, CreatedBy, UpdatedAtUtc, UpdatedBy, IsDeleted
 // =====================================================================
 
@@ -99,6 +99,20 @@ public class Tenant
 
     // ── Public link ───────────────────────────────────────────────────
     public string? PublicLinkSecret { get; set; }
+
+    // ── Inbound email (083) ───────────────────────────────────────────
+    /// <summary>
+    /// The workspace's own receiving address — the part before the @, as
+    /// in "sathorn-k7m2qx@in.madeevision.com". Email a rep BCCs or forwards
+    /// there is filed against this workspace.
+    ///
+    /// RANDOM, not the TenantKey. Keys are sequential ("BB100001"), and an
+    /// address anyone can guess is an address anyone can fill with junk.
+    /// NULL until somebody first opens Settings → Inbound Email, which
+    /// creates it; regenerating it there makes the old one stop working.
+    /// Unique (filtered index UX_Tenants_InboundAlias).
+    /// </summary>
+    public string? InboundAlias { get; set; }
 
     // ── Payment ───────────────────────────────────────────────────────
     public string? PaymentProvider { get; set; }

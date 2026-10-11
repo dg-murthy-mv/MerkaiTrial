@@ -29,6 +29,13 @@
 //   Without it, one network blip means a customer gets the same quote
 //   email twice.
 //
+// 083 — RECEIVING
+//   EmailOptions gains InboundDomain and InboundWebhookSecret, and the
+//   sender now accepts SEVERAL reply-to addresses (comma-separated in
+//   OutboundMessage.ReplyToAddress): a quote email carries the tracked
+//   reply+<token> address AND the workspace's own mailbox, so the reply is
+//   filed on the deal and still lands where the team has always read it.
+//
 // RATE LIMIT
 //   Resend's default is 2 requests per second. The worker paces itself;
 //   this class also treats HTTP 429 as retryable rather than fatal, so a
@@ -78,6 +85,52 @@ public sealed class EmailOptions
     public string ApiBaseUrl { get; set; } = "https://api.resend.com";
 
     public int TimeoutSeconds { get; set; } = 30;
+
+    // ── 083: receiving ───────────────────────────────────────────────
+
+    /// <summary>
+    /// The domain Resend receives on — "in.madeevision.com" once the MX
+    /// record is in place, or the account's free "xxxx.resend.app" address
+    /// for testing. NOT secret; appsettings is fine. Empty switches
+    /// receiving off: quote emails keep the old single Reply-To and the
+    /// settings page says what is missing.
+    /// </summary>
+    public string? InboundDomain { get; set; }
+
+    /// <summary>
+    /// The webhook's signing secret from the Resend dashboard ("whsec_…").
+    ///
+    /// SECRET — NEVER IN appsettings.json. Locally:
+    ///     dotnet user-secrets set "Email:InboundWebhookSecret" "whsec_..."
+    /// (in MerkaiTrial.WebApi), and on Azure: Email__InboundWebhookSecret.
+    /// Without it the webhook refuses every call, because an unsigned call
+    /// could come from anyone.
+    /// </summary>
+    public string? InboundWebhookSecret { get; set; }
+
+    /// <summary>The receiving domain, lower-case and without a leading @, or null.</summary>
+    public string? NormalisedInboundDomain =>
+        string.IsNullOrWhiteSpace(InboundDomain)
+            ? null
+            : InboundDomain.Trim().TrimStart('@').ToLowerInvariant();
+
+    /// <summary>
+    /// Tracked reply addresses go on outgoing email. Only needs the domain:
+    /// a reply that arrives before the webhook is set up is held by Resend
+    /// and shown in its dashboard, not lost.
+    ///
+    /// SET IT ONLY ONCE RESEND IS RECEIVING ON THAT DOMAIN (Receiving shows
+    /// it verified). Before that, the tracked address bounces — the
+    /// customer's copy to the workspace mailbox still arrives, but they
+    /// also get a delivery-failure notice for the other one.
+    /// </summary>
+    public bool IsInboundAddressingOn => NormalisedInboundDomain is not null;
+
+    /// <summary>Everything the webhook and the worker need: domain, secret and API key.</summary>
+    public bool IsReceivingReady =>
+        IsInboundAddressingOn
+        && !string.IsNullOrWhiteSpace(InboundWebhookSecret)
+        && IsConfigured;
 
     /// <summary>
     /// No key means no sending. The worker then leaves messages Pending
@@ -167,9 +220,7 @@ public sealed class ResendEmailSender : IEmailSender
             Subject = subject,
             Html = message.BodyHtml,
             Text = message.BodyText,
-            ReplyTo = string.IsNullOrWhiteSpace(message.ReplyToAddress)
-                ? null
-                : new[] { message.ReplyToAddress! }
+            ReplyTo = SplitReplyTo(message.ReplyToAddress)
         };
 
         try
@@ -246,6 +297,23 @@ public sealed class ResendEmailSender : IEmailSender
     {
         if (string.IsNullOrEmpty(s)) return string.Empty;
         return s.Length <= max ? s : s[..max];
+    }
+
+    /// <summary>
+    /// 083. "reply+abc@in.example.com, sales@acme.com" → two addresses.
+    /// Null when there are none, so the field is left out of the request
+    /// entirely rather than sent as an empty array.
+    /// </summary>
+    private static string[]? SplitReplyTo(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var parts = value
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return parts.Length == 0 ? null : parts;
     }
 
     // snake_case, as Resend's API expects.

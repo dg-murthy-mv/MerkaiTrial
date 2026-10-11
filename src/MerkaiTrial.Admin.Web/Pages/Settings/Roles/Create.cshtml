@@ -1,8 +1,12 @@
 @* =====================================================================
    ROLE CREATE PAGE
+   084: underscores allowed in the role name (sales_rep); permission
+   boxes come from _RolePermissionsGrid and keep their ticks after a
+   validation error.
    ===================================================================== *@
 @page "/Settings/Roles/Create"
 @model MerkaiTrial.Admin.Web.Pages.Settings.Roles.CreateModel
+@using MerkaiTrial.Admin.Web.Pages.Settings.Roles
 @{
     ViewData["Title"] = "Create New Role";
 }
@@ -46,8 +50,8 @@
                                 <label asp-for="Input.Name" class="form-label">
                                     Role Name <span class="text-danger">*</span>
                                 </label>
-                                <input asp-for="Input.Name" class="form-control" placeholder="sales-rep" />
-                                <small class="form-text text-muted">Unique identifier (lowercase, no spaces)</small>
+                                <input asp-for="Input.Name" class="form-control" placeholder="sales_rep" autocomplete="off" />
+                                <small class="form-text text-muted">Short unique ID, e.g. <code>sales_rep</code>. Letters, numbers, - and _ only. Saved in lower case.</small>
                                 <span asp-validation-for="Input.Name" class="text-danger small"></span>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -74,33 +78,8 @@
                         <h5 class="mb-0"><i class="bi bi-key"></i> Permissions</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted mb-3">Select which actions this role can perform in each module</p>
-                        <div class="row g-3">
-                            @foreach (var module in Model.AvailableModules)
-                            {
-                                <div class="col-md-6">
-                                    <div class="border rounded p-3">
-                                        <h6 style="color: #ff6b35;">
-                                            <i class="bi bi-@module.Icon"></i> @module.DisplayName
-                                        </h6>
-                                        <div class="mt-2">
-                                            @foreach (var permission in module.Permissions)
-                                            {
-                                                var fieldName = $"Permissions_{module.Name}_{permission}";
-                                                
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input" 
-                                                           name="@fieldName" value="true" />
-                                                    <label class="form-check-label">
-                                                        @permission.ToUpper()
-                                                    </label>
-                                                </div>
-                                            }
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-                        </div>
+                        <partial name="_RolePermissionsGrid"
+                                 model="new RolePermissionsGridVm(Model.AvailableModules, Model.SelectedPermissions)" />
                     </div>
                 </div>
             </div>
@@ -129,7 +108,7 @@
                         <ul class="list-unstyled mb-0 small">
                             <li class="mb-2">
                                 <i class="bi bi-check-circle text-success"></i>
-                                <strong>Role Name:</strong> Use lowercase with hyphens (e.g., sales-manager)
+                                <strong>Role Name:</strong> No spaces &mdash; use _ or - (e.g., sales_manager)
                             </li>
                             <li class="mb-2">
                                 <i class="bi bi-check-circle text-success"></i>
@@ -152,10 +131,11 @@
                         <h6 class="mb-0"><i class="bi bi-info-circle"></i> Permission Types</h6>
                     </div>
                     <div class="card-body small">
-                        <p class="mb-2"><strong>CREATE:</strong> Add new records</p>
-                        <p class="mb-2"><strong>READ:</strong> View records</p>
-                        <p class="mb-2"><strong>UPDATE:</strong> Modify existing records</p>
-                        <p class="mb-0"><strong>DELETE:</strong> Remove records</p>
+                        <p class="mb-2"><strong>View:</strong> See records</p>
+                        <p class="mb-2"><strong>Add:</strong> Create new records</p>
+                        <p class="mb-2"><strong>Edit:</strong> Change existing records</p>
+                        <p class="mb-2"><strong>Delete:</strong> Remove records</p>
+                        <p class="mb-0 text-muted">Workspace admins always have every permission.</p>
                     </div>
                 </div>
             </div>

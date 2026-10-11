@@ -1,8 +1,11 @@
 @* =====================================================================
    ROLE DETAIL PAGE
+   084: permissions shown with real module names (incl. "No access"),
+   read case-insensitively; Edit button needs roles.update.
    ===================================================================== *@
 @page "/Settings/Roles/Detail/{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Settings.Roles.DetailModel
+@using MerkaiTrial.Admin.Web.Pages.Settings.Roles
 @{
     ViewData["Title"] = $"Role: {Model.Role.DisplayName}";
 }
@@ -28,7 +31,7 @@
             <p class="text-muted mb-0">@Model.Role.Name</p>
         </div>
         <div>
-            @if (!Model.Role.IsSystemRole)
+            @if (!Model.Role.IsSystemRole && Model.CanUpdate)
             {
                 <a asp-page="./Edit" asp-route-id="@Model.Id" class="btn btn-warning">
                     <i class="bi bi-pencil"></i> Edit Role
@@ -49,7 +52,7 @@
         </li>
         <li class="nav-item">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#permissions">
-                <i class="bi bi-key"></i> Permissions
+                <i class="bi bi-key"></i> Permissions <span class="badge bg-secondary">@Model.GrantedModuleCount</span>
             </button>
         </li>
         <li class="nav-item">
@@ -118,32 +121,44 @@
                     <h5 class="mb-0"><i class="bi bi-key"></i> Permissions</h5>
                 </div>
                 <div class="card-body">
-                    @if (Model.ParsedPermissions.Any())
+                    @if (Model.Role.Name == "tenant_admin")
                     {
-                        <div class="row g-3">
-                            @foreach (var module in Model.ParsedPermissions)
-                            {
-                                <div class="col-md-6">
-                                    <div class="border rounded p-3">
-                                        <h6 style="color: #ff6b35;">
-                                            <i class="bi bi-@(module.Key == "leads" ? "funnel" : module.Key == "contacts" ? "person" : module.Key == "deals" ? "currency-dollar" : module.Key == "users" ? "people" : module.Key == "tenants" ? "building" : "gear")"></i>
-                                            @module.Key.ToUpper()
-                                        </h6>
-                                        <div class="d-flex flex-wrap gap-2 mt-2">
-                                            @foreach (var perm in module.Value)
+                        <div class="alert alert-info small"><i class="bi bi-shield-check me-1"></i>Workspace admins have every permission, whatever is listed here.</div>
+                    }
+                    @if (Model.GrantedModuleCount == 0)
+                    {
+                        <p class="text-muted mb-3"><i class="bi bi-info-circle me-1"></i>This role has no permissions yet.</p>
+                    }
+                    <div class="row g-3">
+                        @foreach (var row in Model.PermissionRows)
+                        {
+                            var hasAccess = row.Actions.Count > 0;
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100 @(hasAccess ? "" : "bg-light")">
+                                    <h6 class="mb-0" style="color:@(hasAccess ? "#ff6b35" : "#6c757d");">
+                                        <i class="@row.IconClass me-1"></i>@row.Label
+                                        @if (!row.InEditor)
+                                        {
+                                            <span class="badge bg-light text-muted border ms-1" title="Not shown in the role editor; kept when the role is saved">not in editor</span>
+                                        }
+                                    </h6>
+                                    <div class="d-flex flex-wrap gap-2 mt-2">
+                                        @if (hasAccess)
+                                        {
+                                            foreach (var perm in row.Actions)
                                             {
-                                                <span class="badge bg-success">@perm</span>
+                                                <span class="badge bg-success">@RolePermissionForm.ActionLabel(perm)</span>
                                             }
-                                        </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-light text-muted border">No access</span>
+                                        }
                                     </div>
                                 </div>
-                            }
-                        </div>
-                    }
-                    else
-                    {
-                        <p class="text-muted text-center py-4">No permissions assigned</p>
-                    }
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         </div>

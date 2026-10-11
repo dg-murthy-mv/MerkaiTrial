@@ -1,0 +1,116 @@
+@* =====================================================================
+   FILE: Pages/Settings/Roles/_RolePermissionsGrid.cshtml
+
+   084. NEW. The permission checkboxes, shared by Create and Edit so the
+   two pages cannot drift again (Edit compared case-sensitively and
+   Create did not keep ticks after an error).
+
+   Field names are unchanged: Permissions_{module}_{action} = "true".
+   ===================================================================== *@
+@using MerkaiTrial.Admin.Web.Pages.Settings.Roles
+@model RolePermissionsGridVm
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <p class="text-muted mb-0 small">
+        Tick what people with this role can do in each area.
+        <span class="d-block">Ticking Add, Edit or Delete also ticks View &mdash; nobody can change what they cannot see.</span>
+    </p>
+    <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-light text-dark border" data-perm-count>0 selected</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-perm-all="true">Tick all</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-perm-all="false">Clear all</button>
+    </div>
+</div>
+
+<div class="row g-3" data-perm-grid>
+    @foreach (var module in Model.Modules)
+    {
+        var moduleId = "permmod_" + RolePermissionForm.FieldId(module, "all");
+        <div class="col-md-6">
+            <div class="border rounded p-3 h-100" data-perm-module>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0" style="color:#ff6b35;">
+                        <i class="@RolePermissionForm.IconClass(module.Icon) me-1"></i>@module.DisplayName
+                    </h6>
+                    <div class="form-check form-switch mb-0" title="Everything in @module.DisplayName">
+                        <input type="checkbox" class="form-check-input" id="@moduleId" data-perm-module-all />
+                        <label class="form-check-label small text-muted" for="@moduleId">All</label>
+                    </div>
+                </div>
+
+                @foreach (var permission in module.Permissions)
+                {
+                    var fieldId = RolePermissionForm.FieldId(module, permission);
+                    var isRead = string.Equals(permission, "read", StringComparison.OrdinalIgnoreCase)
+                              || string.Equals(permission, "view", StringComparison.OrdinalIgnoreCase);
+                    var hint = RolePermissionForm.ActionHint(permission);
+
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input"
+                               id="@fieldId"
+                               name="@RolePermissionForm.FieldName(module, permission)"
+                               value="true"
+                               data-perm-box
+                               data-perm-read="@(isRead ? "true" : "false")"
+                               checked="@RolePermissionForm.Has(Model.Selected, module.Name, permission)" />
+                        <label class="form-check-label" for="@fieldId">
+                            @RolePermissionForm.ActionLabel(permission)
+                            @if (!string.IsNullOrEmpty(hint))
+                            {
+                                <span class="text-muted small">&middot; @hint</span>
+                            }
+                        </label>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<script>
+(function () {
+    var grid = document.querySelector('[data-perm-grid]');
+    if (!grid) return;
+
+    function boxes(scope) { return Array.prototype.slice.call(scope.querySelectorAll('[data-perm-box]')); }
+
+    function refresh() {
+        grid.querySelectorAll('[data-perm-module]').forEach(function (card) {
+            var all = boxes(card);
+            var on = all.filter(function (b) { return b.checked; }).length;
+            var sw = card.querySelector('[data-perm-module-all]');
+            if (sw) {
+                sw.checked = all.length > 0 && on === all.length;
+                sw.indeterminate = on > 0 && on < all.length;
+            }
+        });
+        var count = boxes(grid).filter(function (b) { return b.checked; }).length;
+        var badge = document.querySelector('[data-perm-count]');
+        if (badge) badge.textContent = count + ' selected';
+    }
+
+    grid.addEventListener('change', function (e) {
+        var t = e.target;
+        var card = t.closest('[data-perm-module]');
+        if (!card) return;
+
+        if (t.hasAttribute('data-perm-module-all')) {
+            boxes(card).forEach(function (b) { b.checked = t.checked; });
+        } else if (t.hasAttribute('data-perm-box') && t.checked && t.getAttribute('data-perm-read') !== 'true') {
+            var read = card.querySelector('[data-perm-box][data-perm-read="true"]');
+            if (read) read.checked = true;
+        }
+        refresh();
+    });
+
+    document.querySelectorAll('[data-perm-all]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var value = btn.getAttribute('data-perm-all') === 'true';
+            boxes(grid).forEach(function (b) { b.checked = value; });
+            refresh();
+        });
+    });
+
+    refresh();
+})();
+</script>

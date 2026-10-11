@@ -35,6 +35,13 @@
 //   working, reps lose access, and delegating it to a sales manager is a
 //   checkbox in the role editor rather than a future round.
 //
+// ROUND 083: an "inbox" module — the SHARED INBOX of received email that
+// matched no record. Read = see the inbox and any email in it; Update =
+// file, unfile, dismiss; Delete = delete an email. Held by nobody until a
+// workspace admin grants it (admins bypass, as for every module). A rep
+// does NOT need it to read the emails on their own leads and deals — that
+// follows leads.read / deals.read and record visibility.
+//
 // ALSO ADDED: Modules.Audit. ModuleCatalog has enforced an "audit" module
 // since it was written, and this file never had the constant — so every
 // call site had to spell the string by hand, which is precisely how the
@@ -64,6 +71,12 @@ namespace MerkaiTrial.Application.Authorization
         /// bypass it like every other permission.
         /// </summary>
         public const string Settings = "settings";  // ← 024
+
+        /// <summary>
+        /// 083. The shared inbox — received email nobody has filed yet.
+        /// Held by nobody until a tenant admin grants it.
+        /// </summary>
+        public const string Inbox = "inbox";
     }
 
     public static class Actions
@@ -137,5 +150,12 @@ namespace MerkaiTrial.Application.Authorization
         public const string SettingsCreate = "settings.create";
         public const string SettingsUpdate = "settings.update";
         public const string SettingsDelete = "settings.delete";
+
+        // ── 083: the shared inbox ─────────────────────────────────────
+        // No "create": email arrives, nobody creates it. ModuleCatalog
+        // offers exactly these three.
+        public const string InboxRead   = "inbox.read";
+        public const string InboxUpdate = "inbox.update";
+        public const string InboxDelete = "inbox.delete";
     }
 }

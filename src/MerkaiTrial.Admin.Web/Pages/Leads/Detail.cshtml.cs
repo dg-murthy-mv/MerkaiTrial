@@ -56,9 +56,18 @@
 //     says so; the rest of the page still renders.
 //   • OnPostConvertToDealAsync checked the "Deals.Create" policy by string.
 //     It uses UserCanCreate(Modules.Deals) now, like ConvertToDeal.cshtml.cs.
+//
+// 083 — EMAILS
+//   • An "Emails" tab: replies and emails filed on this lead, through the
+//     shared _RecordEmails partial (Pipeline and Contacts use the same).
+//     Loaded in parallel with the rest; a failure costs the tab, not the
+//     page, and the tab says so.
+//   • The Timeline already includes them (GetTimelineHandler), each item
+//     linking to the email.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;
+using MerkaiTrial.Admin.Web.Services.InboundEmails;   // 083
 using MerkaiTrial.Admin.Web.Services.Activities;
 using MerkaiTrial.Admin.Web.Services.CustomFields;
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -88,6 +97,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private readonly ILogger<DetailModel> _logger;
         private readonly ILeadStatusService _statusService;
         private readonly ICustomFieldService _customFields;     // 079
+        private readonly IInboundEmailService _emails;          // 083
 
         protected override string ModuleName => Modules.Leads;
 
@@ -99,10 +109,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
          ICurrentTenantService tenantService,
          ILogger<DetailModel> logger,
          ILeadStatusService statuses,
-         ICustomFieldService customFields)
+         ICustomFieldService customFields,
+         IInboundEmailService emails)
             : base(authorizationService, currentUserService, logger)
         {
             _customFields = customFields;
+            _emails = emails;
             _leadService = leadService;
             _activityService = activityService;
             _currentUserService = currentUserService;
@@ -180,6 +192,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         // ── Timeline ──────────────────────────────────────────────────
         public List<TimelineItemDto> Timeline { get; set; } = new();
+
+        // ── 083: emails ───────────────────────────────────────────────
+        public RecordEmailsVm RecordEmails { get; private set; } = new();
 
         // ── 079: custom fields ────────────────────────────────────────
         /// <summary>Every Lead custom field, retired ones included.</summary>
@@ -355,8 +370,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 var attachmentsTask = LoadAttachmentsAsync(tenantId, id);
                 var assigneesTask   = LoadAssigneesAsync();
                 var fieldsTask      = LoadCustomFieldsAsync();          // 079
+                var emailsTask      = LoadEmailsAsync(id);              // 083
 
-                await Task.WhenAll(notesTask, activitiesTask, timelineTask, attachmentsTask, assigneesTask, fieldsTask);
+                await Task.WhenAll(notesTask, activitiesTask, timelineTask, attachmentsTask, assigneesTask, fieldsTask, emailsTask);
 
                 if (TaskInput.DueDate == default)
                     TaskInput.DueDate = _tenantService.UtcToLocal(DateTime.UtcNow)
@@ -983,8 +999,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 LoadTimelineAsync(tenantId, id),
                 LoadAttachmentsAsync(tenantId, id),
                 LoadAssigneesAsync(),
-                LoadCustomFieldsAsync());                               // 079
+                LoadCustomFieldsAsync(),                                // 079
+                LoadEmailsAsync(id));                                   // 083
         }
+
+        /// <summary>083. Never throws — RecordEmailsVm.LoadAsync turns a failure into LoadFailed.</summary>
+        private async Task LoadEmailsAsync(Guid leadId)
+            => RecordEmails = await RecordEmailsVm.LoadAsync(
+                _emails, "Lead", leadId, "lead", FormatDateTime, _logger);
 
         /// <summary>079. Retired fields included, so a value on a switched-off field still shows.</summary>
         private async Task LoadCustomFieldsAsync()

@@ -1,6 +1,10 @@
 @* =====================================================================
    TIMELINE TAB - Unified Timeline of All Lead Interactions
    Location: MerkaiTrial.Admin.Web/Pages/Leads/_TimelineTab.cshtml
+
+   083: an item with a Url (received / sent emails) is a link to it. The
+   Url is built by the API from the email's id — a local path, never
+   anything taken from the email itself.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
 
@@ -25,7 +29,16 @@
                         </div>
                         <div class="timeline-content">
                             <div class="timeline-header">
-                                <h6 class="mb-1">@item.Title</h6>
+                                <h6 class="mb-1">
+                                    @if (!string.IsNullOrEmpty(item.Url) && item.Url.StartsWith("/"))
+                                    {
+                                        <a href="@item.Url" class="text-decoration-none">@item.Title</a>
+                                    }
+                                    else
+                                    {
+                                        @item.Title
+                                    }
+                                </h6>
                                 <small class="text-muted">
                                     <i class="bi bi-clock me-1"></i>
                                     @Model.FormatDateTime(item.Date)

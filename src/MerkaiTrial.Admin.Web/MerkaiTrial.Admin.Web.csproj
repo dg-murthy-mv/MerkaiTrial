@@ -13,11 +13,14 @@
     <Folder Include="Areas\Admin\Leads\" />
     <Folder Include="Filters\" />
     <Folder Include="Pages\Admin\WhatsAppTemplates\" />
+    <Folder Include="Pages\Emails\" />
+    <Folder Include="Pages\Inbox\" />
     <Folder Include="Pages\Notifications\" />
     <Folder Include="Pages\Settings\AuditLogs\" />
     <Folder Include="Pages\Settings\LeadStatuses\" />
     <Folder Include="Pages\Settings\CompanyProfile\" />
     <Folder Include="Pages\Settings\CustomFields\" />
+    <Folder Include="Pages\Settings\InboundEmail\" />
     <Folder Include="Pages\Settings\ProductCategories\" />
     <Folder Include="Pages\Settings\TaxRates\" />
     <Folder Include="Pages\Settings\Notifications\" />
@@ -29,6 +32,7 @@
     <Folder Include="Pages\Settings\Users\" />
     <Folder Include="Services\Audit\" />
     <Folder Include="Services\CustomFields\" />
+    <Folder Include="Services\InboundEmails\" />
     <Folder Include="Services\Notifications\" />
     <Folder Include="Services\Security\" />
     <Folder Include="Services\Pipeline\" />

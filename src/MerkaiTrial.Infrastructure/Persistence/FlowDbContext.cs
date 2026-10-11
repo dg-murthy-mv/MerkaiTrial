@@ -24,6 +24,16 @@
 //      to start without this, which is exactly what that guard is for.
 //   9. (038) OutboundMessages + UserNotificationPreferences. Both strictly
 //      tenant-owned and filtered.
+//  17. (083) InboundEmail + InboundEmailAttachment + EmailReplyToken —
+//      email that came IN. All three STRICTLY tenant-owned.
+//
+//      ⚠ TWO PLACES READ THESE WITH NO TENANT AT ALL: the Resend webhook
+//      (an anonymous call from Resend — there is no signed-in user) and
+//      InboundEmailWorker (a background service). Both see Guid.Empty here,
+//      exactly like OutboundMessageWorker, so both call IgnoreQueryFilters()
+//      and put an explicit TenantId on every query they run after the
+//      workspace is known. That is the ONLY place those calls are allowed;
+//      every page-facing handler goes through the filter.
 //  16. (075) CustomFieldDefinition + CustomFieldValue — tenant-defined
 //      extra fields on records (Contacts first). BOTH STRICTLY
 //      tenant-owned: there is no Merkai default field, and a value is
@@ -167,6 +177,15 @@ public class FlowDbContext : DbContext
     /// a value; no row means "not filled in".
     /// </summary>
     public DbSet<CustomFieldValue> CustomFieldValues => Set<CustomFieldValue>();
+
+    /// <summary>083. Email received for a workspace. Strictly tenant-owned.</summary>
+    public DbSet<InboundEmail> InboundEmails => Set<InboundEmail>();
+
+    /// <summary>083. Files that came with an InboundEmail. Strictly tenant-owned.</summary>
+    public DbSet<InboundEmailAttachment> InboundEmailAttachments => Set<InboundEmailAttachment>();
+
+    /// <summary>083. reply+&lt;token&gt; addresses → the record the email was about.</summary>
+    public DbSet<EmailReplyToken> EmailReplyTokens => Set<EmailReplyToken>();
     public DbSet<User> Users => Set<User>();
     public DbSet<LeadChannel> LeadChannels { get; set; }
     public DbSet<LeadSource> LeadSources { get; set; }
@@ -348,6 +367,15 @@ public class FlowDbContext : DbContext
         // sits on. Neither has any business in the shared-or-tenant group.
         b.Entity<CustomFieldDefinition>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<CustomFieldValue>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Inbound email (083). Strict, all three: a customer's email is as
+        // private as the record it is filed on, and an unmatched one is
+        // more private still. See item 17 in the header for the two
+        // tenant-less readers (webhook and worker) and why they are the
+        // only callers allowed to IgnoreQueryFilters.
+        b.Entity<InboundEmail>()          .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<InboundEmailAttachment>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<EmailReplyToken>()       .HasQueryFilter(e => e.TenantId == CurrentTenantId);
 
         b.Entity<Invoice>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<InvoiceLine>()     .HasQueryFilter(e => e.TenantId == CurrentTenantId);

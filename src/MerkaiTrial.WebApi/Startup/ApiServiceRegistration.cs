@@ -43,6 +43,14 @@
 //   • nothing stops a controller reaching for a page model, and the
 //     compiler would have allowed it
 //
+// 083 — RECEIVING EMAIL
+//   AddApiEmail also registers the inbound side: the webhook's receiver
+//   (IInboundEmailReceiver) and the Resend client the worker reads emails
+//   back with (IResendInboundClient — a typed HttpClient when a key is
+//   configured, a "not configured" stand-in otherwise). The page handlers
+//   are ICommandHandlers, found by the scan. AddApiBackgroundServices adds
+//   InboundEmailWorker beside the outbound one.
+//
 // The API may depend on Domain, Application and Infrastructure. It must
 // not depend on a host. If something in Application is ever needed by
 // both, it belongs in Application — which both hosts already reference —
@@ -62,6 +70,7 @@ using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Fiscal;
+using MerkaiTrial.Application.Services.Inbound;      // 083
 using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Application.Services.Pdf;
 using MerkaiTrial.Application.Services.Storage;
@@ -263,6 +272,8 @@ public static class ApiServiceRegistration
         services.Configure<WhatsAppOptions>(config.GetSection(WhatsAppOptions.SectionName));
         services.Configure<OutboundMessageWorkerOptions>(
             config.GetSection(OutboundMessageWorkerOptions.SectionName));
+        services.Configure<InboundEmailWorkerOptions>(                    // 083
+            config.GetSection(InboundEmailWorkerOptions.SectionName));
 
         var options = config.GetSection(EmailOptions.SectionName).Get<EmailOptions>()
                       ?? new EmailOptions();
@@ -281,6 +292,34 @@ public static class ApiServiceRegistration
         else
         {
             services.AddSingleton<IEmailSender, NullEmailSender>();
+        }
+
+        // ── 083: receiving ────────────────────────────────────────
+        //
+        //     Email__InboundDomain          in.madeevision.com   (or xxxx.resend.app)
+        //     Email__InboundWebhookSecret   whsec_...            SECRET — user-secrets / App Service
+        //
+        // The receiver (what the webhook calls) is always registered: with
+        // no secret it refuses every call with a 503, which is what makes
+        // Resend hold the mail and retry once it IS configured.
+        //
+        // The client reads the received email back with the SAME API key
+        // as the sender. Its own typed HttpClient: a slow attachment
+        // download must never hold up an outgoing send.
+        services.AddScoped<IInboundEmailReceiver, InboundEmailReceiver>();
+
+        if (options.IsConfigured)
+        {
+            services.AddHttpClient<IResendInboundClient, ResendInboundClient>(http =>
+            {
+                http.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
+                // Longer than the sender's: an attachment can be several MB.
+                http.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds * 3, 30, 300));
+            });
+        }
+        else
+        {
+            services.AddSingleton<IResendInboundClient, NullResendInboundClient>();
         }
 
         // ── 045: WhatsApp, the same shape ─────────────────────────
@@ -342,6 +381,7 @@ public static class ApiServiceRegistration
     public static IServiceCollection AddApiBackgroundServices(this IServiceCollection services)
     {
         services.AddHostedService<OutboundMessageWorker>();
+        services.AddHostedService<InboundEmailWorker>();     // 083 — files received email
         return services;
     }
 }

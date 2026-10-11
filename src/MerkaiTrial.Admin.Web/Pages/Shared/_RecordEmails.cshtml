@@ -1,0 +1,144 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.RecordEmailsVm
+@* =====================================================================
+   _RecordEmails.cshtml — NEW (083)
+   The "Emails" section on Leads/Detail, Pipeline/Detail and Contacts/Detail.
+
+   • Each row opens the email page (/Emails/View/{id}).
+   • Nothing user-supplied is ever written as markup: subject, snippet and
+     names are Razor-encoded text. The email's own HTML is only ever shown
+     on the email page, inside a sandboxed frame.
+   • The "copy" button uses the layout's delegated [data-copy] handler —
+     no script here, so the partial can appear on any page.
+   ===================================================================== *@
+
+<div class="card border-0 shadow-sm mb-4 re-card">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between">
+        <h6 class="mb-0">
+            <i class="bi bi-envelope me-2"></i>Emails
+            @if (Model.Count > 0)
+            {
+                <span class="badge bg-secondary ms-1">@Model.Count</span>
+            }
+        </h6>
+        @if (Model.Count >= 50)
+        {
+            <small class="text-muted">Latest 50</small>
+        }
+    </div>
+
+    <div class="card-body p-0">
+        @if (Model.LoadFailed)
+        {
+            <div class="alert alert-warning m-3 mb-3 d-flex gap-2 align-items-start">
+                <i class="bi bi-exclamation-triangle mt-1"></i>
+                <span>The emails for this @Model.RecordLabel could not be loaded just now. Refresh the page to try again.</span>
+            </div>
+        }
+        else if (Model.Count == 0)
+        {
+            <div class="text-center text-muted py-4 px-3">
+                <i class="bi bi-envelope-open" style="font-size:2.2rem;opacity:.3;"></i>
+                <p class="mb-1 mt-2">No emails on this @Model.RecordLabel yet.</p>
+                @if (Model.ReceivingOn)
+                {
+                    <p class="small mb-0">Customer replies to quote emails appear here by themselves.</p>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="list-group list-group-flush">
+                @foreach (var e in Model.Items)
+                {
+                    <a class="list-group-item list-group-item-action re-row" href="/Emails/View/@e.Id">
+                        <div class="d-flex gap-3 align-items-start">
+                            <div class="re-ico @(e.Direction == "SentByUser" ? "re-out" : "re-in")" title="@e.DirectionLabel">
+                                <i class="bi @e.DirectionIcon"></i>
+                            </div>
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <div class="re-who text-truncate">
+                                        @if (e.Direction == "SentByUser")
+                                        {
+                                            <text><span class="text-muted">To</span> @e.WithDisplay</text>
+                                        }
+                                        else
+                                        {
+                                            <text>@e.WithDisplay</text>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(e.ForwardedByName))
+                                        {
+                                            <span class="text-muted small">
+                                                · @(e.Direction == "SentByUser" ? "sent by" : "forwarded by") @e.ForwardedByName
+                                            </span>
+                                        }
+                                    </div>
+                                    <small class="text-muted text-nowrap" title="@Model.FormatDateTime(e.ReceivedAtUtc)">
+                                        @Model.FormatDateTime(e.ReceivedAtUtc)
+                                    </small>
+                                </div>
+                                <div class="re-subject text-truncate">@e.Subject</div>
+                                @if (!string.IsNullOrWhiteSpace(e.Snippet))
+                                {
+                                    <div class="re-snippet text-muted text-truncate">@e.Snippet</div>
+                                }
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @if (e.AttachmentCount > 0)
+                                    {
+                                        <span class="badge bg-light text-dark border">
+                                            <i class="bi bi-paperclip"></i> @e.AttachmentCount
+                                        </span>
+                                    }
+                                    @if (e.IsAutoReply)
+                                    {
+                                        <span class="badge bg-light text-muted border">Auto-reply</span>
+                                    }
+                                    @if (e.SenderVerified == false)
+                                    {
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                              title="The sender's domain failed its authenticity checks.">
+                                            <i class="bi bi-shield-exclamation"></i> Unverified sender
+                                        </span>
+                                    }
+                                    @if (e.IsStillProcessing)
+                                    {
+                                        <span class="badge bg-info-subtle text-info-emphasis">Still downloading…</span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!Model.LoadFailed && !string.IsNullOrWhiteSpace(Model.WorkspaceAddress))
+    {
+        <div class="card-footer bg-white small text-muted d-flex flex-wrap align-items-center gap-2">
+            <i class="bi bi-lightbulb"></i>
+            <span>Emailing this customer from Gmail or Outlook? BCC</span>
+            <code class="re-addr">@Model.WorkspaceAddress</code>
+            <button type="button" class="btn btn-link btn-sm p-0" data-copy="@Model.WorkspaceAddress"
+                    title="Copy the address">
+                <i class="bi bi-clipboard"></i> Copy
+            </button>
+            <span>and it is logged here too.</span>
+        </div>
+    }
+</div>
+
+<style>
+    .re-row { padding: 12px 16px; }
+    .re-ico {
+        width: 32px; height: 32px; border-radius: 8px; flex: 0 0 32px;
+        display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .re-in  { background: #eff6ff; color: #2563eb; }
+    .re-out { background: #f0fdf4; color: #16a34a; }
+    .re-who { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+    .re-subject { font-size: 13.5px; color: #1e293b; }
+    .re-snippet { font-size: 12.5px; }
+    .re-addr { font-size: 12px; background: #f8fafc; padding: 1px 6px; border-radius: 4px; }
+    .min-w-0 { min-width: 0; }
+</style>

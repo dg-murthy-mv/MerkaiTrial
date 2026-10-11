@@ -223,6 +223,28 @@ namespace MerkaiTrial.Domain.Entities
         public const string CustomFieldCreated = "CustomFieldCreated";
         public const string CustomFieldUpdated = "CustomFieldUpdated";
         public const string CustomFieldDeleted = "CustomFieldDeleted";
+
+        // ── Inbound email (083) ───────────────────────────────────────
+        //
+        // What PEOPLE did to an email — never the automatic filing, which
+        // is visible on the email itself (MatchMethod, MatchNote). Moving
+        // an email between records changes who can read a customer's
+        // words, so it is worth being able to answer "who moved this".
+        //
+        // Data: { from (masked), subject, entityType, entityId } — never
+        // the body. The longest value is 20 characters.
+        public const string InboundEmailLinked    = "InboundEmailLinked";
+        public const string InboundEmailUnlinked  = "InboundEmailUnlinked";
+        public const string InboundEmailDismissed = "InboundEmailDismiss";
+        public const string InboundEmailRestored  = "InboundEmailRestore";
+        public const string InboundEmailDeleted   = "InboundEmailDeleted";
+
+        /// <summary>
+        /// The workspace's receiving address was replaced. Mail to the old
+        /// one stops arriving from that moment, which is exactly the kind
+        /// of thing somebody asks about a week later.
+        /// </summary>
+        public const string InboundAddressChanged = "InboundAddressChanged";
     }
 
     public class AuditLog
@@ -285,5 +307,8 @@ namespace MerkaiTrial.Domain.Entities
 
         /// <summary>075. A row in dbo.CustomFieldDefinitions.</summary>
         public const string CustomField = "CustomField";
+
+        /// <summary>083. A row in dbo.InboundEmails.</summary>
+        public const string InboundEmail = "InboundEmail";
     }
 }

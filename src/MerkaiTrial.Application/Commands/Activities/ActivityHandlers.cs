@@ -43,6 +43,13 @@
 //     • Tasks page: unchanged — it already shows only YOUR tasks to
 //       non-admins
 //
+// 083 — EMAILS ON THE TIMELINE
+//   GetTimelineHandler adds the record's received / sent / forwarded email
+//   (dbo.InboundEmails), each linking to its email page. A lead shows the
+//   emails filed on it; a deal shows its own, its contact's and its
+//   source lead's — the same set as the deal's Emails tab. Dismissed and
+//   deleted emails are left out.
+//
 // GLOBAL QUERY FILTERS: nothing here uses IgnoreQueryFilters. Every query
 // also carries an explicit TenantId, which the filter agrees with, so the
 // two layers never contradict each other.
@@ -1002,6 +1009,33 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Select(l => new { l.Id, l.Data, l.CreatedAtUtc, l.By })
                         .ToListAsync(ct);
 
+                // ── 083: emails ──────────────────────────────────────────
+                var dealContactId = query.EntityType != ActivityEntityType.Deal
+                    ? Guid.Empty
+                    : await _db.Deals.AsNoTracking()
+                        .Where(d => d.Id == query.EntityId && d.TenantId == query.TenantId)
+                        .Select(d => d.ContactId)
+                        .FirstOrDefaultAsync(ct);
+
+                var leadIdForEmails = query.EntityType == ActivityEntityType.Lead ? query.EntityId : linkedLeadId;
+                var dealIdForEmails = query.EntityType == ActivityEntityType.Deal ? query.EntityId : Guid.Empty;
+                var contactIdForEmails = query.EntityType == ActivityEntityType.Contact ? query.EntityId : dealContactId;
+
+                var emails = await _db.InboundEmails.AsNoTracking()
+                    .Where(e => e.TenantId == query.TenantId && !e.IsDeleted
+                             && e.Status != InboundEmailStatus.Dismissed
+                             && ((leadIdForEmails != Guid.Empty && e.LeadId == leadIdForEmails)
+                              || (dealIdForEmails != Guid.Empty && e.DealId == dealIdForEmails)
+                              || (contactIdForEmails != Guid.Empty && e.ContactId == contactIdForEmails)))
+                    .OrderByDescending(e => e.ReceivedAtUtc)
+                    .Take(100)
+                    .Select(e => new
+                    {
+                        e.Id, e.Direction, e.FromAddress, e.FromName, e.CounterpartAddress,
+                        e.Subject, e.Snippet, e.ReceivedAtUtc, e.ForwardedByUserId, e.IsAutoReply
+                    })
+                    .ToListAsync(ct);
+
                 // ── Resolve every "who" in one query ─────────────────────
                 var names = await ActivityReadModel.UserNamesAsync(_db, query.TenantId,
                     activities.Select(a => a.CreatedBy)
@@ -1009,6 +1043,7 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Concat(dealNotes.Select(n => n.CreatedBy))
                         .Concat(stageChanges.Select(h => h.ChangedBy))
                         .Concat(statusChanges.Select(s => s.By))
+                        .Concat(emails.Select(e => e.ForwardedByUserId?.ToString()))    // 083
                         .Append(creation.CreatedBy), ct);
 
                 string? Who(string? stored) => ActivityReadModel.Lookup(names, stored) ?? stored;
@@ -1082,6 +1117,27 @@ namespace MerkaiTrial.Application.Commands.Activities
                         s.CreatedAtUtc, Who(s.By), "bi-flag", "bg-info"));
                 }
 
+                // 083 — emails, each opening its own page.
+                foreach (var e in emails)
+                {
+                    var name = string.IsNullOrWhiteSpace(e.FromName) ? e.FromAddress : e.FromName;
+                    var (title, icon, badge) = e.Direction switch
+                    {
+                        InboundEmailDirection.SentByUser =>
+                            ($"Email sent to {e.CounterpartAddress ?? "a customer"}: {e.Subject}", "bi-send", "bg-primary"),
+                        InboundEmailDirection.Forwarded =>
+                            ($"Email from {e.CounterpartAddress ?? name} (forwarded): {e.Subject}", "bi-forward", "bg-info"),
+                        _ =>
+                            ($"Email from {name}: {e.Subject}", "bi-envelope-open", "bg-info")
+                    };
+
+                    if (e.IsAutoReply) title = "Auto-reply · " + title;
+
+                    items.Add(new TimelineItemDto(e.Id, "Email", title, e.Snippet, e.ReceivedAtUtc,
+                        e.ForwardedByUserId.HasValue ? Who(e.ForwardedByUserId.Value.ToString()) : null,
+                        icon, badge, $"/Emails/View/{e.Id}"));
+                }
+
                 return items.OrderByDescending(t => t.Date).ToList();
             }
             catch (Exception ex)
@@ -1114,31 +1170,63 @@ namespace MerkaiTrial.Application.Commands.Activities
                 ActivityEntityType.Lead => await _db.Leads.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
                     .VisibleTo(leadAccess!)
-                    .Select(x => new TimelineItemDto(x.Id, "Created", "Lead created",
+                    .Select(x => new TimelineItemDto(
+                        x.Id,
+                        "Created",
+                        "Lead created",
                         "Lead '" + x.FullName + "' was created",
-                        x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))
+                        x.CreatedAtUtc,
+                        x.CreatedBy,
+                        "bi-plus-circle",
+                        "bg-primary",
+                        null // explicitly pass all parameters, including the optional Url
+                    ))
                     .FirstOrDefaultAsync(ct),
 
                 ActivityEntityType.Deal => await _db.Deals.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
                     .VisibleTo(dealAccess!)
-                    .Select(x => new TimelineItemDto(x.Id, "Created", "Deal created",
+                    .Select(x => new TimelineItemDto(
+                        x.Id,
+                        "Created",
+                        "Deal created",
                         "Deal '" + x.Title + "' was created",
-                        x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))
+                        x.CreatedAtUtc,
+                        x.CreatedBy,
+                        "bi-plus-circle",
+                        "bg-primary",
+                        null
+                    ))
                     .FirstOrDefaultAsync(ct),
 
                 ActivityEntityType.Contact => await _db.Contacts.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
-                    .Select(x => new TimelineItemDto(x.Id, "Created", "Contact created",
+                    .Select(x => new TimelineItemDto(
+                        x.Id,
+                        "Created",
+                        "Contact created",
                         "Contact was created",
-                        x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))
+                        x.CreatedAtUtc,
+                        x.CreatedBy,
+                        "bi-plus-circle",
+                        "bg-primary",
+                        null
+                    ))
                     .FirstOrDefaultAsync(ct),
 
                 ActivityEntityType.Company => await _db.Companies.AsNoTracking()
                     .Where(x => x.Id == id && x.TenantId == t && !x.IsDeleted)
-                    .Select(x => new TimelineItemDto(x.Id, "Created", "Company created",
+                    .Select(x => new TimelineItemDto(
+                        x.Id,
+                        "Created",
+                        "Company created",
                         "Company '" + x.Name + "' was created",
-                        x.CreatedAtUtc, x.CreatedBy, "bi-plus-circle", "bg-primary"))
+                        x.CreatedAtUtc,
+                        x.CreatedBy,
+                        "bi-plus-circle",
+                        "bg-primary",
+                        null
+                    ))
                     .FirstOrDefaultAsync(ct),
 
                 _ => null

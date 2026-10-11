@@ -7,6 +7,8 @@
 // (017) + IQuoteApprovalService.
 // (075) + ICustomFieldService — custom fields, Round A. See the note
 //       beside the registration line.
+// (083) + IInboundEmailService — received email (Inbox, email page,
+//       record Emails sections, Settings → Inbound Email).
 //
 // WHY THE MODULE SERVICES ARE STILL A LIST (not a scan)
 //   They are thin wrappers over IApiService. A naming-convention scan
@@ -35,6 +37,7 @@ using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.CustomFields;   // 075
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.InboundEmails;   // 083
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
@@ -248,6 +251,14 @@ public static class AdminWebServiceRegistration
         // "Unable to resolve service for type 'ICustomFieldService'" the
         // first time anybody opens a contact.
         services.AddScoped<ICustomFieldService, CustomFieldService>();
+
+        // 083 — received email. Read by the Inbox, the email page, the
+        // Emails sections on Leads / Pipeline / Contacts Detail, Leads/Create
+        // ("create a lead from this email") and Settings → Inbound Email.
+        // Without this line the app starts and then throws "Unable to
+        // resolve service for type 'IInboundEmailService'" on the first
+        // lead page anybody opens.
+        services.AddScoped<IInboundEmailService, InboundEmailService>();
 
         // Workspace settings
         services.AddScoped<IUserService, UserService>();

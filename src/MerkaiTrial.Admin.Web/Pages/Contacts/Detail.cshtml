@@ -21,6 +21,10 @@
    • Country comes from the Countries table (Model.CountryName).
    • The page model's own FormatCurrency/FormatDate copies are deleted;
      the base class's tenant-aware versions are used.
+
+   083:
+   • "Emails" card under Associated Deals — the shared _RecordEmails
+     partial, the same one the lead and deal pages use.
    ===================================================================== *@
 
 <!-- Page Header -->
@@ -236,6 +240,9 @@
                 </div>
             </div>
         }
+
+        @* 083 — emails filed on this contact. *@
+        <partial name="_RecordEmails" model="Model.RecordEmails" />
 
         <!-- Timeline Card -->
         <div class="card border-0 shadow-sm">

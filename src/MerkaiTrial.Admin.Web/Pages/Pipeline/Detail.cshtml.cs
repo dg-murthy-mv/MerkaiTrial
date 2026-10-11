@@ -8,6 +8,14 @@
 //   money through the base class), and it was one more hardcoded symbol
 //   table that disagreed with CurrencyConfiguration (AED as د.إ).
 //
+// CHANGES (083 — inbound email)
+//   • An "Emails" tab: the deal's own emails, its contact's, and those on
+//     the lead it came from — the whole conversation, wherever it was
+//     filed — through the shared _RecordEmails partial. A customer who
+//     writes in fresh (no reply token) still shows up here because they
+//     are this deal's contact. Loaded in parallel; a failure costs the
+//     tab, not the page.
+//
 // CHANGES (077 — custom fields on deals)
 //   • "Additional details" card above the tabs: every active Deal custom
 //     field, plus any retired field this deal still has a value in, through
@@ -73,6 +81,7 @@ using MerkaiTrial.Admin.Web.Pages.Shared;              // 077
 using MerkaiTrial.Admin.Web.Services.Activities;
 using MerkaiTrial.Admin.Web.Services.CustomFields;     // 077
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.InboundEmails;    // 083
 using MerkaiTrial.Admin.Web.Services.Pipeline;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
@@ -102,6 +111,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         private readonly IPipelineRuleService _ruleService;          // 020
         private readonly IDealStageService _dealStageService;        // 020
         private readonly ICustomFieldService _customFields;          // 077
+        private readonly IInboundEmailService _emails;               // 083
         protected override string ModuleName => Modules.Deals;
 
         public DetailModel(
@@ -115,7 +125,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             IPipelineStageService stageService,
             IPipelineRuleService ruleService,                        // 020
             IDealStageService dealStageService,                      // 020
-            ICustomFieldService customFields)                        // 077
+            ICustomFieldService customFields,                        // 077
+            IInboundEmailService emails)                             // 083
             : base(authorizationService, currentUserService, logger)
         {
             _dealService          = dealService;
@@ -128,6 +139,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _ruleService          = ruleService;
             _dealStageService     = dealStageService;
             _customFields         = customFields;
+            _emails               = emails;
         }
 
         // ==================== PAGE PROPERTIES ====================
@@ -144,6 +156,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public List<ActivityDto> Tasks      => AllActivities.Where(a =>  a.IsTask).ToList();
 
         public List<PipelineStageDto> Stages { get; set; } = new();
+
+        /// <summary>083. The Emails tab.</summary>
+        public RecordEmailsVm RecordEmails { get; private set; } = new();
 
         // ── 077: custom fields ────────────────────────────────────────
 
@@ -368,9 +383,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var assigneesTask    = LoadAssigneesAsync();
                 var transitionsTask  = LoadTransitionsAsync(id);
                 var customFieldsTask = LoadCustomFieldsAsync();          // 077
+                var emailsTask       = LoadEmailsAsync(id);              // 083
 
                 await Task.WhenAll(notesTask, stageHistoryTask, stagesTask, attachmentsTask,
-                                   activitiesTask, assigneesTask, transitionsTask, customFieldsTask);
+                                   activitiesTask, assigneesTask, transitionsTask, customFieldsTask, emailsTask);
 
                 Notes        = await notesTask;
                 StageHistory = await stageHistoryTask;
@@ -903,6 +919,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 CustomFieldsLoadFailed = true;
             }
         }
+
+        /// <summary>083. Never throws — a failure shows on the tab.</summary>
+        private async Task LoadEmailsAsync(Guid dealId)
+            => RecordEmails = await RecordEmailsVm.LoadAsync(
+                _emails, "Deal", dealId, "deal", FormatDateTime, _logger);
 
         private async Task LoadAssigneesAsync()
         {

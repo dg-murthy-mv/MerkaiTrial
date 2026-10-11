@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Admin.Web.Services.Roles;
+using MerkaiTrial.Admin.Web.Services.Roles;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
@@ -6,16 +6,29 @@ using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.Roles;
 
 
 // =====================================================================
 // FILE: Pages/Settings/Roles/Create.cshtml.cs
+//
+// 084 CHANGES
+//   - Role names may contain underscores. Built-in roles are named
+//     "sales_rep", "sales_manager"; the old rule (letters, digits,
+//     hyphens) rejected them, so a role copied from one could never be
+//     saved. Upper case is accepted and stored lower case.
+//   - A validation error no longer unticks every permission box.
+//   - Checkbox reading/saving moved to RolePermissionForm (shared with
+//     Edit and Detail). BuildPermissionsJson keeps its signature.
 // =====================================================================
 public class CreateModel : AuthorizedPageModel
 {
+    /// <summary>Shared by Create and Edit so the rule cannot drift.</summary>
+    internal const string NamePattern = @"^[A-Za-z0-9_-]+$";
+    internal const string NameMessage =
+        "Use letters, numbers, hyphens (-) or underscores (_). No spaces.";
+
     private readonly IRoleService _roleService;
 
     protected override string ModuleName => Modules.Roles;
@@ -34,14 +47,16 @@ public class CreateModel : AuthorizedPageModel
 
     public List<ModuleDefinition> AvailableModules { get; set; } = new();
 
+    /// <summary>What to tick when the form is redisplayed after an error.</summary>
+    public Dictionary<string, List<string>> SelectedPermissions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public string? ErrorMessage { get; set; }
 
     public class InputModel
     {
         [Required(ErrorMessage = "Role name is required")]
         [StringLength(100, MinimumLength = 2, ErrorMessage = "Name must be between 2 and 100 characters")]
-        [RegularExpression(@"^[a-z0-9-]+$",
-            ErrorMessage = "Use lowercase letters, numbers and hyphens only")]
+        [RegularExpression(NamePattern, ErrorMessage = NameMessage)]
         public string Name { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Display name is required")]
@@ -51,6 +66,9 @@ public class CreateModel : AuthorizedPageModel
         [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
         public string? Description { get; set; }
     }
+
+    public bool IsChecked(string module, string action)
+        => RolePermissionForm.Has(SelectedPermissions, module, action);
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -68,7 +86,11 @@ public class CreateModel : AuthorizedPageModel
 
         AvailableModules = _roleService.GetAvailableModules();
 
-        if (!ModelState.IsValid) return Page();
+        if (!ModelState.IsValid)
+        {
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
+            return Page();
+        }
 
         try
         {
@@ -86,40 +108,28 @@ public class CreateModel : AuthorizedPageModel
         }
         catch (InvalidOperationException ex)
         {
-            // "Role with name X already exists" — now scoped per tenant, so
+            // "Role with name X already exists" — scoped per tenant, so
             // this only fires on a genuine clash inside this workspace.
             ModelState.AddModelError(string.Empty, ex.Message);
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
             return Page();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error creating role");
             ErrorMessage = "Failed to create the role. Please try again.";
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
             return Page();
         }
     }
 
     /// <summary>
     /// Reads the Permissions_{module}_{action} checkboxes into the JSON
-    /// shape stored on Role.Permissions. Shared with Edit so the two
-    /// cannot drift — the format is read by SignInService when building
-    /// permission claims, so a mismatch means silent permission loss.
+    /// shape stored on Role.Permissions, for a NEW role. Edit merges with
+    /// the stored role instead (RolePermissionForm.BuildJson with the
+    /// stored JSON) so nothing the page does not show is lost.
     /// </summary>
     internal static string BuildPermissionsJson(
         IFormCollection form, IEnumerable<ModuleDefinition> modules)
-    {
-        var permissions = new Dictionary<string, List<string>>();
-
-        foreach (var module in modules)
-        {
-            var granted = module.Permissions
-                .Where(p => form[$"Permissions_{module.Name}_{p}"].ToString() == "true")
-                .ToList();
-
-            if (granted.Count > 0)
-                permissions[module.Name] = granted;
-        }
-
-        return JsonSerializer.Serialize(permissions);
-    }
+        => RolePermissionForm.BuildJson(null, form, modules);
 }

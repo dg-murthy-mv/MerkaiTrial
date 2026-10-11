@@ -13,6 +13,10 @@
 //   2. Icon and link are presentation. They are computed once, here, so
 //      the bell dropdown and the notifications page cannot disagree about
 //      what a QuoteAccepted looks like.
+//
+// 083 — CustomerEmailReceived: an envelope icon, and a link straight to
+//   the email (/Emails/View/{id}). NotificationEmailTemplate.BuildUrl
+//   carries the same route, so the bell and the email go to one place.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -45,6 +49,7 @@ namespace MerkaiTrial.Application.DTOs
             nameof(NotificationEventType.DealStageChanged)        => "bi-arrow-right-circle",
             nameof(NotificationEventType.LeadAssigned)            => "bi-person-plus",
             nameof(NotificationEventType.DealAssigned)            => "bi-briefcase",
+            nameof(NotificationEventType.CustomerEmailReceived)   => "bi-envelope-open",   // 083
             _                                                     => "bi-bell"
         };
 
@@ -54,6 +59,7 @@ namespace MerkaiTrial.Application.DTOs
             nameof(NotificationEventType.QuoteAccepted)          => "text-success",
             nameof(NotificationEventType.QuoteRejected)          => "text-danger",
             nameof(NotificationEventType.QuoteApprovalRequested) => "text-warning",
+            nameof(NotificationEventType.CustomerEmailReceived)  => "text-info",       // 083
             _                                                    => "text-primary"
         };
 
@@ -67,6 +73,7 @@ namespace MerkaiTrial.Application.DTOs
             ("Quote", { } id) => $"/Quotes/Detail/{id}",
             ("Deal",  { } id) => $"/Pipeline/Detail/{id}",
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
+            ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
             _                 => null
         };
     }

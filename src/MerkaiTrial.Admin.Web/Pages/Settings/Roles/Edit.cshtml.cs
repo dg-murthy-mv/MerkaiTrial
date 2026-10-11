@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Admin.Web.Services.Roles;
+using MerkaiTrial.Admin.Web.Services.Roles;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
@@ -6,9 +6,23 @@ using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.Roles;
+
+// =====================================================================
+// FILE: Pages/Settings/Roles/Edit.cshtml.cs
+//
+// 084 CHANGES
+//   - Shows what the role REALLY grants. Stored keys are PascalCase
+//     ("Leads"); the checkboxes are lowercase ("leads"). The old
+//     case-sensitive check showed those boxes unticked.
+//   - Saving never silently drops a permission. The stored role is
+//     re-read on POST and only the boxes on this page are applied to
+//     it; modules/actions the page does not offer are kept (and listed
+//     on the page so the admin knows they exist).
+//   - Underscores allowed in the role name (sales_rep).
+//   - Built-in roles are refused on POST too, not just GET.
+// =====================================================================
 public class EditModel : AuthorizedPageModel
 {
     private readonly IRoleService _roleService;
@@ -33,23 +47,30 @@ public class EditModel : AuthorizedPageModel
     public string? ErrorMessage { get; set; }
 
     public List<ModuleDefinition> AvailableModules { get; set; } = new();
-    public Dictionary<string, List<string>> SelectedPermissions { get; set; } = new();
+    public Dictionary<string, List<string>> SelectedPermissions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Stored grants this page does not show; kept on save.</summary>
+    public Dictionary<string, List<string>> KeptPermissions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>People holding this role — they are signed out on save.</summary>
+    public int AssignedUsers { get; set; }
 
     public class InputModel
     {
         [Required(ErrorMessage = "Role name is required")]
-        [StringLength(100, MinimumLength = 2)]
-        [RegularExpression(@"^[a-z0-9-]+$",
-            ErrorMessage = "Use lowercase letters, numbers and hyphens only")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "Name must be between 2 and 100 characters")]
+        [RegularExpression(CreateModel.NamePattern, ErrorMessage = CreateModel.NameMessage)]
         public string Name { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Display name is required")]
-        [StringLength(200, MinimumLength = 2)]
+        [StringLength(200, MinimumLength = 2, ErrorMessage = "Display name must be between 2 and 200 characters")]
         public string DisplayName { get; set; } = string.Empty;
 
-        [StringLength(500)]
+        [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
         public string? Description { get; set; }
     }
+
+    public string ModuleLabel(string key) => RolePermissionForm.ModuleLabel(key, AvailableModules);
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -62,11 +83,7 @@ public class EditModel : AuthorizedPageModel
 
             // Built-in roles are shared across every tenant. Editing one
             // here would change it for every other client.
-            if (role.IsSystemRole)
-            {
-                TempData["ErrorMessage"] = "Built-in roles cannot be edited.";
-                return RedirectToPage("./Detail", new { id = Id });
-            }
+            if (role.IsSystemRole) return BuiltInRole();
 
             Input = new InputModel
             {
@@ -76,7 +93,10 @@ public class EditModel : AuthorizedPageModel
             };
 
             AvailableModules = _roleService.GetAvailableModules();
-            SelectedPermissions = ParsePermissions(role.Permissions);
+            var stored = RolePermissionForm.Parse(role.Permissions);
+            SelectedPermissions = stored;
+            KeptPermissions = RolePermissionForm.NotShown(stored, AvailableModules);
+            AssignedUsers = role.UserCount;
 
             return Page();
         }
@@ -84,7 +104,7 @@ public class EditModel : AuthorizedPageModel
         {
             return RoleNotFound();
         }
-        catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+        catch (HttpRequestException ex) when (IsNotFound(ex))
         {
             // Another tenant's role. The API returns 404 rather than 403 so
             // the two are indistinguishable from outside.
@@ -105,9 +125,40 @@ public class EditModel : AuthorizedPageModel
 
         AvailableModules = _roleService.GetAvailableModules();
 
+        // Re-read the stored role. Its current permissions are the base
+        // the checkboxes are applied to — without it, anything the page
+        // does not show would be wiped by this save.
+        RoleDto role;
+        try
+        {
+            role = await _roleService.GetByIdAsync(Id);
+        }
+        catch (KeyNotFoundException)
+        {
+            return RoleNotFound();
+        }
+        catch (HttpRequestException ex) when (IsNotFound(ex))
+        {
+            return RoleNotFound();
+        }
+        catch (Exception ex)
+        {
+            // Refuse to save rather than save blind.
+            Logger.LogError(ex, "Error re-loading role {RoleId} before update", Id);
+            ErrorMessage = "Couldn't load the role's current permissions, so nothing was saved. Please try again.";
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
+            return Page();
+        }
+
+        if (role.IsSystemRole) return BuiltInRole();
+
+        var stored = RolePermissionForm.Parse(role.Permissions);
+        KeptPermissions = RolePermissionForm.NotShown(stored, AvailableModules);
+        AssignedUsers = role.UserCount;
+
         if (!ModelState.IsValid)
         {
-            SelectedPermissions = ReadPermissionsFromForm(Request.Form, AvailableModules);
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
             return Page();
         }
 
@@ -118,7 +169,7 @@ public class EditModel : AuthorizedPageModel
                 Name: Input.Name.Trim().ToLowerInvariant(),
                 DisplayName: Input.DisplayName.Trim(),
                 Description: Input.Description?.Trim(),
-                Permissions: CreateModel.BuildPermissionsJson(Request.Form, AvailableModules)
+                Permissions: RolePermissionForm.BuildJson(role.Permissions, Request.Form, AvailableModules)
             );
 
             await _roleService.UpdateAsync(command);
@@ -127,18 +178,19 @@ public class EditModel : AuthorizedPageModel
             // UpdateRoleHandler, so they are signed out and pick up the new
             // permissions on next sign-in. Say so — otherwise the admin
             // reports "it logged everyone out" as a bug.
-            TempData["SuccessMessage"] =
-                $"Role '{Input.DisplayName}' updated. Anyone using it will be asked to sign in again.";
+            TempData["SuccessMessage"] = AssignedUsers > 0
+                ? $"Role '{Input.DisplayName.Trim()}' updated. The {AssignedUsers} {(AssignedUsers == 1 ? "person" : "people")} using it will be asked to sign in again."
+                : $"Role '{Input.DisplayName.Trim()}' updated.";
 
             return RedirectToPage("./Detail", new { id = Id });
         }
         catch (InvalidOperationException ex)
         {
             ErrorMessage = ex.Message;
-            SelectedPermissions = ReadPermissionsFromForm(Request.Form, AvailableModules);
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
             return Page();
         }
-        catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+        catch (HttpRequestException ex) when (IsNotFound(ex))
         {
             return RoleNotFound();
         }
@@ -146,9 +198,20 @@ public class EditModel : AuthorizedPageModel
         {
             Logger.LogError(ex, "Error updating role {RoleId}", Id);
             ErrorMessage = "Failed to update the role. Please try again.";
-            SelectedPermissions = ReadPermissionsFromForm(Request.Form, AvailableModules);
+            SelectedPermissions = RolePermissionForm.ReadForm(Request.Form, AvailableModules);
             return Page();
         }
+    }
+
+    private static bool IsNotFound(HttpRequestException ex)
+        => ex.StatusCode == System.Net.HttpStatusCode.NotFound
+           || ex.Message.Contains("404")
+           || ex.Message.Contains("NotFound", StringComparison.OrdinalIgnoreCase);
+
+    private IActionResult BuiltInRole()
+    {
+        TempData["ErrorMessage"] = "Built-in roles cannot be edited.";
+        return RedirectToPage("./Detail", new { id = Id });
     }
 
     private IActionResult RoleNotFound()
@@ -158,42 +221,9 @@ public class EditModel : AuthorizedPageModel
     }
 
     /// <summary>
-    /// Re-reads the posted checkboxes so a validation failure does not wipe
-    /// the permission selections the user just made. The /Admin version
-    /// left SelectedPermissions empty on this path, so every box came back
-    /// unticked after a validation error.
+    /// Kept for callers outside this folder. Case-insensitive now: the
+    /// returned dictionary matches "Leads" and "leads" alike.
     /// </summary>
-    private static Dictionary<string, List<string>> ReadPermissionsFromForm(
-        IFormCollection form, IEnumerable<ModuleDefinition> modules)
-    {
-        var result = new Dictionary<string, List<string>>();
-
-        foreach (var module in modules)
-        {
-            var granted = module.Permissions
-                .Where(p => form[$"Permissions_{module.Name}_{p}"].ToString() == "true")
-                .ToList();
-
-            if (granted.Count > 0) result[module.Name] = granted;
-        }
-
-        return result;
-    }
-
     internal static Dictionary<string, List<string>> ParsePermissions(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return new();
-
-        try
-        {
-            return JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json) ?? new();
-        }
-        catch (JsonException)
-        {
-            // Corrupt JSON shows as "no permissions" rather than throwing.
-            // SignInService now fails closed on the same data, so this
-            // matches what the role actually grants.
-            return new();
-        }
-    }
+        => RolePermissionForm.Parse(json);
 }

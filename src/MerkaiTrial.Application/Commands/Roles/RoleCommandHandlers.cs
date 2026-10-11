@@ -16,6 +16,10 @@
 //     they never chose. Uniqueness must be per tenant.
 //   * CreatedBy was never populated.
 //
+// 084b: UPDATE no longer crashes when rotating security stamps (EF
+//       could not translate Guid.ToString inside ExecuteUpdate). Role
+//       and stamps now save together in one transaction.
+//
 // UPDATE / DELETE:
 //   * The role was loaded by id alone. A tenant admin who knows (or
 //     guesses) another tenant's role GUID could edit or delete it.
@@ -135,13 +139,24 @@ public class UpdateRoleHandler : ICommandHandler
         role.UpdatedAtUtc = DateTime.UtcNow;
         role.UpdatedBy    = actor.Email;
 
-        await _db.SaveChangesAsync();
-
         // Permission claims are baked into the auth cookie at sign-in, so
         // users holding this role keep their OLD permissions until they sign
         // in again. Rotating their SecurityStamp forces revalidation to fail
         // and signs them out — the change then takes effect immediately.
         // Without this, revoking a permission appears to do nothing.
+        //
+        // 084b FIX. This used ExecuteUpdateAsync with
+        //     SetProperty(u => u.SecurityStamp, _ => Guid.NewGuid().ToString("N"))
+        // EF cannot translate Guid.ToString into SQL, so it threw AFTER the
+        // role had already been saved: the permissions changed, nobody was
+        // signed out, and the page reported "failed to update".
+        //
+        // Now the stamps are generated in C# (one fresh value per person)
+        // and saved in the SAME SaveChangesAsync as the role. One
+        // SaveChanges is one transaction: either the role changes AND its
+        // users are signed out, or neither happens.
+        //
+        // Users are not tenant-filtered, so the tenant is checked explicitly.
         var affectedUserIds = await _db.UserRoles
             .Where(ur => ur.RoleId == role.Id)
             .Select(ur => ur.UserId)
@@ -149,11 +164,15 @@ public class UpdateRoleHandler : ICommandHandler
 
         if (affectedUserIds.Count > 0)
         {
-            await _db.Users
-                .Where(u => affectedUserIds.Contains(u.Id))
-                .ExecuteUpdateAsync(s => s.SetProperty(
-                    u => u.SecurityStamp, _ => Guid.NewGuid().ToString("N")));
+            var affectedUsers = await _db.Users
+                .Where(u => affectedUserIds.Contains(u.Id) && u.TenantId == tenantId)
+                .ToListAsync();
+
+            foreach (var user in affectedUsers)
+                user.SecurityStamp = Guid.NewGuid().ToString("N");
         }
+
+        await _db.SaveChangesAsync();
     }
 }
 

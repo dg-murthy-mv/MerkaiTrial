@@ -1,8 +1,12 @@
 @* =====================================================================
    ROLE EDIT PAGE
+   084: boxes show the role's real permissions whatever their stored
+   capitalisation; saving changes only what is shown here; underscores
+   allowed in the role name (sales_rep).
    ===================================================================== *@
 @page "/Settings/Roles/Edit/{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Settings.Roles.EditModel
+@using MerkaiTrial.Admin.Web.Pages.Settings.Roles
 @{
     ViewData["Title"] = $"Edit Role: {Model.Input.DisplayName}";
 }
@@ -33,6 +37,19 @@
         </div>
     }
 
+    @if (Model.AssignedUsers > 0)
+    {
+        <div class="alert alert-warning d-flex align-items-start">
+            <i class="bi bi-people me-2 mt-1"></i>
+            <div>
+                <strong>@Model.AssignedUsers @(Model.AssignedUsers == 1 ? "person uses" : "people use") this role.</strong>
+                When you save, they'll be signed out and get the new permissions when they sign back in.
+            </div>
+        </div>
+    }
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
     <form method="post">
         <div class="row">
             <!-- Basic Info -->
@@ -47,7 +64,8 @@
                                 <label asp-for="Input.Name" class="form-label">
                                     Role Name <span class="text-danger">*</span>
                                 </label>
-                                <input asp-for="Input.Name" class="form-control" placeholder="sales-rep" />
+                                <input asp-for="Input.Name" class="form-control" placeholder="sales_rep" autocomplete="off" />
+                                <small class="form-text text-muted">Letters, numbers, - and _ only. Saved in lower case.</small>
                                 <span asp-validation-for="Input.Name" class="text-danger small"></span>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -73,35 +91,23 @@
                         <h5 class="mb-0"><i class="bi bi-key"></i> Permissions</h5>
                     </div>
                     <div class="card-body">
-                        <p class="text-muted mb-3">Select which actions this role can perform in each module</p>
-                        <div class="row g-3">
-                            @foreach (var module in Model.AvailableModules)
-                            {
-                                <div class="col-md-6">
-                                    <div class="border rounded p-3">
-                                        <h6 style="color: #ff6b35;">
-                                            <i class="bi bi-@module.Icon"></i> @module.DisplayName
-                                        </h6>
-                                        <div class="mt-2">
-                                            @foreach (var permission in module.Permissions)
-                                            {
-                                                var fieldName = $"Permissions_{module.Name}_{permission}";
-                                                var isChecked = Model.SelectedPermissions.ContainsKey(module.Name) && 
-                                                               Model.SelectedPermissions[module.Name].Contains(permission);
-                                                
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input" 
-                                                           name="@fieldName" value="true" checked="@isChecked" />
-                                                    <label class="form-check-label">
-                                                        @permission.ToUpper()
-                                                    </label>
-                                                </div>
-                                            }
-                                        </div>
+                        <partial name="_RolePermissionsGrid"
+                                 model="new RolePermissionsGridVm(Model.AvailableModules, Model.SelectedPermissions)" />
+
+                        @if (Model.KeptPermissions.Any())
+                        {
+                            <div class="alert alert-light border mt-3 mb-0 small">
+                                <div class="fw-semibold mb-1"><i class="bi bi-lock me-1"></i>Also on this role (kept as they are)</div>
+                                <div class="text-muted mb-2">These aren't offered on this page, so saving won't change them.</div>
+                                @foreach (var kept in Model.KeptPermissions)
+                                {
+                                    <div>
+                                        <strong>@Model.ModuleLabel(kept.Key)</strong>:
+                                        @string.Join(", ", kept.Value.Select(RolePermissionForm.ActionLabel))
                                     </div>
-                                </div>
-                            }
-                        </div>
+                                }
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
@@ -136,9 +142,13 @@
                                 <i class="bi bi-check-circle text-success"></i>
                                 Role name must be unique
                             </li>
-                            <li class="mb-0">
+                            <li class="mb-2">
                                 <i class="bi bi-exclamation-triangle text-warning"></i>
-                                Changes affect all assigned users
+                                Changes affect all assigned users; they're asked to sign in again
+                            </li>
+                            <li class="mb-0">
+                                <i class="bi bi-shield-check text-success"></i>
+                                Workspace admins always have every permission
                             </li>
                         </ul>
                     </div>
@@ -149,7 +159,7 @@
 </div>
 
 @section Scripts {
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validate/1.19.5/jquery.validate.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-validation-unobtrusive/4.0.0/jquery.validate.unobtrusive.min.js"></script>
+    @* 084: same local scripts as Create. The CDN copies loaded a second
+       jQuery on top of the layout's. *@
+    <partial name="_ValidationScriptsPartial" />
 }

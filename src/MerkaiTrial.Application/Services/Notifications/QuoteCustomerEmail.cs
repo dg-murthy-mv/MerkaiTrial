@@ -44,6 +44,23 @@
 //   web-safe fonts — because that is what survives Outlook's Word
 //   renderer and Gmail stripping <style> blocks. Only the words differ.
 //
+// 083 — REPLIES ARE FILED ON THE DEAL
+//   When receiving is switched on (Email:InboundDomain), Reply-To carries
+//   TWO addresses:
+//
+//       reply+<token>@<receiving domain>, <the workspace's reply-to>
+//
+//   The first is a tracked address: Resend receives the customer's reply,
+//   and it appears on this quote's deal (and contact), with the deal owner
+//   notified. The second is the mailbox replies have always gone to, so
+//   nothing changes for the team — the reply still lands in that inbox.
+//   Most mail programs answer every Reply-To address; one that only uses
+//   the first still reaches the deal, and the owner hears about it.
+//
+//   The token row is ADDED here and committed by the caller's SaveChanges
+//   with the outbox row — same transaction, same rule as everything else.
+//   With receiving off, Reply-To is exactly what it was before 083.
+//
 // THE FROM LINE IS STILL OURS
 //   Resend only accepts a From on a domain we have verified. The envelope
 //   is Merkai's; Reply-To is the TENANT's, so a customer hitting reply
@@ -54,6 +71,7 @@
 
 using System.Net;
 using System.Text;
+using MerkaiTrial.Application.Services.Inbound;   // 083
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -166,7 +184,7 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
 
         // Reply-To is the TENANT's, never ours. A customer replying to a
         // quote must reach the people who sent it.
-        var replyTo = !string.IsNullOrWhiteSpace(tenant?.ReplyToEmail)
+        var mailbox = !string.IsNullOrWhiteSpace(tenant?.ReplyToEmail)
             ? tenant!.ReplyToEmail
             : tenant?.FromEmail;
 
@@ -186,6 +204,20 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
             return "The customer link has no web address. Set Email__AppBaseUrl on the API.";
         }
 
+        // 083: the tracked reply address first, then the mailbox. See the
+        // header. The message id is chosen now so the token can point at it.
+        // After every early return, so a refused email leaves no token behind.
+        var messageId = Guid.NewGuid();
+        string? trackedAddress = null;
+
+        if (_email.NormalisedInboundDomain is { } inboundDomain)
+        {
+            var token = InboundAddressing.AddReplyToken(_db, tenantId, "Quote", quote.Id, messageId);
+            trackedAddress = InboundAddressing.ReplyAddress(token, inboundDomain);
+        }
+
+        var replyTo = InboundAddressing.CombineReplyTo(trackedAddress, mailbox);
+
         var rendered = Render(
             tenantName: tenantName,
             tenantPhone: tenant?.Phone,
@@ -197,7 +229,7 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
 
         _db.OutboundMessages.Add(new OutboundMessage
         {
-            Id        = Guid.NewGuid(),           // also the idempotency key
+            Id        = messageId,                // also the idempotency key; 083: the token points here
             TenantId  = tenantId,
             Channel   = OutboundChannel.Email,
             Status    = OutboundStatus.Pending,
@@ -213,7 +245,7 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
             // still goes where it was addressed.
             ToAddress      = Truncate(contact.Email, 320)!,
             ToName         = Truncate(contact.DisplayName, 200),
-            ReplyToAddress = Truncate(replyTo, 320),
+            ReplyToAddress = replyTo,             // 083: already fitted to 320 by CombineReplyTo
 
             Subject  = Truncate(rendered.Subject, 300)!,
             BodyHtml = rendered.Html,

@@ -1,0 +1,249 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.InboundEmail.IndexModel
+@{
+    ViewData["Title"] = "Inbound Email";
+    var s = Model.Settings;
+}
+@* =====================================================================
+   Settings/InboundEmail/Index.cshtml — NEW (083).
+
+   PATTERNS: no Bootstrap includes, no TempData alert block, @@ in
+   <style>, confirms delegated through data-confirm, copy buttons through
+   the layout's delegated [data-copy] handler.
+
+   Nothing secret is ever printed here — the checklist says whether a
+   setting is present, never what it is.
+   ===================================================================== *@
+
+<style>
+    .ie-wrap { max-width: 1050px; }
+    .ie-address {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        background: #f8fafc; border: 1px dashed #c7d2fe; border-radius: 10px; padding: 14px 16px;
+    }
+    .ie-address code { font-size: 16px; color: #312e81; background: transparent; word-break: break-all; }
+    .ie-check { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid #f1f5f9; }
+    .ie-check:last-child { border-bottom: 0; }
+    .ie-check i { font-size: 17px; margin-top: 1px; }
+    .ie-check .t { font-size: 13.5px; color: #0f172a; font-weight: 500; }
+    .ie-check .d { font-size: 12.5px; color: #64748b; }
+    .ie-stat { font-size: 12.5px; color: #64748b; }
+    .ie-stat strong { display: block; font-size: 20px; color: #0f172a; }
+    .ie-how li { margin-bottom: 6px; }
+</style>
+
+<div class="ie-wrap">
+    <div class="mb-3">
+        <h1 class="lf-page-title mb-1">Inbound Email</h1>
+        <p class="text-muted mb-0">
+            Customer replies and the emails your team sends from their own mailbox, filed on the right lead,
+            deal or contact automatically.
+        </p>
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-warning d-flex align-items-center gap-2">
+            <i class="bi bi-exclamation-triangle"></i><span>@Model.LoadError</span>
+        </div>
+    }
+
+    @if (s is not null)
+    {
+        <div class="row g-4">
+            <div class="col-lg-7">
+
+                <div class="card mb-3">
+                    <div class="card-header"><i class="bi bi-at me-2 text-primary"></i>Your workspace address</div>
+                    <div class="card-body">
+                        @if (s.WorkspaceAddress is not null)
+                        {
+                            <div class="ie-address mb-3">
+                                <code>@s.WorkspaceAddress</code>
+                                <button type="button" class="btn btn-sm btn-primary ms-auto" data-copy="@s.WorkspaceAddress">
+                                    <i class="bi bi-clipboard me-1"></i>Copy
+                                </button>
+                            </div>
+
+                            <ul class="small ie-how mb-0">
+                                <li><strong>Emailing a customer from Gmail or Outlook?</strong> Put this address in <strong>BCC</strong>.
+                                    Your email is filed on that customer's record.</li>
+                                <li><strong>A customer emailed you directly?</strong> <strong>Forward</strong> it here. It is filed on the
+                                    customer it came from, not on you.</li>
+                                <li><strong>Quote emails need nothing.</strong> Replies to them are tracked automatically and land on the deal.</li>
+                                <li>Save it as a contact called "Merkai" in your mail program, so it's two letters to type.</li>
+                            </ul>
+                        }
+                        else
+                        {
+                            <p class="text-muted mb-0">
+                                Your address appears here once receiving is set up on the server (see the checklist).
+                                @if (!string.IsNullOrWhiteSpace(s.Alias))
+                                {
+                                    <span>It will start with <code>@s.Alias@@</code>.</span>
+                                }
+                            </p>
+                        }
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header"><i class="bi bi-diagram-3 me-2 text-primary"></i>How email is filed</div>
+                    <div class="card-body small">
+                        <ol class="ie-how mb-2">
+                            <li><strong>A reply to a quote email</strong> goes straight to that quote's deal.</li>
+                            <li><strong>A reply to an email already on a record</strong> follows it there.</li>
+                            <li><strong>Anything else</strong> is matched by the customer's email address against your contacts and leads.</li>
+                            <li><strong>No match?</strong> It waits in the <a asp-page="/Inbox/Index">Inbox</a> for someone to file it — or to create a lead from it.</li>
+                        </ol>
+                        <p class="text-muted mb-0">
+                            The record's owner gets a notification (they can turn it off under Notification settings → Email).
+                            Out-of-office replies and your team's own BCC'd emails are filed without a notification.
+                            Email whose sender can't be verified is never filed automatically.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header"><i class="bi bi-shield-lock me-2 text-primary"></i>Who can see what</div>
+                    <div class="card-body small">
+                        <p class="mb-2">An email filed on a lead or deal is visible to whoever can see that lead or deal — nothing new to set up.</p>
+                        <p class="mb-0">
+                            The <strong>Inbox</strong> (email that matched nobody) is visible only to workspace admins and to roles
+                            given <strong>Shared Inbox</strong> under
+                            @if (Model.UserCanRead(MerkaiTrial.Application.Authorization.Modules.Roles))
+                            {
+                                <a asp-page="/Settings/Roles/Index">Roles &amp; Permissions</a>
+                            }
+                            else
+                            {
+                                <text>Roles &amp; Permissions</text>
+                            }.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-5">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-list-check me-2 text-primary"></i>Set-up checklist</span>
+                        @if (s.FullyReady)
+                        {
+                            <span class="badge bg-success">Ready</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-warning text-dark">Not finished</span>
+                        }
+                    </div>
+                    <div class="card-body">
+                        <div class="ie-check">
+                            <i class="bi @(s.DomainConfigured ? "bi-check-circle-fill text-success" : "bi-circle text-muted")"></i>
+                            <div>
+                                <div class="t">Receiving domain</div>
+                                <div class="d">
+                                    @if (s.DomainConfigured)
+                                    {
+                                        <text>Receiving on <code>@s.Domain</code>.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>Not set. Your administrator sets <code>Email:InboundDomain</code> on the server.</text>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="ie-check">
+                            <i class="bi @(s.WebhookSecretConfigured ? "bi-check-circle-fill text-success" : "bi-circle text-muted")"></i>
+                            <div>
+                                <div class="t">Webhook signing secret</div>
+                                <div class="d">@(s.WebhookSecretConfigured ? "Set. Only genuine calls from Resend are accepted." : "Not set — every incoming email is refused until it is.")</div>
+                            </div>
+                        </div>
+                        <div class="ie-check">
+                            <i class="bi @(s.ApiKeyConfigured ? "bi-check-circle-fill text-success" : "bi-circle text-muted")"></i>
+                            <div>
+                                <div class="t">Resend API key</div>
+                                <div class="d">@(s.ApiKeyConfigured ? "Set. Used to download each email's text and attachments." : "Not set — emails are recorded but their text can't be downloaded.")</div>
+                            </div>
+                        </div>
+                        <div class="ie-check">
+                            <i class="bi @(s.ReplyTrackingOn ? "bi-check-circle-fill text-success" : "bi-circle text-muted")"></i>
+                            <div>
+                                <div class="t">Reply tracking on quote emails</div>
+                                <div class="d">@(s.ReplyTrackingOn ? "On. Replies go to the deal and to your reply-to address." : "Off until the receiving domain is set.")</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header"><i class="bi bi-activity me-2 text-primary"></i>Activity</div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-6 ie-stat"><strong>@s.ReceivedLast30Days</strong>received, last 30 days</div>
+                            <div class="col-6 ie-stat">
+                                <strong>@s.UnmatchedCount</strong>
+                                @if (s.UnmatchedCount > 0)
+                                {
+                                    <a asp-page="/Inbox/Index">waiting in the Inbox</a>
+                                }
+                                else
+                                {
+                                    <text>waiting in the Inbox</text>
+                                }
+                            </div>
+                            <div class="col-6 ie-stat"><strong>@s.WaitingCount</strong>still downloading</div>
+                            <div class="col-6 ie-stat">
+                                <strong>@s.FailedCount</strong>
+                                @if (s.FailedCount > 0)
+                                {
+                                    <a asp-page="/Inbox/Index" asp-route-status="problems">couldn't be downloaded</a>
+                                }
+                                else
+                                {
+                                    <text>couldn't be downloaded</text>
+                                }
+                            </div>
+                        </div>
+                        <div class="small text-muted mt-3">
+                            Last email:
+                            @(s.LastReceivedAtUtc.HasValue ? Model.FormatDateTime(s.LastReceivedAtUtc.Value) : "none yet")
+                        </div>
+                    </div>
+                </div>
+
+                @if (Model.CanUpdate && s.Alias is not null)
+                {
+                    <div class="card mb-3">
+                        <div class="card-header"><i class="bi bi-arrow-repeat me-2 text-primary"></i>Getting spam on this address?</div>
+                        <div class="card-body small">
+                            <p class="text-muted">
+                                Replace it with a new one. The old address stops working immediately, so your team
+                                needs the new one. Replies to quotes already sent are not affected — they carry their own tracking.
+                            </p>
+                            <form method="post" asp-page-handler="NewAddress" class="js-confirm"
+                                  data-confirm="Replace your workspace address? Email sent to the old one will no longer arrive.">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Give us a new address
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        document.addEventListener('submit', function (ev) {
+            var form = ev.target.closest('form.js-confirm');
+            if (!form) return;
+            var message = form.getAttribute('data-confirm');
+            if (message && !window.confirm(message)) ev.preventDefault();
+        });
+    </script>
+}

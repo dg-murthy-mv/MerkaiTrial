@@ -25,6 +25,11 @@
 // A PLAIN TEXT PART IS NOT OPTIONAL
 //   An email with no text alternative scores worse with spam filters and
 //   is unreadable in a text-only client. It costs six lines.
+//
+// 083 — "InboundEmail" joins the route map: a notification about a
+//   customer's email links to the email itself (/Emails/View/{id}), with
+//   the button reading "Read the email". Kept identical to
+//   NotificationDto.Url, which got the same line in the same round.
 // =====================================================================
 
 using System.Net;
@@ -170,6 +175,7 @@ Change them under Settings &rarr; Notifications.
         "Quote" => "Open the quote",
         "Deal"  => "Open the deal",
         "Lead"  => "Open the lead",
+        "InboundEmail" => "Read the email",     // 083
         _       => "Open Merkai"
     };
 
@@ -187,6 +193,7 @@ Change them under Settings &rarr; Notifications.
             ("Quote", { } id) => $"/Quotes/Detail/{id}",
             ("Deal",  { } id) => $"/Pipeline/Detail/{id}",
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
+            ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
             _                 => "/"
         };
 

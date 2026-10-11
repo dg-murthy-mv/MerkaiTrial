@@ -21,6 +21,9 @@
    tabs, through the shared _CustomFieldValues partial (the contact page
    uses the same one). It draws nothing when there are no fields and the
    viewer cannot add any.
+
+   (083) An "Emails" tab — the shared _RecordEmails partial — between
+   Tasks and Attachments.
 *@
 
 <div class="container-fluid py-4">
@@ -168,6 +171,17 @@
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="emails-tab"
+                            data-bs-toggle="tab" data-bs-target="#emails"
+                            type="button" role="tab">
+                        <i class="bi bi-envelope me-2"></i>Emails
+                        @if (Model.RecordEmails.Count > 0)
+                        {
+                            <span class="badge bg-secondary ms-1">@Model.RecordEmails.Count</span>
+                        }
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
                     <button class="nav-link" id="attachments-tab"
                             data-bs-toggle="tab" data-bs-target="#attachments"
                             type="button" role="tab">
@@ -189,6 +203,9 @@
                 </div>
                 <div class="tab-pane fade" id="tasks" role="tabpanel">
                     <partial name="_TasksTab" />
+                </div>
+                <div class="tab-pane fade" id="emails" role="tabpanel">
+                    <partial name="_RecordEmails" model="Model.RecordEmails" />
                 </div>
                 <div class="tab-pane fade" id="attachments" role="tabpanel">
                     <partial name="_AttachmentsTab" />
