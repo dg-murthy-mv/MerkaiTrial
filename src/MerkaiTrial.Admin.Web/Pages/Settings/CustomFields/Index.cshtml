@@ -24,6 +24,19 @@
    the two differ only in whether the type can be chosen. The type is
    FIXED once a field exists — changing "number" to "date" would orphan
    every stored value — so on edit it is shown, not offered.
+
+   079 — the Leads tab is live. A Lead field's row shows where its value
+   goes on conversion ("→ Contact: Budget · Deal: Budget"); a Contact or
+   Deal field fed by a Lead field shows "From lead: …". The add form's
+   script also keeps the "copy to" dropdowns to fields of the picked type.
+
+   081 — the Quotes and Invoices tabs are live. Rows show "Prints" for a
+   field printed on the documents; a Quote field's row shows the Invoice
+   field it copies into, and an Invoice field's row shows "From quote".
+   The side panel counts the printed fields.
+
+   082 — the Products tab shows "Prints" too: those fields print under the
+   product's line on quotes and invoices.
    ===================================================================== *@
 
 <style>
@@ -294,6 +307,28 @@
                                         <i class="bi bi-layout-three-columns me-1"></i>On list
                                     </span>
                                 }
+                                @if (Model.FilledFromLead.TryGetValue(f.Id, out var fromLead))
+                                {
+                                    <span class="badge bg-success-subtle text-success-emphasis border ms-1"
+                                          title="Filled in from the lead field “@fromLead” when a lead is converted">
+                                        <i class="bi bi-arrow-left-right me-1"></i>From lead: @fromLead
+                                    </span>
+                                }
+                                @* 081 *@
+                                @if (Model.SupportsPrint && f.PrintOnDocuments && f.IsActive)
+                                {
+                                    <span class="badge bg-primary-subtle text-primary-emphasis border ms-1"
+                                          title="@(Model.ActiveEntity == CustomFieldEntityTypes.Product ? "Printed under this product's line on quotes and invoices" : "Printed on the " + Model.Noun + " PDF") when it has a value">
+                                        <i class="bi bi-printer me-1"></i>Prints
+                                    </span>
+                                }
+                                @if (Model.FilledFromQuote.TryGetValue(f.Id, out var fromQuote))
+                                {
+                                    <span class="badge bg-success-subtle text-success-emphasis border ms-1"
+                                          title="Filled in from the quote field “@fromQuote” when an invoice is raised from a quote">
+                                        <i class="bi bi-arrow-left-right me-1"></i>From quote: @fromQuote
+                                    </span>
+                                }
                             </div>
                             <div class="cf-meta">
                                 @CustomFieldTypes.DisplayName(f.FieldType)
@@ -319,6 +354,34 @@
                             @if (!string.IsNullOrWhiteSpace(f.HelpText))
                             {
                                 <div class="cf-meta text-truncate" title="@f.HelpText">“@f.HelpText”</div>
+                            }
+                            @if (Model.IsLeadTab && (f.MapToContactFieldId.HasValue || f.MapToDealFieldId.HasValue))
+                            {
+                                var toContact = Model.Target(f.MapToContactFieldId, contact: true);
+                                var toDeal    = Model.Target(f.MapToDealFieldId, contact: false);
+                                <div class="cf-meta">
+                                    <i class="bi bi-arrow-return-right me-1"></i>On conversion:
+                                    @if (toContact is not null)
+                                    {
+                                        <span class="ms-1">Contact · <strong>@toContact.Label</strong>@(toContact.IsActive ? "" : " (off — skipped)")</span>
+                                    }
+                                    @if (toContact is not null && toDeal is not null)
+                                    {
+                                        <span>&nbsp;·&nbsp;</span>
+                                    }
+                                    @if (toDeal is not null)
+                                    {
+                                        <span>Deal · <strong>@toDeal.Label</strong>@(toDeal.IsActive ? "" : " (off — skipped)")</span>
+                                    }
+                                </div>
+                            }
+                            @* 081 — the quote → invoice copy *@
+                            @if (Model.IsQuoteTab && Model.InvoiceTarget(f.MapToInvoiceFieldId) is { } toInvoice)
+                            {
+                                <div class="cf-meta">
+                                    <i class="bi bi-arrow-return-right me-1"></i>On the invoice:
+                                    <span class="ms-1">Invoice · <strong>@toInvoice.Label</strong>@(toInvoice.IsActive ? "" : " (off — skipped)")</span>
+                                </div>
                             }
                         </div>
 
@@ -383,6 +446,22 @@
                                         It disappears from every @Model.Noun form. You can add a field
                                         with the same name again later.
                                     </p>
+                                    @if (Model.FilledFromLead.TryGetValue(f.Id, out var feeder))
+                                    {
+                                        <p class="small text-muted mt-2 mb-0">
+                                            <i class="bi bi-arrow-left-right me-1"></i>
+                                            The lead field &ldquo;@feeder&rdquo; copies into this one on conversion.
+                                            That stops; the lead field itself is kept.
+                                        </p>
+                                    }
+                                    @if (Model.FilledFromQuote.TryGetValue(f.Id, out var quoteFeeder))
+                                    {
+                                        <p class="small text-muted mt-2 mb-0">
+                                            <i class="bi bi-arrow-left-right me-1"></i>
+                                            The quote field &ldquo;@quoteFeeder&rdquo; copies into this one when an invoice
+                                            is raised. That stops; the quote field itself is kept.
+                                        </p>
+                                    }
                                 </div>
                                 <div class="modal-footer">
                                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -441,6 +520,15 @@
                     @Model.ListColumnsUsed of @Model.MaxListColumns shown as list columns.
                     <a asp-page="@Model.ListPage" class="ms-1">Open the list</a>
                 </p>
+                @if (Model.SupportsPrint)
+                {
+                    @* 081 *@
+                    <p class="mb-0 mt-2 small">
+                        <i class="bi bi-printer me-1"></i>
+                        @Model.PrintedCount @(Model.PrintedCount == 1 ? "field prints" : "fields print")
+                        @(Model.ActiveEntity == CustomFieldEntityTypes.Product ? "under the product's quote and invoice lines." : "on the " + Model.Noun + ".")
+                    </p>
+                }
             </div>
         }
     </div>
@@ -471,6 +559,21 @@
                 var type = currentType();
                 form.querySelectorAll('[data-cf-show]').forEach(function (el) {
                     el.hidden = el.getAttribute('data-cf-show').split(' ').indexOf(type) < 0;
+                });
+
+                // 079 — the "copy to" dropdowns on a Lead field offer only
+                // fields of the same type. A choice that stops matching is
+                // cleared rather than posted and refused.
+                form.querySelectorAll('select[data-cf-map]').forEach(function (sel) {
+                    Array.prototype.forEach.call(sel.options, function (opt) {
+                        var t = opt.getAttribute('data-cf-target-type');
+                        if (!t) return;
+                        var mismatch = t !== type;
+                        opt.hidden = mismatch;
+                        if (!opt.hasAttribute('data-cf-taken')) opt.disabled = mismatch;
+                    });
+                    var picked = sel.options[sel.selectedIndex];
+                    if (picked && picked.hidden) sel.value = '';
                 });
             }
 

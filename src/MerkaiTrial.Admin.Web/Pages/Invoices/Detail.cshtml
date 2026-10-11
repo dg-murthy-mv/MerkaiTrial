@@ -10,6 +10,13 @@
      052. The line list prints QuantityDisplay instead of Quantity, so a
      decimal quantity arrives with its unit and without trailing zeros.
 
+     082. Under each line's name, the product's custom fields marked to
+     print — the quote's copy, or the one fixed at issue.
+
+     081. Under the line items: the invoice's custom fields
+     (_CustomFieldValues) and "Printed on the invoice" (_DocumentFieldsCard)
+     — what the PDF prints, fixed when the invoice is issued.
+
    ✅ SESSION 5 FIX — WRONG MODULE:
      All five gates above previously read CanUpdate("Deals") / CanDelete("Deals").
      That is the DEALS module, not Invoices, and unlike the identical bug in
@@ -32,7 +39,9 @@
 
 @page
 @using MerkaiTrial.Application.Configuration
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @model MerkaiTrial.Admin.Web.Pages.Invoices.DetailModel
+@inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService DocTenant
 @{
     ViewData["Title"] = $"Invoice {Model.DisplayNumber}";
 
@@ -309,6 +318,12 @@
                                     {
                                         <small class="text-muted">@line.Description</small>
                                     }
+                                    @{ var lineFields082 = MerkaiTrial.Admin.Web.Pages.Shared.DocumentCulture.LineText(line.DocumentFields, Model.Invoice.Currency, DocTenant.GetDateFormat()); }
+                                    @if (lineFields082.Length > 0)
+                                    {
+                                        @* 082 — the product's printed custom fields *@
+                                        <div class="small text-muted mt-1"><i class="bi bi-tag me-1" aria-hidden="true"></i>@lineFields082</div>
+                                    }
                                 </div>
                                 <div class="text-end">
                                     <div class="fw-bold text-primary" style="font-size:1.25rem;">
@@ -365,6 +380,10 @@
                 }
             </div>
         </div>
+
+        @* 081 — the invoice's own custom fields, then exactly what the PDF prints. *@
+        <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
+        <partial name="_DocumentFieldsCard" model="Model.DocumentFieldsCard" />
 
         <!-- Payment History Card -->
         <div class="card mb-4">

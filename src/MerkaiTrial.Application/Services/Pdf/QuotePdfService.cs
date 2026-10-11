@@ -5,6 +5,16 @@
 //   builder.Services.AddScoped<IQuotePdfService, QuotePdfService>();
 //   (QuestPDF.Settings.License = LicenseType.Community already set)
 //
+// 082. UNDER EACH ITEM, the product's custom fields marked "Print on
+// quotes & invoices" — "Warranty: 2 years  ·  Colour: Red" — as fixed when
+// the quote was sent (QuoteItemDto.DocumentFields). Nothing on a custom
+// line or when the product has none.
+//
+// 081. AN "ADDITIONAL DETAILS" BLOCK under QUOTE TO, printed ONLY when
+// the quote has custom fields switched to "Print on quotes & invoices"
+// and filled in. Drawn by DocumentFieldsPdf, shared with the invoice PDF.
+// Numbers in the quote's currency culture; dates in the tenant's format.
+//
 // 071. A PAYMENT SCHEDULE SECTION, between the totals and the validity
 // notice, printed ONLY when the quote has one. "30% on signing, 40% on
 // delivery, 30% on completion" is a commercial term the customer is
@@ -300,6 +310,15 @@ namespace MerkaiTrial.Application.Services.Pdf
                             });
                         });
 
+                        // ── ADDITIONAL DETAILS (081) ────────────────────────────
+                        // Custom fields marked to print; nothing at all when
+                        // there are none.
+                        if (DocumentFieldsPdf.HasAny(model.Quote.DocumentFields))
+                        {
+                            col.Item().PaddingTop(12).Element(e =>
+                                DocumentFieldsPdf.Compose(e, model.Quote.DocumentFields, culture, model.DateFormat));
+                        }
+
                         col.Item().PaddingVertical(14);
 
                         // ── LINE ITEMS TABLE ────────────────────────────────────
@@ -376,6 +395,13 @@ namespace MerkaiTrial.Application.Services.Pdf
                                         if (!string.IsNullOrWhiteSpace(item.Description))
                                             c.Item().Text(item.Description)
                                                 .FontSize(8).FontColor(MutedHex);
+
+                                        // 082 — the product's printed fields.
+                                        var itemFields = DocumentFieldEntry.JoinForLine(
+                                            item.DocumentFields, culture, model.DateFormat);
+                                        if (itemFields.Length > 0)
+                                            c.Item().PaddingTop(2).Text(itemFields)
+                                                .FontSize(7.5f).FontColor("#374151");
                                     });
 
                                 // 067. A line with no code prints an em dash

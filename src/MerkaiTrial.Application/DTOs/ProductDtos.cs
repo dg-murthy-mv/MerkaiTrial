@@ -67,6 +67,20 @@
 // Definition live, document frozen; ProductBundleItem.cs has the full
 // argument.
 // ─────────────────────────────────────────────────────────────────────
+// 080: CUSTOM FIELDS
+//
+//   ProductDto.CustomFieldValues       every stored value, retired fields included
+//   ProductListItem.CustomFieldValues  the "Show on the list" fields, this page only
+//   CreateProductDto.CustomFields      what the form is stating
+//   UpdateProductDto.CustomFields      ditto; NULL = say nothing, leave them alone
+//
+// Wire shape everywhere: field id → value as text (CustomFieldValueRules).
+//
+// ProductListItem's is a BODY property, NOT a seventh trailing
+// parameter. It is filled in after the rows are built, and leaving the
+// positional list alone means the quote line editor and both quote page
+// models — which construct or deconstruct it — are not touched at all.
+// ─────────────────────────────────────────────────────────────────────
 // =====================================================================
 
 using System;
@@ -129,6 +143,14 @@ namespace MerkaiTrial.Application.DTOs
         public bool IsActive { get; set; }
         public DateTime CreatedAtUtc { get; set; }
         public string? CreatedBy { get; set; }
+
+        /// <summary>
+        /// 080. Every stored custom value for this product, field id →
+        /// value as text. Retired (switched-off) fields included: the
+        /// product page shows them marked as retired, and Edit carries
+        /// them so a save never drops a value it did not display.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
     }
 
     /// <summary>
@@ -197,7 +219,16 @@ namespace MerkaiTrial.Application.DTOs
 
         // For the badge on the products list.
         int BundleComponentCount = 0
-    );
+    )
+    {
+        /// <summary>
+        /// 080. The "Show on the list" custom values for this row, field
+        /// id → value as text. A BODY property, deliberately not another
+        /// positional parameter — see the header. Empty when no field is
+        /// on the list.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+    }
 
     public record ProductStatsDto(
         int TotalProducts,
@@ -258,6 +289,12 @@ namespace MerkaiTrial.Application.DTOs
 
         public bool IsActive { get; set; } = true;
         public string? CreatedBy { get; set; }
+
+        /// <summary>
+        /// 080. Custom field values, field id → value as text. Null or a
+        /// missing key says nothing; an empty value clears.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class UpdateProductDto
@@ -287,6 +324,14 @@ namespace MerkaiTrial.Application.DTOs
         public List<ProductBundleItemDto>? BundleItems { get; set; }
 
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// 080. Custom field values. NULL = the caller said nothing and
+        /// every stored value is left alone (an API client written before
+        /// this round). A missing key is left alone too; an empty value
+        /// clears that one field.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     /// <summary>

@@ -31,6 +31,21 @@
 //     Switching a target OFF leaves the pointer: conversion simply skips
 //     a switched-off target, and switching it back on restores the copy.
 //
+// 080 — LiveEntityIds knows Products.
+//
+// 081 — QUOTES AND INVOICES
+//   • LiveEntityIds knows Quotes and Invoices.
+//   • PrintOnDocuments is stored only for types that print
+//     (CustomFieldEntityTypes.SupportsPrint) and forced false otherwise.
+//   • A Quote field may name an Invoice field that receives its value when
+//     an invoice is raised from the quote (MapToInvoiceFieldId). Checked by
+//     the same CheckTargetAsync as the 079 lead mapping: a live Invoice
+//     field, the same type, and one Quote field per target.
+//   • Deleting an Invoice field clears every Quote field's pointer to it.
+//   • FIXED: two error sentences in CheckTargetAsync were written as
+//     $""{target.Label}" … — that is not valid C# and stopped the
+//     Application project compiling. They are \"…\" now.
+//
 // Registered automatically: the Scrutor scan in ApiServiceRegistration
 // picks up every ICommandHandler in this assembly.
 //
@@ -95,6 +110,12 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                     db.Companies.Where(c => c.TenantId == tenantId && !c.IsDeleted).Select(c => c.Id),
                 CustomFieldEntityTypes.Lead =>                                               // 079
                     db.Leads.Where(l => l.TenantId == tenantId && !l.IsDeleted).Select(l => l.Id),
+                CustomFieldEntityTypes.Product =>                                            // 080
+                    db.Products.Where(p => p.TenantId == tenantId && !p.IsDeleted).Select(p => p.Id),
+                CustomFieldEntityTypes.Quote =>                                              // 081
+                    db.Quotes.Where(q => q.TenantId == tenantId && !q.IsDeleted).Select(q => q.Id),
+                CustomFieldEntityTypes.Invoice =>                                            // 081
+                    db.Invoices.Where(i => i.TenantId == tenantId && !i.IsDeleted).Select(i => i.Id),
                 _ => throw new ArgumentOutOfRangeException(nameof(entityType), entityType, "Unknown entity type")
             };
 
@@ -145,6 +166,8 @@ namespace MerkaiTrial.Application.Commands.CustomFields
             DecimalPlaces = d.DecimalPlaces,
             MapToContactFieldId = d.MapToContactFieldId,     // 079
             MapToDealFieldId    = d.MapToDealFieldId,        // 079
+            PrintOnDocuments    = d.PrintOnDocuments,        // 081
+            MapToInvoiceFieldId = d.MapToInvoiceFieldId,     // 081
             Options       = d.FieldType == CustomFieldTypes.Dropdown
                                 ? CustomFieldOptionsJson.Parse(d.OptionsJson)
                                 : new List<CustomFieldOptionDto>(),
@@ -275,23 +298,43 @@ namespace MerkaiTrial.Application.Commands.CustomFields
         {
             if (entityType != CustomFieldEntityTypes.Lead) return (null, null);
 
-            var contact = await CheckTargetAsync(db, tenantId, fieldType, selfId,
-                NullIfEmpty(toContact), CustomFieldEntityTypes.Contact, isContact: true, ct);
-            var deal    = await CheckTargetAsync(db, tenantId, fieldType, selfId,
-                NullIfEmpty(toDeal), CustomFieldEntityTypes.Deal, isContact: false, ct);
+            var contact = await CheckTargetAsync(db, tenantId, CustomFieldEntityTypes.Lead, fieldType, selfId,
+                NullIfEmpty(toContact), CustomFieldEntityTypes.Contact, ct);
+            var deal    = await CheckTargetAsync(db, tenantId, CustomFieldEntityTypes.Lead, fieldType, selfId,
+                NullIfEmpty(toDeal), CustomFieldEntityTypes.Deal, ct);
 
             return (contact, deal);
         }
 
+        /// <summary>
+        /// 081. The quote → invoice mapping for a field about to be saved.
+        /// Null for anything that is not a Quote field. Same checks as the
+        /// lead mapping above.
+        /// </summary>
+        public static Task<Guid?> ValidateInvoiceMappingAsync(
+            FlowDbContext db, Guid tenantId, string entityType, string fieldType, Guid? selfId,
+            Guid? toInvoice, CancellationToken ct)
+        {
+            if (!CustomFieldEntityTypes.SupportsInvoiceMapping(entityType)) return Task.FromResult<Guid?>(null);
+
+            return CheckTargetAsync(db, tenantId, entityType, fieldType, selfId,
+                NullIfEmpty(toInvoice), CustomFieldEntityTypes.Invoice, ct);
+        }
+
+        /// <summary>081. The stored print flag: only for record types that print.</summary>
+        public static bool PrintFlag(string entityType, bool requested)
+            => requested && CustomFieldEntityTypes.SupportsPrint(entityType);
+
         private static Guid? NullIfEmpty(Guid? id) => id is { } g && g != Guid.Empty ? g : null;
 
         private static async Task<Guid?> CheckTargetAsync(
-            FlowDbContext db, Guid tenantId, string fieldType, Guid? selfId,
-            Guid? targetId, string targetEntity, bool isContact, CancellationToken ct)
+            FlowDbContext db, Guid tenantId, string sourceEntity, string fieldType, Guid? selfId,
+            Guid? targetId, string targetEntity, CancellationToken ct)
         {
             if (targetId is null) return null;
 
-            var noun = CustomFieldEntityTypes.SingularNoun(targetEntity);
+            var noun       = CustomFieldEntityTypes.SingularNoun(targetEntity);
+            var sourceNoun = CustomFieldEntityTypes.SingularNoun(sourceEntity);
 
             var target = await db.CustomFieldDefinitions
                 .AsNoTracking()
@@ -309,18 +352,25 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                     $"so it cannot receive a {CustomFieldTypes.DisplayName(fieldType).ToLowerInvariant()} value. " +
                     "Pick a field of the same type.");
 
-            var taken = await db.CustomFieldDefinitions
+            var others = db.CustomFieldDefinitions
                 .AsNoTracking()
-                .Where(d => d.TenantId == tenantId && d.EntityType == CustomFieldEntityTypes.Lead && !d.IsDeleted &&
-                            (selfId == null || d.Id != selfId) &&
-                            (isContact ? d.MapToContactFieldId == targetId : d.MapToDealFieldId == targetId))
-                .Select(d => d.Label)
-                .FirstOrDefaultAsync(ct);
+                .Where(d => d.TenantId == tenantId && d.EntityType == sourceEntity && !d.IsDeleted &&
+                            (selfId == null || d.Id != selfId));
+
+            others = targetEntity switch
+            {
+                CustomFieldEntityTypes.Contact => others.Where(d => d.MapToContactFieldId == targetId),
+                CustomFieldEntityTypes.Deal    => others.Where(d => d.MapToDealFieldId    == targetId),
+                CustomFieldEntityTypes.Invoice => others.Where(d => d.MapToInvoiceFieldId == targetId),   // 081
+                _ => throw new ArgumentOutOfRangeException(nameof(targetEntity), targetEntity, "Not a mapping target")
+            };
+
+            var taken = await others.Select(d => d.Label).FirstOrDefaultAsync(ct);
 
             if (taken is not null)
                 throw new InvalidOperationException(
-                    $"\"{target.Label}\" on {noun}s already receives the lead field \"{taken}\". " +
-                    "One lead field per target — change that one first.");
+                    $"\"{target.Label}\" on {noun}s already receives the {sourceNoun} field \"{taken}\". " +
+                    $"One {sourceNoun} field per target — change that one first.");
 
             return targetId;
         }
@@ -427,6 +477,10 @@ namespace MerkaiTrial.Application.Commands.CustomFields
             var (mapContact, mapDeal) = await CustomFieldOps.ValidateMappingAsync(
                 _db, tenantId, entityType, fieldType, null, dto.MapToContactFieldId, dto.MapToDealFieldId, ct);
 
+            // 081 — Quote fields only; null for anything else.
+            var mapInvoice = await CustomFieldOps.ValidateInvoiceMappingAsync(
+                _db, tenantId, entityType, fieldType, null, dto.MapToInvoiceFieldId, ct);
+
             var options = fieldType == CustomFieldTypes.Dropdown
                 ? CustomFieldOps.MergeOptions(dto.Options, Array.Empty<CustomFieldOptionDto>(), new HashSet<string>())
                 : new List<CustomFieldOptionDto>();
@@ -456,6 +510,8 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                 OptionsJson   = CustomFieldOptionsJson.Serialize(options),
                 MapToContactFieldId = mapContact,     // 079
                 MapToDealFieldId    = mapDeal,        // 079
+                PrintOnDocuments    = CustomFieldOps.PrintFlag(entityType, dto.PrintOnDocuments),   // 081
+                MapToInvoiceFieldId = mapInvoice,                                                  // 081
                 CreatedAtUtc  = DateTime.UtcNow,
                 CreatedBy     = actor,
                 IsDeleted     = false
@@ -469,7 +525,8 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                 new
                 {
                     entityType, label = row.Label, fieldType, isRequired = row.IsRequired, isActive = row.IsActive,
-                    mapsToContact = row.MapToContactFieldId, mapsToDeal = row.MapToDealFieldId    // 079
+                    mapsToContact = row.MapToContactFieldId, mapsToDeal = row.MapToDealFieldId,   // 079
+                    printOnDocuments = row.PrintOnDocuments, mapsToInvoice = row.MapToInvoiceFieldId  // 081
                 },
                 ct);
 
@@ -565,6 +622,10 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                 _db, tenantId, row.EntityType, row.FieldType, row.Id,
                 dto.MapToContactFieldId, dto.MapToDealFieldId, ct);
 
+            // 081
+            var mapInvoice = await CustomFieldOps.ValidateInvoiceMappingAsync(
+                _db, tenantId, row.EntityType, row.FieldType, row.Id, dto.MapToInvoiceFieldId, ct);
+
             var before = new { row.Label, row.IsRequired, row.IsActive };
 
             row.Label        = label;
@@ -574,6 +635,8 @@ namespace MerkaiTrial.Application.Commands.CustomFields
             row.ShowInList   = dto.ShowInList;
             row.MapToContactFieldId = mapContact;    // 079
             row.MapToDealFieldId    = mapDeal;       // 079
+            row.PrintOnDocuments    = CustomFieldOps.PrintFlag(row.EntityType, dto.PrintOnDocuments);   // 081
+            row.MapToInvoiceFieldId = mapInvoice;                                                    // 081
             row.UpdatedAtUtc = DateTime.UtcNow;
             row.UpdatedBy    = CustomFieldOps.Actor((await _currentUser.GetCurrentUserAsync())?.FullName);
 
@@ -589,7 +652,9 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                     isRequired    = row.IsRequired,
                     isActive      = row.IsActive,
                     mapsToContact = row.MapToContactFieldId,     // 079
-                    mapsToDeal    = row.MapToDealFieldId
+                    mapsToDeal    = row.MapToDealFieldId,
+                    printOnDocuments = row.PrintOnDocuments,     // 081
+                    mapsToInvoice    = row.MapToInvoiceFieldId
                 },
                 ct);
 
@@ -670,6 +735,22 @@ namespace MerkaiTrial.Application.Commands.CustomFields
                 pointing = sources.Count;
             }
 
+            // 081 — Quote fields that copy INTO this Invoice field lose the pointer.
+            if (row.EntityType == CustomFieldEntityTypes.Invoice)
+            {
+                var sources = await _db.CustomFieldDefinitions
+                    .Where(d => d.TenantId == tenantId && d.EntityType == CustomFieldEntityTypes.Quote &&
+                                d.MapToInvoiceFieldId == row.Id)
+                    .ToListAsync(ct);
+
+                foreach (var s in sources)
+                {
+                    s.MapToInvoiceFieldId = null;
+                    s.UpdatedAtUtc = DateTime.UtcNow;
+                }
+                pointing += sources.Count;
+            }
+
             row.IsDeleted    = true;
             row.IsActive     = false;
             row.UpdatedAtUtc = DateTime.UtcNow;
@@ -679,7 +760,7 @@ namespace MerkaiTrial.Application.Commands.CustomFields
 
             await _audit.WriteAsync(
                 AuditAction.CustomFieldDeleted, AuditEntityType.CustomField, row.Id, tenantId,
-                new { entityType = row.EntityType, label = row.Label, fieldType = row.FieldType, leadMappingsCleared = pointing },
+                new { entityType = row.EntityType, label = row.Label, fieldType = row.FieldType, mappingsCleared = pointing },
                 ct);
 
             _logger.LogInformation("Custom field {Label} deleted for tenant {TenantId}", row.Label, tenantId);

@@ -2,6 +2,10 @@
 // Invoice.cs
 // Location: MerkaiTrial.Domain/Entities/Invoice.cs
 //
+// CHANGES (082) — InvoiceLine.CustomFieldsSnapshot: the product's printed
+// custom fields for the line (see the property). Sql/082_LineCustomFields.sql.
+// (081 added Invoice.CustomFieldsSnapshot / CustomFieldsFrozenAtUtc.)
+//
 // CHANGES (018 — invoice workflow)
 //   ✅ IssuedAtUtc / IssuedBy — when the invoice was issued (left Draft).
 //   ✅ VoidedAtUtc / VoidedBy / VoidReason — an issued invoice is never
@@ -52,6 +56,14 @@
 //      MILESTONE — enforced for the first time by the database, in
 //      UX_Invoices_Quote_Milestone_Live.
 //      Columns are added by Sql/071_QuoteMilestones.sql.
+//
+// CHANGES (081 — custom fields on invoices), on Invoice:
+//   ✅ CustomFieldsSnapshot / CustomFieldsFrozenAtUtc — the PRINTED
+//      custom fields (label, type, value of every "Print on documents"
+//      field), frozen when the invoice is ISSUED, inside the same
+//      ExecuteUpdate that claims the number. Definition live, document
+//      frozen, a fourth time. NULL on drafts and on every invoice issued
+//      before 081. Columns added by Sql/081_DocumentCustomFields.sql.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -145,6 +157,18 @@ namespace MerkaiTrial.Domain.Entities
         /// not a defect: the invoices sum to exactly the quote total.
         /// </summary>
         public decimal? MilestonePercent { get; set; }
+
+        // ── Printed custom fields, frozen at issue (081) ──────────────
+
+        /// <summary>
+        /// 081. JSON array of DocumentFieldEntry (MerkaiTrial.Application,
+        /// DocumentFields). Written by IssueInvoiceHandler; never edited
+        /// afterwards. NULL on a draft.
+        /// </summary>
+        public string? CustomFieldsSnapshot { get; set; }
+
+        /// <summary>081. When the snapshot above was taken (the moment of issue).</summary>
+        public DateTime? CustomFieldsFrozenAtUtc { get; set; }
 
         // Audit fields
         public DateTime CreatedAtUtc { get; set; }
@@ -260,6 +284,16 @@ namespace MerkaiTrial.Domain.Entities
         /// NULL and "" mean the same thing and are stored as NULL.
         /// </summary>
         public string? TaxCode { get; set; }
+
+        /// <summary>
+        /// 082: NVARCHAR(MAX), nullable. The PRODUCT's printed custom fields
+        /// for this line (DocumentFieldEntry list as JSON). Copied from the
+        /// quote line when the invoice is raised from a quote — so it says
+        /// what the customer accepted — and taken from the product when the
+        /// invoice is ISSUED for any line still without one. Once set it is
+        /// what prints, draft or not. NULL on a custom line.
+        /// </summary>
+        public string? CustomFieldsSnapshot { get; set; }
 
         // Legacy field (kept for compatibility)
         public decimal Amount { get; set; }  // Total line amount (calculated)

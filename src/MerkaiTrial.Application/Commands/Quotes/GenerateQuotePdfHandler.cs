@@ -1,6 +1,16 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Commands/Quotes/GenerateQuotePdfHandler.cs
 //
+// 082: each line's DocumentFields — the product's printed custom fields,
+// frozen when the quote was sent — set below, and printed under the item
+// name by QuotePdfService. Same hand-built-DTO hazard as everything else.
+//
+// 081: the custom fields switched to "Print on quotes & invoices" are
+// set on the DTO (DocumentFields) — the frozen copy once the quote has
+// been sent, the live values before — and QuotePdfService prints them as
+// "Additional details". The same hand-built-DTO hazard as 065/067/071
+// below: without this line every quote PDF would quietly omit them.
+//
 // 053: the QUOTE TO block is addressed to the customer's COMPANY, with
 // the contact underneath, instead of putting the contact's name where the
 // company belongs. The rule is CustomerNaming; the Include chain below
@@ -132,9 +142,17 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 })
                 .FirstOrDefaultAsync(ct);
 
+            // 081 — what this quote prints: frozen once sent, live before.
+            var (printedFields, printedAt) = await QuoteDocument.ResolveAsync(_db, quote, ct);
+            var lineFields = await QuoteDocument.ResolveLinesAsync(_db, quote, ct);   // 082
+
             // ── Build QuoteDto from entity (mirrors GetQuoteByIdHandler) ─
             var dto = new QuoteDto
             {
+                // 081
+                DocumentFields            = printedFields,
+                DocumentFieldsFrozenAtUtc = printedAt,
+
                 Id            = quote.Id,
                 TenantId      = quote.TenantId,
                 DealId        = quote.DealId,
@@ -164,6 +182,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
                 Items = quote.Items.Select(i => new QuoteItemDto
                 {
+                    // 082 — the product fields printed under this line
+                    DocumentFields = lineFields.GetValueOrDefault(i.Id) ?? new List<DocumentFieldEntry>(),
                     Id             = i.Id,
                     QuoteId        = i.QuoteId,
                     ProductId      = i.ProductId,

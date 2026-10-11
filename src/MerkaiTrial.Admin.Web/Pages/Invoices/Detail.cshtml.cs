@@ -1,6 +1,19 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Detail.cshtml.cs
 //
+// CHANGES (081 — custom fields on invoices)
+//   ✅ The invoice's custom fields, in the shared _CustomFieldValues card —
+//      Edit link only while it is a draft (the API's rule: an issued tax
+//      invoice does not change).
+//   ✅ "Printed on the invoice" (_DocumentFieldsCard, shared with the
+//      quote page): exactly what the PDF prints — the copy fixed when the
+//      invoice was issued, or a draft's preview.
+//   ✅ FormatDate / FormatDateTime / FormatCurrency deleted: AuthorizedPage-
+//      Model declares all three (CS0108 — these hid them, doing the same
+//      thing). GetSymbol's private table — "AED" => "د.إ", contradicting
+//      CurrencyConfiguration — is CurrencyConfiguration now, as on Edit
+//      since 074.
+//
 // CHANGES (018 — invoice workflow)
 //   ✅ Workflow (from api/invoices/{id}/workflow) drives the buttons:
 //        Draft  → Edit, Issue, Delete
@@ -57,9 +70,12 @@
 //   that stops being true.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldDisplayVm, DocumentFieldsVm
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;        // 081 — CustomFieldEntityTypes, CurrencyConfiguration
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -75,6 +91,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly IDealService _dealService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
+        private readonly ICustomFieldService _customFields;      // 081
         private readonly ILogger<DetailModel> _logger;
 
         public DetailModel(
@@ -82,10 +99,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             IDealService dealService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
+            ICustomFieldService customFields,                    // 081
             IAuthorizationService authorizationService,
             ILogger<DetailModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _invoiceService = invoiceService;
             _dealService = dealService;
             _currentUserService = currentUserService;
@@ -109,6 +128,44 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
+
+        // ── 081: custom fields ───────────────────────────────────────────────
+
+        /// <summary>Every Invoice field, switched-off ones included (a retired field still shows its value).</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>081. The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Invoice?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = TenantCtx.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            // Drafts only — the API's rule. An issued invoice is filed.
+            CanEdit      = CanUpdate && IsDraft,
+            RecordId     = Id,
+            EntityType   = CustomFieldEntityTypes.Invoice,
+            EditPage     = "/Invoices/Edit"
+        };
+
+        /// <summary>081. The model for _DocumentFieldsCard — what the invoice prints.</summary>
+        public DocumentFieldsVm DocumentFieldsCard => new()
+        {
+            Fields          = Invoice?.DocumentFields ?? new List<DocumentFieldEntry>(),
+            FrozenAtUtc     = Invoice?.DocumentFieldsFrozenAtUtc,
+            FrozenAtDisplay = Invoice?.DocumentFieldsFrozenAtUtc is { } at ? FormatDateTime(at) : null,
+            IsOut           = Invoice != null && !IsDraft,
+            Noun            = "invoice",
+            FreezeVerb      = "issued",
+            // The PDF's number format — by the invoice's currency.
+            Culture         = DocumentCulture.For(Invoice?.Currency),
+            DateFormat      = TenantCtx.GetDateFormat(),
+            CanConfigure    = UserCanRead(Modules.Settings),
+            EntityType      = CustomFieldEntityTypes.Invoice
+        };
 
         // ── ✅ RECORD PAYMENT PERMISSION — SINGLE SOURCE OF TRUTH ────────────
         //
@@ -196,6 +253,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 catch (Exception wfEx)
                 {
                     _logger.LogWarning(wfEx, "Could not load workflow for invoice {Id}", Id);
+                }
+
+                // 081 — never blocks the page; the card says so on failure.
+                try
+                {
+                    CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                        CustomFieldEntityTypes.Invoice, includeInactive: true);
+                }
+                catch (Exception cfEx)
+                {
+                    _logger.LogWarning(cfEx, "Custom fields could not be loaded for invoice {Id}", Id);
+                    CustomFieldDefinitions = new();
+                    CustomFieldsLoadFailed = true;
                 }
 
                 _logger.LogInformation("Loaded invoice {Number}", Invoice.Number);
@@ -452,21 +522,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         // ── VIEW HELPERS ──────────────────────────────────────────────────────
 
-        public string FormatDate(DateTime utcDate) => _tenantService.FormatDate(utcDate);
-        public string FormatDateTime(DateTime utcDate) => _tenantService.FormatDateTime(utcDate);
-        public string FormatCurrency(decimal amount) => _tenantService.FormatCurrency(amount);
+        // 081: FormatDate / FormatDateTime / FormatCurrency come from
+        // AuthorizedPageModel (see the header).
 
-        public string GetSymbol(string? code) => code switch
-        {
-            "INR" => "₹",
-            "THB" => "฿",
-            "PHP" => "₱",
-            "AED" => "د.إ",
-            "USD" => "$",
-            "EUR" => "€",
-            "GBP" => "£",
-            _ => _tenantService.GetCurrencySymbol()
-        };
+        /// <summary>081: CurrencyConfiguration, the one symbol table (as Edit since 074).</summary>
+        public string GetSymbol(string? code) =>
+            string.IsNullOrWhiteSpace(code)
+                ? _tenantService.GetCurrencySymbol()
+                : CurrencyConfiguration.GetCurrencySymbol(code);
 
         public string GetStatusBadgeClass(string status) => status switch
         {

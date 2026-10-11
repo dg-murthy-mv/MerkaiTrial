@@ -20,6 +20,15 @@
 //   POST api/invoices/{id}/void            {reason}     Invoices.Update issued → Void
 //   POST api/invoices/{id}/payments/{pid}/reverse {reason} Invoices.Update take a payment back out
 //   ✅ Delete refusals (issued invoices can't be deleted) → 400 + message.
+//
+// CHANGES (081 — custom fields)
+//   ✅ PUT api/invoices/{id} carries CustomFields through to the handler.
+//      It was mapped field by field into UpdateInvoiceCommand, so without
+//      this line the Edit page's custom fields would be accepted and then
+//      silently dropped. Create and from-quote take the DTO whole and need
+//      nothing. A required field left empty is a 400 with the sentence.
+//   ✅ UpdatedBy on PUT is the signed-in user, not whatever the body said:
+//      it is what the audit log and the custom field rows record.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Invoices;
@@ -366,6 +375,8 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 // ✅ Handler signature: Handle(UpdateInvoiceCommand command, CancellationToken ct)
                 // Map DTO → Command
+                var me = await _currentUserService.GetCurrentUserAsync();
+
                 var command = new UpdateInvoiceCommand
                 {
                     TenantId = dto.TenantId,
@@ -373,7 +384,9 @@ namespace MerkaiTrial.WebApi.Controllers
                     DueDateUtc = dto.DueDateUtc,
                     Notes = dto.Notes,
                     Lines = dto.Lines,
-                    UpdatedBy = dto.UpdatedBy
+                    // 081: the server's name for the caller wins.
+                    UpdatedBy = !string.IsNullOrWhiteSpace(me?.FullName) ? me!.FullName : dto.UpdatedBy,
+                    CustomFields = dto.CustomFields      // 081
                 };
 
                 var invoice = await _updateInvoice.Handle(command, cancellationToken);

@@ -3,6 +3,13 @@
 //
 // REVISED (059). The page a CUSTOMER sees. No login, no tenant claims.
 //
+// 082: LineDetails(item) — the product's custom fields marked to print,
+// under each item, as fixed when the quote was sent.
+//
+// 081: PrintedDetails — the custom fields the seller marked to print, as
+// fixed when the quote was sent. The API sends ONLY those on this
+// anonymous read (never the quote's other custom values).
+//
 // WHY THIS ROUND TOUCHED IT AT ALL: rounds 052, 053 and 055 changed the
 // shape of a quote line and never came back here, so the one page a
 // customer reads was the last one running on the old assumptions:
@@ -50,6 +57,7 @@ using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.Collections.Generic;   // 081: PrintedDetails
 using System.Globalization;
 using System.Linq;   // HasAnyLineDiscount — explicit, not relying on ImplicitUsings
 
@@ -204,6 +212,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Public
         /// </summary>
         public string FormatCurrency(decimal amount, int decimals = 2)
             => $"{CurrencySymbol}{amount.ToString($"N{decimals}", CultureForCurrency(Quote?.Currency))}";
+
+        /// <summary>
+        /// 081. The custom fields this quote prints — label and value — as
+        /// fixed when it was sent (QuoteDto.DocumentFields). Numbers in the
+        /// quote's own culture, like the money beside them; dates in the
+        /// same "dd MMM yyyy" the rest of this page uses (DocumentFieldEntry
+        /// formats dates with the invariant calendar, so a Thai quote does
+        /// not print the Buddhist year). Empty → the block is not drawn.
+        /// </summary>
+        /// <summary>
+        /// 082. One item's printed product fields as a line of text —
+        /// "Warranty: 2 years  ·  Colour: Red" — numbers in the quote's
+        /// culture, dates as the rest of this page prints them. Empty when
+        /// the item prints none (a custom line, or a product with none).
+        /// </summary>
+        public string LineDetails(QuoteItemDto item)
+            => DocumentFieldEntry.JoinForLine(item.DocumentFields, CultureForCurrency(Quote?.Currency), "dd MMM yyyy");
+
+        public IReadOnlyList<(string Label, string Value)> PrintedDetails =>
+            Quote?.DocumentFields is { Count: > 0 } fields
+                ? fields.Select(f => (f.Label, f.Format(CultureForCurrency(Quote.Currency), "dd MMM yyyy"))).ToList()
+                : new List<(string Label, string Value)>();
 
         /// <summary>
         /// 059: a tax rate the customer can trust. The view had

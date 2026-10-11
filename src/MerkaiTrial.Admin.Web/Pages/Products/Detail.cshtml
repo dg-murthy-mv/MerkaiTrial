@@ -1,8 +1,23 @@
 @page "/Products/Detail/{id}"
 @model MerkaiTrial.Admin.Web.Pages.Products.DetailModel
 @{
-    ViewData["Title"] = "Product Details";
+    ViewData["Title"] = Model.Product.Name;
 }
+@* =====================================================================
+   Pages/Products/Detail.cshtml — COMPLETE FILE (080).
+
+   • "Additional details" — the product's custom fields, through the
+     shared _CustomFieldValues card, under Product Information.
+   • Edit, Activate/Deactivate and Delete render only for CanUpdate /
+     CanDelete (every handler still checks for itself).
+   • Delete is a modal; the name is rendered by Razor (encoded), never put
+     into a script. When the product is part of a bundle the modal says
+     the delete will be refused and offers Deactivate instead.
+   • "Created" uses the workspace's date format (FormatDate).
+   • The Settings tab is gone — it repeated Overview, and its "Deletion is
+     permanent" was not true.
+   • Messages after a redirect are rendered once, globally, by _Layout.
+   ===================================================================== *@
 
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -43,30 +58,18 @@
             </div>
         </div>
         <div class="d-flex gap-2">
-            <a asp-page="./Edit" asp-route-id="@Model.Product.Id" class="btn btn-warning">
-                <i class="bi bi-pencil"></i> <span class="d-none d-sm-inline">Edit</span>
-            </a>
+            @if (Model.CanUpdate)
+            {
+                <a asp-page="./Edit" asp-route-id="@Model.Product.Id" class="btn btn-warning">
+                    <i class="bi bi-pencil"></i> <span class="d-none d-sm-inline">Edit</span>
+                </a>
+            }
             <a asp-page="./Index" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
             </a>
         </div>
     </div>
 
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item">
-            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#overview">
-                <i class="bi bi-info-circle"></i> Overview
-            </button>
-        </li>
-        <li class="nav-item">
-            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings">
-                <i class="bi bi-gear"></i> Settings
-            </button>
-        </li>
-    </ul>
-
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="overview">
             <div class="row g-4">
                 <div class="col-lg-8">
                     <div class="card border-0 shadow-sm mb-4">
@@ -113,11 +116,22 @@
                                 </div>
                                 <div class="col-12">
                                     <label class="text-muted small">Description</label>
-                                    <div class="fw-semibold">@(Model.Product.Description ?? "No description")</div>
+                                    @if (string.IsNullOrWhiteSpace(Model.Product.Description))
+                                    {
+                                        <div class="text-muted">No description</div>
+                                    }
+                                    else
+                                    {
+                                        <div style="white-space: pre-line;">@Model.Product.Description</div>
+                                    }
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    @* 080 — the workspace's own Product fields. Hidden entirely
+                       when there are none and the person cannot add any. *@
+                    <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
 
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-success text-white">
@@ -336,95 +350,103 @@
                             </div>
                             <div class="mb-3">
                                 <label class="text-muted small">Created</label>
-                                <div class="small">@Model.Product.CreatedAtUtc.ToString("MMM dd, yyyy")</div>
-                                <div class="small text-muted">by @Model.Product.CreatedBy</div>
+                                <div class="small">@Model.FormatDate(Model.Product.CreatedAtUtc)</div>
+                                @if (!string.IsNullOrWhiteSpace(Model.Product.CreatedBy))
+                                {
+                                    <div class="small text-muted">by @Model.Product.CreatedBy</div>
+                                }
                             </div>
                         </div>
                     </div>
 
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-light">
-                            <h6 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h6>
+                            <h6 class="mb-0"><i class="bi bi-lightning"></i> Quick actions</h6>
                         </div>
                         <div class="card-body">
                             <div class="d-grid gap-2">
-                                <a asp-page="./Edit" asp-route-id="@Model.Product.Id" class="btn btn-warning btn-sm">
-                                    <i class="bi bi-pencil me-1"></i>Edit Product
-                                </a>
-                                <a asp-page="./Index" class="btn btn-outline-secondary btn-sm">
-                                    <i class="bi bi-list me-1"></i>View All Products
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="tab-pane fade" id="settings">
-            <div class="row g-4">
-                <div class="col-lg-8">
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-warning text-dark">
-                            <h5 class="mb-0"><i class="bi bi-gear"></i> Product Settings</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="text-muted small">Product Type</label>
-                                    <div><span class="badge bg-secondary fs-6">@Model.Product.Type</span></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="text-muted small">Active Status</label>
-                                    <div>
+                                @if (Model.CanUpdate)
+                                {
+                                    <a asp-page="./Edit" asp-route-id="@Model.Product.Id" class="btn btn-warning btn-sm">
+                                        <i class="bi bi-pencil me-1"></i>Edit product
+                                    </a>
+                                    <form method="post" asp-page-handler="ToggleActive" asp-route-id="@Model.Product.Id" class="d-grid">
                                         @if (Model.Product.IsActive)
                                         {
-                                            <span class="badge bg-success fs-6">Active</span>
+                                            <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                                    title="Keeps it on existing quotes; it can no longer be added to new ones">
+                                                <i class="bi bi-pause-circle me-1"></i>Deactivate
+                                            </button>
                                         }
                                         else
                                         {
-                                            <span class="badge bg-danger fs-6">Inactive</span>
+                                            <button type="submit" class="btn btn-outline-success btn-sm">
+                                                <i class="bi bi-play-circle me-1"></i>Activate
+                                            </button>
                                         }
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-lg-4">
-                    <div class="card border-0 shadow-sm mb-3">
-                        <div class="card-header bg-light">
-                            <h6 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h6>
-                        </div>
-                        <div class="card-body">
-                            <div class="d-grid gap-2">
-                                <a asp-page="./Edit" asp-route-id="@Model.Product.Id" class="btn btn-warning btn-sm">
-                                    <i class="bi bi-pencil me-1"></i>Edit Settings
+                                    </form>
+                                }
+                                <a asp-page="./Index" class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-list me-1"></i>All products
                                 </a>
-                                <form method="post" onsubmit="return confirm('Delete this product?');">
-                                    <button type="submit" asp-page-handler="Delete" class="btn btn-danger btn-sm w-100">
-                                        <i class="bi bi-trash me-1"></i>Delete Product
+                                @if (Model.CanDelete)
+                                {
+                                    <button type="button" class="btn btn-outline-danger btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#deleteProductModal">
+                                        <i class="bi bi-trash me-1"></i>Delete product
                                     </button>
-                                </form>
+                                }
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="card border-0 shadow-sm">
-                        <div class="card-header bg-light">
-                            <h6 class="mb-0"><i class="bi bi-lightbulb"></i> Guidelines</h6>
-                        </div>
-                        <div class="card-body">
-                            <ul class="small mb-0 ps-3">
-                                <li class="mb-2">Set to <strong>Inactive</strong> to hide from catalog</li>
-                                <li class="mb-2">Change <strong>Type</strong> affects categorization</li>
-                                <li>Deletion is <strong>permanent</strong></li>
-                            </ul>
                         </div>
                     </div>
                 </div>
             </div>
+</div>
+
+@if (Model.CanDelete)
+{
+    var inBundles = Model.Product.UsedInBundleCount;
+    <div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Product.Id" class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteProductLabel">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Delete product
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    @if (inBundles > 0)
+                    {
+                        @* The API refuses this delete; say so before the click,
+                           and offer the thing that does work. *@
+                        <div class="alert alert-warning small mb-0">
+                            <i class="bi bi-boxes me-1"></i>
+                            <strong>@Model.Product.Name</strong> is part of
+                            <strong>@inBundles @(inBundles == 1 ? "bundle" : "bundles")</strong>, so it can't be deleted.
+                            Take it out of @(inBundles == 1 ? "that bundle" : "those bundles") first —
+                            or deactivate it, which stops it being quoted on its own and keeps the bundles intact.
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="mb-2">Delete <strong>@Model.Product.Name</strong>?</p>
+                        <p class="text-muted small mb-0">
+                            Quotes and invoices that already list it keep their lines as they are.
+                            It can no longer be added to new ones.
+                        </p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    @if (inBundles == 0)
+                    {
+                        <button type="submit" class="btn btn-danger">
+                            <i class="bi bi-trash me-1"></i>Delete product
+                        </button>
+                    }
+                </div>
+            </form>
         </div>
     </div>
-</div>
+}

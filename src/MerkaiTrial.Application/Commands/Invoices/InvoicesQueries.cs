@@ -4,6 +4,10 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 081: the list carries each row's "Show on the list" custom values; the
+// by-id read carries every stored value and what the invoice PRINTS
+// (InvoiceDocument — frozen at issue, live on a draft).
+//
 // 053: both read paths address the invoice to the customer's COMPANY.
 // They set CompanyName from Deal.Contact.FirstName — a person's first
 // name, in the column the list headed "Company" and the detail screen
@@ -43,7 +47,10 @@
 //      (never owed). Drafts are still counted in DraftInvoices.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;   // 081: CustomFieldListQuery
+using MerkaiTrial.Application.Commands.Invoices;       // 081: InvoiceDocument
 using MerkaiTrial.Application.Common;          // 053: CustomerNaming
+using MerkaiTrial.Application.Configuration;   // 081: CustomFieldEntityTypes
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
@@ -225,6 +232,17 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     return r.Item;
                 }).ToList();
 
+                // 081 — the "Show on the list" custom values, these rows only.
+                var cfDefs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                    _context, request.TenantId, CustomFieldEntityTypes.Invoice, cancellationToken);
+                if (cfDefs.Any(d => d.ShowInList) && invoices.Count > 0)
+                {
+                    var cfValues = await CustomFieldListQuery.ListValuesAsync(
+                        _context, request.TenantId, cfDefs, invoices.Select(i => i.Id).ToList(), cancellationToken);
+                    foreach (var item in invoices)
+                        if (cfValues.TryGetValue(item.Id, out var map)) item.CustomFieldValues = map;
+                }
+
                 _logger.LogInformation("Found {Count} invoices", invoices.Count);
                 return invoices;
             }
@@ -387,6 +405,10 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     IsFullyPaid = invoice.Balance <= 0,
                     DaysUntilDue = invoice.DueDateUtc.HasValue ? (invoice.DueDateUtc.Value - DateTime.UtcNow).Days : 0
                 };
+
+                // 081 — stored values, and what the invoice prints (frozen
+                // at issue, live on a draft).
+                await InvoiceDocument.FillAsync(_context, dto, invoice, cancellationToken);
 
                 _logger.LogInformation("Found invoice {Number}", invoice.Number);
                 return dto;

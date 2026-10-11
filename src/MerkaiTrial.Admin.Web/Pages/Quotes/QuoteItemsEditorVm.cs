@@ -24,8 +24,17 @@
 //
 // Two copies of the same 300 lines will drift again. This view model plus
 // _QuoteItemsEditor.cshtml is the one copy both pages render.
+//
+// 081 — QuoteItemsSeed: the ONE place that builds the editor's
+// InitialItemsJson, from the stored lines (Edit opening) OR from the lines
+// just posted (Create and Edit re-showing the form after an error). Before
+// 081 a refused Create redirected and every typed line was lost, and a
+// refused Edit re-seeded from the database, quietly undoing what the
+// person had just changed. With required custom fields on quotes a refusal
+// is an everyday event, so both pages now re-render with the posted lines.
 // =====================================================================
 
+using System.Text.Json;
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Pages.Quotes
@@ -75,5 +84,73 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         /// adding a phantom line to an existing quote would be wrong.
         /// </summary>
         public bool StartWithOneBlankLine { get; init; }
+    }
+
+    /// <summary>
+    /// 081. The editor's seed JSON — one shape, two sources. Keys match what
+    /// _QuoteItemsEditor.cshtml reads: itemId, productId, name, description,
+    /// quantity, unitOfMeasure, unitPrice, lineDiscount, discountPercent,
+    /// taxRate (a PERCENTAGE) and taxCode ("" for a deliberately
+    /// unclassified line — see QuoteItemData.TaxCode).
+    /// </summary>
+    public static class QuoteItemsSeed
+    {
+        /// <summary>Lines stored on a quote. QuoteItemDto.TaxRate is a FRACTION, so ×100 here.</summary>
+        public static string FromStored(IEnumerable<QuoteItemDto>? items)
+            => JsonSerializer.Serialize((items ?? Enumerable.Empty<QuoteItemDto>()).Select(i => new
+            {
+                itemId          = (Guid?)i.Id,
+                productId       = i.ProductId,
+                name            = i.Name ?? string.Empty,
+                description     = i.Description ?? string.Empty,
+                quantity        = i.Quantity,
+                unitOfMeasure   = i.UnitOfMeasure,
+                unitPrice       = i.UnitPrice,
+                lineDiscount    = i.LineDiscount,
+                discountPercent = i.DiscountPercent,
+                taxRate         = i.TaxRate * 100m,
+                taxCode         = i.TaxCode ?? string.Empty
+            }));
+
+        /// <summary>Lines just posted (itemsJson). QuoteItemData.TaxRate is already a PERCENTAGE.</summary>
+        public static string FromPosted(IEnumerable<QuoteItemData>? items)
+            => JsonSerializer.Serialize((items ?? Enumerable.Empty<QuoteItemData>()).Select(i => new
+            {
+                itemId          = i.Id,
+                productId       = i.ProductId,
+                name            = i.Name ?? string.Empty,
+                description     = i.Description ?? string.Empty,
+                quantity        = i.Quantity,
+                unitOfMeasure   = i.UnitOfMeasure,
+                unitPrice       = i.UnitPrice,
+                lineDiscount    = i.LineDiscount,
+                discountPercent = i.DiscountPercent,
+                taxRate         = i.TaxRate,
+                taxCode         = i.TaxCode ?? string.Empty
+            }));
+
+        /// <summary>
+        /// Reads a posted itemsJson leniently — "id":0 / "id":"" normalised
+        /// the way both pages always have. Null when it cannot be read.
+        /// </summary>
+        public static List<QuoteItemData>? TryParse(string? itemsJson)
+        {
+            if (string.IsNullOrWhiteSpace(itemsJson)) return null;
+            try
+            {
+                var normalised = System.Text.RegularExpressions.Regex.Replace(
+                    itemsJson,
+                    @"""id""\s*:\s*(-?\d+|"""")",
+                    @"""id"":null",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                return JsonSerializer.Deserialize<List<QuoteItemData>>(
+                    normalised, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
     }
 }

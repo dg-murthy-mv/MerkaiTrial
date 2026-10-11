@@ -88,12 +88,30 @@
 //      in this handler is now per stage, matching
 //      CreateInvoiceFromQuoteHandler — and the API has the final say
 //      either way, now backed by a unique index.
+//
+// CHANGES (081 — custom fields on quotes)
+//
+//   ✅ The quote's custom fields, in the shared _CustomFieldValues card
+//      ("Additional details") — Edit link only while the quote can be
+//      edited (Draft, Revised, Approved), the same rule as the API.
+//   ✅ NEW "Printed on the quote" card (_DocumentFieldsCard, shared with
+//      the invoice page): exactly what the PDF and the customer's link
+//      print, and whether that is the copy fixed when the quote was sent
+//      or a preview. Nothing is drawn when nothing prints.
+//   ✅ "Create invoice" (whole quote or a stage) needs no change here: the
+//      server copies the quote fields mapped to invoice fields
+//      (Settings → Custom Fields → Quotes → "Copy to invoice field").
+//   If the field list cannot be loaded the card says so; the rest of the
+//   page is unaffected.
 // =====================================================================
 
 using System.Globalization;
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldDisplayVm, DocumentFieldsVm
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;        // 081 — CustomFieldEntityTypes
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -112,6 +130,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly IInvoiceService        _invoiceService;
         private readonly IQuoteApprovalService  _approvals;
         private readonly IQuoteMilestoneService _milestones;          // 071
+        private readonly ICustomFieldService    _customFields;        // 081
         private readonly ILogger<DetailModel>   _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -123,10 +142,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             IInvoiceService        invoiceService,
             IQuoteApprovalService  approvals,
             IQuoteMilestoneService milestones,
+            ICustomFieldService    customFields,                     // 081
             IAuthorizationService  authorizationService,
             ILogger<DetailModel>   logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields       = customFields;
             _quoteService       = quoteService;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
@@ -250,6 +271,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode   { get; private set; } = string.Empty;
 
+        // ── 081: custom fields ────────────────────────────────────────
+
+        /// <summary>Every Quote field, switched-off ones included (a retired field still shows its value).</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>081. The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Quote?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = TenantCtx.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            // Same rule as the API (QuoteWorkflow.IsEditable): a sent quote's
+            // fields are the customer's copy and do not change.
+            CanEdit      = CanUpdate && IsEditableStatus,
+            RecordId     = Id,
+            EntityType   = CustomFieldEntityTypes.Quote,
+            EditPage     = "/Quotes/Edit"
+        };
+
+        /// <summary>081. The model for _DocumentFieldsCard — what the quote prints.</summary>
+        public DocumentFieldsVm DocumentFieldsCard => new()
+        {
+            Fields          = Quote?.DocumentFields ?? new List<DocumentFieldEntry>(),
+            FrozenAtUtc     = Quote?.DocumentFieldsFrozenAtUtc,
+            FrozenAtDisplay = Quote?.DocumentFieldsFrozenAtUtc is { } at ? FormatDateTime(at) : null,
+            // The statuses in which the customer holds the quote — the same
+            // five the public link works in.
+            IsOut           = Quote?.Status is "Sent" or "Viewed" or "Accepted" or "Rejected" or "Expired",
+            Noun            = "quote",
+            FreezeVerb      = "sent",
+            // The PDF's number format — by the quote's currency.
+            Culture         = DocumentCulture.For(Quote?.Currency),
+            DateFormat      = TenantCtx.GetDateFormat(),
+            CanConfigure    = UserCanRead(Modules.Settings),
+            EntityType      = CustomFieldEntityTypes.Quote
+        };
+
         // ── GET ───────────────────────────────────────────────────────
         public async Task<IActionResult> OnGetAsync()
         {
@@ -319,6 +381,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 // screen rather than pretending there are no payment
                 // terms.
                 Billing = await _milestones.GetAsync(Id);
+
+                // ── 081: the quote's custom field definitions ─────────
+                // includeInactive: a retired field still shows the value it
+                // holds on this quote. Never blocks the page.
+                try
+                {
+                    CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                        CustomFieldEntityTypes.Quote, includeInactive: true);
+                }
+                catch (Exception cfEx)
+                {
+                    _logger.LogWarning(cfEx, "Custom fields could not be loaded for quote {QuoteId}", Id);
+                    CustomFieldDefinitions = new();
+                    CustomFieldsLoadFailed = true;
+                }
 
                 // ✅ Load attachments
                 try

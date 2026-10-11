@@ -11,6 +11,31 @@
 // 078 — the Companies tab is live, and ListPage sends "Open the list" to
 //   the Companies list from it. The Leads tab shows as "Coming soon".
 //
+// 079 — the Leads tab is live, and Lead fields get a "When a lead is
+//   converted" section: copy this value into a Contact field and/or a Deal
+//   field of the same type. The choices are loaded only on the Leads tab
+//   (ContactTargets / DealTargets); on the Contacts and Deals tabs each
+//   field shows which Lead field fills it (FilledFromLead). The one-click
+//   on/off toggle carries the mapping through, for the same reason it
+//   carries ShowInList — it rebuilds the whole field, and leaving the
+//   mapping out would have quietly removed it every time a Lead field was
+//   switched off and on.
+//
+// 080 — the Products tab is live; "Open the list" goes to the Products
+//   list from it.
+//
+// 081 — the Quotes and Invoices tabs are live.
+//   • "Print on quotes & invoices" (PrintOnDocuments) on both tabs — the
+//     value appears on the PDF and the customer's quote link.
+//   • On the Quotes tab, "When an invoice is raised from this quote": copy
+//     the value into an Invoice field of the same type (InvoiceTargets).
+//     On the Invoices tab each field shows which Quote field fills it
+//     (FilledFromQuote).
+//   • The one-click on/off toggle carries both settings through, for the
+//     reason it carries ShowInList and the lead mapping: it rebuilds the
+//     whole field, and leaving them out would quietly clear them.
+//   • "Open the list" goes to the Quotes / Invoices lists.
+//
 // 076 — "Show on the list": ShowInList on the form, a badge on the row,
 //   and the count of list columns used in the side panel. The one-click
 //   on/off toggle now carries ShowInList through — it rebuilds the whole
@@ -107,9 +132,63 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
         {
             CustomFieldEntityTypes.Deal    => "/Pipeline/Index",
             CustomFieldEntityTypes.Company => "/Companies/Index",   // 078
+            CustomFieldEntityTypes.Lead    => "/Leads/Index",       // 079
+            CustomFieldEntityTypes.Product => "/Products/Index",    // 080
+            CustomFieldEntityTypes.Quote   => "/Quotes/Index",      // 081
+            CustomFieldEntityTypes.Invoice => "/Invoices/Index",    // 081
             _                           => "/Contacts/Index"
         };
+
+        /// <summary>
+        /// 081. What "Show on the list" means on this tab. Contacts, deals,
+        /// companies, leads and products filter and search every field;
+        /// the quote and invoice lists show columns only.
+        /// </summary>
+        public string ListHint => ActiveEntity switch
+        {
+            CustomFieldEntityTypes.Quote   => $"Up to {CustomFieldLimits.MaxListColumns} fields can be columns in the quotes List view, and the quick search finds their values.",
+            CustomFieldEntityTypes.Invoice => $"Up to {CustomFieldLimits.MaxListColumns} fields can be shown on each invoice in the invoices list.",
+            _ => $"Up to {CustomFieldLimits.MaxListColumns} fields can be columns. Every field can be searched and filtered on, whether it is a column or not."
+        };
         public bool AtLimit => Fields.Count >= MaxFields;
+
+        // ── 079: lead → contact / deal mapping ────────────────────────
+
+        public bool IsLeadTab => ActiveEntity == CustomFieldEntityTypes.Lead;
+
+        /// <summary>Leads tab only: the Contact fields a Lead field can copy into (switched-off ones included, marked).</summary>
+        public List<CustomFieldDefinitionDto> ContactTargets { get; private set; } = new();
+
+        /// <summary>Leads tab only: the Deal fields a Lead field can copy into.</summary>
+        public List<CustomFieldDefinitionDto> DealTargets { get; private set; } = new();
+
+        /// <summary>Contacts / Deals tab only: target field id → the Lead field that fills it.</summary>
+        public Dictionary<Guid, string> FilledFromLead { get; private set; } = new();
+
+        /// <summary>A target's label for the row summary, or null when it is gone.</summary>
+        public CustomFieldDefinitionDto? Target(Guid? id, bool contact)
+            => id is { } g ? (contact ? ContactTargets : DealTargets).FirstOrDefault(t => t.Id == g) : null;
+
+        // ── 081: printing, and the quote → invoice mapping ────────────
+
+        public bool IsQuoteTab   => ActiveEntity == CustomFieldEntityTypes.Quote;
+        public bool IsInvoiceTab => ActiveEntity == CustomFieldEntityTypes.Invoice;
+
+        /// <summary>This tab's fields can be printed on quotes and invoices.</summary>
+        public bool SupportsPrint => CustomFieldEntityTypes.SupportsPrint(ActiveEntity);
+
+        /// <summary>How many switched-on fields print, for the side panel.</summary>
+        public int PrintedCount => Fields.Count(f => f.IsActive && f.PrintOnDocuments);
+
+        /// <summary>Quotes tab only: the Invoice fields a Quote field can copy into (switched-off ones included, marked).</summary>
+        public List<CustomFieldDefinitionDto> InvoiceTargets { get; private set; } = new();
+
+        /// <summary>Invoices tab only: target field id → the Quote field that fills it.</summary>
+        public Dictionary<Guid, string> FilledFromQuote { get; private set; } = new();
+
+        /// <summary>The Invoice field a Quote field copies into, or null when none / gone.</summary>
+        public CustomFieldDefinitionDto? InvoiceTarget(Guid? id)
+            => id is { } g ? InvoiceTargets.FirstOrDefault(t => t.Id == g) : null;
 
         public string Noun => CustomFieldEntityTypes.SingularNoun(ActiveEntity);
         public string NounPlural => CustomFieldEntityTypes.PluralLabel(ActiveEntity).ToLowerInvariant();
@@ -183,6 +262,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
 
             /// <summary>Dropdown only. Rows with no name and no key are ignored.</summary>
             public List<OptionInput> Options { get; set; } = new();
+
+            /// <summary>079. Lead fields only: copy into this Contact field on conversion. Empty = none.</summary>
+            [Display(Name = "Copy to contact field")]
+            public Guid? MapToContactFieldId { get; set; }
+
+            /// <summary>079. Lead fields only: copy into this Deal field on conversion. Empty = none.</summary>
+            [Display(Name = "Copy to deal field")]
+            public Guid? MapToDealFieldId { get; set; }
+
+            /// <summary>081. Quote / Invoice fields: printed on the PDF and the customer's link.</summary>
+            [Display(Name = "Print on quotes & invoices")]
+            public bool PrintOnDocuments { get; set; }
+
+            /// <summary>081. Quote fields only: copy into this Invoice field when an invoice is raised. Empty = none.</summary>
+            [Display(Name = "Copy to invoice field")]
+            public Guid? MapToInvoiceFieldId { get; set; }
         }
 
         public class OptionInput
@@ -379,7 +474,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
                     IsActive      = !row.IsActive,
                     ShowInList    = row.ShowInList,       // 076 — see the header
                     DecimalPlaces = row.DecimalPlaces,
-                    Options       = row.Options
+                    Options       = row.Options,
+                    MapToContactFieldId = row.MapToContactFieldId,   // 079 — see the header
+                    MapToDealFieldId    = row.MapToDealFieldId,
+                    PrintOnDocuments    = row.PrintOnDocuments,      // 081 — see the header
+                    MapToInvoiceFieldId = row.MapToInvoiceFieldId
                 };
 
                 await _fields.UpdateAsync(id, dto);
@@ -493,7 +592,62 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
                 LoadFailed = true;
                 PageError ??= "Could not load your custom fields. Please try again.";
             }
+
+            await LoadMappingContextAsync();
         }
+
+        /// <summary>
+        /// 079. The other side of the lead mapping. Non-fatal. If the lists
+        /// cannot be loaded, the form says so and posts the field's CURRENT
+        /// mapping back unchanged (hidden inputs in _FieldSettings) — an
+        /// empty dropdown would otherwise post "none" and silently clear it.
+        /// </summary>
+        private async Task LoadMappingContextAsync()
+        {
+            ContactTargets  = new();
+            DealTargets     = new();
+            FilledFromLead  = new();
+            InvoiceTargets  = new();   // 081
+            FilledFromQuote = new();   // 081
+
+            try
+            {
+                if (IsLeadTab)
+                {
+                    ContactTargets = await _fields.GetDefinitionsAsync(CustomFieldEntityTypes.Contact, includeInactive: true);
+                    DealTargets    = await _fields.GetDefinitionsAsync(CustomFieldEntityTypes.Deal, includeInactive: true);
+                }
+                else if (ActiveEntity == CustomFieldEntityTypes.Contact || ActiveEntity == CustomFieldEntityTypes.Deal)
+                {
+                    var leadFields = await _fields.GetDefinitionsAsync(CustomFieldEntityTypes.Lead, includeInactive: true);
+                    var contact = ActiveEntity == CustomFieldEntityTypes.Contact;
+
+                    foreach (var lf in leadFields)
+                    {
+                        var target = contact ? lf.MapToContactFieldId : lf.MapToDealFieldId;
+                        if (target is { } t) FilledFromLead[t] = lf.Label;
+                    }
+                }
+                else if (IsQuoteTab)                                                 // 081
+                {
+                    InvoiceTargets = await _fields.GetDefinitionsAsync(CustomFieldEntityTypes.Invoice, includeInactive: true);
+                }
+                else if (IsInvoiceTab)                                               // 081
+                {
+                    var quoteFields = await _fields.GetDefinitionsAsync(CustomFieldEntityTypes.Quote, includeInactive: true);
+                    foreach (var qf in quoteFields)
+                        if (qf.MapToInvoiceFieldId is { } t) FilledFromQuote[t] = qf.Label;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Could not load the mapping context for {Entity}", ActiveEntity);
+                MappingLoadFailed = true;
+            }
+        }
+
+        /// <summary>079 / 081. The other side of the mapping could not be loaded.</summary>
+        public bool MappingLoadFailed { get; private set; }
 
         private static InputModel FromDto(CustomFieldDefinitionDto row)
         {
@@ -507,6 +661,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
                 IsActive      = row.IsActive,
                 ShowInList    = row.ShowInList,
                 DecimalPlaces = row.DecimalPlaces,
+                MapToContactFieldId = row.MapToContactFieldId,   // 079
+                MapToDealFieldId    = row.MapToDealFieldId,
+                PrintOnDocuments    = row.PrintOnDocuments,      // 081
+                MapToInvoiceFieldId = row.MapToInvoiceFieldId,   // 081
                 Options       = row.Options
                     .Select(o => new OptionInput { Key = o.Key, Label = o.Label, IsActive = o.IsActive })
                     .ToList()
@@ -529,6 +687,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
             IsActive      = input.IsActive,
             ShowInList    = input.ShowInList,
             DecimalPlaces = input.DecimalPlaces,
+            // 079 — only meaningful for Lead fields; the API stores null otherwise.
+            MapToContactFieldId = entityType == CustomFieldEntityTypes.Lead ? input.MapToContactFieldId : null,
+            MapToDealFieldId    = entityType == CustomFieldEntityTypes.Lead ? input.MapToDealFieldId : null,
+            // 081 — the API forces both off for types they do not apply to.
+            PrintOnDocuments    = CustomFieldEntityTypes.SupportsPrint(entityType) && input.PrintOnDocuments,
+            MapToInvoiceFieldId = CustomFieldEntityTypes.SupportsInvoiceMapping(entityType) ? input.MapToInvoiceFieldId : null,
             Options       = (input.Options ?? new List<OptionInput>())
                 .Select(o => new CustomFieldOptionDto
                 {

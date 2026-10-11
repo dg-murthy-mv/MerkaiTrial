@@ -19,6 +19,27 @@
 //   the view contains no permission-dependent buttons (only the form itself,
 //   which is unreachable without passing OnGetAsync).
 //
+// CHANGES (081 — custom fields on invoices)
+//   1. The invoice's own custom fields, through the shared
+//      _CustomFieldInputs partial, pre-filled from InvoiceDto.
+//      CustomFieldValues and sent as UpdateInvoiceDto.CustomFields — on a
+//      quote's invoice too: its LINES are the quote's, its fields are its
+//      own until it is issued. NULL when the field list could not be
+//      loaded, so nothing about them changes.
+//   2. A REFUSED SAVE KEEPS WHAT WAS TYPED. The old error path re-seeded
+//      the lines from the database, put the reason in TempData on a
+//      response that renders, and never refilled the permission flags.
+//      RedisplayAsync shows the POSTED lines (QuoteItemsSeed, the one seed
+//      builder), the reason in PageError, and fills the flags again.
+//   3. NEW LINES GOT THE WRONG TAX RATE BELOW 1% — the "raw < 1 → ×100"
+//      guess. The stored rate is always a percentage (as Quotes/Create
+//      since 056).
+//   4. FormatDate / FormatDateTime / FormatCurrency deleted: they hid the
+//      AuthorizedPageModel members of the same names (CS0108) and did the
+//      same thing. Money() formats an amount in the INVOICE's currency
+//      culture — the read-only table printed lakh-currency figures with
+//      Western grouping (InvariantCulture).
+//
 // CHANGES (074 — the catalogue finally reaches manual invoices)
 //
 //   Everything rounds 052, 055, 067, 069 and 070 built for the catalogue
@@ -75,7 +96,9 @@
 //      that issued invoices are voided and re-issued.
 // =====================================================================
 
-using MerkaiTrial.Admin.Web.Pages.Quotes;          // 074: QuoteItemsEditorVm
+using MerkaiTrial.Admin.Web.Pages.Quotes;          // 074: QuoteItemsEditorVm; 081: QuoteItemsSeed
+using MerkaiTrial.Admin.Web.Pages.Shared;          // 081 — CustomFieldFormVm, CustomFieldForm
+using MerkaiTrial.Admin.Web.Services.CustomFields; // 081
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Application.Configuration;       // 074: CurrencyConfiguration, UnitsOfMeasure, TaxCodes
@@ -101,6 +124,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly IProductService _productService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
+        private readonly ICustomFieldService _customFields;      // 081
         private readonly ILogger<EditModel> _logger;
 
         public EditModel(
@@ -108,10 +132,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             IProductService productService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
+            ICustomFieldService customFields,                    // 081
             IAuthorizationService authorizationService,
             ILogger<EditModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _invoiceService = invoiceService;
             _productService = productService;
             _currentUserService = currentUserService;
@@ -138,6 +164,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         [TempData]
         public string? ErrorMessage { get; set; }
+
+        // ── 081 ───────────────────────────────────────────────────────
+
+        /// <summary>Why the form came back, on THIS response (not TempData — no redirect).</summary>
+        public string? PageError { get; private set; }
+
+        /// <summary>The lines as POSTED, after a refusal. Null on a fresh open — the view seeds from the invoice.</summary>
+        public string? PostedItemsJson { get; private set; }
+
+        /// <summary>Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>Active Invoice custom fields, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>The model for _CustomFieldInputs (rendered inside the form).</summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Invoice
+        };
 
         // Business-state lock — distinct from the CanUpdate PERMISSION property
         public bool IsEditable => ExistingInvoice?.Status == "Draft";
@@ -245,6 +297,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     Products = new List<ProductListItem>();
                 }
 
+                // 081 — the invoice's stored custom values, into the inputs.
+                CustomFields = CustomFieldForm.FromStored(ExistingInvoice.CustomFieldValues);
+                await LoadCustomFieldsAsync();
+
                 return Page();
             }
             catch (Exception ex)
@@ -264,16 +320,33 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             var permissionCheck = await ValidatePermissionAsync(Actions.Update);
             if (permissionCheck != null) return permissionCheck;
 
+            if (Id == Guid.Empty)
+            {
+                ErrorMessage = "Invalid invoice ID";
+                return RedirectToPage("/Invoices/Index");
+            }
+
+            var tenantId = _currentUserService.GetCurrentTenantId();
+
+            // 081. Read the lines FIRST so a refusal can show them again as
+            // posted (the old error path re-seeded them from the database,
+            // undoing the person's edits). Null when unreadable.
+            List<InvoiceItemData>? items = null;
+            if (!string.IsNullOrWhiteSpace(itemsJson))
+            {
+                try
+                {
+                    items = JsonSerializer.Deserialize<List<InvoiceItemData>>(
+                        itemsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch (JsonException jex)
+                {
+                    _logger.LogWarning(jex, "Unreadable itemsJson on invoice {InvoiceId}", Id);
+                }
+            }
+
             try
             {
-                if (Id == Guid.Empty)
-                {
-                    ErrorMessage = "Invalid invoice ID";
-                    return RedirectToPage("/Invoices/Index");
-                }
-
-                var tenantId = _currentUserService.GetCurrentTenantId();
-
                 // Load existing invoice to check status
                 ExistingInvoice = await _invoiceService.GetByIdAsync(tenantId, Id);
 
@@ -291,60 +364,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 _logger.LogInformation("Updating invoice {InvoiceId}", Id);
 
+                // 081 — each custom field's message under its own input.
+                await LoadCustomFieldsAsync();
+                CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
                 // ── 074: due on or after issue ────────────────────────
-                //
-                // The issue date is not editable here — it is printed
-                // read-only beside the due date — so the comparison is
-                // against the invoice's own issue date, not a posted one.
-                //
-                // Nothing checked this before, and the consequence is not
-                // cosmetic: an invoice whose due date has passed is
-                // Overdue, so pulling the due date back behind the issue
-                // date makes a current invoice overdue on the next
-                // refresh, with no explanation on the screen.
-                // (InvoiceDto.IssueDateUtc is a plain DateTime, not nullable —
-                //  unlike DueDateUtc. Every invoice has an issue date.)
+                // The issue date is not editable here, so the comparison is
+                // against the invoice's own. An invoice due before it was
+                // raised turns Overdue on the next refresh, unexplained.
                 if (Input.DueDate.Date < ExistingInvoice.IssueDateUtc.Date)
                 {
-                    ErrorMessage =
+                    return await RedisplayAsync(tenantId, items,
                         $"The due date ({Input.DueDate:dd MMM yyyy}) is before this invoice's " +
                         $"issue date ({ExistingInvoice.IssueDateUtc:dd MMM yyyy}). " +
-                        "An invoice cannot fall due before it was raised.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
+                        "An invoice cannot fall due before it was raised.");
                 }
 
-                // (018) A quote's invoice: due date and notes only — no lines
-                // are sent, and the API keeps the quote's lines.
-                var items = new List<InvoiceItemData>();
+                // (018) A quote's invoice: due date, notes and (081) its own
+                // custom fields — no lines are sent, the API keeps the quote's.
+                var lines = new List<InvoiceItemData>();
 
                 if (!IsFromQuote)
                 {
-                    if (string.IsNullOrWhiteSpace(itemsJson))
-                    {
-                        ErrorMessage = "Please add at least one item to the invoice";
-                        await LoadFormDataAsync(tenantId);
-                        return Page();
-                    }
-
-                    var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    items = JsonSerializer.Deserialize<List<InvoiceItemData>>(itemsJson, jsonOptions) ?? new();
-
-                    if (items.Count == 0)
-                    {
-                        _logger.LogWarning("No items provided for invoice update");
-                        ErrorMessage = "Please add at least one item to the invoice";
-                        await LoadFormDataAsync(tenantId);
-                        return Page();
-                    }
+                    if (items == null || items.Count == 0)
+                        return await RedisplayAsync(tenantId, items, "Please add at least one item to the invoice.");
 
                     if (items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
-                    {
-                        ErrorMessage = "All items must have a name";
-                        await LoadFormDataAsync(tenantId);
-                        return Page();
-                    }
+                        return await RedisplayAsync(tenantId, items, "All items must have a name.");
+
+                    lines = items;
                 }
+
+                // 081 — a custom field is wrong: its message is under its own input.
+                if (CustomFieldForm.HasErrors(ModelState))
+                    return await RedisplayAsync(tenantId, items, "Please correct the highlighted fields.");
+
+                // A date box that failed to bind (a cleared box posts "") is said
+                // plainly rather than saving the default binding left behind. ONLY
+                // these keys: with nullable reference types on, an unposted string
+                // property also lands in ModelState, and must not block the save.
+                if (new[] { "Input.DueDate" }.Any(k => ModelState[k]?.Errors.Count > 0))
+                    return await RedisplayAsync(tenantId, items, "Some of the dates could not be read. Please check them and try again.");
 
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
@@ -356,7 +416,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     DueDateUtc = DateTime.SpecifyKind(Input.DueDate.Date, DateTimeKind.Utc),
                     Notes = Input.Notes,
                     UpdatedBy = currentUser.FullName,
-                    Lines = items.Select(i => new CreateInvoiceLineDto
+
+                    // 081 — null when the field list could not be loaded: the
+                    // form had no custom inputs, so leave the values alone.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+
+                    Lines = lines.Select(i => new CreateInvoiceLineDto
                     {
                         ProductId = i.ProductId,
                         Name = i.Name,
@@ -366,28 +433,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                         // 052. Sent even though the handler would fill it
                         // from the product: a CUSTOM line has no product
-                        // to ask, and "3.5 days of consulting" typed by
-                        // hand is exactly the case units were added for.
+                        // to ask.
                         UnitOfMeasure = i.UnitOfMeasure,
 
                         LineDiscount = i.LineDiscount,
 
                         // 055. Authoritative when set — the handler
-                        // recomputes the amount from it. Null means the
-                        // discount was typed as an amount.
+                        // recomputes the amount from it.
                         DiscountPercent = i.DiscountPercent,
 
                         TaxRate = i.TaxRate / 100m,       // % -> decimal
 
-                        // 067. The HSN / SAC code. A manual GST invoice
-                        // without it is a tax document missing the one
-                        // field the tax authority looks for.
-                        //
-                        // "" and not null: null tells the handler "nothing
-                        // was said, go and ask the product", which is
-                        // right for an API caller and wrong here — the
-                        // editor always sends the field, so a blank one
-                        // means the person cleared it on purpose.
+                        // 067. "" and not null: null tells the handler to
+                        // ask the product, which would refill a code the
+                        // person cleared on purpose.
                         TaxCode = i.TaxCode ?? ""
                     }).ToList()
                 };
@@ -395,37 +454,47 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 await _invoiceService.UpdateAsync(tenantId, Id, updateDto);
                 _logger.LogInformation("✅ Invoice {InvoiceId} updated successfully", Id);
 
+                // TempData is right here: this response REDIRECTS.
                 SuccessMessage = $"Invoice {ExistingInvoice.Number} updated successfully!";
                 return RedirectToPage("/Invoices/Detail", new { id = Id });
             }
             catch (InvalidOperationException ex)
             {
-                // The API refused and said why (a bad line, or it's no longer a draft).
+                // The API refused and said why (a bad line, no longer a draft,
+                // a required custom field).
                 _logger.LogWarning(ex, "Invoice update refused");
-                ErrorMessage = ex.Message;
-                var tenantId = _currentUserService.GetCurrentTenantId();
-                await LoadFormDataAsync(tenantId);
-                return Page();
+                return await RedisplayAsync(tenantId, items, ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Failed to update invoice {InvoiceId}", Id);
-                ErrorMessage = $"Failed to update invoice: {ex.Message}";
-
-                // Reload form data
-                var tenantId = _currentUserService.GetCurrentTenantId();
-                await LoadFormDataAsync(tenantId);
-                return Page();
+                return await RedisplayAsync(tenantId, items, "Failed to update the invoice. Please try again.");
             }
         }
 
         // ==================== HELPER METHODS ====================
 
-        private async Task LoadFormDataAsync(Guid tenantId)
+        /// <summary>
+        /// 081 (was LoadFormDataAsync + a TempData message). The form again,
+        /// as POSTED — lines, due date, notes, custom fields — with the
+        /// reason in PageError. Permissions are filled again (a POST gets a
+        /// fresh page model), which the old reload never did.
+        /// </summary>
+        private async Task<IActionResult> RedisplayAsync(Guid tenantId, List<InvoiceItemData>? items, string message)
         {
+            PageError = message;
+
             try
             {
-                ExistingInvoice = await _invoiceService.GetByIdAsync(tenantId, Id);
+                await InitializePermissionsAsync();
+
+                ExistingInvoice ??= await _invoiceService.GetByIdAsync(tenantId, Id);
+                if (ExistingInvoice == null)
+                {
+                    ErrorMessage = "Invoice not found";
+                    return RedirectToPage("/Invoices/Index");
+                }
+
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
                 TenantCurrencyCode = _tenantService.GetCurrencyCode();
                 await LoadDefaultTaxAsync();
@@ -433,10 +502,57 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                 {
                     await LoadProductsAsync(tenantId);
                 }
+                if (ActiveCustomFields.Count == 0 && !CustomFieldsLoadFailed)
+                    await LoadCustomFieldsAsync();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to reload form data");
+            }
+
+            // A quote's invoice has no editable lines; a manual one shows
+            // the lines as posted when they could be read.
+            PostedItemsJson = !IsFromQuote && items is { Count: > 0 } ? SeedFromPosted(items) : null;
+            return Page();
+        }
+
+        /// <summary>081. Posted lines → the editor's seed, through QuoteItemsSeed (the one seed builder).</summary>
+        private static string SeedFromPosted(IEnumerable<InvoiceItemData> items)
+            => QuoteItemsSeed.FromPosted(items.Select(i => new QuoteItemData
+            {
+                ProductId       = i.ProductId,
+                Name            = i.Name ?? string.Empty,
+                Description     = i.Description ?? string.Empty,
+                UnitPrice       = i.UnitPrice,
+                Quantity        = i.Quantity,
+                UnitOfMeasure   = i.UnitOfMeasure,
+                LineDiscount    = i.LineDiscount,
+                DiscountPercent = i.DiscountPercent,
+                TaxRate         = i.TaxRate,
+                TaxCode         = i.TaxCode
+            }));
+
+        /// <summary>
+        /// 081. The active Invoice custom fields. A failure is remembered
+        /// (CustomFieldsLoadFailed) so the form says why the fields are
+        /// missing and the save sends CustomFields = null — every stored
+        /// value stays exactly as it was.
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Invoice, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.SortOrder)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the Edit Invoice form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
             }
         }
 
@@ -444,9 +560,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         {
             try
             {
-                // May come back as a fraction (0.07) or a percentage (7).
-                var raw = await _tenantService.GetDefaultTaxRateAsync();
-                DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+                // 081: ALWAYS a percentage (as Quotes/Create since 056). The
+                // old "raw < 1 → ×100" guess made a real 0.5% rate 50%.
+                DefaultTaxRate = await _tenantService.GetDefaultTaxRateAsync();
 
                 var label = _tenantService.GetTaxLabel();
                 if (!string.IsNullOrWhiteSpace(label)) DefaultTaxRateName = label;
@@ -511,9 +627,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             string.IsNullOrWhiteSpace(code)
                 ? _tenantService.GetCurrencySymbol()
                 : CurrencyConfiguration.GetCurrencySymbol(code);
-        public string FormatDate(DateTime utcDate) => _tenantService.FormatDate(utcDate);
-        public string FormatDateTime(DateTime utcDate) => _tenantService.FormatDateTime(utcDate);
-        public string FormatCurrency(decimal amount) => _tenantService.FormatCurrency(amount);
+
+        // 081: FormatDate / FormatDateTime / FormatCurrency removed — the
+        // base class declares all three (see the header, note 4).
+
+        /// <summary>
+        /// 081. An amount in THIS INVOICE's currency: its symbol and its
+        /// grouping (1,00,000.00 for INR). The read-only table used
+        /// InvariantCulture, so an Indian invoice printed 100,000.00 here
+        /// and 1,00,000.00 on its PDF.
+        /// </summary>
+        public string Money(decimal amount)
+        {
+            var code = ExistingInvoice?.Currency;
+            // DocumentCulture — the same currency → format choice the PDF makes.
+            return GetSymbol(code) + amount.ToString("N2", DocumentCulture.For(code));
+        }
     }
 
     /// <summary>

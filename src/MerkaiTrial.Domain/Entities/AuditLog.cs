@@ -70,6 +70,23 @@ namespace MerkaiTrial.Domain.Entities
         public const string CompanyUpdated = "CompanyUpdated";
         public const string CompanyDeleted = "CompanyDeleted";
 
+        // ── Products ──────────────────────────────────────────────────
+        //
+        // 080 — Created and Updated join PriceChanged and Deleted, by the
+        // same rule as contacts and companies above. A product can be
+        // created or rewritten — its name, kind, unit, tax code, custom
+        // fields — and none of that left a trace until now.
+        //
+        // Data on Created: { name, type, category }.
+        // Data on Updated: { name, changed: ["name", "taxCode", …] } plus
+        // previousName when the name changed — field NAMES, never values;
+        // "customFields" when any custom value changed. ProductPriceChanged
+        // is still written as well on a price or tax-rate change, with the
+        // figures, exactly as before.
+        //
+        // 14 characters each, inside the 32 allowed.
+        public const string ProductCreated = "ProductCreated";
+        public const string ProductUpdated = "ProductUpdated";
         public const string ProductPriceChanged = "ProductPriceChgd";
         public const string ProductDeleted = "ProductDeleted";
         public const string ActivityCreated = "ActivityCreated";

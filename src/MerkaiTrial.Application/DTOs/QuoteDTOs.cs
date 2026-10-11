@@ -33,6 +33,24 @@
 // ProductId set makes the handler snapshot the product's own code — the
 // same arrangement UnitOfMeasure has, so a caller that has never heard of
 // tax codes still stores the right one.
+//
+// 081 — CUSTOM FIELDS
+//
+//   QuoteDto.CustomFieldValues       every stored value (internal read only;
+//                                    the public-token read leaves it empty)
+//   QuoteDto.DocumentFields          what the quote PRINTS — frozen when it
+//                                    was sent, otherwise a live preview
+//   QuoteDto.DocumentFieldsFrozenAtUtc  when that copy was taken; null = live
+//   QuoteListItem.CustomFieldValues  the "Show on the list" fields, this page only
+//   CreateQuoteDto.CustomFields      what the form is stating
+//   UpdateQuoteDto.CustomFields      ditto; NULL = say nothing, leave them alone
+//
+// ⚠ GetQuoteByTokenHandler and GenerateQuotePdfHandler build QuoteDto by
+// hand (see the 071 note on PaymentStages). Both set DocumentFields.
+//
+// 082 — QuoteItemDto.DocumentFields: the product's printed custom fields
+// for that line (frozen when the quote is sent). Set on all three read
+// paths, like the quote-level DocumentFields.
 // =====================================================================
 
 using MerkaiTrial.Application.Common;                 // 055: LineDiscounts
@@ -146,6 +164,24 @@ namespace MerkaiTrial.Application.DTOs
         public bool HasPaymentSchedule => PaymentStages.Count > 0;
 
         public List<QuoteItemDto> Items { get; set; } = new();
+
+        /// <summary>
+        /// 081. Every stored custom value on this quote, field id → value as
+        /// text, retired fields included. Set by GetQuoteByIdHandler only:
+        /// the customer's link must not carry fields nobody chose to print.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+
+        /// <summary>
+        /// 081. The custom fields this quote PRINTS, in order — the frozen
+        /// copy once the quote has been sent, otherwise the live values (a
+        /// preview of what sending would print). Empty = print nothing.
+        /// Set on EVERY read path, including the two hand-built ones.
+        /// </summary>
+        public List<DocumentFieldEntry> DocumentFields { get; set; } = new();
+
+        /// <summary>081. When DocumentFields was frozen. Null = live values.</summary>
+        public DateTime? DocumentFieldsFrozenAtUtc { get; set; }
     }
 
     /// <summary>
@@ -263,7 +299,15 @@ namespace MerkaiTrial.Application.DTOs
         decimal GrandTotal,
         int ItemCount,
         DateTime CreatedAtUtc
-    );
+    )
+    {
+        /// <summary>
+        /// 081. The "Show on the list" custom values for this row. A BODY
+        /// property, not another positional parameter, so no existing
+        /// `new QuoteListItem(...)` call has to change.
+        /// </summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+    }
 
     public class QuoteItemDto
     {
@@ -318,6 +362,17 @@ namespace MerkaiTrial.Application.DTOs
         public decimal LineTotal { get; set; }
         public decimal LineTax { get; set; }
         public decimal LineGrandTotal { get; set; }
+
+        /// <summary>
+        /// 082. The PRODUCT's custom fields this line prints, under its name
+        /// — the copy fixed when the document went out, or the product's
+        /// current values before then. Empty for a custom line. Set on every
+        /// read path, including the hand-built ones.
+        /// </summary>
+        public List<DocumentFieldEntry> DocumentFields { get; set; } = new();
+
+        /// <summary>082. True when there is anything to print under this line.</summary>
+        public bool HasDocumentFields => DocumentFields.Count > 0;
     }
 
     public class CreateQuoteDto
@@ -329,6 +384,9 @@ namespace MerkaiTrial.Application.DTOs
         public string Currency { get; set; } = string.Empty;   // ✅ Set by tenant service
         public string? CreatedBy { get; set; }
         public List<CreateQuoteItemDto> Items { get; set; } = new();
+
+        /// <summary>081. Custom field values, field id → value as text. Null says nothing.</summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class CreateQuoteItemDto
@@ -369,6 +427,12 @@ namespace MerkaiTrial.Application.DTOs
         public DateTime ExpiresAtUtc { get; set; }
         public string Currency { get; set; } = string.Empty;   // ✅ No default
         public List<UpdateQuoteItemDto> Items { get; set; } = new();
+
+        /// <summary>
+        /// 081. Custom field values. NULL = leave them exactly as they are;
+        /// a missing key leaves that field alone; an empty value clears it.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class UpdateQuoteItemDto

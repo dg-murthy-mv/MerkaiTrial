@@ -22,6 +22,13 @@
    reach the page through Razor's HTML encoding.
 
    Nothing here renders a <form>; it sits inside the page's own.
+
+   081 — a field switched to "Print on quotes & invoices" carries a small
+   printer mark beside its label, so whoever fills it in knows the
+   customer will read it. Nothing else changes.
+
+   081 — Model.FormId: when set, every input carries form="…" so it posts
+   with a form it is not inside (Invoices/Create). Null renders nothing.
    ===================================================================== *@
 
 @if (Model.LoadFailed)
@@ -74,6 +81,7 @@ else if (Model.Fields.Count > 0)
                 var inputClass  = "form-control" + invalid;
                 var selectClass = "form-select" + invalid;
                 var hasHelp  = !string.IsNullOrWhiteSpace(f.HelpText);
+                var prints   = f.PrintOnDocuments;   // 081
 
                 string? value = null;
                 Model.Values.TryGetValue(key, out value);
@@ -87,10 +95,17 @@ else if (Model.Fields.Count > 0)
                                binder takes the FIRST value posted under a name. *@
                             <input class="@checkClass" type="checkbox" role="switch"
                                    id="@inputId" name="@name" value="true"
-                                   checked="@(value == "true")"
+                                   checked="@(value == "true")" form="@Model.FormId"
                                    aria-describedby="@(hasHelp ? helpId : null)" />
-                            <input type="hidden" name="@name" value="false" />
-                            <label class="form-check-label" for="@inputId">@f.Label</label>
+                            <input type="hidden" name="@name" value="false" form="@Model.FormId" />
+                            <label class="form-check-label" for="@inputId">
+                                @f.Label
+                                @if (prints)
+                                {
+                                    <i class="bi bi-printer text-muted ms-1" title="Printed on the customer's document"
+                                       aria-label="Printed on the customer's document"></i>
+                                }
+                            </label>
                         </div>
                     }
                     else
@@ -101,6 +116,11 @@ else if (Model.Fields.Count > 0)
                             {
                                 <span class="text-danger" aria-hidden="true">*</span>
                             }
+                            @if (prints)
+                            {
+                                <i class="bi bi-printer text-muted ms-1" title="Printed on the customer's document"
+                                   aria-label="Printed on the customer's document"></i>
+                            }
                         </label>
 
                         @switch (f.FieldType)
@@ -109,20 +129,20 @@ else if (Model.Fields.Count > 0)
                                 <input type="number" class="@inputClass" id="@inputId" name="@name"
                                        value="@value" step="@CustomFieldForm.StepFor(f.DecimalPlaces)"
                                        inputmode="decimal" autocomplete="off"
-                                       required="@required"
+                                       required="@required" form="@Model.FormId"
                                        aria-describedby="@(hasHelp ? helpId : null)" />
                                 break;
 
                             case CustomFieldTypes.Date:
                                 <input type="date" class="@inputClass" id="@inputId" name="@name"
                                        value="@value" min="1900-01-01" max="2199-12-31"
-                                       required="@required"
+                                       required="@required" form="@Model.FormId"
                                        aria-describedby="@(hasHelp ? helpId : null)" />
                                 break;
 
                             case CustomFieldTypes.Dropdown:
                                 <select class="@selectClass" id="@inputId" name="@name"
-                                        required="@required"
+                                        required="@required" form="@Model.FormId"
                                         aria-describedby="@(hasHelp ? helpId : null)">
                                     <option value="">— Choose —</option>
                                     @foreach (var o in f.Options)
@@ -144,7 +164,7 @@ else if (Model.Fields.Count > 0)
                                 <input type="text" class="@inputClass" id="@inputId" name="@name"
                                        value="@value" maxlength="@CustomFieldLimits.TextValueMaxLength"
                                        autocomplete="off"
-                                       required="@required"
+                                       required="@required" form="@Model.FormId"
                                        aria-describedby="@(hasHelp ? helpId : null)" />
                                 break;
                         }

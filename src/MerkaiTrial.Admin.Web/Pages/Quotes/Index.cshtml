@@ -1,5 +1,6 @@
 @page
 @using MerkaiTrial.Application.DTOs
+@using MerkaiTrial.Application.Configuration
 @using MerkaiTrial.Admin.Web.Pages.Quotes
 @model MerkaiTrial.Admin.Web.Pages.Quotes.IndexModel
 @{
@@ -13,6 +14,11 @@
 @* =====================================================================
    QUOTES (028a)
    Location: MerkaiTrial.Admin.Web/Pages/Quotes/Index.cshtml
+
+   081: quote custom fields marked "Show on the list" are extra columns in
+   the List view, placed after Expires so the sortable columns keep their
+   data-col numbers, and each is sortable too. Their values are added to
+   the row's data-find, so the quick search finds them.
 
    COMPLETE FILE — replaces the 028 version.
 
@@ -441,6 +447,14 @@
                             <th class="text-center">Items</th>
                             <th class="sortable" data-sort="num" data-col="6" tabindex="0" role="button">Issued <i class="bi bi-chevron-expand caret"></i></th>
                             <th>Expires</th>
+                            @* 081: custom columns, sortable as text. *@
+                            @for (var ci = 0; ci < Model.ListColumns.Count; ci++)
+                            {
+                                var col = Model.ListColumns[ci];
+                                <th class="sortable" data-sort="text" data-col="@(8 + ci)" tabindex="0" role="button">
+                                    <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1 text-muted" aria-hidden="true"></i>@col.Label <i class="bi bi-chevron-expand caret"></i>
+                                </th>
+                            }
                             <th class="q-stick text-end">Actions</th>
                         </tr>
                     </thead>
@@ -453,7 +467,7 @@
                             var live = IndexModel.IsLive(q.Status) && IndexModel.HasExpiry(q.ExpiresAtUtc);
                             var days = live ? Model.DaysLeft(q.ExpiresAtUtc) : 0;
 
-                            <tr data-find="@($"{q.Number} {q.CompanyName} {q.DealTitle} {m.Label}".ToLowerInvariant())">
+                            <tr data-find="@($"{q.Number} {q.CompanyName} {q.DealTitle} {m.Label}".ToLowerInvariant() + " " + Model.CustomSearchText(q))">
                                 <td class="num" data-v="@q.Number">
                                     <a asp-page="/Quotes/Detail" asp-route-id="@q.Id" class="text-decoration-none">@q.Number</a>
                                 </td>
@@ -481,6 +495,27 @@
                                         <span>—</span>
                                     }
                                 </td>
+                                @* 081: the "Show on the list" custom fields. *@
+                                @foreach (var col in Model.ListColumns)
+                                {
+                                    var shown = Model.ColumnValue(q, col);
+                                    <td data-v="@shown">
+                                        <div class="q-clip" title="@shown">
+                                            @if (string.IsNullOrEmpty(shown))
+                                            {
+                                                <span class="muted">—</span>
+                                            }
+                                            else if (col.FieldType == CustomFieldTypes.Checkbox)
+                                            {
+                                                <i class="bi bi-check-lg text-success" aria-label="Yes"></i>
+                                            }
+                                            else
+                                            {
+                                                @shown
+                                            }
+                                        </div>
+                                    </td>
+                                }
                                 @* PINNED. This cell stays on screen at every window
                                    width — that is the whole point of .q-stick. *@
                                 <td class="q-stick">

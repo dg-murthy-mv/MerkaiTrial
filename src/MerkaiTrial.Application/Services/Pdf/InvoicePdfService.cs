@@ -7,6 +7,16 @@
 //   QuestPDF.Settings.License = LicenseType.Community;  // free for < $1M revenue
 //   builder.Services.AddScoped<IInvoicePdfService, InvoicePdfService>();
 //
+// 082. In the Description cell of each line, under the description, the
+// product's custom fields marked "Print on quotes & invoices" — the copy
+// the customer accepted on the quote, or the one fixed at issue.
+//
+// 081. AN "ADDITIONAL DETAILS" BLOCK under BILL TO (and the milestone
+// banner, when there is one), printed ONLY when the invoice has custom
+// fields switched to "Print on quotes & invoices" and filled in. An
+// issued invoice prints the copy frozen at issue; a draft prints the live
+// values. Drawn by DocumentFieldsPdf, shared with the quote PDF.
+//
 // COMPLETE FILE — 067. THE LINE TABLE GAINS A TAX CLASSIFICATION COLUMN,
 // and on an Indian invoice that is not a nicety: a GST invoice has to
 // carry the HSN or SAC code against every line. Products have carried the
@@ -472,6 +482,13 @@ namespace MerkaiTrial.Application.Services.Pdf
                                 });
                         }
 
+                        // ── ADDITIONAL DETAILS (081) ───────────────────────────
+                        if (DocumentFieldsPdf.HasAny(model.Invoice.DocumentFields))
+                        {
+                            col.Item().PaddingTop(12).Element(e =>
+                                DocumentFieldsPdf.Compose(e, model.Invoice.DocumentFields, culture, model.DateFormat));
+                        }
+
                         col.Item().PaddingTop(20);
 
                         // ── LINE ITEMS TABLE ───────────────────────────────────
@@ -551,7 +568,22 @@ namespace MerkaiTrial.Application.Services.Pdf
 
                                 DataCell((i + 1).ToString(), color: MutedHex);
                                 DataCell(line.Name ?? "—", bold: true);
-                                DataCell(line.Description ?? "—", color: MutedHex);
+                                // 082 — the description, and under it the
+                                // product's printed fields. Drawn by hand
+                                // rather than DataCell: two lines, two sizes.
+                                var lineFieldsText = DocumentFieldEntry.JoinForLine(
+                                    line.DocumentFields, culture, model.DateFormat);
+                                table.Cell()
+                                    .Background(rowBg)
+                                    .BorderBottom(0.5f).BorderColor(BorderHex)
+                                    .PaddingHorizontal(6).PaddingVertical(5)
+                                    .Column(c =>
+                                    {
+                                        c.Item().Text(line.Description ?? "—").FontSize(9).FontColor(MutedHex);
+                                        if (lineFieldsText.Length > 0)
+                                            c.Item().PaddingTop(2).Text(lineFieldsText)
+                                                .FontSize(7.5f).FontColor("#374151");
+                                    });
 
                                 // 067. An em dash where a line has no code,
                                 // so a reader can tell "not classified" from

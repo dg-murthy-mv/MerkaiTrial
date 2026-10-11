@@ -2,6 +2,16 @@
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Index.cshtml.cs
 // Invoice Index Page Backend - List with filters and statistics
 //
+// CHANGES (081 — custom fields on invoices)
+//   ✅ Invoice fields switched to "Show on the list" appear on each card,
+//      under the customer, as "Label: value" — up to the usual four. A
+//      field list that cannot be loaded leaves them off; the list still
+//      renders.
+//   ✅ FormatDate / FormatDateTime / FormatCurrency deleted — they hid the
+//      AuthorizedPageModel members of the same names and did the same.
+//   (The view's Issue / Delete buttons read data- attributes now instead of
+//   building onclick="…" around values.)
+//
 // CHANGES (018 — invoice workflow)
 //   ✅ "Send" on a draft is now ISSUE (OnPostIssue): it gets its INV number
 //      and is locked. A manual invoice over the approval limits comes back
@@ -53,6 +63,8 @@
 //   deals.update.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldColumns, CustomFieldFormatter
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;   // 074b: CurrencyConfiguration
@@ -64,6 +76,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Globalization;                    // 081
+using System.Linq;                             // 081
 using System.Threading.Tasks;
 
 namespace MerkaiTrial.Admin.Web.Pages.Invoices
@@ -73,16 +87,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly IInvoiceService _invoiceService;
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
+        private readonly ICustomFieldService _customFields;      // 081
         private readonly ILogger<IndexModel> _logger;
 
         public IndexModel(
             IInvoiceService invoiceService,
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
+            ICustomFieldService customFields,                    // 081
             IAuthorizationService authorizationService,
             ILogger<IndexModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _invoiceService = invoiceService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
@@ -140,6 +157,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         /// </summary>
         public string? LoadError { get; private set; }
 
+        /// <summary>081. The "Show on the list" invoice fields, in order. Empty when none or not loadable.</summary>
+        public List<CustomFieldDefinitionDto> ListColumns { get; private set; } = new();
+
         // ==================== ON GET ====================
         // ✅ Signature changed from `Task OnGet()` to `Task<IActionResult> OnGetAsync()`
         //    so the permission gate can return a redirect.
@@ -170,6 +190,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     toDate: ToDate);
 
                 _logger.LogInformation("Loaded {Count} invoices", Invoices.Count);
+
+                // 081 — custom values on the cards. Never blocks the page.
+                try
+                {
+                    ListColumns = CustomFieldColumns.Pick(
+                        await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Invoice, includeInactive: false));
+                }
+                catch (Exception cfEx)
+                {
+                    _logger.LogWarning(cfEx, "Custom fields could not be loaded for the invoices list");
+                    ListColumns = new();
+                }
             }
             catch (Exception ex)
             {
@@ -281,9 +313,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             };
         }
 
-        public string FormatDate(DateTime utcDate) => _tenantService.FormatDate(utcDate);
-        public string FormatDateTime(DateTime utcDate) => _tenantService.FormatDateTime(utcDate);
-        public string FormatCurrency(decimal amount) => _tenantService.FormatCurrency(amount);
+        // 081: FormatDate / FormatDateTime / FormatCurrency come from
+        // AuthorizedPageModel.
+
+        private CultureInfo? _cfCulture;
+        private string? _cfDateFormat;
+
+        /// <summary>
+        /// 081. This card's custom values that are set, as (label, text) —
+        /// an unset field is left off the card rather than shown as a dash.
+        /// </summary>
+        public IEnumerable<(CustomFieldDefinitionDto Field, string Text)> CustomValues(InvoiceListItem invoice)
+        {
+            if (ListColumns.Count == 0) yield break;
+
+            _cfCulture    ??= CustomFieldFormatter.ResolveCulture(CultureName);
+            _cfDateFormat ??= TenantCtx.GetDateFormat();
+
+            foreach (var col in ListColumns)
+            {
+                var text = CustomFieldColumns.Value(col, invoice.CustomFieldValues, _cfCulture, _cfDateFormat);
+                if (text.Length > 0) yield return (col, text);
+            }
+        }
 
         /// <summary>
         /// 074b. Delegates, like every other page does since 074.

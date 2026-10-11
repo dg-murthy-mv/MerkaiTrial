@@ -4,12 +4,12 @@
 @using MerkaiTrial.Admin.Web.Pages.Quotes
 @using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Invoices.EditModel
+@inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService DocTenant
 @{
     ViewData["Title"] = $"Edit Invoice - {Model.ExistingInvoice?.Number}";
 
     var inv       = Model.ExistingInvoice;
     var lines     = inv?.Lines ?? new List<MerkaiTrial.Application.DTOs.InvoiceLineDto>();
-    var symbol    = Model.GetSymbol(inv?.Currency);
     var taxCodeLabel = TaxCodes.ColumnHeaderFor(inv?.Currency);
     var showTaxCode  = TaxCodes.AnyPresent(lines.Select(l => l.TaxCode));
 
@@ -64,7 +64,9 @@
         // wonders later whether it was forgotten.
         ApprovalRulesJson     = "{\"enabled\":false}",
         Products              = Model.Products ?? new(),
-        InitialItemsJson      = JsonSerializer.Serialize(seed),
+        // 081: the lines as POSTED when the form comes back after a
+        // refusal; the stored lines otherwise.
+        InitialItemsJson      = Model.PostedItemsJson ?? JsonSerializer.Serialize(seed),
         ListPricesJson        = JsonSerializer.Serialize(listPrices),
         StartWithOneBlankLine = false
     };
@@ -106,6 +108,18 @@
 
    TempData alerts are rendered once, globally, by _Layout.cshtml — this
    page used to draw its own on top.
+
+   082: the read-only lines of a quote's invoice show the product's printed
+   custom fields under each name — the copy the customer accepted.
+
+   081
+   • The invoice's own custom fields, under the due date and notes (shared
+     _CustomFieldInputs partial) — on a quote's invoice too: its lines are
+     locked, its fields are its own until it is issued.
+   • A refused save comes back with the lines AS POSTED and the reason in
+     Model.PageError, instead of reloading the lines from the database.
+   • Amounts in the read-only table use the invoice's own grouping
+     (Model.Money) — 1,00,000.00 on an INR invoice, as on its PDF.
    ===================================================================== *@
 
 <style>
@@ -155,6 +169,15 @@
        and ["ErrorMessage"] globally, and [TempData] properties populate
        exactly those keys. *@
 
+    @* 081: why the form came back (this response renders; TempData is for redirects). *@
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
+
     @if (!Model.IsEditable && !string.IsNullOrEmpty(Model.StatusWarning))
     {
         <div class="alert alert-warning">
@@ -181,7 +204,7 @@
                 </div>
                 <div>
                     <span class="k">Amount</span>
-                    <span class="v">@symbol@inv.GrandTotal.ToString("N2", CultureInfo.InvariantCulture)</span>
+                    <span class="v">@Model.Money(inv.GrandTotal)</span>
                 </div>
                 <div>
                     <span class="k">Issue date</span>
@@ -253,6 +276,9 @@
                         <textarea asp-for="Input.Notes" class="form-control" rows="3"></textarea>
                     </div>
                 </div>
+
+                @* 081 — the invoice's own custom fields. *@
+                <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
             </div>
 
             @if (Model.IsFromQuote)
@@ -292,6 +318,12 @@
                                         {
                                             <div class="text-muted small">@line.Description</div>
                                         }
+                                        @{ var lineFields082 = MerkaiTrial.Admin.Web.Pages.Shared.DocumentCulture.LineText(line.DocumentFields, inv.Currency, DocTenant.GetDateFormat()); }
+                                        @if (lineFields082.Length > 0)
+                                        {
+                                            @* 082 — the product's printed custom fields *@
+                                            <div class="text-muted small"><i class="bi bi-tag me-1" aria-hidden="true"></i>@lineFields082</div>
+                                        }
                                     </td>
                                     @if (showTaxCode)
                                     {
@@ -311,7 +343,7 @@
                                        screen showing what was agreed showed
                                        less than the PDF did. *@
                                     <td class="n">@line.QuantityDisplay</td>
-                                    <td class="n">@symbol@line.UnitPrice.ToString("N2", CultureInfo.InvariantCulture)</td>
+                                    <td class="n">@Model.Money(line.UnitPrice)</td>
                                     <td class="n">@((line.TaxRate * 100).ToString("0.##"))%</td>
                                     <td class="n">
                                         @if (!string.IsNullOrWhiteSpace(line.DiscountLabel))
@@ -322,7 +354,7 @@
                                         }
                                         else if (line.LineDiscount > 0)
                                         {
-                                            <span>@symbol@line.LineDiscount.ToString("N2", CultureInfo.InvariantCulture)</span>
+                                            <span>@Model.Money(line.LineDiscount)</span>
                                         }
                                         else
                                         {
@@ -330,7 +362,7 @@
                                         }
                                     </td>
                                     <td class="n fw-semibold">
-                                        @symbol@line.LineGrandTotal.ToString("N2", CultureInfo.InvariantCulture)
+                                        @Model.Money(line.LineGrandTotal)
                                     </td>
                                 </tr>
                             }

@@ -1,6 +1,28 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Create.cshtml.cs
 //
+// CHANGES (081 — custom fields on invoices)
+//   1. The workspace's Invoice custom fields, in the Invoice Details card,
+//      through the shared _CustomFieldInputs partial. They sit OUTSIDE the
+//      post forms (which live in the sticky sidebar), so the partial is
+//      given the form's id (CustomFieldFormVm.FormId) and every input
+//      carries form="…" — it posts, and the browser checks required
+//      fields, as if it were inside.
+//   2. FROM A QUOTE, the boxes are PRE-FILLED from the quote's fields
+//      that are mapped to invoice fields, using CustomFieldWireMapper —
+//      the same conversion the server uses when an invoice is raised
+//      without this form. The card says how many came from the quote.
+//   3. A REFUSED SAVE KEEPS WHAT WAS TYPED. Both paths used to REDIRECT
+//      on every error, which on the manual path threw away every line.
+//      They re-render now (RedisplayFromQuoteAsync / RedisplayManualAsync)
+//      with the posted lines, dates, notes and fields, and the reason in
+//      PageError — a plain property, because TempData is for redirects.
+//      The GET-side loading moved into LoadFromQuoteAsync / LoadManualAsync
+//      so the re-render loads exactly what the first render did.
+//   4. NEW LINES GOT THE WRONG TAX RATE BELOW 1% — the "raw < 1 → ×100"
+//      guess Quotes/Create dropped in 056. The stored rate is always a
+//      percentage.
+//
 // CHANGES (074 — the catalogue reaches the manual invoice)
 //   The MANUAL path (straight from a deal, no quote) got none of what
 //   052, 055, 067, 069 and 070 built. Same four fixes as Edit.cshtml.cs,
@@ -57,6 +79,8 @@
 //   ✅ API refusals show their message.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldFormVm, CustomFieldForm
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Products;
@@ -87,6 +111,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly IQuoteMilestoneService _milestones;          // 071
+        private readonly ICustomFieldService _customFields;           // 081
         private readonly ILogger<CreateModel> _logger;
 
         public CreateModel(
@@ -97,10 +122,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             IQuoteMilestoneService milestones,
+            ICustomFieldService customFields,                         // 081
             IAuthorizationService authorizationService,
             ILogger<CreateModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _invoiceService = invoiceService;
             _quoteService = quoteService;
             _productService = productService;
@@ -188,6 +215,39 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         [TempData]
         public string? ErrorMessage { get; set; }
 
+        // ── 081 ───────────────────────────────────────────────────────
+
+        /// <summary>Why the form came back, on THIS response (not TempData — no redirect).</summary>
+        public string? PageError { get; private set; }
+
+        /// <summary>The manual editor's starting lines: "[]", or the posted lines after a refusal.</summary>
+        public string InitialItemsJson { get; private set; } = "[]";
+
+        /// <summary>Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>Active Invoice custom fields, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>How many boxes were filled from the quote's mapped fields (fresh form only).</summary>
+        public int PrefilledFromQuote { get; private set; }
+
+        /// <summary>
+        /// The model for _CustomFieldInputs. FormId: the inputs are rendered
+        /// in the left column, outside the sidebar form that posts them.
+        /// </summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Invoice,
+            FormId       = Mode == "FromQuote" ? "fromQuoteInvoiceForm" : "manualInvoiceForm"
+        };
+
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode { get; private set; } = string.Empty;
 
@@ -215,153 +275,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 if (QuoteId.HasValue)
                 {
-                    // ✅ CROSS-MODULE GATE: this page is about to read quote contents.
-                    // NOTE: UserCanRead reads the claim directly and does NOT go
-                    // through AuthorizationService, so it produces no log line —
-                    // same as the Create Invoice button gate on Quotes/Detail.
-                    if (!UserCanRead(Modules.Quotes))
-                    {
-                        _logger.LogWarning(
-                            "❌ Access denied (missing permission: quotes.read) while creating invoice from quote {QuoteId}",
-                            QuoteId);
-                        return RedirectToPage("/AccessDenied");
-                    }
+                    var stop = await LoadFromQuoteAsync(tenantId, isPost: false);
+                    if (stop != null) return stop;
 
-                    Quote = await _quoteService.GetByIdAsync(tenantId, QuoteId.Value);
-
-                    if (Quote == null)
-                    {
-                        ErrorMessage = "Quote not found";
-                        return RedirectToPage("/Quotes/Index");
-                    }
-
-                    if (Quote.Status != "Accepted")
-                    {
-                        ErrorMessage = "Can only create invoice from accepted quotes";
-                        return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                    }
-
-                    Currency = !string.IsNullOrEmpty(Quote.Currency) ? Quote.Currency : _tenantService.GetCurrencyCode();
-                    IssueDate = DateTime.Today;
-                    DueDate = DateTime.Today.AddDays(30);
-
-                    // ── 071: the billing schedule ─────────────────────
-                    Billing = await _milestones.GetAsync(QuoteId.Value);
-
-                    if (Billing.LoadFailed)
-                    {
-                        // Hard stop. "Could not read the schedule" and
-                        // "there is no schedule" look identical in the
-                        // DTO, and carrying on as if it were the second
-                        // would bill the whole quote against a customer
-                        // who agreed to stages. Back to the quote, with a
-                        // sentence that says what happened.
-                        ErrorMessage = "Couldn't read this quote's payment schedule, so no invoice has been started. " +
-                                       "Try again from the quote.";
-                        return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                    }
-
-                    if (HasSchedule)
-                    {
-                        if (!MilestoneId.HasValue)
-                        {
-                            ErrorMessage = $"This quote is billed in {Billing.Schedule.Rows.Count} stages. " +
-                                           "Pick a stage in the Payment schedule panel.";
-                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                        }
-
-                        Stage = Billing.Schedule.Rows.FirstOrDefault(r => r.Id == MilestoneId.Value);
-
-                        if (Stage == null)
-                        {
-                            ErrorMessage = "That payment stage is no longer on this quote.";
-                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                        }
-
-                        if (Stage.IsInvoiced)
-                        {
-                            ErrorMessage = $"Stage {Stage.Sequence} ({Stage.Name}) is already covered by " +
-                                           $"{Stage.InvoiceNumber ?? "a draft invoice"}. " +
-                                           "Void it first if it needs replacing.";
-                            return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                        }
-
-                        // The stage's own date is a SUGGESTION, so it
-                        // pre-fills the due date when it has one. Thirty
-                        // days from today otherwise — the pre-071 default.
-                        if (Stage.DueDateUtc.HasValue)
-                            DueDate = Stage.DueDateUtc.Value.Date;
-                    }
-                    else if (MilestoneId.HasValue)
-                    {
-                        // A stale link: the schedule was removed after
-                        // somebody opened the quote page.
-                        ErrorMessage = "This quote no longer has a payment schedule.";
-                        return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
-                    }
+                    // 081 — the invoice's own fields, pre-filled from the
+                    // quote's mapped ones.
+                    await LoadCustomFieldsAsync();
+                    await PrefillFromQuoteAsync();
                 }
                 else if (DealId.HasValue)
                 {
-                    // ✅ CROSS-MODULE GATE: about to read deal contents
-                    if (!UserCanRead(Modules.Deals))
-                    {
-                        _logger.LogWarning(
-                            "❌ Access denied (missing permission: deals.read) while creating invoice from deal {DealId}",
-                            DealId);
-                        return RedirectToPage("/AccessDenied");
-                    }
+                    var stop = await LoadManualAsync(tenantId);
+                    if (stop != null) return stop;
 
-                    Deal = await _dealService.GetDetailAsync(tenantId, DealId.Value);
-
-                    if (Deal == null)
-                    {
-                        ErrorMessage = "Deal not found";
-                        return RedirectToPage("/Pipeline/Index");
-                    }
-
-                    // (018) Catalog for "Add from Product Catalog" — only with products.read.
-                    if (UserCanRead(Modules.Products))
-                    {
-                        try
-                        {
-                            // ⚠ 074: THE DEAL'S CURRENCY. Without it the
-                            // catalogue comes back priced in the
-                            // WORKSPACE's currency and this page hands
-                            // those figures to an invoice denominated in
-                            // something else — the 069 bug, which was
-                            // fixed on quotes and left standing here.
-                            //
-                            // MUST run after Deal is loaded; that is what
-                            // knows the currency.
-                            var paginated = await _productService.GetAllAsync(
-                                tenantId: tenantId, pageNumber: 1, pageSize: 1000,
-                                category: null, isActive: true, searchTerm: null,
-                                currency: Deal?.Currency ?? _tenantService.GetCurrencyCode());
-                            Products = paginated?.Items ?? new List<ProductListItem>();
-                        }
-                        catch (Exception pex)
-                        {
-                            _logger.LogWarning(pex, "Could not load products for manual invoice");
-                            Products = new List<ProductListItem>();
-                        }
-                    }
-
-                    try
-                    {
-                        var raw = await _tenantService.GetDefaultTaxRateAsync();
-                        DefaultTaxRate = raw < 1m ? raw * 100m : raw;
-
-                        // 074: the country's word for it — "GST", "VAT" —
-                        // for the editor's column header.
-                        var label = _tenantService.GetTaxLabel();
-                        if (!string.IsNullOrWhiteSpace(label)) DefaultTaxRateName = label;
-                    }
-                    catch (Exception tex)
-                    {
-                        _logger.LogWarning(tex, "Could not load the tenant's default tax rate");
-                    }
-
-                    Currency = Deal.Currency ?? _tenantService.GetCurrencyCode();
+                    await LoadCustomFieldsAsync();   // 081
                 }
                 else
                 {
@@ -374,9 +301,177 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading invoice creation page");
-                ErrorMessage = $"Error: {ex.Message}";
+                // 081: PageError, not TempData — this response renders.
+                PageError = "The invoice form could not be loaded. Please try again.";
                 return Page();
             }
+        }
+
+        /// <summary>
+        /// Everything the FROM-QUOTE form needs: the quote (accepted, and
+        /// readable by this user), the currency, and — 071 — the billing
+        /// schedule and the stage. Returns a redirect when the page must
+        /// not be shown at all, null otherwise. Used by GET and, 081, by a
+        /// refused POST that shows the form again.
+        /// </summary>
+        private async Task<IActionResult?> LoadFromQuoteAsync(Guid tenantId, bool isPost)
+        {
+            // ✅ CROSS-MODULE GATE: this page is about to read quote contents.
+            // NOTE: UserCanRead reads the claim directly and does NOT go
+            // through AuthorizationService, so it produces no log line —
+            // same as the Create Invoice button gate on Quotes/Detail.
+            if (!UserCanRead(Modules.Quotes))
+            {
+                _logger.LogWarning(
+                    "❌ Access denied (missing permission: quotes.read) while creating invoice from quote {QuoteId}",
+                    QuoteId);
+                return RedirectToPage("/AccessDenied");
+            }
+
+            Quote = await _quoteService.GetByIdAsync(tenantId, QuoteId!.Value);
+
+            if (Quote == null)
+            {
+                ErrorMessage = "Quote not found";
+                return RedirectToPage("/Quotes/Index");
+            }
+
+            if (Quote.Status != "Accepted")
+            {
+                ErrorMessage = "Can only create invoice from accepted quotes";
+                return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+            }
+
+            Currency = !string.IsNullOrEmpty(Quote.Currency) ? Quote.Currency : _tenantService.GetCurrencyCode();
+
+            // The dates are the person's on a POST — only a fresh form
+            // gets the defaults.
+            if (!isPost)
+            {
+                IssueDate = DateTime.Today;
+                DueDate = DateTime.Today.AddDays(30);
+            }
+
+            // ── 071: the billing schedule ─────────────────────
+            Billing = await _milestones.GetAsync(QuoteId.Value);
+
+            if (Billing.LoadFailed)
+            {
+                // Hard stop. "Could not read the schedule" and "there is no
+                // schedule" look identical in the DTO, and carrying on as if
+                // it were the second would bill the whole quote against a
+                // customer who agreed to stages.
+                ErrorMessage = "Couldn't read this quote's payment schedule, so no invoice has been started. " +
+                               "Try again from the quote.";
+                return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+            }
+
+            if (HasSchedule)
+            {
+                if (!MilestoneId.HasValue)
+                {
+                    ErrorMessage = $"This quote is billed in {Billing.Schedule.Rows.Count} stages. " +
+                                   "Pick a stage in the Payment schedule panel.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
+                Stage = Billing.Schedule.Rows.FirstOrDefault(r => r.Id == MilestoneId.Value);
+
+                if (Stage == null)
+                {
+                    ErrorMessage = "That payment stage is no longer on this quote.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
+                if (Stage.IsInvoiced)
+                {
+                    ErrorMessage = $"Stage {Stage.Sequence} ({Stage.Name}) is already covered by " +
+                                   $"{Stage.InvoiceNumber ?? "a draft invoice"}. " +
+                                   "Void it first if it needs replacing.";
+                    return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+                }
+
+                // The stage's own date is a SUGGESTION, so it pre-fills the
+                // due date on a fresh form when it has one.
+                if (!isPost && Stage.DueDateUtc.HasValue)
+                    DueDate = Stage.DueDateUtc.Value.Date;
+            }
+            else if (MilestoneId.HasValue)
+            {
+                // A stale link: the schedule was removed after somebody
+                // opened the quote page.
+                ErrorMessage = "This quote no longer has a payment schedule.";
+                return RedirectToPage("/Quotes/Detail", new { id = QuoteId.Value });
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Everything the MANUAL form needs: the deal, the catalogue in the
+        /// deal's currency, and the tax defaults. A redirect when the page
+        /// must not be shown, null otherwise. GET and, 081, a refused POST.
+        /// </summary>
+        private async Task<IActionResult?> LoadManualAsync(Guid tenantId)
+        {
+            // ✅ CROSS-MODULE GATE: about to read deal contents
+            if (!UserCanRead(Modules.Deals))
+            {
+                _logger.LogWarning(
+                    "❌ Access denied (missing permission: deals.read) while creating invoice from deal {DealId}",
+                    DealId);
+                return RedirectToPage("/AccessDenied");
+            }
+
+            Deal = await _dealService.GetDetailAsync(tenantId, DealId!.Value);
+
+            if (Deal == null)
+            {
+                ErrorMessage = "Deal not found";
+                return RedirectToPage("/Pipeline/Index");
+            }
+
+            // (018) Catalog for "Add from Product Catalog" — only with products.read.
+            if (UserCanRead(Modules.Products))
+            {
+                try
+                {
+                    // ⚠ 074: THE DEAL'S CURRENCY. Without it the catalogue
+                    // comes back priced in the WORKSPACE's currency and this
+                    // page hands those figures to an invoice denominated in
+                    // something else. MUST run after Deal is loaded.
+                    var paginated = await _productService.GetAllAsync(
+                        tenantId: tenantId, pageNumber: 1, pageSize: 1000,
+                        category: null, isActive: true, searchTerm: null,
+                        currency: Deal?.Currency ?? _tenantService.GetCurrencyCode());
+                    Products = paginated?.Items ?? new List<ProductListItem>();
+                }
+                catch (Exception pex)
+                {
+                    _logger.LogWarning(pex, "Could not load products for manual invoice");
+                    Products = new List<ProductListItem>();
+                }
+            }
+
+            try
+            {
+                // 081 (as Quotes/Create since 056): the stored rate is ALWAYS
+                // a percentage. The old "raw < 1 → ×100" guess turned a real
+                // 0.5% rate into 50% on every new line.
+                DefaultTaxRate = await _tenantService.GetDefaultTaxRateAsync();
+
+                // 074: the country's word for it — "GST", "VAT" — for the
+                // editor's column header.
+                var label = _tenantService.GetTaxLabel();
+                if (!string.IsNullOrWhiteSpace(label)) DefaultTaxRateName = label;
+            }
+            catch (Exception tex)
+            {
+                _logger.LogWarning(tex, "Could not load the tenant's default tax rate");
+            }
+
+            Currency = Deal.Currency ?? _tenantService.GetCurrencyCode();
+            return null;
         }
 
         public async Task<IActionResult> OnPostCreateFromQuoteAsync(bool sendImmediately = false)
@@ -385,32 +480,44 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             var permissionCheck = await ValidatePermissionAsync(Actions.Create);
             if (permissionCheck != null) return permissionCheck;
 
+            if (!QuoteId.HasValue)
+            {
+                ErrorMessage = "Quote ID is required";
+                return RedirectToPage();
+            }
+
+            // 081 — each custom field's message under its own input.
+            await LoadCustomFieldsAsync();
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
             try
             {
-                if (!QuoteId.HasValue)
-                {
-                    ErrorMessage = "Quote ID is required";
-                    return RedirectToPage();
-                }
-
-                // 074. Before anything is read or written.
+                // 074. Before anything is read or written. 081: shown on the
+                // form again rather than redirecting away from what was typed.
                 var dateProblem = DateProblem();
                 if (dateProblem != null)
-                {
-                    ErrorMessage = dateProblem;
-                    return RedirectToPage(new { QuoteId, MilestoneId });
-                }
+                    return await RedisplayFromQuoteAsync(dateProblem);
+
+                // 081 — a custom field is wrong: its message is under its own input.
+                if (CustomFieldForm.HasErrors(ModelState))
+                    return await RedisplayFromQuoteAsync("Please correct the highlighted fields.");
+
+                // A date box that failed to bind (a cleared box posts "") is said
+                // plainly rather than saving the default binding left behind. ONLY
+                // these keys: with nullable reference types on, an unposted string
+                // property also lands in ModelState, and must not block the save.
+                if (new[] { nameof(IssueDate), nameof(DueDate) }.Any(k => ModelState[k]?.Errors.Count > 0))
+                    return await RedisplayFromQuoteAsync("Some of the dates could not be read. Please check them and try again.");
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
 
                 // ── 071: re-read the schedule. ────────────────────────
                 //
-                // Not trusted from the form. The form was rendered at
-                // some point in the past, the schedule may have been
-                // re-cut since, and this handler is about to decide how
-                // much money to invoice. A failed read stops everything
-                // for the reason the OnGet path gives at length.
+                // Not trusted from the form. The schedule may have been
+                // re-cut since the form was rendered, and this handler is
+                // about to decide how much money to invoice. A failed read
+                // stops everything for the reason the GET path gives.
                 var billing = await _milestones.GetAsync(QuoteId.Value);
 
                 if (billing.LoadFailed)
@@ -449,24 +556,33 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     DueDateUtc = AsUtcDate(DueDate),
                     Notes = Notes,
                     CreatedBy = currentUser.FullName,
-                    SendImmediately = sendImmediately
+                    SendImmediately = sendImmediately,
+
+                    // 081 — the form states the invoice's fields (pre-filled
+                    // from the quote, then possibly changed). Null when the
+                    // field list could not be loaded: the server then copies
+                    // the quote's mapped values itself.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
                 };
 
                 var invoice = await _invoiceService.CreateFromQuoteAsync(dto);
 
+                // TempData is right from here: this response REDIRECTS.
                 SuccessMessage = ResultMessage(invoice, sendImmediately);
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
             }
             catch (InvalidOperationException ex)
             {
-                ErrorMessage = ex.Message;
-                return RedirectToPage(new { QuoteId, MilestoneId });
+                // The API's own sentence — a stage already billed, a required
+                // custom field. The form comes back as typed.
+                return await RedisplayFromQuoteAsync(ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating invoice from quote");
-                ErrorMessage = "Failed to create the invoice. Please try again.";
-                return RedirectToPage(new { QuoteId, MilestoneId });
+                return await RedisplayFromQuoteAsync("Failed to create the invoice. Please try again.");
             }
         }
 
@@ -476,32 +592,50 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             var permissionCheck = await ValidatePermissionAsync(Actions.Create);
             if (permissionCheck != null) return permissionCheck;
 
+            if (!DealId.HasValue)
+            {
+                ErrorMessage = "Deal ID is required";
+                return RedirectToPage();
+            }
+
+            // (018) Case-insensitive — the page sends camelCase. 081: read
+            // FIRST, so every refusal can put the lines back on the form.
+            List<InvoiceItemData>? items = null;
             try
             {
-                if (!DealId.HasValue)
-                {
-                    ErrorMessage = "Deal ID is required";
-                    return RedirectToPage();
-                }
+                items = JsonSerializer.Deserialize<List<InvoiceItemData>>(
+                    string.IsNullOrWhiteSpace(itemsJson) ? "[]" : itemsJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch (JsonException jex)
+            {
+                _logger.LogWarning(jex, "Unreadable itemsJson on the manual invoice form");
+            }
 
-                // 074. Before anything is parsed or written.
+            // 081 — each custom field's message under its own input.
+            await LoadCustomFieldsAsync();
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
+            try
+            {
+                // 074. Before anything is written.
                 var dateProblem = DateProblem();
                 if (dateProblem != null)
-                {
-                    ErrorMessage = dateProblem;
-                    return RedirectToPage(new { DealId });
-                }
-
-                // (018) Case-insensitive — the page sends camelCase. Without this
-                // every line arrived with an empty name and zero price.
-                var items = JsonSerializer.Deserialize<List<InvoiceItemData>>(
-                    itemsJson ?? "[]", new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    return await RedisplayManualAsync(items, dateProblem);
 
                 if (items == null || items.Count == 0)
-                {
-                    ErrorMessage = "Please add at least one item to the invoice";
-                    return RedirectToPage(new { DealId });
-                }
+                    return await RedisplayManualAsync(items, "Please add at least one item to the invoice.");
+
+                // 081 — a custom field is wrong: its message is under its own input.
+                if (CustomFieldForm.HasErrors(ModelState))
+                    return await RedisplayManualAsync(items, "Please correct the highlighted fields.");
+
+                // A date box that failed to bind (a cleared box posts "") is said
+                // plainly rather than saving the default binding left behind. ONLY
+                // these keys: with nullable reference types on, an unposted string
+                // property also lands in ModelState, and must not block the save.
+                if (new[] { nameof(IssueDate), nameof(DueDate) }.Any(k => ModelState[k]?.Errors.Count > 0))
+                    return await RedisplayManualAsync(items, "Some of the dates could not be read. Please check them and try again.");
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
@@ -516,6 +650,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     Notes = Notes,
                     CreatedBy = currentUser.FullName,
                     SendImmediately = sendImmediately,
+
+                    // 081 — null when the field list could not be loaded.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+
                     Lines = items.Select(i => new CreateInvoiceLineDto
                     {
                         ProductId = i.ProductId,
@@ -524,10 +664,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                         UnitPrice = i.UnitPrice,
                         Quantity = i.Quantity,            // 074: decimal, was int
 
-                        // 052 / 055 / 067 — all three now travel. See the
-                        // matching block in Edit.cshtml.cs for why each
-                        // one matters; TaxCode is the one a GST invoice
-                        // is legally incomplete without.
+                        // 052 / 055 / 067 — all three travel. TaxCode is the
+                        // one a GST invoice is legally incomplete without.
                         UnitOfMeasure = i.UnitOfMeasure,
                         LineDiscount = i.LineDiscount,
                         DiscountPercent = i.DiscountPercent,
@@ -538,20 +676,138 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 var invoice = await _invoiceService.CreateAsync(dto);
 
+                // TempData is right from here: this response REDIRECTS.
                 SuccessMessage = ResultMessage(invoice, sendImmediately);
                 return RedirectToPage("/Invoices/Detail", new { id = invoice.Id });
             }
             catch (InvalidOperationException ex)
             {
-                // e.g. a bad line, or a deal this user can't see
-                ErrorMessage = ex.Message;
-                return RedirectToPage(new { DealId });
+                // e.g. a bad line, a deal this user can't see, a required field
+                return await RedisplayManualAsync(items, ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating invoice manually");
-                ErrorMessage = "Failed to create invoice. Please try again.";
-                return RedirectToPage(new { DealId });
+                return await RedisplayManualAsync(items, "Failed to create invoice. Please try again.");
+            }
+        }
+
+        // ── 081: showing the form again, as posted ────────────────────
+
+        /// <summary>
+        /// A refused FROM-QUOTE save, shown again: the dates and notes are
+        /// bound properties, the custom field values are the posted ones,
+        /// and the reason is in PageError (this response renders).
+        /// </summary>
+        private async Task<IActionResult> RedisplayFromQuoteAsync(string message)
+        {
+            PageError = message;
+            await InitializePermissionsAsync();
+
+            TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
+            TenantCurrencyCode = _tenantService.GetCurrencyCode();
+
+            try
+            {
+                var stop = await LoadFromQuoteAsync(_currentUserService.GetCurrentTenantId(), isPost: true);
+                if (stop != null) return stop;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not redisplay the invoice-from-quote form for {QuoteId}", QuoteId);
+                ErrorMessage = message;
+                return RedirectToPage("/Quotes/Detail", new { id = QuoteId });
+            }
+
+            return Page();
+        }
+
+        /// <summary>A refused MANUAL save, shown again with the posted lines.</summary>
+        private async Task<IActionResult> RedisplayManualAsync(List<InvoiceItemData>? items, string message)
+        {
+            PageError = message;
+            await InitializePermissionsAsync();
+
+            TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
+            TenantCurrencyCode = _tenantService.GetCurrencyCode();
+
+            try
+            {
+                var stop = await LoadManualAsync(_currentUserService.GetCurrentTenantId());
+                if (stop != null) return stop;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not redisplay the manual invoice form for deal {DealId}", DealId);
+                ErrorMessage = message;
+                return RedirectToPage("/Pipeline/Index");
+            }
+
+            InitialItemsJson = InvoiceLinesSeed.FromPosted(items);
+            return Page();
+        }
+
+        /// <summary>
+        /// 081. The active Invoice custom fields. A failure is remembered
+        /// (CustomFieldsLoadFailed) so the form says why the fields are
+        /// missing and the save sends CustomFields = null.
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Invoice, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.SortOrder)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the New Invoice form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
+            }
+        }
+
+        /// <summary>
+        /// 081. Fill the invoice's fields from the quote's MAPPED ones
+        /// (Settings → Custom Fields → Quotes → "Copy to invoice field"),
+        /// through CustomFieldWireMapper — the same conversion the server
+        /// uses when an invoice is raised without this form, so the two can
+        /// never disagree. Only on a fresh form; a POST keeps what was typed.
+        /// Never throws: a failure just leaves the boxes empty.
+        /// </summary>
+        private async Task PrefillFromQuoteAsync()
+        {
+            if (Quote == null || CustomFieldsLoadFailed || ActiveCustomFields.Count == 0) return;
+            if (Quote.CustomFieldValues.Count == 0) return;
+
+            try
+            {
+                var quoteFields = await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Quote, includeInactive: true);
+                var targets = ActiveCustomFields.ToDictionary(f => f.Id);
+
+                foreach (var source in quoteFields.Where(f => f.MapToInvoiceFieldId.HasValue))
+                {
+                    if (!targets.TryGetValue(source.MapToInvoiceFieldId!.Value, out var target)) continue;
+                    if (!Quote.CustomFieldValues.TryGetValue(source.Id, out var wire)) continue;
+
+                    var converted = CustomFieldWireMapper.Convert(
+                        source.FieldType, source.Options, wire,
+                        target.FieldType, target.DecimalPlaces, target.Options);
+                    if (converted is null) continue;
+
+                    var key = target.Id.ToString();
+                    if (CustomFields.ContainsKey(key)) continue;
+
+                    CustomFields[key] = converted;
+                    PrefilledFromQuote++;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not pre-fill invoice custom fields from quote {QuoteId}", QuoteId);
             }
         }
 
@@ -601,6 +857,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             return wantedToIssue
                 ? "Invoice saved as a draft but NOT issued — it's over your workspace's limits, so a manager of this deal's team (or an admin) needs to issue it. Open it to see why."
                 : $"Draft invoice created{stage}. Issue it when it's ready — it gets its number then.";
+        }
+
+        /// <summary>
+        /// 081. The manual editor's seed from posted lines. InvoiceItemData
+        /// has no line id (a manual invoice's lines are replaced on save),
+        /// so it is turned into the quote shape and QuoteItemsSeed — the
+        /// one seed builder — does the rest.
+        /// </summary>
+        private static class InvoiceLinesSeed
+        {
+            public static string FromPosted(IEnumerable<InvoiceItemData>? items)
+                => items == null
+                    ? "[]"
+                    : QuoteItemsSeed.FromPosted(items.Select(i => new QuoteItemData
+                    {
+                        ProductId       = i.ProductId,
+                        Name            = i.Name ?? string.Empty,
+                        Description     = i.Description ?? string.Empty,
+                        UnitPrice       = i.UnitPrice,
+                        Quantity        = i.Quantity,
+                        UnitOfMeasure   = i.UnitOfMeasure,
+                        LineDiscount    = i.LineDiscount,
+                        DiscountPercent = i.DiscountPercent,
+                        TaxRate         = i.TaxRate,
+                        TaxCode         = i.TaxCode
+                    }));
         }
 
         // 074: the nested InvoiceItemData is GONE. It duplicated the

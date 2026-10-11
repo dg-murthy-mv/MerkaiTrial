@@ -42,6 +42,9 @@
 //
 // Columns are widened / added by Sql/052_LineQuantityAndUnits.sql,
 // Sql/055_LineDiscountPercent.sql and Sql/067_LineTaxCode.sql.
+// 082 adds CustomFieldsSnapshot — the product's printed custom fields,
+// frozen onto the line when the quote is sent (Sql/082_LineCustomFields.sql).
+//
 // InvoiceLine in Invoice.cs gets exactly the same two changes in the same
 // round — a quote that can say 12.5 against an invoice that rounds it to
 // 12 would be worse than neither.
@@ -111,6 +114,16 @@ namespace MerkaiTrial.Domain.Entities
         /// line never carries whitespace onto an invoice.
         /// </summary>
         public string? TaxCode { get; set; }
+
+        /// <summary>
+        /// 082: NVARCHAR(MAX), nullable. The PRODUCT's custom fields marked
+        /// "Print on quotes &amp; invoices", as they were when the quote was
+        /// SENT — label, type and value (DocumentFieldEntry list as JSON).
+        /// Printed under this line on the PDF and the customer's link. NULL
+        /// on a custom line, on a quote not yet sent, and on lines sent before
+        /// 082 (those print the product's current values, as before).
+        /// </summary>
+        public string? CustomFieldsSnapshot { get; set; }
 
         // Audit Fields
         public DateTime CreatedAtUtc { get; set; }

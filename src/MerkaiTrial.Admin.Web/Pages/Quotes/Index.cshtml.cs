@@ -42,12 +42,32 @@
 //      This needs IInvoiceService, which is the only new constructor
 //      argument; it is already registered in DI because DetailModel uses
 //      it, so nothing else has to change.
+//
+// ── 081 ──────────────────────────────────────────────────────────────
+//   5. CUSTOM COLUMNS. Quote fields switched to "Show on the list" appear
+//      as columns in the List view (after Expires, so the existing sort
+//      columns keep their positions), and their values are part of what
+//      the quick search matches — type a PO number, find the quote. If
+//      the field list cannot be loaded the list still renders, without
+//      the extra columns.
+//   7. A failed load put its message in TempData on a response that
+//      renders, so it appeared on the NEXT page. Removed: the view's own
+//      "Couldn't load your quotes" panel is the message.
+//   6. MOVING A QUOTE TO SENT FROM THE LIST GAVE THE CUSTOMER A BROKEN
+//      LINK. OnPostUpdateStatus called the obsolete three-argument
+//      UpdateStatusAsync, which sends no BaseUrl, so the quote was stored
+//      with a RELATIVE "/q/…" link — useless in the email that goes out
+//      in the same step. It passes the site's address now, exactly as the
+//      Detail page does.
 // =====================================================================
 
 using System.Globalization;
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldColumns, CustomFieldFormatter
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;        // 081 — CustomFieldEntityTypes
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -64,6 +84,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly ICurrentTenantService _tenantService;
         private readonly IInvoiceService _invoiceService;
         private readonly IQuoteApprovalService _approvals;
+        private readonly ICustomFieldService _customFields;      // 081
         private readonly ILogger<IndexModel> _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -78,10 +99,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             ICurrentTenantService tenantService,
             IInvoiceService invoiceService,
             IQuoteApprovalService approvals,
+            ICustomFieldService customFields,                    // 081
             IAuthorizationService authorizationService,
             ILogger<IndexModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields = customFields;
             _quoteService = quoteService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
@@ -99,6 +122,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
         /// <summary>Approval requests waiting for the current user's decision.</summary>
         public int PendingForMeCount { get; private set; }
+
+        /// <summary>081. The "Show on the list" quote fields, in order. Empty when none, or when they could not be loaded.</summary>
+        public List<CustomFieldDefinitionDto> ListColumns { get; private set; } = new();
 
         // ── Tenant context (use in view, never hardcode ₹ / $ / INR) ─
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
@@ -139,6 +165,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 Quotes = await _quoteService.GetAllAsync(
                     tenantId, null, StatusFilter, FromDate, ToDate);
 
+                // 081 — custom columns. Never blocks the page.
+                try
+                {
+                    ListColumns = CustomFieldColumns.Pick(
+                        await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Quote, includeInactive: false));
+                }
+                catch (Exception cfEx)
+                {
+                    _logger.LogWarning(cfEx, "Custom fields could not be loaded for the quotes list");
+                    ListColumns = new();
+                }
+
                 // Approvals badge — never blocks the page.
                 try
                 {
@@ -158,7 +196,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 // the first one" state underneath a red "failed to load"
                 // banner, which reads as "your data is gone".
                 LoadFailed = true;
-                ErrorMessage = "Failed to load quotes. Please try again.";
+                // 081: no TempData message — this response RENDERS, so it
+                // would surface on the user's NEXT page. The view's own
+                // "Couldn't load your quotes" panel says it here.
                 return Page();
             }
         }
@@ -229,7 +269,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 if (check != null) return check;
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
-                await _quoteService.UpdateStatusAsync(tenantId, quoteId, status);
+
+                // 081: the site's address, so a quote sent from here gets a
+                // full customer link (see note 6 in the header).
+                var baseUrl = $"{Request.Scheme}://{Request.Host}";
+                await _quoteService.UpdateStatusAsync(tenantId, quoteId, status, baseUrl);
                 SuccessMessage = $"Quote moved to {Label(status)}.";
             }
             catch (InvalidOperationException ex)
@@ -427,6 +471,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         /// </summary>
         public static bool HasExpiry(DateTime expiresUtc)
             => expiresUtc != default && expiresUtc.Year > 1900;
+
+        // ── 081: custom columns ───────────────────────────────────────
+
+        private CultureInfo? _cfCulture;
+        private string? _cfDateFormat;
+
+        private CultureInfo CfCulture => _cfCulture ??= CustomFieldFormatter.ResolveCulture(CultureName);
+        private string CfDateFormat => _cfDateFormat ??= TenantCtx.GetDateFormat();
+
+        /// <summary>081. One custom cell, formatted for this workspace. Empty when unset.</summary>
+        public string ColumnValue(QuoteListItem quote, CustomFieldDefinitionDto field)
+            => CustomFieldColumns.Value(field, quote.CustomFieldValues, CfCulture, CfDateFormat);
+
+        /// <summary>081. The custom values the quick search should match, lower-case.</summary>
+        public string CustomSearchText(QuoteListItem quote)
+            => ListColumns.Count == 0
+                ? string.Empty
+                : CustomFieldColumns.SearchText(ListColumns, quote.CustomFieldValues, CfCulture, CfDateFormat);
 
         public static bool IsLive(string? status)
             => string.Equals(status, "Sent", StringComparison.OrdinalIgnoreCase)

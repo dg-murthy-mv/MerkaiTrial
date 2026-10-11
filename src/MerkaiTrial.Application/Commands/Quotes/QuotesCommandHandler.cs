@@ -4,6 +4,33 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 081 — CUSTOM FIELDS ON QUOTES
+//   ✅ GetQuotes: each row carries its "Show on the list" values.
+//   ✅ GetQuoteById: every stored value (CustomFieldValues) and what the
+//      quote prints (DocumentFields — frozen copy once sent, live preview
+//      before).
+//   ✅ CreateQuote / UpdateQuote: the form's values are staged through
+//      CustomFieldValueWriter BEFORE the save, so they commit with the
+//      quote or not at all. Required fields are enforced only when the
+//      caller sends a map; an API caller that sends none is unaffected.
+//      UpdateQuote writes them only on an editable quote — the existing
+//      status check runs first.
+//   ✅ UpdateQuoteStatus: moving to SENT freezes the printed fields onto
+//      the quote (CustomFieldsSnapshot / CustomFieldsFrozenAtUtc), in the
+//      same save as the status change. Re-sending a revised quote takes a
+//      fresh copy.
+//   ✅ GetQuoteByToken: the customer's page prints the frozen copy.
+//   QuoteDocument.IsFrozen says which statuses print the frozen copy — the
+//   same five statuses the public link works in.
+//
+// 082 — PRODUCT FIELDS UNDER EACH LINE
+//   ✅ All three read paths set QuoteItemDto.DocumentFields
+//      (QuoteDocument.ResolveLinesAsync): a sent quote's lines print their
+//      frozen copy; a draft's print the product as it is now.
+//   ✅ Moving to SENT freezes every product line's copy
+//      (QuoteItems.CustomFieldsSnapshot) in the same save as the status
+//      and the quote-level copy.
+//
 // 067 — TAX CLASSIFICATION ON THE LINE
 //   ✅ Create and Update snapshot TaxCode onto each line, filling it from
 //      the product when the caller sent nothing (LineTaxCodes, at the
@@ -165,6 +192,7 @@
 // uses the same status handler with no signed-in user.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;   // 081
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Common;                 // 053: CustomerNaming, 055: LineDiscounts
 using MerkaiTrial.Application.Configuration;          // 052: UnitsOfMeasure
@@ -228,7 +256,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 .OrderByDescending(q => q.CreatedAtUtc)
                 .ToListAsync();
 
-            return quotesData.Select(q => new QuoteListItem(
+            var rows = quotesData.Select(q => new QuoteListItem(
                 q.Id,
                 q.DealId,
                 q.Number,
@@ -245,6 +273,60 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 q.Items.Count,
                 q.CreatedAtUtc
             )).ToList();
+
+            // 081 — the "Show on the list" custom values, for these rows only.
+            var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(_db, tenantId, CustomFieldEntityTypes.Quote);
+            if (defs.Any(d => d.ShowInList) && rows.Count > 0)
+            {
+                var values = await CustomFieldListQuery.ListValuesAsync(
+                    _db, tenantId, defs, rows.Select(r => r.Id).ToList());
+                foreach (var r in rows)
+                    if (values.TryGetValue(r.Id, out var map)) r.CustomFieldValues = map;
+            }
+
+            return rows;
+        }
+    }
+
+    /// <summary>
+    /// 081. Which quote statuses print the FROZEN custom fields: the ones
+    /// in which the customer holds the quote. Draft, Revised, pending and
+    /// approved quotes print the live values — they have not been sent, or
+    /// are being changed before being sent again.
+    /// </summary>
+    public static class QuoteDocument
+    {
+        public static bool IsFrozen(QuoteStatus status)
+            => status is QuoteStatus.Sent or QuoteStatus.Viewed or QuoteStatus.Accepted
+                      or QuoteStatus.Rejected or QuoteStatus.Expired;
+
+        /// <summary>The printed fields for a quote row, frozen or live.</summary>
+        public static async Task<(List<DocumentFieldEntry> Fields, DateTime? FrozenAt)> ResolveAsync(
+            FlowDbContext db, Quote quote, CancellationToken ct = default)
+        {
+            var frozen = IsFrozen(quote.Status) && quote.CustomFieldsSnapshot is not null;
+            var fields = await DocumentFields.ResolveAsync(
+                db, quote.TenantId, CustomFieldEntityTypes.Quote, quote.Id,
+                frozen, quote.CustomFieldsSnapshot, ct);
+            return (fields, frozen ? quote.CustomFieldsFrozenAtUtc : null);
+        }
+
+        /// <summary>
+        /// 082. Line id → the product fields each live line prints. A sent
+        /// quote's line uses its frozen copy (taken when it was sent); a
+        /// draft's, or a line sent before 082 with no copy, shows the product
+        /// as it is now. <paramref name="quote"/> must have Items loaded.
+        /// </summary>
+        public static Task<Dictionary<Guid, List<DocumentFieldEntry>>> ResolveLinesAsync(
+            FlowDbContext db, Quote quote, CancellationToken ct = default)
+        {
+            var frozen = IsFrozen(quote.Status);
+            return DocumentFields.ResolveLinesAsync(db, quote.TenantId,
+                quote.Items
+                    .Where(i => !i.IsDeleted)
+                    .Select(i => new DocumentFields.LineFieldSource(
+                        i.Id, i.ProductId, i.CustomFieldsSnapshot, frozen && i.CustomFieldsSnapshot != null)),
+                ct);
         }
     }
 
@@ -273,8 +355,18 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (quote == null)
                 throw new KeyNotFoundException($"Quote {quoteId} not found");
 
+            // 081
+            var customValues = await CustomFieldValueWriter.ReadAsync(
+                _db, tenantId, CustomFieldEntityTypes.Quote, quote.Id, CancellationToken.None);
+            var (printed, frozenAt) = await QuoteDocument.ResolveAsync(_db, quote);
+            var lineFields = await QuoteDocument.ResolveLinesAsync(_db, quote);   // 082
+
             return new QuoteDto
             {
+                CustomFieldValues         = customValues,    // 081
+                DocumentFields            = printed,         // 081
+                DocumentFieldsFrozenAtUtc = frozenAt,        // 081
+
                 Id            = quote.Id,
                 TenantId      = quote.TenantId,
                 DealId        = quote.DealId,
@@ -308,6 +400,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 PublicLinkToken = quote.PublicLinkToken,
                 Items         = quote.Items.Select(i => new QuoteItemDto
                 {
+                    // 082 — the product fields printed under this line
+                    DocumentFields = lineFields.GetValueOrDefault(i.Id) ?? new List<DocumentFieldEntry>(),
                     Id             = i.Id,
                     QuoteId        = i.QuoteId,
                     ProductId      = i.ProductId,
@@ -545,6 +639,14 @@ namespace MerkaiTrial.Application.Commands.Quotes
             }
 
             _db.Quotes.Add(quote);
+
+            // 081 — staged, not saved: they commit with the quote below.
+            // Throws CustomFieldValidationException (a 400) before anything
+            // is written when a required field is empty.
+            await CustomFieldValueWriter.ApplyAsync(
+                _db, dto.TenantId, CustomFieldEntityTypes.Quote, quote.Id, dto.CustomFields,
+                currentUser.FullName, isNew: true, CancellationToken.None);
+
             await SaveWithNumberRetryAsync(quote, dto.TenantId);
             await _audit.WriteAsync(
                  AuditAction.QuoteCreated, AuditEntityType.Quote, quote.Id, dto.TenantId,
@@ -821,6 +923,38 @@ namespace MerkaiTrial.Application.Commands.Quotes
             quote.Status = newStatus;
             quote.UpdatedAtUtc = DateTime.UtcNow;
             quote.UpdatedBy = changedBy;
+
+            // ── 081: FREEZE WHAT THE CUSTOMER IS SENT ─────────────────────
+            // The printed custom fields, label and value, copied onto the
+            // quote in this same save. From here on the PDF, the customer's
+            // link and the quote page print this copy, whatever later
+            // happens to the field definitions. A revised quote that is sent
+            // again gets a fresh copy, because it is a new offer.
+            if (newStatus == QuoteStatus.Sent)
+            {
+                var printed = await DocumentFields.BuildAsync(
+                    _db, tenantId, CustomFieldEntityTypes.Quote, quote.Id);
+                quote.CustomFieldsSnapshot    = DocumentFields.Serialize(printed);
+                quote.CustomFieldsFrozenAtUtc = DateTime.UtcNow;
+
+                // 082 — and each product line's printed product fields, in
+                // the same save. IgnoreQueryFilters for the reason the quote
+                // read above gives; scoped by quote AND tenant explicitly.
+                var lines = await _db.QuoteItems
+                    .IgnoreQueryFilters()
+                    .Where(i => i.QuoteId == quote.Id && i.TenantId == tenantId && !i.IsDeleted)
+                    .ToListAsync();
+
+                var frozenProducts = await DocumentFields.FreezeProductsAsync(
+                    _db, tenantId, lines.Select(i => i.ProductId));
+
+                foreach (var line in lines)
+                {
+                    line.CustomFieldsSnapshot = line.ProductId is { } pid && frozenProducts.TryGetValue(pid, out var copy)
+                        ? copy
+                        : null;
+                }
+            }
 
             // ── 037: tell the deal's owner ────────────────────────────────
             // Added BEFORE the save, so the notification and the status
@@ -1113,6 +1247,14 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             if (dto.Items == null || dto.Items.Count == 0)
                 throw new InvalidOperationException("Add at least one item to the quote.");
+
+            // 081 — after the status checks above, so a sent quote's values
+            // cannot be changed through this door either. Staged, not saved;
+            // throws (a 400) listing every problem before anything changes.
+            var editor = await _currentUserService.GetCurrentUserAsync();
+            await CustomFieldValueWriter.ApplyAsync(
+                _db, tenantId, CustomFieldEntityTypes.Quote, quoteId, dto.CustomFields,
+                editor?.FullName ?? "System", isNew: false, CancellationToken.None);
 
             // 055 — see CreateQuoteHandler. Resolve before anything reads
             // LineDiscount.
@@ -1416,8 +1558,20 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // so getting this wrong is the most visible version of the bug:
             // it addressed them by their own first and last name under a
             // heading that says who the quote is FOR.
+            // 081 — the custom fields printed on the customer's copy: the
+            // frozen copy taken when the quote was sent. A quote sent before
+            // 081 has none and prints its current values instead.
+            // CustomFieldValues is deliberately NOT set: fields nobody chose
+            // to print must not reach an anonymous page.
+            var (printedFields, printedAt) = await QuoteDocument.ResolveAsync(_db, quote, ct);
+            var lineFields = await QuoteDocument.ResolveLinesAsync(_db, quote, ct);   // 082
+
             return new QuoteDto
             {
+                // 081
+                DocumentFields            = printedFields,
+                DocumentFieldsFrozenAtUtc = printedAt,
+
                 // 065
                 Seller = seller,
 
@@ -1446,6 +1600,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 VerticalName = quote.Deal?.Vertical?.Name,
                 Items = quote.Items.Select(i => new QuoteItemDto
                 {
+                    // 082 — the product fields printed under this line
+                    DocumentFields = lineFields.GetValueOrDefault(i.Id) ?? new List<DocumentFieldEntry>(),
                     Id = i.Id,
                     QuoteId = i.QuoteId,
                     ProductId = i.ProductId,

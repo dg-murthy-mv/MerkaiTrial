@@ -26,6 +26,24 @@
 //   Lead fields can also name a Contact field and a Deal field that
 //   receive their value on conversion (CustomFieldDefinition.MapTo…).
 //
+// 080 — Product is an enabled entity type, guarded by products.* for
+//   records. Its values stay on the product; quotes do not copy them yet
+//   (that is the quotes round, which freezes values at issue time).
+//
+// 081 — Quote and Invoice are enabled entity types, guarded by quotes.*
+//   and invoices.* for records. Two new per-field settings:
+//     PrintOnDocuments     the value is printed on the PDF and on the
+//                          customer's quote link (SupportsPrint says
+//                          which record types offer the switch)
+//     MapToInvoiceFieldId  on a Quote field: the Invoice field that
+//                          receives its value when an invoice is raised
+//                          from the quote (SupportsInvoiceMapping)
+//   082 — Product fields can print too: under every quote / invoice line
+//   that sells the product (SupportsPrint now includes Product).
+//   CustomFieldWireMapper is the one conversion between two fields of the
+//   same type — used by the quote → invoice copy on the server AND by the
+//   invoice form's pre-fill, so the form shows exactly what will be saved.
+//
 // The value rules live here, in the Application project, because both
 // the WebApi (which must refuse a bad value) and the Admin.Web page
 // (which shows the error beside the right input before posting) call
@@ -50,19 +68,23 @@ namespace MerkaiTrial.Application.Configuration
         public const string Deal    = "Deal";       // 077
         public const string Company = "Company";    // 078
         public const string Lead    = "Lead";       // 079
+        public const string Product = "Product";    // 080
+        public const string Quote   = "Quote";      // 081
+        public const string Invoice = "Invoice";    // 081
 
         /// <summary>
         /// The entity types that can carry custom fields TODAY: Contacts
-        /// (075), Deals (077), Companies (078) and Leads (079).
+        /// (075), Deals (077), Companies (078), Leads (079),
+        /// Products (080), Quotes and Invoices (081).
         ///
         /// Anything not in this list is refused by the API, so a hand-made
-        /// request for EntityType "Invoice" cannot create fields that no
+        /// request for EntityType "Payment" cannot create fields that no
         /// page will ever render.
         /// </summary>
-        public static readonly IReadOnlyList<string> Enabled = new[] { Contact, Deal, Company, Lead };
+        public static readonly IReadOnlyList<string> Enabled = new[] { Contact, Deal, Company, Lead, Product, Quote, Invoice };
 
         /// <summary>Every type the Settings page lists, enabled or not, in order.</summary>
-        public static readonly IReadOnlyList<string> Planned = new[] { Contact, Company, Deal, Lead };
+        public static readonly IReadOnlyList<string> Planned = new[] { Contact, Company, Deal, Lead, Product, Quote, Invoice };
 
         /// <summary>The canonical spelling of an enabled type, or null.</summary>
         public static string? Normalise(string? value)
@@ -81,6 +103,9 @@ namespace MerkaiTrial.Application.Configuration
             Deal    => Modules.Deals,
             Company => Modules.Companies,
             Lead    => Modules.Leads,
+            Product => Modules.Products,
+            Quote   => Modules.Quotes,
+            Invoice => Modules.Invoices,
             _ => throw new ArgumentOutOfRangeException(nameof(entityType), entityType, "Unknown entity type")
         };
 
@@ -90,6 +115,9 @@ namespace MerkaiTrial.Application.Configuration
             Deal    => "Deals",
             Company => "Companies",
             Lead    => "Leads",
+            Product => "Products",
+            Quote   => "Quotes",
+            Invoice => "Invoices",
             _ => entityType
         };
 
@@ -99,6 +127,9 @@ namespace MerkaiTrial.Application.Configuration
             Deal    => "deal",
             Company => "company",
             Lead    => "lead",
+            Product => "product",
+            Quote   => "quote",
+            Invoice => "invoice",
             _ => "record"
         };
 
@@ -108,8 +139,28 @@ namespace MerkaiTrial.Application.Configuration
             Deal    => "bi-kanban",
             Company => "bi-building",
             Lead    => "bi-funnel",
+            Product => "bi-box-seam",
+            Quote   => "bi-file-earmark-text",
+            Invoice => "bi-receipt",
             _ => "bi-collection"
         };
+
+        /// <summary>
+        /// 081. Record types whose fields can be switched to "Print on
+        /// quotes &amp; invoices". Quote and Invoice fields print in the
+        /// document's "Additional details" block; 082 — Product fields
+        /// print under every line that sells the product.
+        /// The server forces the flag off for every other type.
+        /// </summary>
+        public static bool SupportsPrint(string entityType)
+            => entityType is Quote or Invoice or Product;
+
+        /// <summary>
+        /// 081. Record types whose fields can name an Invoice field to
+        /// receive their value when an invoice is raised from them.
+        /// </summary>
+        public static bool SupportsInvoiceMapping(string entityType)
+            => entityType is Quote;
     }
 
     // =================================================================
@@ -437,5 +488,84 @@ namespace MerkaiTrial.Application.Configuration
                 CustomFieldTypes.Checkbox => flag == true ? "true" : null,
                 _                         => null
             };
+    }
+
+    // =================================================================
+    // FIELD → FIELD CONVERSION (081)
+    // =================================================================
+
+    /// <summary>
+    /// 081. Carries one value from a field on one kind of record to a
+    /// field of THE SAME TYPE on another — a quote's "PO number" onto the
+    /// invoice raised from it. The same rules as the 079 lead conversion:
+    ///
+    ///   text / date / checkbox   carried as they are
+    ///   number                   rounded to the TARGET's decimal places,
+    ///                            so the target's own form never refuses it
+    ///   dropdown                 matched by CHOICE NAME (case-insensitive),
+    ///                            because the two fields' keys differ. A
+    ///                            choice the target lacks, or has retired,
+    ///                            is not carried.
+    ///
+    /// Works on the wire strings, so the server copy and the invoice
+    /// form's pre-fill share it. Null = nothing to carry.
+    /// </summary>
+    public static class CustomFieldWireMapper
+    {
+        public static string? Convert(
+            string sourceType,
+            IReadOnlyList<CustomFieldOptionDto> sourceOptions,
+            string? wire,
+            string targetType,
+            int targetDecimalPlaces,
+            IReadOnlyList<CustomFieldOptionDto> targetOptions)
+        {
+            if (string.IsNullOrWhiteSpace(wire)) return null;
+            if (!string.Equals(sourceType, targetType, StringComparison.Ordinal)) return null;
+
+            var value = wire.Trim();
+
+            switch (targetType)
+            {
+                case CustomFieldTypes.Text:
+                    return value.Length > CustomFieldLimits.TextValueMaxLength
+                        ? value[..CustomFieldLimits.TextValueMaxLength]
+                        : value;
+
+                case CustomFieldTypes.Number:
+                {
+                    if (!decimal.TryParse(value,
+                            NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                            CultureInfo.InvariantCulture, out var n))
+                        return null;
+                    var places = Math.Clamp(targetDecimalPlaces, 0, CustomFieldLimits.MaxDecimalPlaces);
+                    return decimal.Round(n, places, MidpointRounding.AwayFromZero)
+                                  .ToString("0.####", CultureInfo.InvariantCulture);
+                }
+
+                case CustomFieldTypes.Date:
+                    return DateOnly.TryParseExact(value, "yyyy-MM-dd",
+                               CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
+                        ? value
+                        : null;
+
+                case CustomFieldTypes.Checkbox:
+                    return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ? "true" : null;
+
+                case CustomFieldTypes.Dropdown:
+                {
+                    var label = sourceOptions.FirstOrDefault(o => o.Key == value)?.Label;
+                    if (string.IsNullOrWhiteSpace(label)) return null;
+
+                    var match = targetOptions.FirstOrDefault(o =>
+                        o.IsActive &&
+                        string.Equals(o.Label?.Trim(), label.Trim(), StringComparison.OrdinalIgnoreCase));
+                    return string.IsNullOrEmpty(match?.Key) ? null : match.Key;
+                }
+
+                default:
+                    return null;
+            }
+        }
     }
 }

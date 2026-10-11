@@ -6,9 +6,55 @@
 //   NOTE:    ProductListItem and ProductDto no longer carry Currency —
 //            update those DTOs to remove the Currency field,
 //            or keep it and populate from ICurrentTenantService
+//
+// ── 080: CUSTOM FIELDS ON PRODUCTS, AND THE LIST FIXES ──────────────
+//
+//   • Create / Update stage the product's custom field values with
+//     CustomFieldValueWriter.ApplyAsync BEFORE SaveChangesAsync, so the
+//     product, its prices, its bundle contents and its custom values
+//     commit together or not at all. GetById reads them back
+//     (CustomFieldValueWriter.ReadAsync) for the product page and Edit.
+//
+//   • The list searches custom text values and dropdown choices too,
+//     takes ?cf= filters, and returns the "Show on the list" values for
+//     the rows on the page only — the same shared CustomFieldListQuery
+//     the Contacts, Deals, Companies and Leads lists use.
+//
+//   • The list CLAMPS page and size here, where the data is: page 0 used
+//     to ask SQL for a negative OFFSET, and any page size was accepted.
+//     The cap is 1000, not 100, ON PURPOSE: the bundle picker on the
+//     product form and the quote line editor load the whole catalogue in
+//     one call (pageSize 1000), and a lower cap would silently cut their
+//     dropdowns short. The Products list itself only offers 10–100.
+//
+//   • The order is STABLE (Category, Name, then Id). Two products with
+//     the same category and name could swap places between pages, so one
+//     showed twice and the other never. A page past the end (after a
+//     delete, say) becomes the last page instead of an empty one.
+//
+//   • Search ignores case explicitly rather than relying on the
+//     database collation.
+//
+//   • VALIDATION SENTENCES. The category guard, the price grid and the
+//     bundle check all throw InvalidOperationException with a sentence
+//     meant for the person. Create and Update now wrap exactly those
+//     steps and rethrow them as ProductValidationException, so the
+//     controller can return them as a 400 — and ONLY them: an
+//     InvalidOperationException from EF during the save is still a
+//     logged 500 whose internal wording never reaches the page.
+//
+//   • AUDIT. ProductCreated { name, type, category } and ProductUpdated
+//     { name, changed: [...] } — field NAMES only, "customFields" when
+//     any custom value changed (see AuditChanges). ProductPriceChanged
+//     is still written on a price or tax change, with the figures, as
+//     before. Every audit write now sits AFTER the save inside its own
+//     try/catch: a saved product must never report failure because its
+//     audit row could not be written (Delete included).
+//
+//   • The stray "using DocumentFormat.OpenXml.Presentation;" is gone.
 // =====================================================================
 
-using DocumentFormat.OpenXml.Presentation;
+using MerkaiTrial.Application.Commands.CustomFields;   // 080
 using MerkaiTrial.Application.Configuration;   // 051: ProductKinds, UnitsOfMeasure
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
@@ -17,14 +63,36 @@ using MerkaiTrial.Application.Services.Tenants;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;                    // 080
 
 
 namespace MerkaiTrial.Application.Commands.Products;
+
+/// <summary>
+/// 080. A product could not be saved for a reason the PERSON can fix — an
+/// unknown category, a bad price row, a bundle that contains itself, a
+/// missing name. The message is a sentence written for them, and the
+/// controller returns it as a 400.
+///
+/// Derived from InvalidOperationException so any older catch still
+/// catches it.
+/// </summary>
+public class ProductValidationException : InvalidOperationException
+{
+    public ProductValidationException(string message) : base(message) { }
+}
 
 public class GetProductsHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
     private readonly ICurrentTenantService _tenant;
+
+    /// <summary>
+    /// 080. The most rows one call may ask for. 1000, not 100, because the
+    /// bundle picker and the quote line editor load the whole catalogue
+    /// in one call; see the header.
+    /// </summary>
+    public const int MaxPageSize = 1000;
 
     public GetProductsHandler(FlowDbContext db, ICurrentTenantService tenant)
     {
@@ -51,7 +119,7 @@ public class GetProductsHandler : ICommandHandler
     /// them are. No extra query is run in that case either —
     /// ProductPricing.LookupAsync returns early.
     /// </summary>
-    public async Task<PaginatedResult<ProductListItem>> Handle(
+    public Task<PaginatedResult<ProductListItem>> Handle(
         Guid tenantId,
         int pageNumber        = 1,
         int pageSize          = 25,
@@ -66,7 +134,34 @@ public class GetProductsHandler : ICommandHandler
         // and passes both explicitly.
         string? currency      = null,
         CancellationToken cancellationToken = default)
+        => Handle(tenantId, pageNumber, pageSize, category, isActive, searchTerm,
+                  currency, customFilters: null, cancellationToken);
+
+    /// <summary>
+    /// 080. The same read with custom field filters (decoded ?cf= values).
+    ///
+    /// A SEPARATE OVERLOAD with every parameter required, rather than one
+    /// more optional parameter on the method above: any existing caller
+    /// that passes its CancellationToken positionally (eighth argument)
+    /// keeps compiling against the original signature, and a call with
+    /// all nine arguments can only mean this one — so the two never
+    /// become ambiguous.
+    /// </summary>
+    public async Task<PaginatedResult<ProductListItem>> Handle(
+        Guid tenantId,
+        int pageNumber,
+        int pageSize,
+        string? category,
+        bool? isActive,
+        string? searchTerm,
+        string? currency,
+        IReadOnlyList<CustomFieldFilter>? customFilters,
+        CancellationToken cancellationToken)
     {
+        // 080 — clamped HERE. See the header for why the cap is 1000.
+        pageSize   = Math.Clamp(pageSize, 1, MaxPageSize);
+        pageNumber = Math.Max(pageNumber, 1);
+
         // Currency is tenant-level — fetch once, apply to all items
         var currencySymbol = _tenant.GetCurrencySymbol();
         var currencyCode   = _tenant.GetCurrencyCode();
@@ -77,22 +172,62 @@ public class GetProductsHandler : ICommandHandler
                              ?? CurrencyConfiguration.NormaliseCode(currencyCode)
                              ?? string.Empty;
 
+        // 080 — the ACTIVE Product custom fields: search, filters, columns.
+        var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+            _db, tenantId, CustomFieldEntityTypes.Product, cancellationToken);
+
         var query = _db.Products
+            .AsNoTracking()
             .Where(p => p.TenantId == tenantId && !p.IsDeleted);
 
-        if (!string.IsNullOrEmpty(category))
-            query = query.Where(p => p.Category == category);
+        if (!string.IsNullOrWhiteSpace(category))
+        {
+            var cat = category.Trim();
+            query = query.Where(p => p.Category == cat);
+        }
 
         if (isActive.HasValue)
             query = query.Where(p => p.IsActive == isActive.Value);
 
-        if (!string.IsNullOrEmpty(searchTerm))
-            query = query.Where(p =>
-                p.Name.Contains(searchTerm) ||
-                (p.Sku != null && p.Sku.Contains(searchTerm)) ||
-                (p.Description != null && p.Description.Contains(searchTerm)));
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            // 080 — case ignored explicitly, and custom text values and
+            // dropdown choice names searched too. Null = no custom field
+            // could match, so the plain search runs on its own.
+            var s = searchTerm.Trim().ToLower();
+            var cfMatches = CustomFieldListQuery.SearchMatches(_db, tenantId, defs, s);
+
+            if (cfMatches is null)
+            {
+                query = query.Where(p =>
+                    p.Name.ToLower().Contains(s) ||
+                    (p.Sku != null && p.Sku.ToLower().Contains(s)) ||
+                    (p.Description != null && p.Description.ToLower().Contains(s)));
+            }
+            else
+            {
+                query = query.Where(p =>
+                    p.Name.ToLower().Contains(s) ||
+                    (p.Sku != null && p.Sku.ToLower().Contains(s)) ||
+                    (p.Description != null && p.Description.ToLower().Contains(s)) ||
+                    cfMatches.Contains(p.Id));
+            }
+        }
+
+        // 080 — custom field filters, as id subqueries (shared helper).
+        foreach (var clause in CustomFieldListQuery.FilterClauses(_db, tenantId, defs, customFilters))
+        {
+            var ids = clause.EntityIds;   // a local, so EF inlines the subquery
+            query = clause.Exclude
+                ? query.Where(p => !ids.Contains(p.Id))
+                : query.Where(p => ids.Contains(p.Id));
+        }
 
         var totalCount = await query.CountAsync(cancellationToken);
+
+        // 080 — a page past the end becomes the last page.
+        var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
+        if (pageNumber > totalPages) pageNumber = totalPages;
 
         // 069. The page's rows first, THEN the prices.
         //
@@ -106,6 +241,7 @@ public class GetProductsHandler : ICommandHandler
         var rows = await query
             .OrderBy(p => p.Category)
             .ThenBy(p => p.Name)
+            .ThenBy(p => p.Id)              // 080 — stable: paging never repeats or skips a row
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .Select(p => new
@@ -187,6 +323,15 @@ public class GetProductsHandler : ICommandHandler
                 bundles.TryGetValue(p.Id, out var cnt) ? cnt.Count : 0
             );
         }).ToList();
+
+        // 080 — the "Show on the list" custom values, this page only, one
+        // query. Empty (and no query) when no field is on the list.
+        var listValues = await CustomFieldListQuery.ListValuesAsync(
+            _db, tenantId, defs, pageIds, cancellationToken);
+
+        foreach (var item in items)
+            if (listValues.TryGetValue(item.Id, out var map))
+                item.CustomFieldValues = map;
 
         return new PaginatedResult<ProductListItem>
         {
@@ -285,6 +430,12 @@ public class GetProductByIdHandler : ICommandHandler
             _db, tenantId, new[] { productId });
         product.UsedInBundleCount = usedIn.TryGetValue(productId, out var n) ? n : 0;
 
+        // 080. Every stored custom value, retired fields included — the
+        // page decides what to show; Edit needs them all so a save does
+        // not drop a value it never displayed.
+        product.CustomFieldValues = await CustomFieldValueWriter.ReadAsync(
+            _db, tenantId, CustomFieldEntityTypes.Product, productId, default);
+
         return product;
     }
 }
@@ -294,31 +445,44 @@ public class CreateProductHandler : ICommandHandler
     private readonly FlowDbContext _db;
     private readonly ICurrentUserService _currentUserService;
     private readonly ICurrentTenantService _tenant;   // 069
+    private readonly IAuditService _audit;            // 080
+    private readonly ILogger<CreateProductHandler> _logger;   // 080
 
     public CreateProductHandler(
         FlowDbContext db,
         ICurrentUserService currentUserService,
-        ICurrentTenantService tenant)                 // 069
+        ICurrentTenantService tenant,                 // 069
+        IAuditService audit,                          // 080
+        ILogger<CreateProductHandler> logger)         // 080
     {
         _db                = db;
         _currentUserService = currentUserService;
         _tenant            = tenant;
+        _audit             = audit;
+        _logger            = logger;
     }
 
     public async Task<ProductDto> Handle(CreateProductDto dto)
     {
         var currentUser = await _currentUserService.GetCurrentUserAsync();
 
+        // 080 — the person-fixable checks first, as sentences (see
+        // ProductValidation). Nothing has been staged yet.
+        var name = ProductValidation.RequireName(dto.Name);
+
+        // 068: checked against this workspace's own category list,
+        // not stored as posted. See ProductCategoryGuard.
+        var category = await ProductValidation.Run(
+            () => ProductCategoryGuard.ResolveAsync(_db, dto.TenantId, dto.Category));
+
         var product = new Product
         {
             Id          = Guid.NewGuid(),
             TenantId    = dto.TenantId,
-            Name        = dto.Name,
+            Name        = name,
             Description = dto.Description,
             Sku         = dto.Sku,
-            // 068: checked against this workspace's own category list,
-            // not stored as posted. See ProductCategoryGuard.
-            Category    = await ProductCategoryGuard.ResolveAsync(_db, dto.TenantId, dto.Category),
+            Category    = category,
             // 051: normalised, never taken as typed. A posted form can
             // carry anything; an unrecognised kind or unit would render as
             // a blank dropdown and print as nothing on the quote line.
@@ -343,10 +507,10 @@ public class CreateProductHandler : ICommandHandler
         // The home currency is passed so a row in it can be refused —
         // the base price is ListPrice above, and two places to store it
         // would disagree.
-        await ProductPricing.SaveAsync(
+        await ProductValidation.Run(() => ProductPricing.SaveAsync(
             _db, dto.TenantId, product.Id,
             _tenant.GetCurrencyCode(), dto.Prices,
-            product.CreatedBy ?? currentUser.FullName);
+            product.CreatedBy ?? currentUser.FullName));
 
         // ── 070: THE BUNDLE'S CONTENTS ───────────────────────────────
         //
@@ -362,16 +526,35 @@ public class CreateProductHandler : ICommandHandler
         // alone.
         if (ProductKinds.IsBundle(product.Type))
         {
-            var components = await ProductBundles.ValidateAsync(
+            var components = await ProductValidation.Run(() => ProductBundles.ValidateAsync(
                 _db, dto.TenantId, product.Id,
-                dto.BundleItems ?? new List<ProductBundleItemDto>());
+                dto.BundleItems ?? new List<ProductBundleItemDto>()));
 
             await ProductBundles.SaveAsync(
                 _db, dto.TenantId, product.Id, components,
                 product.CreatedBy ?? currentUser.FullName);
         }
 
+        // 080 — the custom values, in the same unit of work. Throws
+        // CustomFieldValidationException (every problem at once) before
+        // anything is saved.
+        await CustomFieldValueWriter.ApplyAsync(
+            _db, dto.TenantId, CustomFieldEntityTypes.Product, product.Id,
+            dto.CustomFields, product.CreatedBy ?? currentUser.FullName, isNew: true, default);
+
         await _db.SaveChangesAsync();
+
+        // 080 — after the save; a failure here must not undo it.
+        try
+        {
+            await _audit.WriteAsync(
+                AuditAction.ProductCreated, AuditEntityType.Product, product.Id, dto.TenantId,
+                new { name = product.Name, type = product.Type, category = product.Category });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Product {Id} was created but its audit row could not be written", product.Id);
+        }
 
         return new ProductDto
         {
@@ -401,7 +584,11 @@ public class CreateProductHandler : ICommandHandler
             // the caller claimed they were called.
             BundleItems = ProductKinds.IsBundle(product.Type)
                 ? await ProductBundles.GetForBundleAsync(_db, dto.TenantId, product.Id)
-                : new List<ProductBundleItemDto>()
+                : new List<ProductBundleItemDto>(),
+
+            // 080. Read back for the same reason as Prices.
+            CustomFieldValues = await CustomFieldValueWriter.ReadAsync(
+                _db, dto.TenantId, CustomFieldEntityTypes.Product, product.Id, default)
         };
     }
 }
@@ -445,17 +632,20 @@ public class UpdateProductHandler : ICommandHandler
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditService _audit;
     private readonly ICurrentTenantService _tenant;   // 069
+    private readonly ILogger<UpdateProductHandler> _logger;   // 080
 
     public UpdateProductHandler(
         FlowDbContext db,
         ICurrentUserService currentUserService,
         IAuditService audit,
-        ICurrentTenantService tenant)                 // 069
+        ICurrentTenantService tenant,                 // 069
+        ILogger<UpdateProductHandler> logger)         // 080
     {
         _db                = db;
         _currentUserService = currentUserService;
         _audit             = audit;
         _tenant            = tenant;
+        _logger            = logger;
     }
 
     public async Task Handle(Guid tenantId, Guid productId, UpdateProductDto dto)
@@ -470,20 +660,45 @@ public class UpdateProductHandler : ICommandHandler
         var oldPrice = product.ListPrice;                               // ✅ AUDIT
         var oldTax = product.TaxRate;
 
-        product.Name        = dto.Name;
-        product.Description = dto.Description;
-        product.Sku         = dto.Sku;
+        // 080 — the person-fixable checks first, as sentences.
+        var name = ProductValidation.RequireName(dto.Name);
+
         // 068 — see ProductCategoryGuard. Same check as Create, so a
         // product cannot be EDITED into a category that does not exist
         // either, which is the path a stale Edit page would take after
         // somebody removed a category in another tab.
-        product.Category    = await ProductCategoryGuard.ResolveAsync(_db, tenantId, dto.Category);
-        product.Type          = ProductKinds.Normalise(dto.Type);        // 051
-        product.UnitOfMeasure = UnitsOfMeasure.Normalise(dto.UnitOfMeasure); // 051
+        var category = await ProductValidation.Run(
+            () => ProductCategoryGuard.ResolveAsync(_db, tenantId, dto.Category));
+
+        var newType   = ProductKinds.Normalise(dto.Type);              // 051
+        var newUnit   = UnitsOfMeasure.Normalise(dto.UnitOfMeasure);   // 051
+        var newTax    = dto.TaxRate ?? 0;
+        var newCode   = string.IsNullOrWhiteSpace(dto.TaxCode) ? null : dto.TaxCode.Trim(); // 051
+        var previousName = product.Name;
+
+        // 080 — what changed, by NAME, for the ProductUpdated audit row.
+        var changed = new List<string>();
+        AuditChanges.Track(changed, "name",          product.Name,          name);
+        AuditChanges.Track(changed, "description",   product.Description,   dto.Description);
+        AuditChanges.Track(changed, "sku",           product.Sku,           dto.Sku);
+        AuditChanges.Track(changed, "category",      product.Category,      category);
+        AuditChanges.Track(changed, "type",          product.Type,          newType);
+        AuditChanges.Track(changed, "unitOfMeasure", product.UnitOfMeasure, newUnit);
+        AuditChanges.Track(changed, "listPrice",     product.ListPrice,     dto.ListPrice);
+        AuditChanges.Track(changed, "taxRate",       product.TaxRate,       (decimal?)newTax);
+        AuditChanges.Track(changed, "taxCode",       product.TaxCode,       newCode);
+        AuditChanges.Track(changed, "isActive",      product.IsActive,      dto.IsActive);
+
+        product.Name        = name;
+        product.Description = dto.Description;
+        product.Sku         = dto.Sku;
+        product.Category    = category;
+        product.Type          = newType;
+        product.UnitOfMeasure = newUnit;
         product.ListPrice   = dto.ListPrice;
         // Currency removed — no longer stored on Product
-        product.TaxRate      = dto.TaxRate ?? 0;
-        product.TaxCode      = string.IsNullOrWhiteSpace(dto.TaxCode) ? null : dto.TaxCode.Trim(); // 051
+        product.TaxRate      = newTax;
+        product.TaxCode      = newCode;
         product.IsActive     = dto.IsActive;
         product.UpdatedAtUtc = DateTime.UtcNow;
         product.UpdatedBy    = currentUser.FullName;
@@ -497,10 +712,10 @@ public class UpdateProductHandler : ICommandHandler
         // list means "no other currencies" and does remove them. The
         // form always sends a list, so clearing the grid clears the
         // prices; see ProductPricing.SaveAsync.
-        await ProductPricing.SaveAsync(
+        await ProductValidation.Run(() => ProductPricing.SaveAsync(
             _db, tenantId, product.Id,
             _tenant.GetCurrencyCode(), dto.Prices,
-            currentUser.FullName);
+            currentUser.FullName));
 
         // ── 070: THE BUNDLE'S CONTENTS ───────────────────────────────
         //
@@ -525,8 +740,8 @@ public class UpdateProductHandler : ICommandHandler
         {
             if (dto.BundleItems is not null)
             {
-                var components = await ProductBundles.ValidateAsync(
-                    _db, tenantId, product.Id, dto.BundleItems);
+                var components = await ProductValidation.Run(() => ProductBundles.ValidateAsync(
+                    _db, tenantId, product.Id, dto.BundleItems));
 
                 await ProductBundles.SaveAsync(
                     _db, tenantId, product.Id, components, currentUser.FullName);
@@ -541,16 +756,43 @@ public class UpdateProductHandler : ICommandHandler
                 new List<ProductBundleItemDto>(), currentUser.FullName);
         }
 
+        // 080 — the custom values, same unit of work. Null = the caller
+        // said nothing about them, and nothing is touched.
+        await CustomFieldValueWriter.ApplyAsync(
+            _db, tenantId, CustomFieldEntityTypes.Product, product.Id,
+            dto.CustomFields, currentUser.FullName, isNew: false, default);
+
+        if (AuditChanges.CustomFieldValuesPending(_db))
+            changed.Add(AuditChanges.CustomFields);
+
         await _db.SaveChangesAsync();
-        if (oldPrice != product.ListPrice || oldTax != product.TaxRate)
-            await _audit.WriteAsync(
-                AuditAction.ProductPriceChanged, AuditEntityType.Product, product.Id, tenantId,
-                new
-                {
-                    name = product.Name,
-                    price = new { from = oldPrice, to = product.ListPrice },
-                    taxRate = new { from = oldTax, to = product.TaxRate }
-                });
+
+        // 080 — after the save, each in its own try/catch: a saved product
+        // must never report failure because an audit row could not be
+        // written.
+        try
+        {
+            if (oldPrice != product.ListPrice || oldTax != product.TaxRate)
+                await _audit.WriteAsync(
+                    AuditAction.ProductPriceChanged, AuditEntityType.Product, product.Id, tenantId,
+                    new
+                    {
+                        name = product.Name,
+                        price = new { from = oldPrice, to = product.ListPrice },
+                        taxRate = new { from = oldTax, to = product.TaxRate }
+                    });
+
+            if (changed.Count > 0)
+                await _audit.WriteAsync(
+                    AuditAction.ProductUpdated, AuditEntityType.Product, product.Id, tenantId,
+                    changed.Contains("name")
+                        ? new { name = product.Name, changed, previousName }
+                        : (object)new { name = product.Name, changed });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Product {Id} was updated but its audit row could not be written", product.Id);
+        }
     }
 }
 
@@ -559,11 +801,15 @@ public class DeleteProductHandler : ICommandHandler
     private readonly FlowDbContext _db;
     private readonly ICurrentUserService _currentUserService;
     private readonly IAuditService _audit;
-    public DeleteProductHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit)
+    private readonly ILogger<DeleteProductHandler> _logger;   // 080
+    public DeleteProductHandler(
+        FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit,
+        ILogger<DeleteProductHandler> logger)                 // 080
     {
         _db                = db;
         _currentUserService = currentUserService;
         _audit             = audit;
+        _logger            = logger;
     }
 
     public async Task Handle(Guid tenantId, Guid productId)
@@ -574,6 +820,32 @@ public class DeleteProductHandler : ICommandHandler
         if (product == null)
             throw new KeyNotFoundException($"Product {productId} not found");
 
+        // 080 — REFUSED while the product is part of a live bundle. A
+        // deleted component would otherwise stay inside the bundle: the
+        // bundle's contents, its breakdown on new quote lines and its
+        // "components total" would all still count a product nobody can
+        // open any more. The person decides — take it out of the bundle,
+        // or switch it to Inactive, which keeps it in the bundle honestly.
+        var inBundles = _db.ProductBundleItems
+            .AsNoTracking()
+            .Where(i => i.TenantId == tenantId && !i.IsDeleted && i.ComponentProductId == productId)
+            .Join(_db.Products.Where(b => b.TenantId == tenantId && !b.IsDeleted),
+                  i => i.BundleProductId, b => b.Id, (i, b) => b.Name)
+            .Distinct();
+
+        var bundleCount = await inBundles.CountAsync();
+        if (bundleCount > 0)
+        {
+            var names = await inBundles.OrderBy(n => n).Take(3).ToListAsync();
+            var list  = string.Join(", ", names.Select(n => $"\"{n}\""));
+            var more  = bundleCount > names.Count ? $" and {bundleCount - names.Count} more" : string.Empty;
+
+            throw new ProductValidationException(
+                $"\"{product.Name}\" is part of {(bundleCount == 1 ? "a bundle" : bundleCount + " bundles")} " +
+                $"({list}{more}). Take it out of {(bundleCount == 1 ? "that bundle" : "those bundles")} first, " +
+                "or switch it to Inactive instead.");
+        }
+
         var currentUser = await _currentUserService.GetCurrentUserAsync();
 
         product.IsDeleted    = true;
@@ -581,9 +853,19 @@ public class DeleteProductHandler : ICommandHandler
         product.DeletedBy    = currentUser.FullName;
 
         await _db.SaveChangesAsync();
-        await _audit.WriteAsync(
-        AuditAction.ProductDeleted, AuditEntityType.Product, product.Id, tenantId,
-        new { name = product.Name, sku = product.Sku, price = product.ListPrice });
+
+        // 080 — after the save; a failure here must not undo it, and must
+        // not tell the person a delete that happened has failed.
+        try
+        {
+            await _audit.WriteAsync(
+                AuditAction.ProductDeleted, AuditEntityType.Product, product.Id, tenantId,
+                new { name = product.Name, sku = product.Sku, price = product.ListPrice });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Product {Id} was deleted but its audit row could not be written", product.Id);
+        }
     }
 }
 
@@ -637,6 +919,9 @@ public class DeleteProductHandler : ICommandHandler
 /// </summary>
 internal static class ProductCategoryGuard
 {
+    // (080: callers wrap ResolveAsync in ProductValidation.Run, so its
+    // sentence reaches the page as a 400 rather than a generic error.)
+
     /// <summary>
     /// The value to STORE. NULL in, NULL out — Product.Category is
     /// nullable and an uncategorized product is legal. Anything else has
@@ -683,5 +968,54 @@ public class GetCategoriesHandler : ICommandHandler
         return ProductCategoryResolution.Effective(visible)
             .Select(c => c.Name)
             .ToList();
+    }
+}
+
+/// <summary>
+/// 080. Turns the person-fixable failures of a product save into
+/// ProductValidationException, so the controller can tell them apart from
+/// a real fault.
+///
+/// The category guard, ProductPricing and ProductBundles throw
+/// InvalidOperationException with a sentence written for the person.
+/// Only the steps wrapped in Run are converted — an
+/// InvalidOperationException from EF during SaveChangesAsync is NOT
+/// inside a Run and stays a logged 500.
+/// </summary>
+internal static class ProductValidation
+{
+    /// <summary>The trimmed name, or a sentence when there is none.</summary>
+    public static string RequireName(string? name)
+    {
+        var trimmed = name?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            throw new ProductValidationException("Give the product a name.");
+        return trimmed;
+    }
+
+    public static async Task<T> Run<T>(Func<Task<T>> step)
+    {
+        try
+        {
+            return await step();
+        }
+        catch (InvalidOperationException ex)
+            when (ex is not ProductValidationException && ex is not CustomFieldValidationException)
+        {
+            throw new ProductValidationException(ex.Message);
+        }
+    }
+
+    public static async Task Run(Func<Task> step)
+    {
+        try
+        {
+            await step();
+        }
+        catch (InvalidOperationException ex)
+            when (ex is not ProductValidationException && ex is not CustomFieldValidationException)
+        {
+            throw new ProductValidationException(ex.Message);
+        }
     }
 }

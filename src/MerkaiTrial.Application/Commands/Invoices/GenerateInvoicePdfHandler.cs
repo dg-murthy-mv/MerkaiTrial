@@ -1,6 +1,18 @@
 // =====================================================================
 // FILE: MerkaiTrial.Application/Commands/Invoices/GenerateInvoicePdfHandler.cs
 //
+// CHANGES (082 — product fields under each line)
+//   ✅ Each InvoiceLineDto gets DocumentFields — the line's frozen product
+//      copy, or the product's current values on a line without one — and
+//      InvoicePdfService prints it under the item name.
+//
+// CHANGES (081 — custom fields)
+//   ✅ DocumentFields is set on the hand-built InvoiceDto — the copy frozen
+//      at issue, or a draft's live values — and InvoicePdfService prints it
+//      as "Additional details". The same hand-kept-in-step hazard the 052c,
+//      065 and 067 notes below describe: left out here, every invoice PDF
+//      would silently omit the fields while the screens showed them.
+//
 // CHANGES (018 — invoice workflow)
 //   ✅ A DRAFT prints "DRAFT – not a tax invoice" where the number goes,
 //      instead of its internal placeholder (DRAFT-3F9A1C2B). A customer
@@ -149,8 +161,16 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 .Where(p => !p.IsDeleted && p.Status == PaymentStatusNames.Captured)
                 .ToList();
 
+            // 081 — frozen at issue, live on a draft.
+            var (printedFields, printedAt) = await InvoiceDocument.ResolveAsync(_db, invoice, ct);
+            var lineFields = await InvoiceDocument.ResolveLinesAsync(_db, invoice, ct);   // 082
+
             var dto = new InvoiceDto
             {
+                // 081
+                DocumentFields            = printedFields,
+                DocumentFieldsFrozenAtUtc = printedAt,
+
                 Id            = invoice.Id,
                 Number        = printedNumber,
                 IssueDateUtc  = invoice.IssueDateUtc,
@@ -175,6 +195,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                                 && invoice.Balance > 0,
                 Lines = invoice.Lines.Select(l => new InvoiceLineDto
                 {
+                    // 082 — the product fields printed under this line
+                    DocumentFields = lineFields.GetValueOrDefault(l.Id) ?? new List<DocumentFieldEntry>(),
+
                     Id             = l.Id,
                     Name           = l.Name,
                     Description    = l.Description,

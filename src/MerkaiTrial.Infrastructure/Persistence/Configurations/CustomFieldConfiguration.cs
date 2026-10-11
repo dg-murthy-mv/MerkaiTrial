@@ -61,6 +61,13 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             // 079 — lead → contact / deal mapping. Plain columns; see header.
             builder.Property(d => d.MapToContactFieldId);
             builder.Property(d => d.MapToDealFieldId);
+
+            // 081 (Sql/081_DocumentCustomFields.sql). No HasDefaultValue on
+            // the bool, for the 076 reason: a store default would make EF
+            // read back true for a field saved as false. The SQL default
+            // (0) only covers rows that existed before the column.
+            builder.Property(d => d.PrintOnDocuments).IsRequired();
+            builder.Property(d => d.MapToInvoiceFieldId);
             builder.Property(d => d.CreatedAtUtc).IsRequired();
             builder.Property(d => d.CreatedBy).HasMaxLength(64);
             builder.Property(d => d.UpdatedBy).HasMaxLength(64);

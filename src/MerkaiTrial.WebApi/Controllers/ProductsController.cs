@@ -1,6 +1,44 @@
+// =====================================================================
+// FILE: MerkaiTrial.WebApi/Controllers/ProductsController.cs
+//
+// COMPLETE FILE — 080.
+//
+// 1. THE WORKSPACE COMES FROM THE TOKEN, on every action. Until now each
+//    action took tenantId from the QUERY STRING (and Create from the
+//    request body), so the only thing stopping one workspace asking for
+//    another's products was FlowDbContext's global query filter. That
+//    filter still applies; the controller now also says what it means,
+//    via ICurrentUserService.GetCurrentTenantId().
+//
+//    NO CALLER HAS TO CHANGE. A ?tenantId= still sent by an existing URL
+//    is simply ignored by model binding, and CreateProductDto.TenantId is
+//    overwritten with the token's workspace before the handler sees it.
+//
+// 2. SENTENCES REACH THE PAGE. Create and Update return a 400 with the
+//    message for ProductValidationException (unknown category, a bad
+//    price row, a bundle that contains itself, no name) and for
+//    CustomFieldValidationException. Before this round every one of them
+//    became "Failed to create product" and the person had no idea what
+//    to fix. Delete returns a 400 the same way when the product is part
+//    of a bundle (DeleteProductHandler refuses it). Any OTHER exception stays a logged 500 with a plain-string
+//    body, so internal wording never reaches a page (the 078 rule:
+//    IApiService turns an { error } body into an exception message).
+//
+// 3. GET api/products takes repeated ?cf=<fieldId>~<op>~<value> custom
+//    field filters (CustomFieldFilterCodec), capped BEFORE decoding so a
+//    request with ten thousand ?cf= values costs nothing. Unreadable ones
+//    are skipped. Page and size are clamped by the handler (1–1000; the
+//    catalogue callers need the large pages — see GetProductsHandler).
+//
+// Policies unchanged: products.read / create / update / delete.
+// =====================================================================
+
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Commands.CustomFields;   // 080 — CustomFieldValidationException
 using MerkaiTrial.Application.Commands.Products;
+using MerkaiTrial.Application.Configuration;           // 080 — CustomFieldFilterCodec, CustomFieldLimits
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Services;                // 080 — ICurrentUserService
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +57,7 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly GetCategoriesHandler _getCategoriesHandler;
         private readonly GetProductStatsHandler _getStatsHandler;
         private readonly ToggleProductActiveHandler _toggleActiveHandler;
+        private readonly ICurrentUserService _currentUserService;   // 080
         private readonly ILogger<ProductsController> _logger;
 
         public ProductsController(
@@ -30,6 +69,7 @@ namespace MerkaiTrial.WebApi.Controllers
             DeleteProductHandler deleteProductHandler,
             GetCategoriesHandler getCategoriesHandler,
             ToggleProductActiveHandler toggleActiveHandler,
+            ICurrentUserService currentUserService,                 // 080
             ILogger<ProductsController> logger)
         {
             _getProductsHandler = getProductsHandler;
@@ -40,107 +80,107 @@ namespace MerkaiTrial.WebApi.Controllers
             _getCategoriesHandler = getCategoriesHandler;
             _toggleActiveHandler = toggleActiveHandler;
             _getStatsHandler = getStatsHandler;
+            _currentUserService = currentUserService;
             _logger = logger;
         }
+
+        /// <summary>080. The signed-in user's workspace — never the query string.</summary>
+        private Guid TenantId => _currentUserService.GetCurrentTenantId();
 
         [HttpGet]
         [Authorize(Policy = Policies.ProductsRead)]
         public async Task<ActionResult<PaginatedResult<ProductListItem>>> GetAll(
-        [FromQuery] Guid tenantId,
-        [FromQuery] int pageNumber = 1,
-        [FromQuery] int pageSize = 25,
-        [FromQuery] string? category = null,
-        [FromQuery] bool? isActive = null,
-        [FromQuery] string? search = null,
-        // 069. The currency the returned prices should be denominated in.
-        //
-        // Omitted means the workspace's own, which is what every caller
-        // before this round meant and still gets. The quote line editor
-        // passes the QUOTE's currency, which comes from the deal and is
-        // not always the workspace's — see ProductPricing.cs for the
-        // defect that fixes.
-        //
-        // Safe in the query string: it changes which prices come back,
-        // never WHOSE. The tenant scope is the query filter plus
-        // tenantId, exactly as before.
-        [FromQuery] string? currency = null,
-        CancellationToken cancellationToken = default)
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 25,
+            [FromQuery] string? category = null,
+            [FromQuery] bool? isActive = null,
+            [FromQuery] string? search = null,
+            // 069. The currency the returned prices should be denominated
+            // in. Omitted means the workspace's own. The quote line editor
+            // passes the QUOTE's currency — see ProductPricing.cs. Safe in
+            // the query string: it changes which prices come back, never
+            // WHOSE.
+            [FromQuery] string? currency = null,
+            [FromQuery(Name = "cf")] string[]? cf = null,          // 080
+            CancellationToken cancellationToken = default)
         {
+            var tenantId = TenantId;
             try
             {
+                // 080 — custom field filters, capped before decoding.
+                var customFilters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        customFilters.Add(filter);
+
                 var result = await _getProductsHandler.Handle(
                     tenantId, pageNumber, pageSize, category, isActive, search,
-                    currency, cancellationToken);
+                    currency, customFilters, cancellationToken);
                 return Ok(result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get products for tenant {TenantId}", tenantId);
-                return StatusCode(500, new { error = "Failed to retrieve products" });
+                return StatusCode(500, "Failed to retrieve products");
             }
         }
 
-        // PATCH: api/products/{id}/toggle-active?tenantId={guid}
+        // PATCH: api/products/{id}/toggle-active
         [HttpPatch("{id:guid}/toggle-active")]
         [Authorize(Policy = Policies.ProductsUpdate)]
-        public async Task<IActionResult> ToggleActive(
-            [FromRoute] Guid id,
-            [FromQuery] Guid tenantId)
+        public async Task<IActionResult> ToggleActive([FromRoute] Guid id)
         {
             try
             {
-                var isNowActive = await _toggleActiveHandler.Handle(tenantId, id);
+                var isNowActive = await _toggleActiveHandler.Handle(TenantId, id);
                 var msg = isNowActive ? "Product activated." : "Product deactivated.";
                 return Ok(new { isActive = isNowActive, message = msg });
             }
             catch (KeyNotFoundException)
             {
-                return NotFound(new { error = $"Product {id} not found" });
+                return NotFound(new { error = "Product not found." });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to toggle product {ProductId}", id);
-                return StatusCode(500, new { error = "Toggle failed" });
+                return StatusCode(500, "Toggle failed");
             }
         }
+
         [HttpGet("stats")]
         [Authorize(Policy = Policies.ProductsRead)]
-        public async Task<ActionResult<ProductStatsDto>> GetStats(
-        [FromQuery] Guid tenantId,
-        CancellationToken cancellationToken = default)
+        public async Task<ActionResult<ProductStatsDto>> GetStats(CancellationToken cancellationToken = default)
         {
             try
             {
-                var stats = await _getStatsHandler.Handle(tenantId, cancellationToken);
+                var stats = await _getStatsHandler.Handle(TenantId, cancellationToken);
                 return Ok(stats);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get product statistics");
-                return StatusCode(500, new { error = "Failed to retrieve statistics" });
+                return StatusCode(500, "Failed to retrieve statistics");
             }
         }
 
-        // GET: api/products/{id}?tenantId={guid}
+        // GET: api/products/{id}
         [HttpGet("{id:guid}")]
         [Authorize(Policy = Policies.ProductsRead)]
-        public async Task<ActionResult<ProductDto>> GetById(
-            [FromRoute] Guid id,
-            [FromQuery] Guid tenantId)
+        public async Task<ActionResult<ProductDto>> GetById([FromRoute] Guid id)
         {
             try
             {
-                var product = await _getProductByIdHandler.Handle(tenantId, id);
+                var product = await _getProductByIdHandler.Handle(TenantId, id);
                 return Ok(product);
             }
             catch (KeyNotFoundException)
             {
-                return NotFound(new { error = $"Product {id} not found" });
+                return NotFound(new { error = "Product not found." });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get product {ProductId}", id);
-                return StatusCode(500, new { error = "Failed to retrieve product" });
+                return StatusCode(500, "Failed to retrieve product");
             }
         }
 
@@ -151,60 +191,81 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
+                // 080 — whatever the body claimed, the product goes into
+                // the signed-in user's workspace.
+                dto.TenantId = TenantId;
+
                 var product = await _createProductHandler.Handle(dto);
-                return CreatedAtAction(nameof(GetById), new { id = product.Id, tenantId = dto.TenantId }, product);
+                return CreatedAtAction(nameof(GetById), new { id = product.Id }, product);
+            }
+            catch (ProductValidationException ex)          // 080 — a sentence for the person
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (CustomFieldValidationException ex)      // 080
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create product");
-                return StatusCode(500, new { error = "Failed to create product" });
+                return StatusCode(500, "Failed to create product");
             }
         }
 
-        // PUT: api/products/{id}?tenantId={guid}
+        // PUT: api/products/{id}
         [HttpPut("{id:guid}")]
         [Authorize(Policy = Policies.ProductsUpdate)]
         public async Task<IActionResult> Update(
             [FromRoute] Guid id,
-            [FromQuery] Guid tenantId,
             [FromBody] UpdateProductDto dto)
         {
             try
             {
-                await _updateProductHandler.Handle(tenantId, id, dto);
+                await _updateProductHandler.Handle(TenantId, id, dto);
                 return Ok(new { message = "Product updated successfully" });
             }
             catch (KeyNotFoundException)
             {
-                return NotFound(new { error = $"Product {id} not found" });
+                return NotFound(new { error = "Product not found." });
+            }
+            catch (ProductValidationException ex)          // 080 — a sentence for the person
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (CustomFieldValidationException ex)      // 080
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update product {ProductId}", id);
-                return StatusCode(500, new { error = "Failed to update product" });
+                return StatusCode(500, "Failed to update product");
             }
         }
 
-        // DELETE: api/products/{id}?tenantId={guid}
+        // DELETE: api/products/{id}
         [HttpDelete("{id:guid}")]
         [Authorize(Policy = Policies.ProductsDelete)]
-        public async Task<IActionResult> Delete(
-            [FromRoute] Guid id,
-            [FromQuery] Guid tenantId)
+        public async Task<IActionResult> Delete([FromRoute] Guid id)
         {
             try
             {
-                await _deleteProductHandler.Handle(tenantId, id);
+                await _deleteProductHandler.Handle(TenantId, id);
                 return Ok(new { message = "Product deleted successfully" });
             }
             catch (KeyNotFoundException)
             {
-                return NotFound(new { error = $"Product {id} not found" });
+                return NotFound(new { error = "Product not found." });
+            }
+            catch (ProductValidationException ex)          // 080 — e.g. part of a bundle
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete product {ProductId}", id);
-                return StatusCode(500, new { error = "Failed to delete product" });
+                return StatusCode(500, "Failed to delete product");
             }
         }
 
@@ -223,13 +284,9 @@ namespace MerkaiTrial.WebApi.Controllers
         // nothing rather than their categories. That is the filter saving
         // this endpoint, though, not the endpoint being right.
         //
-        // WORTH KNOWING, NOT CHANGED HERE: every action on this controller
-        // takes tenantId from the QUERY STRING rather than the token. The
-        // query filter is what makes that safe, which means the safety
-        // depends on FlowDbContext rather than on the controller. Moving
-        // them to _currentUserService.GetCurrentTenantId() would make the
-        // controller say what it means — a worthwhile round, but it
-        // changes every caller's URL and does not belong in a one-line fix.
+        // 080: the "tenantId from the query string" note that stood here
+        // is resolved — see the header. Every action now takes the
+        // workspace from the signed-in user's token.
         //
         // ── 068 ──────────────────────────────────────────────────────
         //
@@ -254,8 +311,9 @@ namespace MerkaiTrial.WebApi.Controllers
         // page asks for the inactive rows through its own endpoint.
         [HttpGet("categories")]
         [Authorize(Policy = Policies.ProductsRead)]
-        public async Task<ActionResult<List<string>>> GetCategories([FromQuery] Guid tenantId)
+        public async Task<ActionResult<List<string>>> GetCategories()
         {
+            var tenantId = TenantId;
             try
             {
                 var categories = await _getCategoriesHandler.Handle(tenantId);
@@ -264,9 +322,8 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get categories for tenant {TenantId}", tenantId);
-                return StatusCode(500, new { error = "Failed to retrieve categories" });
+                return StatusCode(500, "Failed to retrieve categories");
             }
         }
     }
 }
-

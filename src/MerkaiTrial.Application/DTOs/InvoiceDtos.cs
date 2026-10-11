@@ -46,6 +46,30 @@
 //   and the PDF can say "Milestone 2 of 3 — On delivery (40%)" without
 //   going back for the schedule. An invoice for a whole quote carries
 //   NULL in all of them and reads exactly as it does today.
+//
+// 081 — CUSTOM FIELDS
+//
+//   InvoiceDto.CustomFieldValues        every stored value
+//   InvoiceDto.DocumentFields           what the invoice PRINTS — frozen
+//                                       when it was issued, otherwise a
+//                                       live preview (drafts)
+//   InvoiceDto.DocumentFieldsFrozenAtUtc  when that copy was taken
+//   InvoiceListItem.CustomFieldValues   the "Show on the list" fields
+//   CreateInvoiceDto.CustomFields       what the form is stating. NULL on
+//                                       an invoice raised from a quote
+//                                       means "copy the quote's mapped
+//                                       fields" (DocumentFields.CopyQuote…)
+//   CreateInvoiceFromQuoteDto.CustomFields  passed through to the above
+//   UpdateInvoiceDto.CustomFields       NULL = leave them alone
+//
+// ⚠ GenerateInvoicePdfHandler builds InvoiceDto by hand — it sets
+// DocumentFields too.
+//
+// 082 — InvoiceLineDto.DocumentFields: the product's printed custom
+// fields for that line. CreateInvoiceLineDto.CustomFieldsSnapshot is
+// INTERNAL — [JsonIgnore], never read from a request, and honoured by
+// CreateInvoiceHandler only on an invoice raised from a quote — it is how
+// CreateInvoiceFromQuoteHandler hands the quote line's frozen copy on.
 // =====================================================================
 
 using System;
@@ -170,6 +194,20 @@ namespace MerkaiTrial.Application.DTOs
         public bool IsFullyPaid { get; set; }
         public int DaysUntilDue { get; set; }
         public int ItemCount => Lines.Count;
+
+        // ── Custom fields (081) ───────────────────────────────────────
+
+        /// <summary>081. Every stored custom value, field id → value as text, retired fields included.</summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+
+        /// <summary>
+        /// 081. What this invoice PRINTS, in order. The frozen copy once it
+        /// is issued; the live values while it is a draft.
+        /// </summary>
+        public List<DocumentFieldEntry> DocumentFields { get; set; } = new();
+
+        /// <summary>081. When DocumentFields was frozen. Null = live values.</summary>
+        public DateTime? DocumentFieldsFrozenAtUtc { get; set; }
     }
 
     public class InvoiceListItem
@@ -228,6 +266,9 @@ namespace MerkaiTrial.Application.DTOs
                     : $"{position} — {MilestoneName!.Trim()}";
             }
         }
+
+        /// <summary>081. The "Show on the list" custom values for this row.</summary>
+        public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
     }
 
     public class CreateInvoiceDto
@@ -265,6 +306,13 @@ namespace MerkaiTrial.Application.DTOs
         public int? MilestoneSequence { get; set; }
         public int? MilestoneCount { get; set; }
         public decimal? MilestonePercent { get; set; }
+
+        /// <summary>
+        /// 081. Custom field values, field id → value as text. NULL says
+        /// nothing; a missing key leaves that field alone; an empty value
+        /// clears it.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class CreateInvoiceFromQuoteDto
@@ -293,6 +341,13 @@ namespace MerkaiTrial.Application.DTOs
         /// worst possible reading of an omitted field.
         /// </summary>
         public Guid? MilestoneId { get; set; }
+
+        /// <summary>
+        /// 081. Custom field values, field id → value as text. NULL says
+        /// nothing; a missing key leaves that field alone; an empty value
+        /// clears it.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class UpdateInvoiceDto
@@ -306,6 +361,13 @@ namespace MerkaiTrial.Application.DTOs
         public List<CreateInvoiceLineDto> Lines { get; set; } = new();
 
         public string UpdatedBy { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 081. Custom field values, field id → value as text. NULL says
+        /// nothing; a missing key leaves that field alone; an empty value
+        /// clears it.
+        /// </summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class UpdateInvoiceStatusDto
@@ -365,6 +427,17 @@ namespace MerkaiTrial.Application.DTOs
 
         public string? ProductName { get; set; }
         public string? ProductSku { get; set; }
+
+        /// <summary>
+        /// 082. The PRODUCT's custom fields this line prints, under its name:
+        /// the line's frozen copy when it has one (taken from the quote, or
+        /// when the invoice was issued), otherwise the product's current
+        /// values. Empty for a custom line. Set on every read path.
+        /// </summary>
+        public List<DocumentFieldEntry> DocumentFields { get; set; } = new();
+
+        /// <summary>082. True when there is anything to print under this line.</summary>
+        public bool HasDocumentFields => DocumentFields.Count > 0;
     }
 
     public class CreateInvoiceLineDto
@@ -401,6 +474,16 @@ namespace MerkaiTrial.Application.DTOs
         /// customer accepted, not what the catalogue says today.
         /// </summary>
         public string? TaxCode { get; set; }
+
+        /// <summary>
+        /// 082. INTERNAL. The quote line's frozen product fields, handed on by
+        /// CreateInvoiceFromQuoteHandler. Never bound from a request body
+        /// ([JsonIgnore]) and ignored by CreateInvoiceHandler unless the
+        /// invoice is being raised from a quote — a manual invoice cannot
+        /// print text that did not come from a product.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
+        public string? CustomFieldsSnapshot { get; set; }
     }
 
     public class InvoiceStatisticsDto

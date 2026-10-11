@@ -15,6 +15,28 @@
    CustomFieldLimits.MaxListColumns of them. The server refuses a fifth
    with a sentence naming the four already there.
 
+   079: on the LEADS tab only, "When a lead is converted" — copy this
+   value into a Contact field and/or a Deal field. Only fields of the SAME
+   type can be chosen: on the edit form the type is fixed, so only matching
+   fields are listed; on the add form every field is listed with its type
+   in data-cf-target-type and the page script hides the ones that do not
+   match the type picked (and clears a choice that stops matching). A
+   target another Lead field already fills is shown disabled with its
+   name, rather than refused after Save. If the lists could not be
+   loaded, the current mapping is posted back unchanged in hidden inputs —
+   an empty dropdown would otherwise post "none" and clear it.
+
+   081: on the QUOTES and INVOICES tabs, "Print on quotes & invoices" —
+   the value appears on the PDF and on the customer's quote link, frozen
+   when the quote is sent / the invoice issued. On the QUOTES tab only,
+   "When an invoice is raised from this quote" — copy the value into an
+   Invoice field of the same type; the same rules and the same script as
+   the 079 lead mapping (data-cf-map), and the same hidden-input fallback.
+
+   082: the PRODUCTS tab gets the print switch too — the value prints
+   under every quote and invoice line that sells the product, fixed when
+   the quote is sent / the invoice issued. Different wording, same field.
+
    DROPDOWN OPTIONS: each row posts Key (hidden), Label and IsActive.
    Key is empty on a new row and the server issues one; an existing row
    keeps its key, which is what every saved value points at — so
@@ -29,6 +51,28 @@
     var canRequire  = CustomFieldTypes.SupportsRequired(type);
     var options     = Model.Input.Options ?? new List<MerkaiTrial.Admin.Web.Pages.Settings.CustomFields.IndexModel.OptionInput>();
     var nonCheckbox = "text number date dropdown";
+    var isProductTab = Model.ActiveEntity == CustomFieldEntityTypes.Product;   // 082
+
+    // 079 — which targets other Lead fields already fill (not this one).
+    var selfId       = Model.Input.Id;
+    var typeIsFixed  = selfId is { } sid && sid != Guid.Empty;
+    var contactTaken = Model.IsLeadTab
+        ? Model.Fields.Where(f => f.Id != selfId && f.MapToContactFieldId.HasValue)
+                      .GroupBy(f => f.MapToContactFieldId!.Value)
+                      .ToDictionary(g => g.Key, g => g.First().Label)
+        : new Dictionary<Guid, string>();
+    var dealTaken = Model.IsLeadTab
+        ? Model.Fields.Where(f => f.Id != selfId && f.MapToDealFieldId.HasValue)
+                      .GroupBy(f => f.MapToDealFieldId!.Value)
+                      .ToDictionary(g => g.Key, g => g.First().Label)
+        : new Dictionary<Guid, string>();
+
+    // 081 — which Invoice fields other Quote fields already fill.
+    var invoiceTaken = Model.IsQuoteTab
+        ? Model.Fields.Where(f => f.Id != selfId && f.MapToInvoiceFieldId.HasValue)
+                      .GroupBy(f => f.MapToInvoiceFieldId!.Value)
+                      .ToDictionary(g => g.Key, g => g.First().Label)
+        : new Dictionary<Guid, string>();
 }
 
 <div class="row g-3">
@@ -83,11 +127,39 @@
                    style="width:2.5em; height:1.3em; cursor:pointer;" />
             <label asp-for="Input.ShowInList" class="form-check-label">Show as a column on the list</label>
         </div>
-        <small class="text-muted">
-            Up to @CustomFieldLimits.MaxListColumns fields can be columns. Every field can be searched
-            and filtered on, whether it is a column or not.
-        </small>
+        <small class="text-muted">@Model.ListHint</small>
     </div>
+
+    @* ── 081: PRINT ON QUOTES & INVOICES (Quotes / Invoices tabs) ── *@
+    @if (Model.SupportsPrint)
+    {
+        <div class="col-md-5">
+            <label class="form-label d-block">On the document</label>
+            <div class="form-check form-switch mt-1">
+                <input asp-for="Input.PrintOnDocuments" class="form-check-input" role="switch"
+                       style="width:2.5em; height:1.3em; cursor:pointer;" />
+                <label asp-for="Input.PrintOnDocuments" class="form-check-label">
+                    <i class="bi bi-printer me-1"></i>@(isProductTab ? "Print on quotes & invoices" : "Print on the " + Model.Noun)
+                </label>
+            </div>
+            @if (isProductTab)
+            {
+                @* 082 *@
+                <small class="text-muted">
+                    Printed under the product's line on quote and invoice PDFs and the customer's quote
+                    link, when it has a value. Fixed when the quote is sent or the invoice issued.
+                </small>
+            }
+            else
+            {
+                <small class="text-muted">
+                    Shown on the PDF@(Model.IsQuoteTab ? " and the customer's quote link" : ""), under
+                    "Additional details", when it has a value. Fixed when the @Model.Noun is
+                    @(Model.IsQuoteTab ? "sent" : "issued").
+                </small>
+            }
+        </div>
+    }
 
     @* ── DECIMAL PLACES (numbers only) ───────────────────────────── *@
     <div class="col-md-7" data-cf-show="number" hidden="@(!isNumber)">
@@ -100,6 +172,155 @@
         </select>
         <small class="text-muted">Numbers show in your workspace's own format, e.g. 1,25,000 or 125,000.</small>
     </div>
+
+    @* ── 079: WHEN A LEAD IS CONVERTED (Leads tab only) ──────────── *@
+    @if (Model.IsLeadTab)
+    {
+        <div class="col-12">
+            <div class="border-top pt-3 mt-1">
+                <label class="form-label d-block mb-1">
+                    <i class="bi bi-arrow-left-right me-1 text-primary"></i>When a lead is converted
+                </label>
+                <small class="text-muted d-block mb-2">
+                    Copy this value onto the contact and the deal the conversion creates. Only
+                    fields of the same type can be picked. Dropdown choices are matched by name.
+                    An existing contact only has its empty fields filled in.
+                </small>
+
+                @if (Model.MappingLoadFailed)
+                {
+                    <div class="alert alert-warning py-2 px-3 small mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        The contact and deal fields could not be loaded, so this can't be changed right now.
+                        Saving keeps the current setting.
+                    </div>
+                    <input type="hidden" name="Input.MapToContactFieldId" value="@Model.Input.MapToContactFieldId" />
+                    <input type="hidden" name="Input.MapToDealFieldId" value="@Model.Input.MapToDealFieldId" />
+                }
+                else
+                {
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.MapToContactFieldId" class="form-label small text-muted mb-1">
+                                <i class="bi bi-person me-1"></i>Copy to contact field
+                            </label>
+                            <select name="Input.MapToContactFieldId" id="Input_MapToContactFieldId" class="form-select form-select-sm" data-cf-map>
+                                <option value="">— Don't copy —</option>
+                                @foreach (var t in Model.ContactTargets)
+                                {
+                                    if (typeIsFixed && t.FieldType != type && t.Id != Model.Input.MapToContactFieldId) { continue; }
+                                    var takenBy = contactTaken.TryGetValue(t.Id, out var tb) ? tb : null;
+                                    var mismatch = t.FieldType != type;
+                                    <option value="@t.Id"
+                                            data-cf-target-type="@t.FieldType"
+                                            data-cf-taken="@(takenBy is not null ? "true" : null)"
+                                            selected="@(t.Id == Model.Input.MapToContactFieldId)"
+                                            disabled="@(takenBy is not null || mismatch)"
+                                            hidden="@mismatch">
+                                        @t.Label (@CustomFieldTypes.DisplayName(t.FieldType)@(t.IsActive ? "" : ", off"))@(takenBy is null ? "" : " — filled from " + takenBy)
+                                    </option>
+                                }
+                            </select>
+                            @if (!Model.ContactTargets.Any())
+                            {
+                                <small class="text-muted">No contact fields yet. <a asp-page="./Index" asp-route-entity="@CustomFieldEntityTypes.Contact">Add one</a>.</small>
+                            }
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Input.MapToDealFieldId" class="form-label small text-muted mb-1">
+                                <i class="bi bi-kanban me-1"></i>Copy to deal field
+                            </label>
+                            <select name="Input.MapToDealFieldId" id="Input_MapToDealFieldId" class="form-select form-select-sm" data-cf-map>
+                                <option value="">— Don't copy —</option>
+                                @foreach (var t in Model.DealTargets)
+                                {
+                                    if (typeIsFixed && t.FieldType != type && t.Id != Model.Input.MapToDealFieldId) { continue; }
+                                    var takenBy = dealTaken.TryGetValue(t.Id, out var tb) ? tb : null;
+                                    var mismatch = t.FieldType != type;
+                                    <option value="@t.Id"
+                                            data-cf-target-type="@t.FieldType"
+                                            data-cf-taken="@(takenBy is not null ? "true" : null)"
+                                            selected="@(t.Id == Model.Input.MapToDealFieldId)"
+                                            disabled="@(takenBy is not null || mismatch)"
+                                            hidden="@mismatch">
+                                        @t.Label (@CustomFieldTypes.DisplayName(t.FieldType)@(t.IsActive ? "" : ", off"))@(takenBy is null ? "" : " — filled from " + takenBy)
+                                    </option>
+                                }
+                            </select>
+                            @if (!Model.DealTargets.Any())
+                            {
+                                <small class="text-muted">No deal fields yet. <a asp-page="./Index" asp-route-entity="@CustomFieldEntityTypes.Deal">Add one</a>.</small>
+                            }
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        A field that is switched off is skipped when a lead is converted.
+                    </small>
+                }
+            </div>
+        </div>
+    }
+
+    @* ── 081: WHEN AN INVOICE IS RAISED FROM THIS QUOTE (Quotes tab) ── *@
+    @if (Model.IsQuoteTab)
+    {
+        <div class="col-12">
+            <div class="border-top pt-3 mt-1">
+                <label class="form-label d-block mb-1">
+                    <i class="bi bi-receipt me-1 text-primary"></i>When an invoice is raised from this quote
+                </label>
+                <small class="text-muted d-block mb-2">
+                    Copy this value into an invoice field. Only fields of the same type can be
+                    picked; dropdown choices are matched by name. The invoice form arrives filled in,
+                    and can still be changed before it is issued.
+                </small>
+
+                @if (Model.MappingLoadFailed)
+                {
+                    <div class="alert alert-warning py-2 px-3 small mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        The invoice fields could not be loaded, so this can't be changed right now.
+                        Saving keeps the current setting.
+                    </div>
+                    <input type="hidden" name="Input.MapToInvoiceFieldId" value="@Model.Input.MapToInvoiceFieldId" />
+                }
+                else
+                {
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="Input.MapToInvoiceFieldId" class="form-label small text-muted mb-1">
+                                <i class="bi bi-receipt me-1"></i>Copy to invoice field
+                            </label>
+                            <select name="Input.MapToInvoiceFieldId" id="Input_MapToInvoiceFieldId" class="form-select form-select-sm" data-cf-map>
+                                <option value="">— Don't copy —</option>
+                                @foreach (var t in Model.InvoiceTargets)
+                                {
+                                    if (typeIsFixed && t.FieldType != type && t.Id != Model.Input.MapToInvoiceFieldId) { continue; }
+                                    var takenBy = invoiceTaken.TryGetValue(t.Id, out var tb) ? tb : null;
+                                    var mismatch = t.FieldType != type;
+                                    <option value="@t.Id"
+                                            data-cf-target-type="@t.FieldType"
+                                            data-cf-taken="@(takenBy is not null ? "true" : null)"
+                                            selected="@(t.Id == Model.Input.MapToInvoiceFieldId)"
+                                            disabled="@(takenBy is not null || mismatch)"
+                                            hidden="@mismatch">
+                                        @t.Label (@CustomFieldTypes.DisplayName(t.FieldType)@(t.IsActive ? "" : ", off"))@(takenBy is null ? "" : " — filled from " + takenBy)
+                                    </option>
+                                }
+                            </select>
+                            @if (!Model.InvoiceTargets.Any())
+                            {
+                                <small class="text-muted">No invoice fields yet. <a asp-page="./Index" asp-route-entity="@CustomFieldEntityTypes.Invoice">Add one</a>.</small>
+                            }
+                        </div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        A switched-off invoice field is skipped.
+                    </small>
+                }
+            </div>
+        </div>
+    }
 
     @* ── OPTIONS (dropdowns only) ────────────────────────────────── *@
     <div class="col-12" data-cf-show="dropdown" hidden="@(!isDropdown)">

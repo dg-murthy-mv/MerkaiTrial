@@ -14,6 +14,12 @@
    them as Can*(module) methods.
    No quota bar — no MaxInvoices in any plan/settings table.
 
+   081
+     • Invoice custom fields marked "Show on the list" appear on each card
+       under the customer, as "Label: value" (set values only).
+     • Issue / Delete buttons carry data- attributes read by one delegated
+       listener, instead of onclick="…" strings built around values.
+
    ✅ 018 — INVOICE WORKFLOW
      • Draft → "Issue" button (was "Send"): gives the INV number, locks it.
      • Delete only on drafts; issued invoices show a lock (void them from
@@ -279,6 +285,14 @@ else
                                         </span>
                                     </div>
                                 }
+                                @* 081 — the "Show on the list" custom fields that are set. *@
+                                @foreach (var cv in Model.CustomValues(invoice))
+                                {
+                                    <div class="text-muted small text-truncate" title="@cv.Field.Label: @cv.Text">
+                                        <i class="bi @MerkaiTrial.Application.Configuration.CustomFieldTypes.Icon(cv.Field.FieldType) me-1" aria-hidden="true"></i>@cv.Field.Label:
+                                        <span class="text-body">@cv.Text</span>
+                                    </div>
+                                }
                             </div>
 
                             <!-- Dates and Amounts -->
@@ -334,8 +348,8 @@ else
                                     @* ✅ (018) Issue — only a Draft, with update permission *@
                                     @if (invoice.Status == "Draft" && Model.CanUpdate)
                                     {
-                                        <button type="button" class="btn btn-sm btn-info"
-                                                onclick="issueInvoice('@invoice.Id')">
+                                        <button type="button" class="btn btn-sm btn-info js-issue"
+                                                data-invoice-id="@invoice.Id">
                                             <i class="bi bi-send-check me-1"></i>Issue
                                         </button>
                                     }
@@ -346,8 +360,9 @@ else
                                         @if (Model.CanDelete)
                                         {
                                             <button type="button"
-                                                    class="btn btn-sm btn-outline-danger"
-                                                    onclick="confirmDelete('@invoice.Id', 'this draft')">
+                                                    class="btn btn-sm btn-outline-danger js-delete"
+                                                    data-invoice-id="@invoice.Id" data-label="this draft"
+                                                    aria-label="Delete this draft">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         }
@@ -439,17 +454,34 @@ else
         // different schedule, call the layout's lfDismissAlert(el) — it is
         // idempotent and does not use the Alert component.
 
-        function confirmDelete(invoiceId, invoiceNumber) {
-            document.getElementById('deleteInvoiceId').value = invoiceId;
-            document.getElementById('deleteInvoiceNumber').textContent = invoiceNumber;
-            new bootstrap.Modal(document.getElementById('deleteModal')).show();
-        }
+        // 081 — one delegated listener reading data- attributes, instead
+        // of onclick="…" strings built around values in the markup.
+        (function () {
+            'use strict';
 
-        function issueInvoice(invoiceId) {
-            if (!confirm('Issue this invoice? It gets its invoice number now and can no longer be edited.')) return;
-            document.getElementById('issueInvoiceId').value = invoiceId;
-            document.getElementById('issueForm').submit();
-        }
+            function confirmDelete(invoiceId, label) {
+                var idField = document.getElementById('deleteInvoiceId');
+                if (!idField) return;   // no delete permission → no form
+                idField.value = invoiceId;
+                document.getElementById('deleteInvoiceNumber').textContent = label;
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteModal')).show();
+            }
+
+            function issueInvoice(invoiceId) {
+                if (!confirm('Issue this invoice? It gets its invoice number now and can no longer be edited.')) return;
+                document.getElementById('issueInvoiceId').value = invoiceId;
+                document.getElementById('issueForm').submit();
+            }
+
+            document.addEventListener('click', function (e) {
+                var t = e.target && e.target.closest ? e.target.closest('.js-issue, .js-delete') : null;
+                if (!t) return;
+                var id = t.getAttribute('data-invoice-id');
+                if (!id) return;
+                if (t.classList.contains('js-issue')) issueInvoice(id);
+                else confirmDelete(id, t.getAttribute('data-label') || 'this draft');
+            });
+        })();
     </script>
 }
 

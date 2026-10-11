@@ -2,8 +2,21 @@
 @using System.Text.Json
 @using MerkaiTrial.Admin.Web.Pages.Quotes
 @model MerkaiTrial.Admin.Web.Pages.Invoices.CreateModel
+@inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService DocTenant
 @* (018) "Create & Issue" (was "Create & Send"); catalog prices/tax rendered
-   culture-proof; new custom lines use the tenant's tax rate. *@
+   culture-proof; new custom lines use the tenant's tax rate.
+
+   081
+   • The invoice's custom fields, in the Invoice Details card (shared
+     _CustomFieldInputs partial, posting with the sidebar form through
+     form="…"). From a quote they arrive PRE-FILLED from the quote's mapped
+     fields, and the card says so.
+   • A refused save comes back as typed — lines, dates, notes, fields —
+     with the reason in Model.PageError, instead of an empty form.
+   • 082: each quote line shows the product's printed custom fields — the
+     copy the customer accepted, which the invoice line will carry.
+   • The read-only quote lines print the quantity with its unit ("12.5 m²",
+     was "12.5000") and the tax rate unrounded ("12.5%", was "13%"). *@
 @{
     ViewData["Title"] = Model.Mode == "FromQuote" ? "Create Invoice from Quote" : "Create Invoice";
 }
@@ -38,6 +51,15 @@
         </div>
     </div>
 </div>
+
+@* 081: why the form came back. Messages after a redirect are _Layout's. *@
+@if (!string.IsNullOrEmpty(Model.PageError))
+{
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.PageError</span>
+    </div>
+}
 
 <div class="row">
     <div class="col-lg-8">
@@ -130,6 +152,18 @@
                         <textarea class="form-control" name="Notes" rows="3" placeholder="Add any notes or payment instructions...">@Model.Notes</textarea>
                     </div>
                 </div>
+
+                @* 081 — the invoice's own custom fields. They post with the
+                   sidebar form through form="…" (CustomFieldInputs.FormId). *@
+                @if (Model.PrefilledFromQuote > 0)
+                {
+                    <div class="small text-muted mt-3">
+                        <i class="bi bi-arrow-down-circle me-1 text-primary"></i>
+                        @Model.PrefilledFromQuote @(Model.PrefilledFromQuote == 1 ? "value was" : "values were") filled in from
+                        quote @Model.Quote?.Number. Change anything that should differ on the invoice.
+                    </div>
+                }
+                <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
             </div>
         </div>
 
@@ -169,6 +203,12 @@
                                     {
                                         <small class="text-muted">@item.Description</small>
                                     }
+                                    @{ var lineFields082 = MerkaiTrial.Admin.Web.Pages.Shared.DocumentCulture.LineText(item.DocumentFields, Model.Quote.Currency, DocTenant.GetDateFormat()); }
+                                    @if (lineFields082.Length > 0)
+                                    {
+                                        @* 082 — the product's printed custom fields *@
+                                        <div class="small text-muted mt-1"><i class="bi bi-tag me-1" aria-hidden="true"></i>@lineFields082</div>
+                                    }
                                 </div>
                                 <div class="text-end">
                                     <div class="fw-bold text-primary" style="font-size: 1.1rem;">
@@ -178,7 +218,7 @@
                             </div>
                             <div class="row text-muted small">
                                 <div class="col">
-                                    <strong>Qty:</strong> @item.Quantity
+                                    <strong>Qty:</strong> @item.QuantityDisplay
                                 </div>
                                 <div class="col">
                                     <strong>Unit Price:</strong> @Model.FormatCurrency(item.UnitPrice)
@@ -190,7 +230,7 @@
                                     </div>
                                 }
                                 <div class="col">
-                                    <strong>Tax:</strong> @((item.TaxRate * 100).ToString("N0"))% (@Model.FormatCurrency(item.LineTax))
+                                    <strong>Tax:</strong> @((item.TaxRate * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))% (@Model.FormatCurrency(item.LineTax))
                                 </div>
                             </div>
                         </div>
@@ -241,9 +281,10 @@
                         // out so nobody wonders whether it was forgotten.
                         ApprovalRulesJson     = "{\"enabled\":false}",
                         Products              = Model.Products ?? new(),
-                        InitialItemsJson      = "[]",
+                        // 081: the posted lines when the form comes back.
+                        InitialItemsJson      = Model.InitialItemsJson,
                         ListPricesJson        = JsonSerializer.Serialize(listPrices),
-                        StartWithOneBlankLine = true
+                        StartWithOneBlankLine = Model.InitialItemsJson == "[]"
                     };
                 }
                 <partial name="/Pages/Quotes/_QuoteItemsEditor.cshtml" model="editor" />

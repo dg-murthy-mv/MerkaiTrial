@@ -3,6 +3,31 @@
 //
 // COMPLETE FILE — replaces the 017 version.
 //
+// CHANGES (081 — custom fields on quotes)
+//
+//   1. The quote's own custom fields, through the shared _CustomFieldInputs
+//      partial, pre-filled from QuoteDto.CustomFieldValues, checked here
+//      first and sent as UpdateQuoteDto.CustomFields. Only ACTIVE fields
+//      are sent, so a switched-off field's stored value is untouched. If
+//      the field list could not be loaded, CustomFields is sent as NULL and
+//      nothing about them changes.
+//
+//   2. A REFUSED SAVE KEEPS WHAT WAS TYPED. The old error path re-seeded
+//      the editor from the DATABASE, so a single mistake quietly undid
+//      every line change the person had just made, and it put the reason
+//      in TempData on a response that renders (TempData is for redirects).
+//      RedisplayAsync now shows the POSTED lines (QuoteItemsSeed) and the
+//      reason in PageError.
+//
+//   3. NEW LINES GOT THE WRONG TAX RATE BELOW 1%. LoadTaxAndRulesAsync
+//      still guessed "fraction or percentage?" (raw < 1 → ×100), the guess
+//      Create dropped in 056: the stored rate is ALWAYS a percentage, and a
+//      genuine 0.5% rate became 50% on every line added here. Now the same
+//      as Create.
+//
+//   4. The tax column said "Tax" on this page and "GST" / "VAT" on Create.
+//      TaxLabel comes from the workspace now, as on Create.
+//
 // CHANGES (029)
 //
 //   1. ★ EVERY SAVE MOVED THE DATES BACK A DAY. This is the one to care
@@ -75,6 +100,8 @@
 //   ✅ API refusals show their real message.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldFormVm, CustomFieldForm
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
@@ -100,6 +127,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly ICurrentUserService    _currentUserService;
         private readonly ICurrentTenantService  _tenantService;
         private readonly IQuoteApprovalService  _approvals;
+        private readonly ICustomFieldService    _customFields;   // 081
         private readonly ILogger<EditModel>     _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -114,10 +142,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             ICurrentUserService   currentUserService,
             ICurrentTenantService tenantService,
             IQuoteApprovalService approvals,
+            ICustomFieldService   customFields,                 // 081
             IAuthorizationService authorizationService,
             ILogger<EditModel>    logger)
             : base(authorizationService, currentUserService, logger)
         {
+            _customFields       = customFields;
             _quoteService       = quoteService;
             _productService     = productService;
             _currentUserService = currentUserService;
@@ -140,11 +170,42 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage   { get; set; }
 
+        /// <summary>081. Why the form came back, on THIS response (not TempData — no redirect).</summary>
+        public string? PageError { get; private set; }
+
+        /// <summary>
+        /// 081. The lines as POSTED, for the editor, when the form is shown
+        /// again after a refusal. Null on a fresh open — the view then seeds
+        /// from the stored quote.
+        /// </summary>
+        public string? PostedItemsJson { get; private set; }
+
+        /// <summary>081. Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>081. Active Quote custom fields, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>081. The model for _CustomFieldInputs.</summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Quote
+        };
+
         /// <summary>Same list as the API's QuoteWorkflow.IsEditable.</summary>
         public bool IsEditable => ExistingQuote?.Status is "Draft" or "Revised" or "Approved";
 
         /// <summary>Tenant default tax, as a percentage (7 for Thai VAT) — for new lines.</summary>
         public decimal DefaultTaxRate { get; private set; }
+
+        /// <summary>081. The workspace's word for the tax — "GST", "VAT". Was hard-coded "Tax".</summary>
+        public string TaxLabel { get; private set; } = "Tax";
 
         /// <summary>JSON for the editor: { enabled, maxDiscountPercent, maxQuoteTotal, exempt }.</summary>
         public string ApprovalRulesJson { get; private set; } = "{\"enabled\":false}";
@@ -261,6 +322,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 await LoadProductsAsync(tenantId);
 
+                // 081 — the quote's stored custom values, into the inputs.
+                CustomFields = CustomFieldForm.FromStored(ExistingQuote.CustomFieldValues);
+                await LoadCustomFieldsAsync();
+
                 return Page();
             }
             catch (Exception ex)
@@ -278,16 +343,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             var check = await ValidatePermissionAsync(Actions.Update);
             if (check != null) return check;
 
+            if (Id == Guid.Empty)
+            {
+                ErrorMessage = "Invalid quote ID";
+                return RedirectToPage("/Quotes/Index");
+            }
+
+            var tenantId = _currentUserService.GetCurrentTenantId();
+
+            // 081. Read the lines FIRST so every refusal below can show them
+            // again exactly as posted. The old page re-seeded from the
+            // database on an error, silently undoing the person's changes.
+            var items = QuoteItemsSeed.TryParse(itemsJson);
+
             try
             {
-                if (Id == Guid.Empty)
-                {
-                    ErrorMessage = "Invalid quote ID";
-                    return RedirectToPage("/Quotes/Index");
-                }
-
-                var tenantId = _currentUserService.GetCurrentTenantId();
-
                 ExistingQuote = await _quoteService.GetByIdAsync(tenantId, Id);
 
                 if (ExistingQuote == null)
@@ -296,105 +366,64 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     return RedirectToPage("/Quotes/Index");
                 }
 
-                // ✅ Level 2 guard, matching OnGetAsync. The old POST checked
-                // only that the quote existed, so a status that OnGet refuses
-                // to open reached the API and the user got the API's wording
-                // instead of this page's.
+                // ✅ Level 2 guard, matching OnGetAsync. A status OnGet refuses
+                // to open must not reach the API through a stale form.
                 if (!IsEditable)
                 {
                     ErrorMessage = NotEditableReason(ExistingQuote.Status);
                     return RedirectToPage("/Quotes/Detail", new { id = Id });
                 }
 
+                // 081 — each custom field's message under its own input.
+                await LoadCustomFieldsAsync();
+                CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
                 if (Input.ExpiryDate.Date < Input.IssueDate.Date)
-                {
-                    ErrorMessage = "The expiry date can't be before the issue date.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
-
-                if (string.IsNullOrWhiteSpace(itemsJson))
-                {
-                    ErrorMessage = "Please add at least one item to the quote";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
-
-                // The editor sends "id":null for a new line, but guard the shapes
-                // System.Text.Json cannot turn into a Guid? anyway — the Create
-                // page has carried this normalisation since 017 and this one
-                // never did.
-                itemsJson = System.Text.RegularExpressions.Regex.Replace(
-                    itemsJson,
-                    @"""id""\s*:\s*(-?\d+|"""")",
-                    @"""id"":null",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-                var items = JsonSerializer.Deserialize<List<QuoteItemData>>(
-                    itemsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    return await RedisplayAsync(tenantId, items, "The expiry date can't be before the issue date.");
 
                 if (items == null || items.Count == 0)
-                {
-                    ErrorMessage = "Please add at least one item to the quote";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "Please add at least one item to the quote.");
 
                 if (items.Any(i => string.IsNullOrWhiteSpace(i.Name)))
                 {
                     var missing = items.Count(i => string.IsNullOrWhiteSpace(i.Name));
-                    ErrorMessage = $"All items must have a name. {missing} item(s) are missing names.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
+                    return await RedisplayAsync(tenantId, items,
+                        $"All items must have a name. {missing} item(s) are missing names.");
                 }
 
                 // 052 — see Create.cshtml.cs. Decimal quantities are legal now.
                 if (items.Any(i => i.Quantity <= 0))
-                {
-                    ErrorMessage = "Every line needs a quantity above zero.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "Every line needs a quantity above zero.");
 
                 if (items.Any(i => i.UnitPrice <= 0))
-                {
-                    ErrorMessage = "Every line needs a unit price above zero.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "Every line needs a unit price above zero.");
 
                 if (items.Any(i => i.TaxRate < 0 || i.TaxRate > 100))
-                {
-                    ErrorMessage = "Tax rates must be between 0 and 100%.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "Tax rates must be between 0 and 100%.");
 
                 // 055 — see Create.cshtml.cs.
                 if (items.Any(i => i.DiscountPercent is < 0 or > 100))
-                {
-                    ErrorMessage = "A discount percentage must be between 0 and 100.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "A discount percentage must be between 0 and 100.");
 
                 if (items.Any(i => i.LineDiscount < 0))
-                {
-                    ErrorMessage = "A line discount can't be negative.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, "A line discount can't be negative.");
 
                 // 067 — see Create.cshtml.cs. TaxCodes.Normalise would
-                // silently shorten an over-long code, which is wrong in
-                // front of a form: the rep would save, reopen, and find
-                // something other than what they typed.
+                // silently shorten an over-long code.
                 if (items.Any(i => (i.TaxCode ?? string.Empty).Trim().Length > TaxCodes.MaxLength))
-                {
-                    ErrorMessage = $"A tax code can be at most {TaxCodes.MaxLength} characters.";
-                    await LoadFormDataAsync(tenantId);
-                    return Page();
-                }
+                    return await RedisplayAsync(tenantId, items, $"A tax code can be at most {TaxCodes.MaxLength} characters.");
+
+                // 081 — a custom field problem; each message is under its input.
+                // 081 — a custom field is wrong: its message is under its own input.
+                if (CustomFieldForm.HasErrors(ModelState))
+                    return await RedisplayAsync(tenantId, items, "Please correct the highlighted fields.");
+
+                // A date box that failed to bind (a cleared box posts "") is said
+                // plainly rather than saving the default binding left behind. ONLY
+                // these keys: with nullable reference types on, an unposted string
+                // property also lands in ModelState, and must not block the save.
+                if (new[] { "Input.IssueDate", "Input.ExpiryDate" }.Any(k => ModelState[k]?.Errors.Count > 0))
+                    return await RedisplayAsync(tenantId, items, "Some of the dates could not be read. Please check them and try again.");
 
                 // ✅ Currency from the STORED quote, never from the post. The
                 // hidden field exists so the form is self-describing; trusting
@@ -406,13 +435,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 var updateDto = new UpdateQuoteDto
                 {
                     // ★ SpecifyKind, not ToUniversalTime. See change 1 in the
-                    // header: these are calendar dates stored as midnight UTC,
-                    // and ToUniversalTime() on an Unspecified midnight subtracts
-                    // the server's offset, moving the date back a day on every
-                    // single save.
+                    // header: calendar dates stored as midnight UTC.
                     IssueDateUtc = DateTime.SpecifyKind(Input.IssueDate.Date, DateTimeKind.Utc),
                     ExpiresAtUtc = DateTime.SpecifyKind(Input.ExpiryDate.Date, DateTimeKind.Utc),
                     Currency     = currency,
+
+                    // 081 — null when the field list could not be loaded: the
+                    // form had no custom inputs, so leave the values alone.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+
                     Items        = items.Select(i => new UpdateQuoteItemDto
                     {
                         Id           = i.Id,          // existing line, or null for a new one
@@ -426,9 +459,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                         DiscountPercent = i.DiscountPercent,   // 055
                         TaxRate      = i.TaxRate / 100m,  // % → decimal fraction
                         // 067. `?? string.Empty`, never a bare null — see
-                        // QuoteItemData.TaxCode. On this page it is the
-                        // difference between clearing a code and having the
-                        // product's put straight back.
+                        // QuoteItemData.TaxCode.
                         TaxCode      = i.TaxCode ?? string.Empty
                     }).ToList()
                 };
@@ -437,6 +468,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 _logger.LogInformation("Quote {QuoteId} updated with {Count} lines", Id, items.Count);
 
+                // TempData is right here: this response REDIRECTS.
                 SuccessMessage = ExistingQuote.Status == "Approved"
                     ? $"Quote {ExistingQuote.Number} updated. It's back in draft — send it, or submit it for approval again if it's over the limits."
                     : $"Quote {ExistingQuote.Number} updated.";
@@ -445,28 +477,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             }
             catch (InvalidOperationException ex)
             {
-                // The API refused and said why — e.g. the quote isn't editable any more.
-                ErrorMessage = ex.Message;
-                await LoadFormDataAsync(_currentUserService.GetCurrentTenantId());
-                return Page();
+                // The API refused and said why — the quote isn't editable any
+                // more, a line is wrong, a required custom field is empty.
+                return await RedisplayAsync(tenantId, items, ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to update quote {QuoteId}", Id);
-                ErrorMessage = "Failed to update quote. Please try again.";
-                await LoadFormDataAsync(_currentUserService.GetCurrentTenantId());
-                return Page();
+                return await RedisplayAsync(tenantId, items, "Failed to update quote. Please try again.");
             }
         }
 
         // ==================== HELPERS ====================
 
         /// <summary>
-        /// Re-fill everything the view needs after a validation failure, so the
-        /// page can be re-rendered instead of redirecting and losing the edit.
+        /// 081 (was LoadFormDataAsync + a TempData message). Show the form
+        /// again with what was POSTED — lines, dates, custom fields — and
+        /// one sentence in PageError saying what is wrong. If the quote
+        /// itself cannot be read any more there is no form to show.
         /// </summary>
-        private async Task LoadFormDataAsync(Guid tenantId)
+        private async Task<IActionResult> RedisplayAsync(Guid tenantId, List<QuoteItemData>? items, string message)
         {
+            PageError = message;
+
             try
             {
                 // Permissions do not survive a POST — the page model is a fresh
@@ -478,12 +511,54 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 TenantCurrencySymbol  = _tenantService.GetCurrencySymbol();
                 TenantCurrencyCode    = _tenantService.GetCurrencyCode();
 
+                if (ExistingQuote == null)
+                {
+                    ErrorMessage = "Quote not found";
+                    return RedirectToPage("/Quotes/Index");
+                }
+
+                // The currency box shows the stored currency, as on GET.
+                Input.Currency = !string.IsNullOrEmpty(ExistingQuote.Currency)
+                    ? ExistingQuote.Currency
+                    : TenantCurrencyCode;
+
                 await LoadTaxAndRulesAsync();
                 await LoadProductsAsync(tenantId);
+                if (ActiveCustomFields.Count == 0 && !CustomFieldsLoadFailed)
+                    await LoadCustomFieldsAsync();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to reload form data for quote {QuoteId}", Id);
+            }
+
+            // The posted lines when they could be read; otherwise the stored
+            // ones (null here means the view seeds from ExistingQuote).
+            PostedItemsJson = items is { Count: > 0 } ? QuoteItemsSeed.FromPosted(items) : null;
+            return Page();
+        }
+
+        /// <summary>
+        /// 081. The active Quote custom fields. A failure is remembered
+        /// (CustomFieldsLoadFailed) so the form says why the fields are
+        /// missing and the save sends CustomFields = null — leaving every
+        /// stored value exactly as it was.
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Quote, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.SortOrder)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the Edit Quote form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
             }
         }
 
@@ -491,9 +566,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         {
             try
             {
-                // GetDefaultTaxRateAsync may return a fraction (0.07) or a percentage (7).
-                var raw = await _tenantService.GetDefaultTaxRateAsync();
-                DefaultTaxRate = raw < 1m ? raw * 100m : raw;
+                // 081 (as Create since 056): the stored rate is ALWAYS a
+                // percentage. The old "raw < 1 → ×100" guess turned a real
+                // 0.5% rate into 50% on every new line.
+                DefaultTaxRate = await _tenantService.GetDefaultTaxRateAsync();
+                TaxLabel       = _tenantService.GetTaxLabel();
             }
             catch (Exception ex)
             {

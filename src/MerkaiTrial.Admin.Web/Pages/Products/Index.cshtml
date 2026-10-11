@@ -1,29 +1,70 @@
 @page "/Products"
 @model MerkaiTrial.Admin.Web.Pages.Products.IndexModel
+@using MerkaiTrial.Application.Configuration
 @{
     ViewData["Title"] = "Products";
+    var p = Model.PaginatedProducts;
+
+    // The whole list state (filters, custom filters, page, size), carried
+    // by every POST form on this page so the redirect lands where the
+    // person was. Built once, not once per row.
+    var state = Model.StateRoute();
 }
+@* =====================================================================
+   Pages/Products/Index.cshtml — COMPLETE FILE (080).
+
+   • _ListToolbar for search, Category, Status and the count; the shared
+     _CustomFieldFilterPanel beneath it; _Pager for paging and page size.
+     The hand-built pager and its three bugs are gone (see the model).
+   • Up to four "Show on the list" custom fields as columns (desktop) and
+     label/value lines (mobile cards).
+   • A failed load shows Model.PageError on THIS response. Messages after
+     a redirect are rendered once, globally, by _Layout — not here.
+   • Delete opens a modal. The product's name travels as a data-
+     attribute and is written with textContent: a name like
+     O'Brien's "Pro" Kit is data, never script. The old inline
+     confirmDelete('@id', '@name') was both a syntax error for such names
+     and an XSS hole.
+   • The delete and Active-switch forms carry the list state, so nothing
+     resets after the redirect.
+   • No nested forms: the toggle forms sit inside table cells, the delete
+     form is the modal's own, and the toolbar/pager are siblings.
+   ===================================================================== *@
+
+<style>
+    .px-desc { max-width: 340px; }
+    .min-w-0 { min-width: 0; }
+    .px-cf { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .px-cf-head { white-space: nowrap; }
+    .px-empty { text-align: center; padding: 3rem 1rem; color: #64748b; }
+    .px-empty .big { font-size: 2.5rem; display: block; margin-bottom: .75rem; color: #94a3b8; }
+</style>
 
 <div class="container-fluid py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
         <div>
-            <h2 class="mb-1"><i class="bi bi-box-seam text-primary"></i> Products</h2>
-            <p class="text-muted mb-0">Manage your product catalog</p>
+            <h2 class="mb-1 d-flex align-items-center gap-2 flex-wrap">
+                <span><i class="bi bi-box-seam text-primary"></i> Products</span>
+                <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">@Model.PlanDisplayName</span>
+            </h2>
+            <p class="text-muted mb-0">Your catalogue — what you sell, at what price, for quotes and invoices.</p>
         </div>
-        @* ✅ Plan badge *@
-        <span class="badge @Model.PlanBadgeClass fs-6 px-3 py-2">
-            @Model.PlanDisplayName
-        </span>
         @if (Model.CanCreate)
         {
             <a asp-page="./Create" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add Product</span>                
+                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Add product</span>
             </a>
-
         }
     </div>
 
-    @* Alert messages are rendered once, globally, by _Layout.cshtml — do not duplicate here. *@
+    @* Messages after a redirect are rendered once, globally, by _Layout.cshtml. *@
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
 
     <!-- Stats -->
     <div class="row g-3 mb-4">
@@ -31,12 +72,12 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="d-flex align-items-center">
-                        <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
                              style="width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #2563eb);">
                             <i class="bi bi-box-seam text-white fs-4"></i>
                         </div>
                         <div class="ms-3">
-                            <h6 class="text-muted mb-1 small">Total Products</h6>
+                            <h6 class="text-muted mb-1 small">Total products</h6>
                             <h3 class="mb-0">@Model.Stats.TotalProducts</h3>
                         </div>
                     </div>
@@ -47,12 +88,12 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="d-flex align-items-center">
-                        <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
                              style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669);">
                             <i class="bi bi-check-circle text-white fs-4"></i>
                         </div>
                         <div class="ms-3">
-                            <h6 class="text-muted mb-1 small">Active Products</h6>
+                            <h6 class="text-muted mb-1 small">Active</h6>
                             <h3 class="mb-0">@Model.Stats.ActiveProducts</h3>
                         </div>
                     </div>
@@ -63,12 +104,12 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="d-flex align-items-center">
-                        <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
                              style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b, #d97706);">
                             <span class="text-white fw-bold fs-5">@Model.TenantCurrencySymbol</span>
                         </div>
                         <div class="ms-3">
-                            <h6 class="text-muted mb-1 small">Total Value</h6>
+                            <h6 class="text-muted mb-1 small" title="The list prices of all active products added together">Catalogue value</h6>
                             <h3 class="mb-0">@Model.FormatCurrency(Model.Stats.TotalValue, 0)</h3>
                         </div>
                     </div>
@@ -79,12 +120,12 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body">
                     <div class="d-flex align-items-center">
-                        <div class="rounded-circle d-flex align-items-center justify-content-center" 
+                        <div class="rounded-circle d-flex align-items-center justify-content-center"
                              style="width: 60px; height: 60px; background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
                             <i class="bi bi-grid text-white fs-4"></i>
                         </div>
                         <div class="ms-3">
-                            <h6 class="text-muted mb-1 small">Categories</h6>
+                            <h6 class="text-muted mb-1 small">Categories in use</h6>
                             <h3 class="mb-0">@Model.Stats.CategoriesCount</h3>
                         </div>
                     </div>
@@ -93,360 +134,406 @@
         </div>
     </div>
 
-    <!-- Search -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body">
-            <form method="get" class="row g-3 align-items-end">
-                <input type="hidden" name="PageSize" value="@Model.PageSize" />
-                <div class="col-lg-4 col-md-6">
-                    <label class="form-label small fw-semibold"><i class="bi bi-search me-1"></i>Search</label>
-                    <input type="text" class="form-control" name="SearchTerm" value="@Model.SearchTerm" placeholder="Product name, SKU..." />
-                </div>
-                <div class="col-lg-3 col-md-6">
-                    <label class="form-label small fw-semibold"><i class="bi bi-tag me-1"></i>Category</label>
-                    <select class="form-select" name="CategoryFilter" asp-items="Model.GetCategoryFilterOptions()"></select>
-                </div>
-                <div class="col-lg-3 col-md-6">
-                    <label class="form-label small fw-semibold"><i class="bi bi-toggle-on me-1"></i>Status</label>
-                    <select class="form-select" name="IsActiveFilter" asp-items="Model.GetIsActiveFilterOptions()"></select>
-                </div>
-                <div class="col-lg-2 col-md-6">
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary flex-fill">
-                            <i class="bi bi-search d-md-none"></i><span class="d-none d-md-inline">Search</span>
-                        </button>
-                        <a asp-page="./Index" asp-route-pagesize="@Model.PageSize" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-clockwise"></i>
-                        </a>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
+    @* Search, Category, Status and the count — one GET form. *@
+    <partial name="_ListToolbar" model="Model.Toolbar" />
+    @* 080 — custom field filters; their inputs post with the toolbar's form. *@
+    <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
-    <!-- Desktop Table -->
-    <div class="card border-0 shadow-sm d-none d-md-block">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">
-                <i class="bi bi-list-ul me-2"></i>Products List
-                <span class="badge bg-white text-primary ms-2">@Model.PaginatedProducts.TotalCount</span>
-            </h5>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th class="ps-3">Product</th>
-                        <th>Category</th>
-                        <th>SKU</th>
-                        <th>Price</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th class="text-end pe-3">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var product in Model.PaginatedProducts.Items)
-                    {
+    @if (p.Items.Any())
+    {
+        <!-- Desktop Table -->
+        <div class="card border-0 shadow-sm d-none d-md-block">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
                         <tr>
-                            <td class="ps-3">
-                                <div class="d-flex align-items-center">
-                                    @* 068: icon and colour from the workspace's own
-                                       category list. title= only when the category no
-                                       longer exists — a grey box on its own reads as a
-                                       styling bug rather than a removed category. *@
-                                    <i class="@Model.GetCategoryIcon(product.Category) fs-4 me-3"
-                                       style="color: @Model.GetCategoryColor(product.Category);"
-                                       title="@Model.CategoryWarning(product.Category)"></i>
-                                    <div>
-                                        <strong>@product.Name</strong>
-                                        @if (!string.IsNullOrEmpty(product.Description))
-                                        {
-                                            <br /><small class="text-muted">@product.Description</small>
-                                        }
-                                    </div>
-                                </div>
-                            </td>
-                            @* 068: an orphaned category is shown as it is stored,
-                               in a muted badge. Hiding it would mean the product
-                               looked uncategorized on this page while its Edit
-                               form still carried the value. *@
-                            <td>
-                                @if (product.Category is null)
-                                {
-                                    <span class="badge bg-light text-muted border">Uncategorized</span>
-                                }
-                                else if (Model.IsCategoryOrphaned(product.Category))
-                                {
-                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
-                                          title="No longer one of your categories">@product.Category</span>
-                                }
-                                else
-                                {
-                                    <span class="badge bg-info">@product.Category</span>
-                                }
-                            </td>
-                            <td><code>@(product.Sku ?? "-")</code></td>
-                            @* 051: the unit rides with the price. Without it a
-                               list of numbers says nothing about what is being
-                               sold — ₹450 per m² and ₹450 per piece are not the
-                               same product. *@
-                            <td>
-                                <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
-                                @if (product.TaxRate.HasValue)
-                                {
-                                    <br /><small class="text-muted">+@product.TaxRate.Value% tax</small>
-                                }
-                                @* 069: how many OTHER currencies this product is
-                                   priced in. Shown only when there are any, so a
-                                   single-currency workspace sees the column it saw
-                                   before this round.
-
-                                   A count rather than the prices themselves: this
-                                   list has one row per product and the figures
-                                   belong on the product page, but "is this one
-                                   priced for my US deals" is a question somebody
-                                   scans a list for. *@
-                                @if (product.OtherCurrencyCount > 0)
-                                {
-                                    <br />
-                                    <a asp-page="./Detail" asp-route-id="@product.Id"
-                                       class="badge bg-light text-dark border text-decoration-none"
-                                       title="Also priced in @product.OtherCurrencyCount other @(product.OtherCurrencyCount == 1 ? "currency" : "currencies")">
-                                        <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
-                                    </a>
-                                }
-                            </td>
-                            @* 070: a bundle says how many products are in it.
-                               "Bundle" alone does not answer the question
-                               somebody scanning the list has, which is whether
-                               it has been filled in yet. *@
-                            <td>
-                                @if (product.IsBundle)
-                                {
-                                    <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle"
-                                          title="@Model.BundleTooltip(product)">
-                                        <i class="bi bi-boxes me-1"></i>Bundle
-                                        @if (product.BundleComponentCount > 0)
-                                        {
-                                            <text>· @product.BundleComponentCount</text>
-                                        }
-                                    </span>
-                                    @if (product.BundleComponentCount == 0)
-                                    {
-                                        <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
-                                           title="This bundle is empty."></i>
-                                    }
-                                }
-                                else
-                                {
-                                    <span class="badge bg-secondary">@product.Type</span>
-                                }
-                            </td>
-                            <td>
-                                @if (Model.CanUpdate)
-                                {
-                                    <form method="post" asp-page-handler="ToggleActive" asp-route-id="@product.Id" class="d-inline">
-                                        <div class="form-check form-switch mb-0" title="@(product.IsActive ? "Click to deactivate" : "Click to activate")">
-                                            <input class="form-check-input" type="checkbox" role="switch"
-                                                   @(product.IsActive ? "checked" : "")
-                                                   onchange="this.form.submit()"
-                                                   style="cursor:pointer; width:2.5em; height:1.3em;" />
-                                            <label class="form-check-label small @(product.IsActive ? "text-success fw-semibold" : "text-muted")">
-                                                @(product.IsActive ? "Active" : "Inactive")
-                                            </label>
+                            <th class="ps-3">Product</th>
+                            <th>Category</th>
+                            <th>SKU</th>
+                            <th>Price</th>
+                            <th>Type</th>
+                            @foreach (var col in Model.ListColumns)
+                            {
+                                <th class="px-cf-head">
+                                    <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1 text-muted" aria-hidden="true"></i>@col.Label
+                                </th>
+                            }
+                            <th>Status</th>
+                            <th class="text-end pe-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in p.Items)
+                        {
+                            <tr>
+                                <td class="ps-3">
+                                    <div class="d-flex align-items-center">
+                                        @* 068: icon and colour from the workspace's own
+                                           category list; title= only when the category
+                                           no longer exists. *@
+                                        <i class="@Model.GetCategoryIcon(product.Category) fs-4 me-3"
+                                           style="color: @Model.GetCategoryColor(product.Category);"
+                                           title="@Model.CategoryWarning(product.Category)"></i>
+                                        <div class="min-w-0">
+                                            <a asp-page="./Detail" asp-route-id="@product.Id"
+                                               class="fw-semibold text-body text-decoration-none">@product.Name</a>
+                                            @if (!string.IsNullOrEmpty(product.Description))
+                                            {
+                                                <div class="small text-muted text-truncate px-desc" title="@product.Description">@product.Description</div>
+                                            }
                                         </div>
-                                    </form>
-                                }
-                                else
+                                    </div>
+                                </td>
+                                <td>
+                                    @if (product.Category is null)
+                                    {
+                                        <span class="badge bg-light text-muted border">Uncategorized</span>
+                                    }
+                                    else if (Model.IsCategoryOrphaned(product.Category))
+                                    {
+                                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                                              title="No longer one of your categories">@product.Category</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-info">@product.Category</span>
+                                    }
+                                </td>
+                                <td><code>@(product.Sku ?? "-")</code></td>
+                                @* 051: the unit rides with the price. *@
+                                <td>
+                                    <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
+                                    @if (product.TaxRate.HasValue && product.TaxRate.Value > 0)
+                                    {
+                                        <br /><small class="text-muted">+@product.TaxRate.Value.ToString("0.##")% tax</small>
+                                    }
+                                    @* 069: how many OTHER currencies it is priced in. *@
+                                    @if (product.OtherCurrencyCount > 0)
+                                    {
+                                        <br />
+                                        <a asp-page="./Detail" asp-route-id="@product.Id"
+                                           class="badge bg-light text-dark border text-decoration-none"
+                                           title="Also priced in @product.OtherCurrencyCount other @(product.OtherCurrencyCount == 1 ? "currency" : "currencies")">
+                                            <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
+                                        </a>
+                                    }
+                                </td>
+                                @* 070: a bundle says how many products are in it. *@
+                                <td>
+                                    @if (product.IsBundle)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle"
+                                              title="@Model.BundleTooltip(product)">
+                                            <i class="bi bi-boxes me-1"></i>Bundle
+                                            @if (product.BundleComponentCount > 0)
+                                            {
+                                                <text>· @product.BundleComponentCount</text>
+                                            }
+                                        </span>
+                                        @if (product.BundleComponentCount == 0)
+                                        {
+                                            <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
+                                               title="This bundle is empty."></i>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary"><i class="bi @Model.KindIcon(product.Type) me-1"></i>@product.Type</span>
+                                    }
+                                </td>
+                                @* 080: the "Show on the list" custom fields. *@
+                                @foreach (var col in Model.ListColumns)
                                 {
-                                    <span class="badge @(product.IsActive ? "bg-success" : "bg-secondary")">
-                                        @(product.IsActive ? "Active" : "Inactive")
-                                    </span>
+                                    var shown = Model.ColumnValue(product, col);
+                                    <td class="px-cf" title="@shown">
+                                        @if (string.IsNullOrEmpty(shown))
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else if (col.FieldType == CustomFieldTypes.Checkbox)
+                                        {
+                                            <i class="bi bi-check-lg text-success" aria-label="Yes"></i>
+                                        }
+                                        else
+                                        {
+                                            @shown
+                                        }
+                                    </td>
                                 }
-                            </td>
-                            <td class="text-end pe-3">
-                                <div class="btn-group btn-group-sm">
-                                    <a asp-page="./Detail" asp-route-id="@product.Id" class="btn btn-outline-primary" title="View">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
+                                <td>
                                     @if (Model.CanUpdate)
                                     {
-                                        <a asp-page="./Edit" asp-route-id="@product.Id" class="btn btn-outline-warning" title="Edit">
-                                            <i class="bi bi-pencil"></i>
+                                        <form method="post" asp-page-handler="ToggleActive" asp-route-id="@product.Id" class="d-inline">
+                                            @foreach (var keep in state)
+                                            {
+                                                <input type="hidden" name="@keep.Key" value="@keep.Value" />
+                                            }
+                                            <div class="form-check form-switch mb-0" title="@(product.IsActive ? "Click to deactivate" : "Click to activate")">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                       id="active-@product.Id"
+                                                       checked="@product.IsActive"
+                                                       onchange="this.form.submit()"
+                                                       aria-label="@(product.IsActive ? "Deactivate" : "Activate") @product.Name"
+                                                       style="cursor:pointer; width:2.5em; height:1.3em;" />
+                                                <label class="form-check-label small @(product.IsActive ? "text-success fw-semibold" : "text-muted")"
+                                                       for="active-@product.Id">
+                                                    @(product.IsActive ? "Active" : "Inactive")
+                                                </label>
+                                            </div>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge @(product.IsActive ? "bg-success" : "bg-secondary")">
+                                            @(product.IsActive ? "Active" : "Inactive")
+                                        </span>
+                                    }
+                                </td>
+                                <td class="text-end pe-3">
+                                    <div class="btn-group btn-group-sm">
+                                        <a asp-page="./Detail" asp-route-id="@product.Id" class="btn btn-outline-primary"
+                                           title="View @product.Name" aria-label="View @product.Name">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        @if (Model.CanUpdate)
+                                        {
+                                            <a asp-page="./Edit" asp-route-id="@product.Id" class="btn btn-outline-warning"
+                                               title="Edit @product.Name" aria-label="Edit @product.Name">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        }
+                                        @if (Model.CanDelete)
+                                        {
+                                            <button type="button" class="btn btn-outline-danger"
+                                                    data-delete-product
+                                                    data-product-id="@product.Id"
+                                                    data-product-name="@product.Name"
+                                                    title="Delete @product.Name" aria-label="Delete @product.Name">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-body border-top">
+                <partial name="_Pager" model="Model.Pager" />
+            </div>
+        </div>
+
+        <!-- Mobile Cards -->
+        <div class="d-md-none">
+            @foreach (var product in p.Items)
+            {
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <i class="@Model.GetCategoryIcon(product.Category) fs-3 me-3"
+                               style="color: @Model.GetCategoryColor(product.Category);"
+                               title="@Model.CategoryWarning(product.Category)"></i>
+                            <div class="flex-grow-1 min-w-0">
+                                <h6 class="mb-1">
+                                    <a asp-page="./Detail" asp-route-id="@product.Id" class="text-body text-decoration-none">@product.Name</a>
+                                </h6>
+                                <div class="d-flex gap-2 flex-wrap align-items-center">
+                                    <span class="badge @(Model.IsCategoryOrphaned(product.Category) ? "bg-warning-subtle text-warning-emphasis" : "bg-info")">@(product.Category ?? "Uncategorized")</span>
+                                    @if (product.IsBundle)
+                                    {
+                                        <span class="badge bg-primary-subtle text-primary-emphasis" title="@Model.BundleTooltip(product)">
+                                            <i class="bi bi-boxes me-1"></i>Bundle · @product.BundleComponentCount
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">@product.Type</span>
+                                    }
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <form method="post" asp-page-handler="ToggleActive" asp-route-id="@product.Id" class="d-inline">
+                                            @foreach (var keep in state)
+                                            {
+                                                <input type="hidden" name="@keep.Key" value="@keep.Value" />
+                                            }
+                                            <button type="submit" class="badge border-0 @(product.IsActive ? "bg-success" : "bg-danger")"
+                                                    title="@(product.IsActive ? "Tap to deactivate" : "Tap to activate")"
+                                                    style="cursor:pointer;">
+                                                @(product.IsActive ? "Active" : "Inactive")
+                                            </button>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge @(product.IsActive ? "bg-success" : "bg-secondary")">
+                                            @(product.IsActive ? "Active" : "Inactive")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <small class="text-muted">Price</small>
+                                <div>
+                                    <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
+                                </div>
+                                @if (product.OtherCurrencyCount > 0)
+                                {
+                                    <span class="badge bg-light text-dark border mt-1">
+                                        <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
+                                    </span>
+                                }
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">SKU</small>
+                                <div><code>@(product.Sku ?? "-")</code></div>
+                            </div>
+                            @* 080: the list-column custom fields, only when filled in. *@
+                            @foreach (var col in Model.ListColumns)
+                            {
+                                var shown = Model.ColumnValue(product, col);
+                                if (string.IsNullOrEmpty(shown)) { continue; }
+                                <div class="col-6">
+                                    <small class="text-muted">@col.Label</small>
+                                    <div class="text-truncate" title="@shown">@shown</div>
+                                </div>
+                            }
+                        </div>
+                        <div class="d-grid gap-2">
+                            <a asp-page="./Detail" asp-route-id="@product.Id" class="btn btn-primary btn-sm">
+                                <i class="bi bi-eye me-1"></i>View details
+                            </a>
+                            @if (Model.CanUpdate || Model.CanDelete)
+                            {
+                                <div class="btn-group">
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <a asp-page="./Edit" asp-route-id="@product.Id" class="btn btn-outline-warning btn-sm">
+                                            <i class="bi bi-pencil me-1"></i>Edit
                                         </a>
                                     }
                                     @if (Model.CanDelete)
                                     {
-                                        <button type="button" class="btn btn-outline-danger" onclick="confirmDelete('@product.Id', '@product.Name')" title="Delete">
-                                            <i class="bi bi-trash"></i>
+                                        <button type="button" class="btn btn-outline-danger btn-sm"
+                                                data-delete-product
+                                                data-product-id="@product.Id"
+                                                data-product-name="@product.Name">
+                                            <i class="bi bi-trash me-1"></i>Delete
                                         </button>
                                     }
                                 </div>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Mobile Cards -->
-    <div class="d-md-none">
-        @foreach (var product in Model.PaginatedProducts.Items)
-        {
-            <div class="card border-0 shadow-sm mb-3">
-                <div class="card-body">
-                    <div class="d-flex align-items-start mb-3">
-                        <i class="@Model.GetCategoryIcon(product.Category) fs-3 me-3"
-                           style="color: @Model.GetCategoryColor(product.Category);"
-                           title="@Model.CategoryWarning(product.Category)"></i>
-                        <div class="flex-grow-1">
-                            <h6 class="mb-1">@product.Name</h6>
-                            <div class="d-flex gap-2 flex-wrap">
-                                <span class="badge bg-info">@(product.Category ?? "Uncategorized")</span>
-                                <span class="badge bg-secondary">@product.Type</span>
-                                @if (Model.CanUpdate)
-                                {
-                                    <form method="post" asp-page-handler="ToggleActive" asp-route-id="@product.Id" class="d-inline">
-                                        <button type="submit" class="badge border-0 @(product.IsActive ? "bg-success" : "bg-danger")"
-                                                title="@(product.IsActive ? "Click to deactivate" : "Click to activate")"
-                                                style="cursor:pointer;">
-                                            @(product.IsActive ? "Active" : "Inactive")
-                                        </button>
-                                    </form>
-                                }
-                                else
-                                {
-                                    <span class="badge @(product.IsActive ? "bg-success" : "bg-secondary")">
-                                        @(product.IsActive ? "Active" : "Inactive")
-                                    </span>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <small class="text-muted">Price</small>
-                            <div>
-                                <strong>@Model.FormatCurrency(product.ListPrice)</strong><span class="text-muted">@Model.PricedPer(product.UnitOfMeasure)</span>
-                            </div>
-                            @if (product.OtherCurrencyCount > 0)
-                            {
-                                @* 069 — see the desktop table. *@
-                                <span class="badge bg-light text-dark border mt-1">
-                                    <i class="bi bi-currency-exchange me-1"></i>+@product.OtherCurrencyCount
-                                </span>
                             }
                         </div>
-                        <div class="col-6">
-                            <small class="text-muted">SKU</small>
-                            <div><code>@(product.Sku ?? "-")</code></div>
-                        </div>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <a asp-page="./Detail" asp-route-id="@product.Id" class="btn btn-primary btn-sm">
-                            <i class="bi bi-eye me-1"></i>View Details
-                        </a>
-                        @if (Model.CanUpdate || Model.CanDelete)
-                        {
-                            <div class="btn-group">
-                                @if (Model.CanUpdate)
-                                {
-                                    <a asp-page="./Edit" asp-route-id="@product.Id" class="btn btn-outline-warning btn-sm">
-                                        <i class="bi bi-pencil me-1"></i>Edit
-                                    </a>
-                                }
-                                @if (Model.CanDelete)
-                                {
-                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDelete('@product.Id', '@product.Name')">
-                                        <i class="bi bi-trash me-1"></i>Delete
-                                    </button>
-                                }
-                            </div>
-                        }
                     </div>
                 </div>
-            </div>
-        }
-    </div>
-
-    @if (!Model.PaginatedProducts.Items.Any())
-    {
-        <div class="card border-0 shadow-sm">
-            <div class="card-body text-center py-5">
-                <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
-                <p class="text-muted mb-0">No products found.</p>
-            </div>
+            }
+            <partial name="_Pager" model="Model.Pager" />
         </div>
     }
-
-    <!-- Pagination -->
-    @if (Model.PaginatedProducts.Items.Any())
+    else
     {
-        <div class="card border-0 shadow-sm mt-4">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <form method="get" class="d-flex align-items-center gap-2">
-                        <input type="hidden" name="SearchTerm" value="@Model.SearchTerm" />
-                        <input type="hidden" name="CategoryFilter" value="@Model.CategoryFilter" />
-                        <input type="hidden" name="IsActiveFilter" value="@Model.IsActiveFilter" />
-                        <input type="hidden" name="Page" value="1" />
-                        <label class="col-form-label small mb-0">Items per page:</label>
-                        <select name="PageSize" class="form-select form-select-sm" style="width: auto;" onchange="this.form.submit()">
-                            <option value="5" selected="@(Model.PageSize == 5)">5</option>
-                            <option value="10" selected="@(Model.PageSize == 10)">10</option>
-                            <option value="25" selected="@(Model.PageSize == 25)">25</option>
-                            <option value="50" selected="@(Model.PageSize == 50)">50</option>
-                            <option value="100" selected="@(Model.PageSize == 100)">100</option>
-                        </select>
-                    </form>
-                    <span class="text-muted small">
-                        Showing @((Model.Page - 1) * Model.PageSize + 1) to @Math.Min(Model.Page * Model.PageSize, Model.PaginatedProducts.TotalCount) of @Model.PaginatedProducts.TotalCount
-                    </span>
-                </div>
-                <nav>
-                    <ul class="pagination pagination-sm justify-content-center mb-0">
-                        <li class="page-item @(!Model.PaginatedProducts.HasPrevious ? "disabled" : "")">
-                            <a class="page-link" asp-page="./Index" asp-route-page="@(Model.Page - 1)" asp-route-pagesize="@Model.PageSize" asp-route-searchterm="@Model.SearchTerm" asp-route-categoryfilter="@Model.CategoryFilter" asp-route-isactivefilter="@Model.IsActiveFilter">
-                                <i class="bi bi-chevron-left"></i> Previous
-                            </a>
-                        </li>
-                        @{
-                            var start = Math.Max(1, Model.Page - 2);
-                            var end = Math.Min(Model.PaginatedProducts.TotalPages, Model.Page + 2);
-                            for (int i = start; i <= end; i++)
-                            {
-                                <li class="page-item @(i == Model.Page ? "active" : "")">
-                                    <a class="page-link" asp-page="./Index" asp-route-page="@i" asp-route-pagesize="@Model.PageSize" asp-route-searchterm="@Model.SearchTerm" asp-route-categoryfilter="@Model.CategoryFilter" asp-route-isactivefilter="@Model.IsActiveFilter">@i</a>
-                                </li>
-                            }
-                        }
-                        <li class="page-item @(!Model.PaginatedProducts.HasNext ? "disabled" : "")">
-                            <a class="page-link" asp-page="./Index" asp-route-page="@(Model.Page + 1)" asp-route-pagesize="@Model.PageSize" asp-route-searchterm="@Model.SearchTerm" asp-route-categoryfilter="@Model.CategoryFilter" asp-route-isactivefilter="@Model.IsActiveFilter">
-                                Next <i class="bi bi-chevron-right"></i>
-                            </a>
-                        </li>
-                    </ul>
-                </nav>
+        <div class="card border-0 shadow-sm">
+            <div class="px-empty">
+                @if (!string.IsNullOrEmpty(Model.PageError))
+                {
+                    <i class="bi bi-cloud-slash big"></i>
+                    <div class="fw-semibold text-body mb-1">The list could not be loaded</div>
+                    <div class="small">
+                        <a asp-page="./Index" asp-all-route-data="state">Try again</a>
+                    </div>
+                }
+                else if (Model.IsFiltered)
+                {
+                    <i class="bi bi-search big"></i>
+                    <div class="fw-semibold text-body mb-1">No product matches these filters</div>
+                    <div class="small">
+                        <a asp-page="./Index" asp-route-PageSize="@Model.PageSize">Clear the search and filters</a>
+                    </div>
+                }
+                else
+                {
+                    <i class="bi bi-box-seam big"></i>
+                    <div class="fw-semibold text-body mb-1">No products yet</div>
+                    <div class="small mb-3">
+                        Add what you sell once, with its price and tax, and pick it on any quote from then on.
+                    </div>
+                    @if (Model.CanCreate)
+                    {
+                        <a asp-page="./Create" class="btn btn-sm btn-primary">
+                            <i class="bi bi-plus-lg me-1"></i>Add your first product
+                        </a>
+                    }
+                }
             </div>
         </div>
     }
 </div>
 
-<form method="post" id="deleteForm">
-    <input type="hidden" name="id" id="deleteId" />
-</form>
+@if (Model.CanDelete)
+{
+    <div class="modal fade" id="deleteProductModal" tabindex="-1" aria-labelledby="deleteProductLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form method="post" asp-page-handler="Delete" class="modal-content">
+                <input type="hidden" name="id" id="deleteProductId" />
+                @* The list state, so the redirect returns to the same page
+                   of the same filtered list. *@
+                @foreach (var keep in state)
+                {
+                    <input type="hidden" name="@keep.Key" value="@keep.Value" />
+                }
+                <div class="modal-header">
+                    <h5 class="modal-title" id="deleteProductLabel">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>Delete product
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Delete <strong id="deleteProductName"></strong>?</p>
+                    <p class="text-muted small mb-2">
+                        Quotes and invoices that already list it keep their lines as they are.
+                        It can no longer be added to new ones.
+                    </p>
+                    <p class="text-muted small mb-0" id="deleteProductBundleNote">
+                        If it is part of a bundle, the delete is refused until you take it out of that bundle —
+                        or switch it to <strong>Inactive</strong> instead.
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Delete product
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
 
 @section Scripts {
     <script>
-        // Alert auto-dismiss is handled globally by _Layout.cshtml — do not duplicate here.
-        function confirmDelete(id, name) {
-            if (confirm(`Delete "${name}"?`)) {
-                document.getElementById('deleteId').value = id;
-                document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;
-                document.getElementById('deleteForm').submit();
-            }
-        }
+        // One delegated listener. The id and name come from data- attributes
+        // and are written with textContent, so a product's name is only ever
+        // data, never script.
+        (function () {
+            'use strict';
+            var modalEl = document.getElementById('deleteProductModal');
+            if (!modalEl) return;
+
+            document.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('[data-delete-product]') : null;
+                if (!btn) return;
+
+                var id = btn.getAttribute('data-product-id');
+                if (!id) return;
+
+                document.getElementById('deleteProductId').value = id;
+                document.getElementById('deleteProductName').textContent =
+                    btn.getAttribute('data-product-name') || 'this product';
+
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            });
+        })();
     </script>
 }

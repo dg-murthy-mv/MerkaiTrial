@@ -32,9 +32,33 @@
 // indexed form fields. _PriceGrid's own header says why: removing a
 // middle row gaps the indexes and the model binder silently drops
 // everything after the gap.
+//
+// ── 080 ─────────────────────────────────────────────────────────────
+//
+// 1. CUSTOM FIELDS. "Additional details" — the workspace's Product
+//    fields, through the shared _CustomFieldInputs partial (the same one
+//    Contacts, Companies, Deals and Leads render). Each value is checked
+//    here first, so its message appears under its own input, then sent as
+//    CreateProductDto.CustomFields; the API checks again. If the field
+//    list could not be loaded, CustomFields is sent as NULL ("say
+//    nothing") and the partial explains why the fields are missing.
+//
+// 2. THE API'S SENTENCES REACH THE PAGE. An unknown category, a bad price
+//    row, a bundle that contains itself or a custom field value the API
+//    refuses now come back as a 400 with a sentence (InvalidOperationException
+//    here) and are shown as-is. Before, every one of them became "Failed
+//    to create product" and nobody could tell what to fix.
+//
+// 3. AFTER SAVING, the new product's own page opens (it went back to the
+//    list, where the person had to find what they had just made).
+//
+// ErrorMessage is an ordinary property, shown on THIS response; TempData
+// is used only for the success message, right before the redirect.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 080 — CustomFieldFormVm, CustomFieldForm
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 080
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Configuration;
@@ -53,6 +77,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         private readonly IProductService _productService;
         private readonly ICurrentTenantService _tenantService;   // FIX: inject tenant service
         private readonly IProductCategoryService _categoryService;   // 068
+        private readonly ICustomFieldService _customFields;          // 080
 
         protected override string ModuleName => Modules.Products;
 
@@ -60,6 +85,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             IProductService productService,
             ICurrentTenantService tenantService,               // FIX: add to constructor
             IProductCategoryService categoryService,           // 068
+            ICustomFieldService customFields,                  // 080
             IAuthorizationService authorizationService,
             ICurrentUserService currentUserService,
             ILogger<CreateModel> logger)
@@ -68,7 +94,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             _productService  = productService;
             _tenantService   = tenantService;
             _categoryService = categoryService;
+            _customFields    = customFields;
         }
+
+        /// <summary>080. Posted as CustomFields[&lt;field id&gt;] = value.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>080. Active custom fields for Products, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>080. The model for _CustomFieldInputs.</summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Product
+        };
 
         /// <summary>
         /// 068. The workspace's active category names, in its own display
@@ -97,6 +142,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         [BindProperty]
         public CreateProductDto Input { get; set; } = new();
 
+        /// <summary>Shown on THIS response — an ordinary property, not TempData.</summary>
         public string? ErrorMessage { get; set; }
 
         // FIX: expose tenant currency for the read-only display in the form
@@ -144,6 +190,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 UnitOfMeasure = UnitsOfMeasure.Unit
             };
 
+            await LoadCustomFieldsAsync();   // 080
+
             return Page();
         }
 
@@ -162,6 +210,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             // instead of showing them an empty one.
             PostedPrices = ParsePrices(pricesJson);
             PostedBundle = ParseBundle(bundleJson);   // 070
+
+            // 080 — each custom field's message under its own input.
+            await LoadCustomFieldsAsync();
+            CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
 
             if (!ModelState.IsValid)
             {
@@ -187,17 +239,56 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 // page from having to know the rules.
                 Input.BundleItems = PostedBundle;
 
-                await _productService.CreateAsync(Input);
+                // 080 — null when the field list could not be loaded: the
+                // form had no custom inputs, so say nothing about them.
+                Input.CustomFields = CustomFieldsLoadFailed
+                    ? null
+                    : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields);
 
-                TempData["SuccessMessage"] = "Product created successfully!";
-                return RedirectToPage("./Index");
+                var created = await _productService.CreateAsync(Input);
+
+                // TempData is right here: this response REDIRECTS, and the
+                // layout shows the message once on the page it lands on.
+                TempData["SuccessMessage"] = $"Product '{created.Name}' created.";
+                return RedirectToPage("./Detail", new { id = created.Id });   // note 3
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 080 — the API's own sentence: an unknown category, a bad
+                // price row, a bundle problem or a custom field value.
+                await ReloadContextAsync();
+                ErrorMessage = ex.Message;
+                return Page();
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error creating product");
                 await ReloadContextAsync();   // 051, 068
-                ModelState.AddModelError(string.Empty, "Failed to create product. Please try again.");
+                ErrorMessage = "The product could not be created. Please try again.";
                 return Page();
+            }
+        }
+
+        /// <summary>
+        /// 080. The active Product custom fields. A failure is remembered
+        /// (CustomFieldsLoadFailed) so the form says why the fields are
+        /// missing and the save sends CustomFields = null.
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Product, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.SortOrder)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Custom fields could not be loaded for the Create Product form");
+                ActiveCustomFields     = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
             }
         }
 

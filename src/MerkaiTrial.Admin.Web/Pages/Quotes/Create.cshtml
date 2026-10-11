@@ -20,9 +20,10 @@
         TaxLabel              = Model.DefaultTaxRateName,
         ApprovalRulesJson     = Model.ApprovalRulesJson,
         Products              = Model.Products ?? new(),
-        InitialItemsJson      = "[]",
+        // 081: the posted lines when the form comes back after a refusal.
+        InitialItemsJson      = Model.InitialItemsJson,
         ListPricesJson        = JsonSerializer.Serialize(listPrices),
-        StartWithOneBlankLine = true
+        StartWithOneBlankLine = Model.InitialItemsJson == "[]"
     };
 }
 @* =====================================================================
@@ -62,11 +63,18 @@
       quote to a customer is not undoable; saving a draft is. The primary
       button is the safe one now.
 
-   7. THE NO-DEALS CASE SAID IT TWICE: the page model puts "No deals
-      available for quoting…" in TempData, which _Layout renders as a
-      banner, and the page drew its own warning box under it.
+   7. THE NO-DEALS CASE SAID IT TWICE. (081: and the TempData copy
+      actually surfaced on the NEXT page, because it was set on a request
+      that renders. It is gone; the panel below is the one message.)
 
    TempData alerts are rendered once, globally, by _Layout.cshtml.
+
+   081
+   • The quote's own custom fields sit in the "Quote details" card (was
+     "Dates"), through the shared _CustomFieldInputs partial. A field that
+     prints on the customer's document carries a printer mark.
+   • A refused save comes back as typed — lines, dates, fields — with the
+     reason in Model.PageError above the form, instead of an empty form.
    ===================================================================== *@
 
 <style>
@@ -125,6 +133,15 @@
         </div>
     </div>
 
+    @* 081: why the form came back. Messages after a redirect are _Layout's. *@
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
+
     @* ── STEP 1: pick a deal ────────────────────────────────────── *@
     @if (Model.ShowDealSelection)
     {
@@ -169,10 +186,8 @@
             }
             else
             {
-                @* The "no deals available" message is already in TempData and
-                   rendered by _Layout, so this says something different: what to
-                   do about it. The old page repeated the same sentence in a
-                   second box. *@
+                @* 081: the only "no deals" message — the TempData copy is gone
+                   (it was set on a rendering request and surfaced a page late). *@
                 <div class="text-center py-3">
                     <i class="bi bi-briefcase d-block mb-2" style="font-size:2.2rem;color:#d7dde3;"></i>
                     <div class="fw-semibold mb-1">Nothing to quote yet</div>
@@ -222,7 +237,7 @@
 
                 <div class="col-lg-5">
                     <div class="qc-card">
-                        <h2><i class="bi bi-calendar-event"></i>Dates</h2>
+                        <h2><i class="bi bi-calendar-event"></i>Quote details</h2>
                         <div class="bd">
                             @* INSIDE the form. The old page had these in the deal card
                                above it, outside any form, so nothing the user typed was
@@ -244,6 +259,9 @@
                             <div class="text-muted mt-2" style="font-size:.76rem;">
                                 Priced in <strong>@Model.Currency</strong>, taken from the deal.
                             </div>
+
+                            @* 081 — the workspace's own Quote fields. Shared with Edit. *@
+                            <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
                         </div>
                     </div>
                 </div>

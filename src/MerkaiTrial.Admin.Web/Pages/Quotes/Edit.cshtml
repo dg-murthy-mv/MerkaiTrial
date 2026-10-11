@@ -14,32 +14,11 @@
         .GroupBy(p => p.Id.ToString())
         .ToDictionary(g => g.Key, g => g.First().ListPrice);
 
-    // The lines already on the quote. TaxRate on QuoteItemDto is a FRACTION
-    // (0.18 = 18%); the editor and QuoteItemData both work in PERCENT, so it
-    // is multiplied here — in one place, named — rather than by a second
-    // "normalise" function inside the script.
-    var seedItems = (eq?.Items ?? new()).Select(i => new
-    {
-        itemId       = i.Id,
-        productId    = i.ProductId,
-        name         = i.Name ?? string.Empty,
-        description  = i.Description ?? string.Empty,
-        quantity     = i.Quantity,
-        // 052: seeded so re-opening a quote shows the unit it was saved with,
-        // not "unit" for everything.
-        unitOfMeasure = i.UnitOfMeasure,
-        unitPrice    = i.UnitPrice,
-        lineDiscount = i.LineDiscount,
-        // 055: seeded so reopening a quote shows "10%" where the rep typed
-        // a percentage, not the amount it worked out to.
-        discountPercent = i.DiscountPercent,
-        taxRate      = i.TaxRate * 100m,
-        // 067: seeded so reopening a quote shows the HSN / SAC code it was
-        // saved with. "" rather than null for a line that has none — the
-        // editor posts this field back, and "" is what tells the server the
-        // line is deliberately unclassified rather than "ask the product".
-        taxCode      = i.TaxCode ?? string.Empty
-    }).ToList();
+    // The editor's starting lines. 081: built by QuoteItemsSeed — the
+    // stored lines on a fresh open (TaxRate FRACTION → PERCENT there, in one
+    // named place), or the lines as POSTED when the form comes back after a
+    // refusal, so nothing the person changed is undone.
+    var seedJson = Model.PostedItemsJson ?? QuoteItemsSeed.FromStored(eq?.Items);
 
     var editor = new QuoteItemsEditorVm
     {
@@ -47,10 +26,10 @@
         CurrencyCode          = string.IsNullOrWhiteSpace(Model.Input.Currency)
                                   ? Model.TenantCurrencyCode : Model.Input.Currency,
         DefaultTaxRate        = Model.DefaultTaxRate,
-        TaxLabel              = "Tax",
+        TaxLabel              = Model.TaxLabel,     // 081: the workspace's word — "GST", "VAT"
         ApprovalRulesJson     = Model.ApprovalRulesJson,
         Products              = Model.Products ?? new(),
-        InitialItemsJson      = JsonSerializer.Serialize(seedItems),
+        InitialItemsJson      = seedJson,
         ListPricesJson        = JsonSerializer.Serialize(listPrices),
         StartWithOneBlankLine = false
     };
@@ -97,6 +76,13 @@
    and expiry dates back a day. Edit.cshtml.cs explains it.
 
    TempData alerts are rendered once, globally, by _Layout.cshtml.
+
+   081
+   • The quote's own custom fields, in the "Quote details" card (was
+     "Dates"), through the shared _CustomFieldInputs partial.
+   • A refused save comes back with the lines AS POSTED (it used to reload
+     them from the database, undoing the edit) and the reason in
+     Model.PageError above the form.
    ===================================================================== *@
 
 <style>
@@ -162,6 +148,15 @@ else
         </div>
     </div>
 
+    @* 081: why the form came back. Messages after a redirect are _Layout's. *@
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.PageError</span>
+        </div>
+    }
+
     @if (!string.IsNullOrEmpty(Model.StatusWarning))
     {
         <div class="qx-warn">
@@ -212,7 +207,7 @@ else
 
             <div class="col-lg-5">
                 <div class="qx-card">
-                    <h2><i class="bi bi-calendar-event"></i>Dates</h2>
+                    <h2><i class="bi bi-calendar-event"></i>Quote details</h2>
                     <div class="bd">
                         <div class="row g-2">
                             <div class="col-6">
@@ -229,12 +224,16 @@ else
                         </div>
                         <span asp-validation-for="Input.IssueDate" class="text-danger small"></span>
                         <span asp-validation-for="Input.ExpiryDate" class="text-danger small"></span>
+
+                        @* 081 — the quote's own custom fields. Shared with Create. *@
+                        <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
                     </div>
                 </div>
             </div>
         </div>
 
-        @* The shared line-item editor, seeded with the quote's existing lines. *@
+        @* The shared line-item editor, seeded with the quote's lines (or the
+           posted ones, after a refusal). *@
         <partial name="_QuoteItemsEditor" model="editor" />
 
         <div class="qx-bar">

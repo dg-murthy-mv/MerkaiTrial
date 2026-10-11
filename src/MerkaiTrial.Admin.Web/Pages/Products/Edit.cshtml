@@ -16,11 +16,20 @@
         </a>
     </div>
 
+    @* 080 — shown on THIS response. Not dismissible and no timer: it is
+       the only sentence saying why the save did not happen. *@
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {
-        <div class="alert alert-danger alert-dismissible fade show">
-            <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+            <span>@Model.ErrorMessage</span>
+        </div>
+    }
+    else if (!ViewData.ModelState.IsValid)
+    {
+        <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+            <i class="bi bi-exclamation-circle-fill mt-1"></i>
+            <span>Some details need fixing — see the highlighted fields below.</span>
         </div>
     }
 
@@ -84,6 +93,9 @@
                                 <span asp-validation-for="Input.Category" class="text-danger small"></span>
                             </div>
                         </div>
+
+                        @* 080 — the workspace's own Product fields. Shared with Create. *@
+                        <partial name="_CustomFieldInputs" model="Model.CustomFieldInputs" />
                     </div>
                 </div>
 

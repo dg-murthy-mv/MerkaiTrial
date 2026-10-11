@@ -27,7 +27,13 @@
 // value when the lead is converted. Ignored (and stored as null) on any
 // other kind of field. Saving a definition sends the WHOLE field, so a
 // null here clears the mapping — the Settings page always sends both.
+//
+// 081 — PrintOnDocuments and MapToInvoiceFieldId on the definition DTOs.
+// Same whole-field rule: the Settings page (and its on/off toggle) always
+// sends both, so a missing value clears the setting.
 // =====================================================================
+
+using System.Globalization;
 
 namespace MerkaiTrial.Application.DTOs
 {
@@ -70,6 +76,12 @@ namespace MerkaiTrial.Application.DTOs
 
         /// <summary>079. Lead fields only: the Deal field that receives this value on conversion.</summary>
         public Guid? MapToDealFieldId { get; set; }
+
+        /// <summary>081. Quote / Invoice fields: printed on the PDF and the customer's quote link.</summary>
+        public bool PrintOnDocuments { get; set; }
+
+        /// <summary>081. Quote fields only: the Invoice field that receives this value when an invoice is raised from the quote.</summary>
+        public Guid? MapToInvoiceFieldId { get; set; }
 
         public List<CustomFieldOptionDto> Options { get; set; } = new();
 
@@ -114,6 +126,21 @@ namespace MerkaiTrial.Application.DTOs
         public Guid? MapToDealFieldId { get; set; }
 
         /// <summary>
+        /// 081. Print the value on quotes &amp; invoices. Ignored (stored as
+        /// false) for record types that do not print — see
+        /// CustomFieldEntityTypes.SupportsPrint.
+        /// </summary>
+        public bool PrintOnDocuments { get; set; }
+
+        /// <summary>
+        /// 081. Quote fields only. The Invoice field (same type) that
+        /// receives this value when an invoice is raised from the quote.
+        /// Refused if it is not a live Invoice field of the same type, or
+        /// if another Quote field already feeds it.
+        /// </summary>
+        public Guid? MapToInvoiceFieldId { get; set; }
+
+        /// <summary>
         /// Dropdown only, and THE FULL LIST. An option that was there before
         /// and is missing now is removed — or, if any record uses it,
         /// retired instead, so nobody's saved value turns into "(unknown)".
@@ -138,6 +165,80 @@ namespace MerkaiTrial.Application.DTOs
         public Guid FieldId { get; set; }
         public string Op { get; set; } = string.Empty;
         public string Value { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// 081. One custom field as PRINTED on a quote or invoice: label, type
+    /// and value together, so a frozen copy keeps saying what was sent even
+    /// after the field is renamed, a choice relabelled, or the field deleted.
+    ///
+    /// Value is the wire shape (see the top of this file). OptionLabel is
+    /// the dropdown choice's name at the time — the key alone would mean
+    /// nothing once the option is gone.
+    /// </summary>
+    public class DocumentFieldEntry
+    {
+        public Guid FieldId { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public int DecimalPlaces { get; set; }
+        public string Value { get; set; } = string.Empty;
+        public string? OptionLabel { get; set; }
+
+        /// <summary>
+        /// The value as the document prints it. Numbers use
+        /// <paramref name="numberCulture"/> (the PDF's currency culture, so
+        /// 1,25,000 in India); dates use the tenant's date format with the
+        /// INVARIANT culture, exactly as every other date on both PDFs does —
+        /// th-TH's own calendar is Buddhist and would print 2569 for 2026.
+        /// Never throws.
+        /// </summary>
+        public string Format(CultureInfo numberCulture, string? dateFormat)
+        {
+            switch (Type)
+            {
+                case "number":
+                    if (decimal.TryParse(Value, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                                         CultureInfo.InvariantCulture, out var n))
+                        return n.ToString("N" + Math.Clamp(DecimalPlaces, 0, 4), numberCulture);
+                    return Value;
+
+                case "date":
+                    if (DateOnly.TryParseExact(Value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                                               DateTimeStyles.None, out var d))
+                    {
+                        try
+                        {
+                            return d.ToString(string.IsNullOrWhiteSpace(dateFormat) ? "dd MMM yyyy" : dateFormat,
+                                              CultureInfo.InvariantCulture);
+                        }
+                        catch (FormatException)
+                        {
+                            return d.ToString("dd MMM yyyy", CultureInfo.InvariantCulture);
+                        }
+                    }
+                    return Value;
+
+                case "checkbox":
+                    return "Yes";
+
+                case "dropdown":
+                    return string.IsNullOrWhiteSpace(OptionLabel) ? Value : OptionLabel;
+
+                default:
+                    return Value;
+            }
+        }
+
+        /// <summary>
+        /// 082. A line's product fields as ONE short line of text —
+        /// "Warranty: 2 years · Colour: Red" — for under an item name on a
+        /// PDF, the customer's page and the detail screens. Empty when none.
+        /// </summary>
+        public static string JoinForLine(IEnumerable<DocumentFieldEntry>? entries, CultureInfo numberCulture, string? dateFormat)
+            => entries is null
+                ? string.Empty
+                : string.Join("  ·  ", entries.Select(e => $"{e.Label}: {e.Format(numberCulture, dateFormat)}"));
     }
 
     public class ReorderCustomFieldsDto

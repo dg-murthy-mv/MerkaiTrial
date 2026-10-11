@@ -11,6 +11,13 @@
 @* =====================================================================
    Public/QuoteView.cshtml — REVISED (059).
 
+   082: under each item, the product's custom fields the seller marked to
+   print, as they were when the quote was sent — the same text as the PDF.
+
+   081: an "Additional details" block above the items — the custom fields
+   the seller chose to print, exactly as they were when the quote was sent
+   (the same block the PDF prints). Drawn only when there are any.
+
    The only page in the product a CUSTOMER reads. Changes this round:
 
      - item.Quantity  ->  item.QuantityDisplay
@@ -146,6 +153,13 @@
             font-weight: 600;
         }
         .seller a { color: #4f46e5; text-decoration: none; }
+
+        /* 081 — the printed custom fields */
+        .qv-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                      gap: .5rem 1.5rem; background: #f8fafc; border: 1px solid #e2e8f0;
+                      border-radius: 10px; padding: .85rem 1rem; }
+        .qv-details .k { font-size: .75rem; color: #64748b; }
+        .qv-details .v { font-weight: 600; color: #0f172a; overflow-wrap: anywhere; }
         .seller a:hover { text-decoration: underline; }
 
         /* The quantity now carries a unit ("12.5 m²"), so it must not wrap
@@ -308,6 +322,23 @@ else
         <!-- ── Body ─────────────────────────────────────────────────── -->
         <div class="quote-body">
 
+            @* 081 — the fields the seller marked "Print on quotes & invoices",
+               as fixed when the quote was sent. Encoded by Razor like every
+               other value on this page. *@
+            @if (Model.PrintedDetails.Count > 0)
+            {
+                <div class="section-label mb-2">Additional details</div>
+                <div class="qv-details mb-4">
+                    @foreach (var d in Model.PrintedDetails)
+                    {
+                        <div>
+                            <div class="k">@d.Label</div>
+                            <div class="v">@d.Value</div>
+                        </div>
+                    }
+                </div>
+            }
+
             <!-- Line items -->
             <div class="section-label mb-2">Items</div>
             <div class="table-responsive mb-4">
@@ -348,6 +379,12 @@ else
                                     @if (!string.IsNullOrWhiteSpace(item.Description))
                                     {
                                         <div class="text-muted small">@item.Description</div>
+                                    }
+                                    @{ var itemDetails = Model.LineDetails(item); }
+                                    @if (itemDetails.Length > 0)
+                                    {
+                                        @* 082 — the product's printed custom fields, as sent *@
+                                        <div class="small" style="color:#475569;">@itemDetails</div>
                                     }
                                 </td>
                                 @if (Model.HasAnyLineTaxCode)

@@ -1,6 +1,8 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages.Quotes
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @model MerkaiTrial.Admin.Web.Pages.Quotes.DetailModel
+@inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService DocTenant
 @{
     ViewData["Title"] = Model.Quote == null ? "Quote" : $"Quote {Model.Quote.Number}";
 
@@ -21,6 +23,13 @@
    Location: MerkaiTrial.Admin.Web/Pages/Quotes/Detail.cshtml
 
    COMPLETE FILE — replaces the 018 version.
+
+   082: under each line's name, the product's custom fields marked to
+   print ("Warranty: 2 years · Colour: Red") — fixed when the quote is sent.
+
+   081: under Totals, the quote's custom fields (_CustomFieldValues) and
+   "Printed on the quote" (_DocumentFieldsCard) — what the PDF and the
+   customer's link print, fixed when the quote is sent.
 
    WHAT WAS WRONG WITH THE OLD PAGE
 
@@ -459,6 +468,12 @@ else
                                             {
                                                 <div class="ds">@it.Description</div>
                                             }
+                                            @{ var lineFields082 = MerkaiTrial.Admin.Web.Pages.Shared.DocumentCulture.LineText(it.DocumentFields, q.Currency, DocTenant.GetDateFormat()); }
+                                            @if (lineFields082.Length > 0)
+                                            {
+                                                @* 082 — the product's printed custom fields *@
+                                                <div class="ds"><i class="bi bi-tag me-1" aria-hidden="true"></i>@lineFields082</div>
+                                            }
                                         </td>
                                         @* 052: "12.5 m²" rather than a bare "12.5".
                                            QuantityDisplay does the formatting on the DTO
@@ -540,6 +555,11 @@ else
                     </div>
                 </div>
             </div>
+
+            @* 081 — the quote's own custom fields (shared card), then exactly
+               what the PDF and the customer's link print. *@
+            <partial name="_CustomFieldValues" model="Model.CustomFieldDisplay" />
+            <partial name="_DocumentFieldsCard" model="Model.DocumentFieldsCard" />
         </div>
 
         @* ── RIGHT: facts, link, attachments ────────────────────── *@

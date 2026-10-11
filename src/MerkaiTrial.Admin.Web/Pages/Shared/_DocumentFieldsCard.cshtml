@@ -1,0 +1,69 @@
+@using MerkaiTrial.Admin.Web.Pages.Shared
+@model MerkaiTrial.Admin.Web.Pages.Shared.DocumentFieldsVm
+@* =====================================================================
+   Pages/Shared/_DocumentFieldsCard.cshtml — NEW (081).
+
+   "Printed on the quote" / "Printed on the invoice": exactly the custom
+   fields the PDF and the customer's link print, in the order they print.
+
+       <partial name="_DocumentFieldsCard" model="Model.DocumentFieldsCard" />
+
+   Three states, each said in words so nobody has to guess:
+     • FROZEN — the copy taken when the document was sent / issued. It
+       will not change, even if the field is renamed or edited later.
+     • PREVIEW — a draft. What would print if it went out now.
+     • OUT, NOT FROZEN — sent / issued before this feature existed; it
+       prints its current values.
+
+   Draws nothing when nothing prints. Values are formatted with the
+   document's own culture and the tenant's date format — the PDF's rules.
+   ===================================================================== *@
+
+@if (Model.Fields.Count > 0)
+{
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0"><i class="bi bi-printer me-2"></i>Printed on the @Model.Noun</h5>
+            @if (Model.IsFrozen)
+            {
+                <span class="badge bg-light text-dark border"
+                      title="Taken when the @Model.Noun was @Model.FreezeVerb. Later changes to the fields do not alter it.">
+                    <i class="bi bi-lock-fill me-1"></i>Fixed when @Model.FreezeVerb@(string.IsNullOrEmpty(Model.FrozenAtDisplay) ? "" : " · " + Model.FrozenAtDisplay)
+                </span>
+            }
+            else if (Model.IsOut)
+            {
+                <span class="badge bg-light text-muted border"
+                      title="This @Model.Noun was @Model.FreezeVerb before printed details were fixed, so it prints the current values.">
+                    <i class="bi bi-clock-history me-1"></i>Current values
+                </span>
+            }
+            else
+            {
+                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle"
+                      title="What would print if the @Model.Noun went out now. Fixed once it is @Model.FreezeVerb.">
+                    <i class="bi bi-eye me-1"></i>Preview · fixed when @Model.FreezeVerb
+                </span>
+            }
+        </div>
+        <div class="card-body">
+            <div class="row">
+                @foreach (var f in Model.Fields)
+                {
+                    <div class="col-md-6 mb-2">
+                        <div class="text-muted small">@f.Label</div>
+                        <div class="fw-semibold text-break">@f.Format(Model.Culture, Model.DateFormat)</div>
+                    </div>
+                }
+            </div>
+            @if (Model.CanConfigure)
+            {
+                <div class="small text-muted mt-1">
+                    <a asp-page="/Settings/CustomFields/Index" asp-route-entity="@Model.EntityType" class="text-decoration-none text-muted">
+                        <i class="bi bi-gear me-1"></i>Choose which fields print
+                    </a>
+                </div>
+            }
+        </div>
+    </div>
+}

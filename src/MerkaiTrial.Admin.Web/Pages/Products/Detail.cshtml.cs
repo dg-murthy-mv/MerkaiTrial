@@ -37,9 +37,41 @@
 // The components' prices are formatted with FormatCurrency, not
 // FormatInCurrency: ComponentListPrice is Product.ListPrice on each
 // component, which is a HOME-currency figure by definition.
+//
+// ── 080 ─────────────────────────────────────────────────────────────
+//
+// 1. "Additional details" — the product's custom fields, through the
+//    shared _CustomFieldValues card (the same one Contacts, Companies,
+//    Deals and Leads use). Numbers in the workspace's number culture,
+//    dates in its date pattern and never shifted by timezone. Retired
+//    fields that still hold a value are shown, marked. A failed field
+//    list is said plainly rather than hiding the card.
+//
+// 2. AUTHORIZATION IN THE VIEW. Edit showed for anybody who could READ
+//    products, and Delete for anybody at all — the POST refused them,
+//    but only after they had clicked. Edit, Activate/Deactivate and
+//    Delete now render only for CanUpdate / CanDelete, and every handler
+//    still checks for itself.
+//
+// 3. ACTIVATE / DEACTIVATE from this page (OnPostToggleActive), so the
+//    person who has just read "part of 2 bundles" can act on it here.
+//
+// 4. DELETE is a modal with the product's name, and a refusal — the
+//    product is part of a bundle — comes back to THIS page with the API's
+//    sentence rather than to the list. The Delete button says up front
+//    when the product is in a bundle.
+//
+// 5. "Created" uses the workspace's date format and timezone
+//    (FormatDate), not the server's culture.
+//
+// 6. The "Settings" tab is gone: it repeated the type and status already
+//    on Overview, and its "Deletion is permanent" was not true (a product
+//    is soft-deleted; quotes that list it keep their lines).
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages.Shared;            // 080 — CustomFieldDisplayVm, CustomFieldFormatter
+using MerkaiTrial.Admin.Web.Services.CustomFields;   // 080
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Products;   // 070 — ProductBundles
@@ -57,6 +89,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         private readonly IProductService _productService;
         private readonly ICurrentTenantService _tenantService;
         private readonly IProductCategoryService _categoryService;   // 068
+        private readonly ICustomFieldService _customFields;          // 080
         protected override string ModuleName => Modules.Products;
 
         public DetailModel(
@@ -65,13 +98,34 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             IProductCategoryService categoryService,                 // 068
+            ICustomFieldService customFields,                        // 080
             ILogger<DetailModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
             _productService  = productService;
             _tenantService   = tenantService;
             _categoryService = categoryService;
+            _customFields    = customFields;
         }
+
+        /// <summary>080. Every Product field, retired ones included (the card shows those with a value).</summary>
+        public List<CustomFieldDefinitionDto> CustomFieldDefinitions { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>080. The model for _CustomFieldValues.</summary>
+        public CustomFieldDisplayVm CustomFieldDisplay => new()
+        {
+            Fields       = CustomFieldDefinitions,
+            Values       = Product?.CustomFieldValues ?? new Dictionary<Guid, string>(),
+            Culture      = CustomFieldFormatter.ResolveCulture(CultureName),
+            DateFormat   = TenantCtx.GetDateFormat(),
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            CanEdit      = CanUpdate,
+            RecordId     = Product?.Id ?? Guid.Empty,
+            EntityType   = CustomFieldEntityTypes.Product,
+            EditPage     = "/Products/Edit"
+        };
 
         /// <summary>
         /// 068. Name -> icon and colour. Never null, and answers for a
@@ -181,21 +235,74 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 // 068. After the product, because nothing above needs it
                 // and a category read that fails should not stop the
                 // product loading.
-                CategoryLookup = await _categoryService.GetLookupAsync();
+                try
+                {
+                    CategoryLookup = await _categoryService.GetLookupAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Product categories could not be loaded for product {ProductId}", id);
+                }
+
+                // 080. Retired fields too, so a value on one still shows.
+                try
+                {
+                    CustomFieldDefinitions = await _customFields.GetDefinitionsAsync(
+                        CustomFieldEntityTypes.Product, includeInactive: true);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Custom fields could not be loaded for product {ProductId}", id);
+                    CustomFieldDefinitions = new();
+                    CustomFieldsLoadFailed = true;
+                }
 
                 return Page();
             }
             catch (KeyNotFoundException)
             {
-                TempData["ErrorMessage"] = "Product not found.";
+                TempData["ErrorMessage"] = "That product no longer exists.";
                 return RedirectToPage("./Index");
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error loading product {ProductId}", id);
-                TempData["ErrorMessage"] = "Failed to load product.";
+                TempData["ErrorMessage"] = "The product could not be loaded. Please try again.";
                 return RedirectToPage("./Index");
             }
+        }
+
+        /// <summary>080. Activate / deactivate from this page.</summary>
+        public async Task<IActionResult> OnPostToggleActiveAsync(Guid id)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            try
+            {
+                var tenantId = CurrentUserService.GetCurrentTenantId();
+                var isNowActive = await _productService.ToggleActiveAsync(tenantId, id);
+
+                TempData["SuccessMessage"] = isNowActive
+                    ? "Product activated."
+                    : "Product deactivated. It stays on existing quotes but can't be added to new ones.";
+            }
+            catch (KeyNotFoundException)
+            {
+                TempData["ErrorMessage"] = "That product no longer exists.";
+                return RedirectToPage("./Index");
+            }
+            catch (InvalidOperationException ex)
+            {
+                TempData["ErrorMessage"] = ex.Message;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error toggling product {ProductId}", id);
+                TempData["ErrorMessage"] = "The product's status could not be changed. Please try again.";
+            }
+
+            return RedirectToPage("./Detail", new { id });
         }
 
         public async Task<IActionResult> OnPostDeleteAsync(Guid id)
@@ -209,19 +316,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 var tenantId = CurrentUserService.GetCurrentTenantId();
                 await _productService.DeleteAsync(tenantId, id);
 
-                TempData["SuccessMessage"] = "Product deleted successfully!";
+                TempData["SuccessMessage"] = "Product deleted.";
                 return RedirectToPage("./Index");
             }
             catch (KeyNotFoundException)
             {
-                TempData["ErrorMessage"] = "Product not found.";
+                TempData["ErrorMessage"] = "That product no longer exists.";
                 return RedirectToPage("./Index");
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 080 — the API's refusal (part of a bundle): back to THIS
+                // product, where the person can act on it.
+                TempData["ErrorMessage"] = ex.Message;
+                return RedirectToPage("./Detail", new { id });
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error deleting product {ProductId}", id);
-                TempData["ErrorMessage"] = "Failed to delete product.";
-                return RedirectToPage("./Index");
+                TempData["ErrorMessage"] = "The product could not be deleted. Please try again.";
+                return RedirectToPage("./Detail", new { id });
             }
         }
 

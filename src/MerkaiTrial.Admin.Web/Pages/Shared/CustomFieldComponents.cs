@@ -25,6 +25,16 @@
 // keys, not Guid keys, so a tampered key fails our own Guid.TryParse
 // quietly instead of leaving a model-binding error somewhere nobody looks
 // (the bool-binding trap from round 071b, in a different shape).
+//
+// 081 — CustomFieldFormVm.FormId: the id of the <form> the inputs belong
+// to, for a page whose inputs sit OUTSIDE its post form (Invoices/Create
+// keeps its details card in the left column and its forms in the sticky
+// sidebar). Each input then carries form="…", so it posts — and takes part
+// in the browser's required-field check — as if it were inside. Null, the
+// default, renders no attribute: every existing page is unchanged.
+//
+// 081 — CustomFieldForm.HasErrors: whether any custom field input has an
+// error, so a page can tell "a field is wrong" from "a date did not bind".
 // =====================================================================
 
 using System.Globalization;
@@ -55,6 +65,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
 
         /// <summary>"Contact" — for the Manage link's ?entity=.</summary>
         public string EntityType { get; set; } = CustomFieldEntityTypes.Contact;
+
+        /// <summary>
+        /// 081. The id of the &lt;form&gt; these inputs post with, when they
+        /// are rendered OUTSIDE it. Null = inside the form (no attribute).
+        /// </summary>
+        public string? FormId { get; set; }
     }
 
     /// <summary>Model for _CustomFieldValues.cshtml.</summary>
@@ -145,6 +161,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
                     modelState.AddModelError(modelKey, $"{f.Label} is required.");
             }
         }
+
+        /// <summary>
+        /// 081. True when any CUSTOM FIELD input has an error in ModelState.
+        /// A page asks this rather than ModelState.IsValid before saying
+        /// "correct the highlighted fields" — a date box that failed to bind
+        /// is a different problem with a different sentence.
+        /// </summary>
+        public static bool HasErrors(ModelStateDictionary modelState, string prefix = DefaultPrefix)
+            => modelState.Any(e => e.Key.StartsWith(prefix + "[", StringComparison.Ordinal) && e.Value.Errors.Count > 0);
 
         /// <summary>Stored values (Guid keys) → what the inputs show (string keys).</summary>
         public static Dictionary<string, string?> FromStored(IDictionary<Guid, string>? stored)

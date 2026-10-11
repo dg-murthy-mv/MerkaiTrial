@@ -4,6 +4,34 @@
 //
 // COMPLETE FILE — replaces the 017 version.
 //
+// 081 — CUSTOM FIELDS ON INVOICES
+//   ✅ CreateInvoice: the form's values (dto.CustomFields) are staged
+//      through CustomFieldValueWriter before the save. When an invoice is
+//      raised from a quote WITHOUT a form (CustomFields null — the API, the
+//      quote page's milestone buttons), the quote's mapped fields are
+//      copied instead (DocumentFields.CopyQuoteToInvoiceAsync).
+//   ✅ CreateInvoiceFromQuote passes the form's values through.
+//   ✅ IssueInvoice FREEZES the printed fields in the same conditional
+//      UPDATE that claims the number — an issued tax invoice must keep
+//      printing exactly what it was issued with.
+//   ✅ UpdateInvoice writes custom values on a DRAFT only (the existing
+//      status check runs first). On an invoice raised from a quote the
+//      lines stay locked, but its own fields are the invoice's and can be
+//      edited until it is issued.
+//   InvoiceDocument (below) resolves what an invoice prints.
+//
+// 082 — PRODUCT FIELDS UNDER EACH LINE
+//   ✅ CreateInvoiceFromQuote hands each quote line's frozen product copy
+//      to the invoice line (CreateInvoiceLineDto.CustomFieldsSnapshot,
+//      internal). CreateInvoiceHandler honours it ONLY on an invoice raised
+//      from a quote.
+//   ✅ IssueInvoice freezes every product line that has no copy yet —
+//      before the claim, and once more after it, so a line added in the
+//      instant between the two is not left printing live values.
+//   ✅ InvoiceDocument.FillAsync sets InvoiceLineDto.DocumentFields; the
+//      PDF handler does the same by hand.
+//   A line's copy, once it has one, is what prints — draft or not.
+//
 // THE INVOICE LIFE (018)
 //
 //   Draft ──Issue──► Sent/Viewed ──payments──► PartiallyPaid ──► Paid
@@ -108,6 +136,7 @@
 // InvoiceAccessHandler at the bottom is what InvoicesController checks.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.CustomFields;   // 081
 using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.Commands.Quotes;
 using MerkaiTrial.Application.Common;          // 055: LineDiscounts
@@ -211,6 +240,79 @@ namespace MerkaiTrial.Application.Commands.Invoices
             InvoiceStatus.PartiallyPaid => "partly paid",
             _ => s.ToString().ToLowerInvariant()
         };
+    }
+
+    /// <summary>
+    /// 081. What an invoice prints. A DRAFT prints the live values (it is
+    /// still being written); anything issued prints the copy frozen at
+    /// issue. An invoice issued before 081 has no copy and prints its
+    /// current values.
+    /// </summary>
+    public static class InvoiceDocument
+    {
+        public static bool IsFrozen(InvoiceStatus status) => status != InvoiceStatus.Draft;
+
+        public static async Task<(List<DocumentFieldEntry> Fields, DateTime? FrozenAt)> ResolveAsync(
+            FlowDbContext db, Invoice invoice, CancellationToken ct = default)
+        {
+            var frozen = IsFrozen(invoice.Status) && invoice.CustomFieldsSnapshot is not null;
+            var fields = await DocumentFields.ResolveAsync(
+                db, invoice.TenantId, CustomFieldEntityTypes.Invoice, invoice.Id,
+                frozen, invoice.CustomFieldsSnapshot, ct);
+            return (fields, frozen ? invoice.CustomFieldsFrozenAtUtc : null);
+        }
+
+        /// <summary>Sets CustomFieldValues, DocumentFields and DocumentFieldsFrozenAtUtc on a DTO.</summary>
+        public static async Task FillAsync(FlowDbContext db, InvoiceDto dto, Invoice invoice, CancellationToken ct = default)
+        {
+            dto.CustomFieldValues = await CustomFieldValueWriter.ReadAsync(
+                db, invoice.TenantId, CustomFieldEntityTypes.Invoice, invoice.Id, ct);
+            var (fields, frozenAt) = await ResolveAsync(db, invoice, ct);
+            dto.DocumentFields            = fields;
+            dto.DocumentFieldsFrozenAtUtc = frozenAt;
+
+            // 082 — the product fields under each line.
+            var lineFields = await ResolveLinesAsync(db, invoice, ct);
+            foreach (var line in dto.Lines)
+                line.DocumentFields = lineFields.GetValueOrDefault(line.Id) ?? new List<DocumentFieldEntry>();
+        }
+
+        /// <summary>
+        /// 082. Line id → the product fields each live line prints: the
+        /// line's own copy when it has one (from the quote, or taken at
+        /// issue), otherwise the product as it is now. <paramref name="invoice"/>
+        /// must have Lines loaded.
+        /// </summary>
+        public static Task<Dictionary<Guid, List<DocumentFieldEntry>>> ResolveLinesAsync(
+            FlowDbContext db, Invoice invoice, CancellationToken ct = default)
+            => DocumentFields.ResolveLinesAsync(db, invoice.TenantId,
+                invoice.Lines
+                    .Where(l => !l.IsDeleted)
+                    .Select(l => new DocumentFields.LineFieldSource(
+                        l.Id, l.ProductId, l.CustomFieldsSnapshot, l.CustomFieldsSnapshot != null)),
+                ct);
+
+        /// <summary>
+        /// 082. Gives every live PRODUCT line of this invoice that has no copy
+        /// yet its frozen product fields, and saves. Returns how many lines
+        /// were frozen. Used by IssueInvoiceHandler.
+        /// </summary>
+        public static async Task<int> FreezeOpenLinesAsync(FlowDbContext db, Guid tenantId, Guid invoiceId, CancellationToken ct = default)
+        {
+            var open = await db.InvoiceLines
+                .Where(l => l.InvoiceId == invoiceId && l.TenantId == tenantId && !l.IsDeleted &&
+                            l.ProductId != null && l.CustomFieldsSnapshot == null)
+                .ToListAsync(ct);
+
+            if (open.Count == 0) return 0;
+
+            var copies = await DocumentFields.FreezeProductsAsync(db, tenantId, open.Select(l => l.ProductId), ct);
+            foreach (var line in open)
+                line.CustomFieldsSnapshot = copies.TryGetValue(line.ProductId!.Value, out var copy) ? copy : "[]";
+
+            await db.SaveChangesAsync(ct);
+            return open.Count;
+        }
     }
     #endregion
 
@@ -367,6 +469,12 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     DiscountPercent = lineDto.DiscountPercent,     // 055 — resolved above
                     TaxRate = lineDto.TaxRate,
                     TaxCode = LineTaxCodes.Resolve(lineDto.TaxCode, lineDto.ProductId, taxCodes),  // 067
+                    // 082. The quote line's frozen product fields — honoured
+                    // ONLY when this invoice is raised from a quote (the
+                    // property is internal and never bound from a request).
+                    CustomFieldsSnapshot = dto.QuoteId.HasValue && lineDto.ProductId.HasValue
+                        ? lineDto.CustomFieldsSnapshot
+                        : null,
                     Amount = ((lineDto.UnitPrice * lineDto.Quantity) - lineDto.LineDiscount) * (1 + lineDto.TaxRate),
                     CreatedAtUtc = now,
                     CreatedBy = invoice.CreatedBy,
@@ -375,8 +483,30 @@ namespace MerkaiTrial.Application.Commands.Invoices
             }
 
             _db.Invoices.Add(invoice);
+
+            // ── 081: custom fields, staged to commit with the invoice ─────
+            // A form said what they are → exactly that, required fields
+            // enforced (throws a 400 before anything is saved).
+            // No form, raised from a quote → the quote's mapped values.
+            var copiedFromQuote = 0;
+            if (dto.CustomFields is not null)
+            {
+                await CustomFieldValueWriter.ApplyAsync(
+                    _db, dto.TenantId, CustomFieldEntityTypes.Invoice, invoice.Id, dto.CustomFields,
+                    invoice.CreatedBy, isNew: true, CancellationToken.None);
+            }
+            else if (dto.QuoteId.HasValue)
+            {
+                copiedFromQuote = await DocumentFields.CopyQuoteToInvoiceAsync(
+                    _db, dto.TenantId, dto.QuoteId.Value, invoice.Id, invoice.CreatedBy);
+            }
+
             await InvoiceNumberSequence.SaveWithRetryAsync(
                 _db, invoice, () => Task.FromResult(InvoiceNumbering.NewDraftNumber()), _logger);
+
+            if (copiedFromQuote > 0)
+                _logger.LogInformation("Invoice {Id}: {Count} custom field value(s) copied from quote {QuoteId}",
+                    invoice.Id, copiedFromQuote, dto.QuoteId);
 
             await _audit.WriteAsync(
                 AuditAction.InvoiceCreated, AuditEntityType.Invoice, invoice.Id, dto.TenantId,
@@ -417,7 +547,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 .Include(i => i.Deal)
                 .FirstAsync();
 
-            return MapToDto(saved);
+            var result = MapToDto(saved);
+            await InvoiceDocument.FillAsync(_db, result, saved);     // 081
+            return result;
         }
 
         internal static InvoiceDto MapToDto(Invoice invoice) => new()
@@ -656,7 +788,12 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     //
                     // 071 does not change this. A stage bills a share of
                     // the money, never a different classification.
-                    TaxCode = item.TaxCode ?? ""
+                    TaxCode = item.TaxCode ?? "",
+
+                    // 082: the product fields the customer accepted, frozen
+                    // when the quote was sent. Null on a quote sent before
+                    // 082 — that line is then frozen when the invoice issues.
+                    CustomFieldsSnapshot = QuoteDocument.IsFrozen(quote.Status) ? item.CustomFieldsSnapshot : null
                 };
 
                 // ── HOW A SCALED LINE READS ───────────────────────────
@@ -760,6 +897,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 MilestoneCount = stage?.Count,
                 MilestonePercent = stage?.Percent,
 
+                // 081. The form's values when there was a form; null lets
+                // CreateInvoiceHandler copy the quote's mapped fields.
+                CustomFields = dto.CustomFields,
+
                 Lines = lines
             };
 
@@ -839,6 +980,21 @@ namespace MerkaiTrial.Application.Commands.Invoices
             var keepNumber = !string.IsNullOrWhiteSpace(invoice.Number) && !invoice.IsDraftNumber;
             const int maxAttempts = 5;
 
+            // ── 081: what the issued invoice prints, frozen ──────────────
+            // Built once, before the claim, and written by the SAME
+            // conditional UPDATE — so an invoice is never issued without its
+            // copy, and a lost race writes nothing.
+            var printed  = await DocumentFields.BuildAsync(
+                _db, tenantId, CustomFieldEntityTypes.Invoice, invoiceId, ct);
+            var snapshot = DocumentFields.Serialize(printed);
+
+            // ── 082: each product line's printed product fields ──────────
+            // Lines raised from a quote already carry the quote's copy and
+            // keep it; any other product line is frozen now, BEFORE the
+            // claim, so an issued invoice never waits on a second write to
+            // stop printing live catalogue values. (Swept once more after.)
+            await InvoiceDocument.FreezeOpenLinesAsync(_db, tenantId, invoiceId, ct);
+
             for (var attempt = 1; ; attempt++)
             {
                 var number = keepNumber ? invoice.Number : await InvoiceNumberSequence.NextAsync(_db, tenantId);
@@ -857,7 +1013,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
                             .SetProperty(i => i.IssuedAtUtc, (DateTime?)now)
                             .SetProperty(i => i.IssuedBy, me.FullName)
                             .SetProperty(i => i.UpdatedAtUtc, (DateTime?)now)
-                            .SetProperty(i => i.UpdatedBy, me.FullName), ct);
+                            .SetProperty(i => i.UpdatedBy, me.FullName)
+                            .SetProperty(i => i.CustomFieldsSnapshot, snapshot)                 // 081
+                            .SetProperty(i => i.CustomFieldsFrozenAtUtc, (DateTime?)now), ct);  // 081
                 }
                 catch (Exception ex) when (!keepNumber && InvoiceNumberSequence.IsDuplicateKey(ex) && attempt < maxAttempts)
                 {
@@ -871,6 +1029,21 @@ namespace MerkaiTrial.Application.Commands.Invoices
 
                 invoice.Number = number;
                 break;
+            }
+
+            // 082 — the sweep: a line added in the instant between the freeze
+            // above and the claim. Normally finds nothing. A failure here is
+            // logged, not thrown: the invoice IS issued, and such a line only
+            // prints the product's current values, as every line did pre-082.
+            try
+            {
+                var late = await InvoiceDocument.FreezeOpenLinesAsync(_db, tenantId, invoiceId, ct);
+                if (late > 0)
+                    _logger.LogInformation("Invoice {Number}: froze {Count} late line(s) after issue", invoice.Number, late);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Invoice {Number}: could not freeze product fields on late lines", invoice.Number);
             }
 
             await _audit.WriteAsync(
@@ -931,6 +1104,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
         public string? Notes { get; set; }
         public List<CreateInvoiceLineDto> Lines { get; set; } = new();
         public string UpdatedBy { get; set; } = string.Empty;
+
+        /// <summary>081. Custom field values. NULL = leave them alone.</summary>
+        public Dictionary<Guid, string?>? CustomFields { get; set; }
     }
 
     public class UpdateInvoiceHandler : ICommandHandler
@@ -959,6 +1135,13 @@ namespace MerkaiTrial.Application.Commands.Invoices
                     "An issued invoice can't be changed. Void it and issue a new one if something is wrong.");
 
             var now = DateTime.UtcNow;
+
+            // 081 — a draft's own custom fields, including on an invoice
+            // raised from a quote (its LINES are the quote's; its fields are
+            // its own). Staged; throws a 400 before anything changes.
+            await CustomFieldValueWriter.ApplyAsync(
+                _context, request.TenantId, CustomFieldEntityTypes.Invoice, invoice.Id, request.CustomFields,
+                request.UpdatedBy, isNew: false, cancellationToken);
 
             if (request.DueDateUtc.HasValue)
                 invoice.DueDateUtc = request.DueDateUtc.Value;
@@ -1057,7 +1240,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             await _context.SaveChangesAsync(cancellationToken);
             await _audit.WriteAsync(
                 AuditAction.InvoiceUpdated, AuditEntityType.Invoice, invoice.Id, request.TenantId,
-                new { number = invoice.Number, linesChanged, total = invoice.Total },
+                new { number = invoice.Number, linesChanged, customFieldsSent = request.CustomFields is not null, total = invoice.Total },
                 cancellationToken);
 
             _logger.LogInformation("Invoice {Number} updated", invoice.Number);
@@ -1073,6 +1256,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             });
             dto.UpdatedAtUtc = invoice.UpdatedAtUtc;
             dto.UpdatedBy = invoice.UpdatedBy;
+            await InvoiceDocument.FillAsync(_context, dto, invoice, cancellationToken);   // 081
             return dto;
         }
     }

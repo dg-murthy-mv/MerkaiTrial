@@ -8,6 +8,10 @@
 //       Contact field and which Deal field receive its value when the
 //       lead is converted. Null on every other kind of field. See the
 //       properties.
+// 081 — + PrintOnDocuments: the field's value is printed on quotes and
+//       invoices (Quote and Invoice fields now; Product fields from 082).
+//       + MapToInvoiceFieldId: on a QUOTE field, the Invoice field that
+//       receives its value when an invoice is raised from the quote.
 //
 // Two tables:
 //
@@ -115,6 +119,25 @@ namespace MerkaiTrial.Domain.Entities
 
         /// <summary>079. LEAD fields only: the Deal field that receives this value on conversion.</summary>
         public Guid? MapToDealFieldId { get; set; }
+
+        /// <summary>
+        /// 081. Print this field on the customer's documents — the quote
+        /// PDF, the public quote page and the invoice PDF. Off by default:
+        /// a workspace's custom fields are often internal ("Margin note",
+        /// "Lost reason") and must never reach a customer by accident.
+        ///
+        /// Meaningful on Quote and Invoice fields (and Product fields from
+        /// 082); always false elsewhere — the API forces it.
+        /// </summary>
+        public bool PrintOnDocuments { get; set; }
+
+        /// <summary>
+        /// 081. QUOTE fields only: the Invoice field that receives this
+        /// value when an invoice is raised from the quote. Same type only;
+        /// dropdowns matched by choice NAME. Not a foreign key — deleting
+        /// the Invoice field clears this. Null on every non-Quote field.
+        /// </summary>
+        public Guid? MapToInvoiceFieldId { get; set; }
 
         /// <summary>Number fields only: 0–4 decimal places accepted and shown.</summary>
         public int DecimalPlaces { get; set; }

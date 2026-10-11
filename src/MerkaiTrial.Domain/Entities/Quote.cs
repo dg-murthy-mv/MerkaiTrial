@@ -11,6 +11,18 @@
 //
 //   An empty collection means "invoice the whole thing once": the
 //   behaviour the product had before this round, and still the default.
+//
+// CHANGES (081 — custom fields on quotes)
+//   ✅ CustomFieldsSnapshot / CustomFieldsFrozenAtUtc. The quote's own
+//      custom field VALUES live in dbo.CustomFieldValues like every other
+//      record's. What is frozen here is the PRINTED copy — label, type
+//      and value of every "Print on documents" field — taken the moment
+//      the quote is SENT. The PDF and the customer's /q/ link read it
+//      from then on, so renaming a field or relabelling a choice never
+//      rewrites a quote the customer already has. Revising the quote and
+//      sending it again takes a fresh snapshot.
+//      NULL on every quote sent before 081 (they print current values).
+//      Columns added by Sql/081_DocumentCustomFields.sql.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -48,6 +60,18 @@ namespace MerkaiTrial.Domain.Entities
         public DateTime? UpdatedAtUtc { get; set; }
         public string? UpdatedBy { get; set; }
         public bool IsDeleted { get; set; }
+
+        // ── Printed custom fields, frozen when sent (081) ─────────────
+
+        /// <summary>
+        /// 081. JSON array of DocumentFieldEntry — see DocumentFields in
+        /// MerkaiTrial.Application. Written by UpdateQuoteStatusHandler on
+        /// the move to Sent; never edited afterwards.
+        /// </summary>
+        public string? CustomFieldsSnapshot { get; set; }
+
+        /// <summary>081. When the snapshot above was taken.</summary>
+        public DateTime? CustomFieldsFrozenAtUtc { get; set; }
 
         // Navigation Properties
         public Deal Deal { get; set; } = null!;
