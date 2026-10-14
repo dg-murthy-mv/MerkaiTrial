@@ -1,0 +1,246 @@
+@page "{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Emails.SentModel
+@{
+    ViewData["Title"] = Model.S.Subject;
+    var s = Model.S;
+    var e = Model.Email;
+}
+@* =====================================================================
+   Emails/Sent.cshtml — NEW (085). One email we sent.
+
+   PATTERNS (same as every page since 028):
+     • No Bootstrap CSS/JS — _Layout loads both.
+     • No TempData alert block — _Layout renders those once.
+     • @@ escaping inside <style>.
+     • Everything from the database is Razor-encoded text. The body goes
+       into <iframe sandbox srcdoc="…"> — see the page model's header.
+   ===================================================================== *@
+
+<style>
+    .es-wrap { max-width: 1200px; }
+    .es-subject { font-family: var(--font-display); font-size: 21px; font-weight: 700; color: #0f172a; margin: 0 0 6px; word-break: break-word; }
+    .es-meta { font-size: 13px; color: #475569; }
+    .es-meta dt { font-weight: 500; color: #94a3b8; width: 64px; flex: 0 0 64px; }
+    .es-meta dd { margin: 0; word-break: break-word; }
+    .es-meta .row-x { display: flex; gap: 8px; margin-bottom: 2px; }
+    .es-frame { width: 100%; height: 65vh; min-height: 360px; border: 0; resize: vertical; display: block; background: #fff; }
+    .es-text { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.55; color: #1e293b; margin: 0; padding: 16px; max-height: 70vh; overflow: auto; }
+    .es-steps { list-style: none; margin: 0; padding: 0; }
+    .es-steps li { display: flex; gap: 12px; position: relative; padding-bottom: 16px; }
+    .es-steps li:last-child { padding-bottom: 0; }
+    .es-steps li:not(:last-child)::after { content: ""; position: absolute; left: 13px; top: 28px; bottom: 2px; width: 2px; background: #e2e8f0; }
+    .es-dot { width: 28px; height: 28px; border-radius: 50%; background: #f8fafc; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; flex: 0 0 28px; font-size: 14px; }
+    .es-step-label { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+    .es-step-at { font-size: 12px; color: #64748b; }
+    .es-step-note { font-size: 12.5px; color: #475569; word-break: break-word; }
+    .es-file { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; }
+    .es-file:last-child { border-bottom: 0; }
+    .es-file i { font-size: 20px; color: #6366f1; }
+    .es-chip {
+        display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e2e8f0;
+        border-radius: 8px; text-decoration: none; color: #0f172a; font-size: 13.5px;
+    }
+    a.es-chip:hover { background: #f8fafc; }
+    .es-wrap .min-w-0 { min-width: 0; }
+    @@media (max-width: 991.98px) { .es-frame { height: 55vh; } }
+</style>
+
+<div class="es-wrap">
+
+    <div class="mb-3 d-flex flex-wrap gap-3">
+        @if (Model.DocumentUrl is not null && !string.IsNullOrWhiteSpace(s.EntityLabel))
+        {
+            <a href="@Model.DocumentUrl" class="text-decoration-none small"><i class="bi bi-arrow-left"></i> @s.EntityLabel</a>
+        }
+        @if (Model.IsWorkspaceAdmin)
+        {
+            <a asp-page="/Settings/Notifications/Index" asp-route-tab="log" class="text-decoration-none small">
+                <i class="bi bi-list-ul"></i> Email log
+            </a>
+        }
+    </div>
+
+    <div class="row g-4">
+        @* ── The email ─────────────────────────────────────────────── *@
+        <div class="col-lg-8">
+
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <span class="badge @s.StateBadge" title="@s.StateHint">
+                            <i class="bi @s.StateIcon"></i> @s.StateLabel
+                        </span>
+                        <span class="badge bg-light text-muted border">@Model.What</span>
+                    </div>
+
+                    <h1 class="es-subject">@s.Subject</h1>
+
+                    <div class="es-meta">
+                        <div class="row-x"><dt>To</dt><dd><strong>@s.ToDisplay</strong></dd></div>
+                        @if (!string.IsNullOrWhiteSpace(s.CcAddresses))
+                        {
+                            <div class="row-x"><dt>Cc</dt><dd>@s.CcAddresses</dd></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(e.ReplyToAddress))
+                        {
+                            <div class="row-x"><dt>Replies</dt><dd>
+                                <span title="Replies to this address are filed on the record automatically.">@e.ReplyToAddress</span>
+                            </dd></div>
+                        }
+                        <div class="row-x"><dt>Queued</dt><dd>@Model.FormatDateTime(s.CreatedAtUtc)</dd></div>
+                        @if (!string.IsNullOrWhiteSpace(s.SentByName))
+                        {
+                            <div class="row-x"><dt>Sent by</dt><dd>@s.SentByName</dd></div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (s.IsProblem || Model.WhatToDo is not null)
+            {
+                <div class="alert @(s.IsProblem ? "alert-danger" : "alert-info") d-flex gap-2 align-items-start">
+                    <i class="bi @(s.IsProblem ? "bi-envelope-x" : "bi-info-circle") mt-1"></i>
+                    <div>
+                        <strong>@s.StateHint</strong>
+                        @if (Model.WhatToDo is not null)
+                        {
+                            <div class="mt-1">@Model.WhatToDo</div>
+                        }
+                    </div>
+                </div>
+            }
+
+            @if (Model.HasBody)
+            {
+                <div class="card mb-3">
+                    @if (Model.HasHtml && Model.HasText)
+                    {
+                        <div class="card-header bg-white">
+                            <ul class="nav nav-tabs card-header-tabs">
+                                <li class="nav-item">
+                                    <a class="nav-link @(Model.ShowHtml ? "active" : "")" asp-route-id="@s.Id" asp-route-tab="html">As the customer saw it</a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link @(!Model.ShowHtml ? "active" : "")" asp-route-id="@s.Id" asp-route-tab="text">Plain text</a>
+                                </li>
+                            </ul>
+                        </div>
+                    }
+                    @if (Model.ShowHtml)
+                    {
+                        <iframe class="es-frame" sandbox title="Email body" referrerpolicy="no-referrer"
+                                srcdoc="@Model.SrcDoc"></iframe>
+                    }
+                    else
+                    {
+                        <pre class="es-text">@e.BodyText</pre>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="card mb-3">
+                    <div class="card-body text-muted small d-flex gap-2 align-items-start">
+                        <i class="bi bi-lock mt-1"></i>
+                        <span>
+                            The text of notification emails to colleagues isn't shown here — only that one was sent and what
+                            happened to it.
+                        </span>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @* ── What happened ─────────────────────────────────────────── *@
+        <div class="col-lg-4">
+
+            <div class="card mb-3">
+                <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-signpost-split me-2"></i>What happened</h6></div>
+                <div class="card-body">
+                    <ul class="es-steps">
+                        @foreach (var step in Model.Timeline)
+                        {
+                            <li>
+                                <div class="es-dot @step.Tone"><i class="bi @step.Icon"></i></div>
+                                <div class="min-w-0">
+                                    <div class="es-step-label">@step.Label</div>
+                                    @if (step.AtUtc is DateTime at)
+                                    {
+                                        <div class="es-step-at">@Model.FormatDateTime(at)</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(step.Note))
+                                    {
+                                        <div class="es-step-note">@step.Note</div>
+                                    }
+                                </div>
+                            </li>
+                        }
+                    </ul>
+
+                    @if (e.CanRetry)
+                    {
+                        <form method="post" asp-page-handler="Retry" asp-route-id="@s.Id" class="mt-3">
+                            <button type="submit" class="btn btn-primary btn-sm w-100"
+                                    onclick="this.disabled=true;this.form.submit();">
+                                <i class="bi bi-arrow-repeat"></i> Send again
+                            </button>
+                            <div class="form-text">The same email, to the same address.</div>
+                        </form>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(e.RetryBlockedReason))
+                    {
+                        <div class="small text-muted mt-3"><i class="bi bi-info-circle"></i> @e.RetryBlockedReason</div>
+                    }
+                </div>
+            </div>
+
+            @if (Model.DocumentUrl is not null)
+            {
+                <div class="card mb-3">
+                    <div class="card-header bg-white"><h6 class="mb-0"><i class="bi bi-link-45deg me-2"></i>About</h6></div>
+                    <div class="card-body">
+                        <a class="es-chip" href="@Model.DocumentUrl">
+                            <i class="bi @Model.DocumentIcon"></i>
+                            <span>@(s.EntityLabel ?? s.EntityType)</span>
+                            <i class="bi bi-chevron-right ms-auto text-muted"></i>
+                        </a>
+                    </div>
+                </div>
+            }
+
+            @if (e.Attachments.Count > 0)
+            {
+                <div class="card mb-3">
+                    <div class="card-header bg-white">
+                        <h6 class="mb-0"><i class="bi bi-paperclip me-2"></i>Attached (@e.Attachments.Count)</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        @foreach (var f in e.Attachments)
+                        {
+                            <div class="es-file">
+                                <i class="bi bi-file-earmark-pdf"></i>
+                                <div class="min-w-0">
+                                    <div class="text-truncate">@f.FileName</div>
+                                    <div class="small text-muted">@MerkaiTrial.Admin.Web.Pages.Emails.SentModel.FileSize(f.SizeBytes)</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="card-footer bg-white small text-muted">
+                        The PDF as it was when the email was sent.
+                        @if (s.EntityType == "Invoice" && Model.DocumentUrl is not null)
+                        {
+                            <text>Download the current one from the <a href="@Model.DocumentUrl">invoice</a>.</text>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="small text-muted px-1">
+                <i class="bi bi-eye-slash"></i>
+                Merkai shows whether an email was <strong>delivered</strong>, not whether it was opened — open tracking
+                relies on hidden pictures that most mail apps now block, so it would often be wrong.
+            </div>
+        </div>
+    </div>
+</div>

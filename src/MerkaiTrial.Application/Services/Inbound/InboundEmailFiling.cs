@@ -53,7 +53,10 @@ public static class InboundLinkTypes
     public const string Contact = "Contact";
     public const string Quote   = "Quote";
 
-    /// <summary>Accepted from a person (the Link form). Quote is token-only.</summary>
+    /// <summary>085. Token-only, like Quote: a reply to an invoice email.</summary>
+    public const string Invoice = "Invoice";
+
+    /// <summary>Accepted from a person (the Link form). Quote and Invoice are token-only.</summary>
     public static readonly IReadOnlySet<string> Linkable =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Lead, Deal, Contact };
 
@@ -63,6 +66,7 @@ public static class InboundLinkTypes
         "deal"    => Deal,
         "contact" => Contact,
         "quote"   => Quote,
+        "invoice" => Invoice,
         _         => null
     };
 }
@@ -92,6 +96,32 @@ public static class InboundEmailFiling
                 if (!await ApplyTargetAsync(db, email, InboundLinkTypes.Deal, dealId.Value, ct)) return false;
 
                 email.QuoteId = entityId;
+                return true;
+            }
+
+            case InboundLinkTypes.Invoice:
+            {
+                // 085. A reply to an invoice email is filed on the invoice's
+                // deal — directly (manual invoice) or through its quote.
+                // There is no InvoiceId on the email: the deal's Emails tab
+                // is where the conversation lives, as for quotes.
+                var target = await db.Invoices.AsNoTracking()
+                    .Where(i => i.Id == entityId && i.TenantId == tenantId && !i.IsDeleted)
+                    .Select(i => new
+                    {
+                        i.DealId,
+                        i.QuoteId,
+                        QuoteDealId = i.Quote != null ? (Guid?)i.Quote.DealId : null
+                    })
+                    .FirstOrDefaultAsync(ct);
+
+                if (target is null) return false;
+
+                var dealId = target.DealId ?? target.QuoteDealId;
+                if (dealId is null) return false;
+
+                if (!await ApplyTargetAsync(db, email, InboundLinkTypes.Deal, dealId.Value, ct)) return false;
+                if (target.QuoteId.HasValue) email.QuoteId = target.QuoteId;
                 return true;
             }
 

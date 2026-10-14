@@ -21,6 +21,13 @@
 // workspace either being looked up (by alias / token) or already known —
 // the permitted pattern described in FlowDbContext item 17.
 //
+// 085 — DELIVERY EVENTS COME HERE TOO. Resend sends "what happened to
+// the email you sent" (delivered, bounced, spam, …) to the same webhook
+// with the same signature. After the signature check those are handed to
+// IEmailDeliveryEvents; only email.received carries on below. Delivery
+// tracking needs only the signing secret — a workspace without a receiving
+// domain still gets Delivered / Bounced.
+//
 // AN EMAIL FOR NOBODY IS NOT AN ERROR. Mail to an address that matches no
 // workspace (an old regenerated alias, a typo, spam to random names) is
 // answered 200 and dropped with a masked log line. Answering with an
@@ -55,7 +62,10 @@ public enum InboundReceiveOutcome
     NotConfigured,
 
     /// <summary>Signed, but not JSON we can read. 400.</summary>
-    Malformed
+    Malformed,
+
+    /// <summary>085. Genuine, but arrived before we could match it. 503 — Resend retries.</summary>
+    RetryLater
 }
 
 public sealed record InboundReceiveResult(InboundReceiveOutcome Outcome, string Detail);
@@ -73,12 +83,18 @@ public sealed class InboundEmailReceiver : IInboundEmailReceiver
 
     private readonly FlowDbContext _db;
     private readonly EmailOptions _options;
+    private readonly IEmailDeliveryEvents _delivery;     // 085
     private readonly ILogger<InboundEmailReceiver> _logger;
 
-    public InboundEmailReceiver(FlowDbContext db, IOptions<EmailOptions> options, ILogger<InboundEmailReceiver> logger)
+    public InboundEmailReceiver(
+        FlowDbContext db,
+        IOptions<EmailOptions> options,
+        IEmailDeliveryEvents delivery,
+        ILogger<InboundEmailReceiver> logger)
     {
         _db = db;
         _options = options.Value;
+        _delivery = delivery;
         _logger = logger;
     }
 
@@ -87,12 +103,13 @@ public sealed class InboundEmailReceiver : IInboundEmailReceiver
     {
         var domain = _options.NormalisedInboundDomain;
 
-        if (domain is null || string.IsNullOrWhiteSpace(_options.InboundWebhookSecret))
+        // 085: the secret is what every event needs; the domain only
+        // received mail (checked below, once we know which kind this is).
+        if (string.IsNullOrWhiteSpace(_options.InboundWebhookSecret))
         {
             _logger.LogWarning(
-                "Inbound webhook called but receiving is not configured (Email:InboundDomain / " +
-                "Email:InboundWebhookSecret). The call was refused.");
-            return new(InboundReceiveOutcome.NotConfigured, "Receiving is not configured on this server.");
+                "Resend webhook called but Email:InboundWebhookSecret is not set. The call was refused.");
+            return new(InboundReceiveOutcome.NotConfigured, "The webhook is not configured on this server.");
         }
 
         // ── 1. Signature — before anything in the body is believed ────
@@ -119,8 +136,19 @@ public sealed class InboundEmailReceiver : IInboundEmailReceiver
             var root = doc.RootElement;
             var type = Str(root, "type");
 
+            // 085 — delivered / bounced / spam / failed for mail we SENT.
+            if (_delivery.Handles(type))
+                return await _delivery.ApplyAsync(type!, root, ct);
+
             if (!string.Equals(type, "email.received", StringComparison.Ordinal))
                 return new(InboundReceiveOutcome.Ignored, $"Event '{type}' is not handled here.");
+
+            if (domain is null)
+            {
+                _logger.LogWarning(
+                    "A received email arrived but Email:InboundDomain is not set. The call was refused.");
+                return new(InboundReceiveOutcome.NotConfigured, "Receiving is not configured on this server.");
+            }
 
             if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
                 return new(InboundReceiveOutcome.Malformed, "No data in the event.");

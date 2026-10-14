@@ -245,6 +245,17 @@ namespace MerkaiTrial.Domain.Entities
         /// of thing somebody asks about a week later.
         /// </summary>
         public const string InboundAddressChanged = "InboundAddressChanged";
+
+        // ── Sending email (085) ───────────────────────────────────────
+        //
+        // Data: { number, to (masked), cc count, attachment } — never the
+        // body and never the customer link's token.
+
+        /// <summary>An invoice was emailed to the customer (PDF + link).</summary>
+        public const string InvoiceEmailed = "InvoiceEmailed";
+
+        /// <summary>A failed customer email was put back in the queue by hand.</summary>
+        public const string EmailRetried = "EmailRetried";
     }
 
     public class AuditLog
@@ -310,5 +321,8 @@ namespace MerkaiTrial.Domain.Entities
 
         /// <summary>083. A row in dbo.InboundEmails.</summary>
         public const string InboundEmail = "InboundEmail";
+
+        /// <summary>085. A row in dbo.OutboundMessages (an email we sent).</summary>
+        public const string OutboundMessage = "OutboundMessage";
     }
 }

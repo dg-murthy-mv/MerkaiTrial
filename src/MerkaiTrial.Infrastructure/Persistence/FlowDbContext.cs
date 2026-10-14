@@ -34,6 +34,16 @@
 //      and put an explicit TenantId on every query they run after the
 //      workspace is known. That is the ONLY place those calls are allowed;
 //      every page-facing handler goes through the filter.
+//  18. (085) OutboundMessageAttachment + InvoiceSentCopy — the invoice
+//      PDF on its way out, and the copy the customer can download. Both
+//      STRICTLY tenant-owned.
+//
+//      ⚠ TWO MORE ANONYMOUS READERS, same rule as 17: the Resend
+//      DELIVERY webhook (EmailDeliveryEvents — finds the OutboundMessage
+//      by Resend's id) and the customer's invoice page (GetInvoiceBy-
+//      TokenHandler — finds the Invoice by its public token). Both call
+//      IgnoreQueryFilters() for that one lookup and put the TenantId of
+//      the row they found on everything after it.
 //  16. (075) CustomFieldDefinition + CustomFieldValue — tenant-defined
 //      extra fields on records (Contacts first). BOTH STRICTLY
 //      tenant-owned: there is no Merkai default field, and a value is
@@ -213,6 +223,12 @@ public class FlowDbContext : DbContext
 
     // Email / SMS outbox and per-user channel preferences (038)
     public DbSet<OutboundMessage> OutboundMessages => Set<OutboundMessage>();
+
+    /// <summary>085. Files sent with an outbound message (the invoice PDF). Strictly tenant-owned.</summary>
+    public DbSet<OutboundMessageAttachment> OutboundMessageAttachments => Set<OutboundMessageAttachment>();
+
+    /// <summary>085. The invoice PDF as last emailed — for the customer's page. Strictly tenant-owned.</summary>
+    public DbSet<InvoiceSentCopy> InvoiceSentCopies => Set<InvoiceSentCopy>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences
         => Set<UserNotificationPreference>();
 
@@ -433,10 +449,16 @@ public class FlowDbContext : DbContext
         //
         // The filter stays, because the log page and every in-request query
         // need it and because the coverage assertion is right to demand it.
-        // OutboundMessageWorker calls IgnoreQueryFilters() and is the ONLY
-        // place allowed to — it never returns rows to a user, it only sends
-        // them to the address already stored on the row.
+        // OutboundMessageWorker calls IgnoreQueryFilters() — it never
+        // returns rows to a user, it only sends them to the address already
+        // stored on the row. 085: so does EmailDeliveryEvents (Resend's
+        // delivery webhook, anonymous), for the single lookup by Resend's
+        // id; it writes the status back and returns nothing to anybody.
         b.Entity<OutboundMessage>() .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // 085 — see item 18 in the header.
+        b.Entity<OutboundMessageAttachment>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<InvoiceSentCopy>()          .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<UserNotificationPreference>()
                                     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantNotificationDefault>()

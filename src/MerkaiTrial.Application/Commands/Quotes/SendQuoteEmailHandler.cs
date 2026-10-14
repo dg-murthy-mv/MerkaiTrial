@@ -21,6 +21,10 @@
 // rep just made; this one RETURNS it, so the page can say exactly what to
 // fix.
 //
+// 085 — the person who pressed the button is recorded on the email
+// (SentByUserId), so a bounce comes back to them. Read from the signed-in
+// user here rather than passed down, so QuotesController is unchanged.
+//
 // WHY RESEND IS NOT RATE LIMITED HERE
 //   Each click queues a row with a fresh id, and a fresh id is a fresh
 //   idempotency key — so pressing it twice really does send two emails.
@@ -58,17 +62,20 @@ namespace MerkaiTrial.Application.Commands.Quotes
         private readonly FlowDbContext _db;
         private readonly IQuoteCustomerEmail _quoteEmail;
         private readonly IAuditService _audit;
+        private readonly ICurrentUserService _currentUser;     // 085
         private readonly ILogger<SendQuoteEmailHandler> _logger;
 
         public SendQuoteEmailHandler(
             FlowDbContext db,
             IQuoteCustomerEmail quoteEmail,
             IAuditService audit,
+            ICurrentUserService currentUser,
             ILogger<SendQuoteEmailHandler> logger)
         {
             _db = db;
             _quoteEmail = quoteEmail;
             _audit = audit;
+            _currentUser = currentUser;
             _logger = logger;
         }
 
@@ -115,7 +122,12 @@ namespace MerkaiTrial.Application.Commands.Quotes
                     quoteId);
             }
 
-            var reason = await _quoteEmail.QueueAsync(quote, tenantId, sentBy, ct);
+            // 085 — who pressed it, for a bounce. Never fails the send.
+            Guid? senderId = null;
+            try { senderId = (await _currentUser.GetCurrentUserAsync())?.UserId; }
+            catch { /* the audit name above is enough; the bounce then goes to the deal owner */ }
+
+            var reason = await _quoteEmail.QueueAsync(quote, tenantId, sentBy, ct, senderId);
 
             if (reason is not null)
             {

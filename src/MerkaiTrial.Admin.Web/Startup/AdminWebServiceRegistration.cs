@@ -9,6 +9,8 @@
 //       beside the registration line.
 // (083) + IInboundEmailService — received email (Inbox, email page,
 //       record Emails sections, Settings → Inbound Email).
+// (085) + ISentEmailService — emails WE sent (quote / invoice history
+//       cards, /Emails/Sent/{id}).
 //
 // WHY THE MODULE SERVICES ARE STILL A LIST (not a scan)
 //   They are thin wrappers over IApiService. A naming-convention scan
@@ -37,6 +39,7 @@ using MerkaiTrial.Admin.Web.Services.Core;
 using MerkaiTrial.Admin.Web.Services.Countries;
 using MerkaiTrial.Admin.Web.Services.CustomFields;   // 075
 using MerkaiTrial.Admin.Web.Services.Deals;
+using MerkaiTrial.Admin.Web.Services.Emails;          // 085
 using MerkaiTrial.Admin.Web.Services.InboundEmails;   // 083
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -259,6 +262,12 @@ public static class AdminWebServiceRegistration
         // resolve service for type 'IInboundEmailService'" on the first
         // lead page anybody opens.
         services.AddScoped<IInboundEmailService, InboundEmailService>();
+
+        // 085 — emails we sent. Read by the email history cards on
+        // Quotes/Detail and Invoices/Detail and by /Emails/Sent/{id}.
+        // Without this line those pages throw "Unable to resolve service
+        // for type 'ISentEmailService'" the first time anyone opens one.
+        services.AddScoped<ISentEmailService, SentEmailService>();
 
         // Workspace settings
         services.AddScoped<IUserService, UserService>();

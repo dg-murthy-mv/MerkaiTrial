@@ -24,6 +24,9 @@
 
    COMPLETE FILE — replaces the 018 version.
 
+   085: "Email history" card in the right column (_SentEmailsCard) — when
+   the quote was emailed, to whom, and whether it was delivered.
+
    082: under each line's name, the product's custom fields marked to
    print ("Warranty: 2 years · Colour: Red") — fixed when the quote is sent.
 
@@ -704,6 +707,11 @@ else
                     </div>
                 </div>
             }
+
+            @* 085 — every time this quote was emailed, and what happened to it. *@
+            <div class="qd-noprint">
+                <partial name="_SentEmailsCard" model="Model.EmailHistory" />
+            </div>
 
             <div class="qd-card">
                 <h2>

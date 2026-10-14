@@ -9,6 +9,15 @@
 //   + ReversePaymentAsync — take a mistaken payment back out, with a reason
 //   API refusals (400/403 with {error}) arrive as InvalidOperationException
 //   carrying the API's message — show it as is.
+//
+// CHANGES (085 — emailing invoices)
+//   + GetEmailPrefillAsync — what the "Email invoice" dialog starts from
+//   + SendEmailAsync       — PDF attached + the customer's /i/ link
+//   + GetByTokenAsync      — the customer's page          (anonymous API call)
+//   + GetPublicPdfAsync    — its "Download PDF" button      (anonymous API call)
+//   The two token calls NEVER log the token whole: it is the customer
+//   link's entire security. Failures there come back as null, so the
+//   public page shows its "link not valid" state instead of an error.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -57,6 +66,14 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
         Task<string> IssueAsync(Guid invoiceId);
         Task VoidAsync(Guid invoiceId, string reason);
         Task ReversePaymentAsync(Guid invoiceId, Guid paymentId, string reason);
+
+        // ── Email (085) ───────────────────────────────────────────────
+        Task<InvoiceEmailPrefillDto> GetEmailPrefillAsync(Guid invoiceId);
+        Task<SendInvoiceEmailResultDto> SendEmailAsync(Guid invoiceId, SendInvoiceEmailDto dto);
+
+        // ── The customer's link (085, anonymous) ──────────────────────
+        Task<PublicInvoiceDto?> GetByTokenAsync(string token);
+        Task<byte[]?> GetPublicPdfAsync(string token);
     }
     public class InvoiceService : IInvoiceService
     {
@@ -212,6 +229,58 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
 
         public async Task ReversePaymentAsync(Guid invoiceId, Guid paymentId, string reason)
             => await _apiService.PostVoidAsync($"api/invoices/{invoiceId}/payments/{paymentId}/reverse", new ReversePaymentDto(reason));
+
+        // ==================== EMAIL (085) ====================
+
+        public async Task<InvoiceEmailPrefillDto> GetEmailPrefillAsync(Guid invoiceId)
+            => await _apiService.GetAsync<InvoiceEmailPrefillDto>($"api/invoices/{invoiceId}/email-prefill");
+
+        /// <summary>
+        /// No catch: a refusal ("Issue the invoice first", "not a valid
+        /// address") arrives as InvalidOperationException carrying the
+        /// sentence the user needs to read.
+        /// </summary>
+        public async Task<SendInvoiceEmailResultDto> SendEmailAsync(Guid invoiceId, SendInvoiceEmailDto dto)
+            => await _apiService.PostAsync<SendInvoiceEmailResultDto>($"api/invoices/{invoiceId}/email", dto);
+
+        // ==================== THE CUSTOMER'S LINK (085) ====================
+
+        public async Task<PublicInvoiceDto?> GetByTokenAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token) || token.Length > 64) return null;
+
+            try
+            {
+                return await _apiService.GetAsync<PublicInvoiceDto>(
+                    $"api/invoices/public/{Uri.EscapeDataString(token)}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Invoice not found for token {Token}", Mask(token));
+                return null;
+            }
+        }
+
+        public async Task<byte[]?> GetPublicPdfAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token) || token.Length > 64) return null;
+
+            try
+            {
+                var bytes = await _apiService.GetBytesAsync(
+                    $"api/invoices/public/{Uri.EscapeDataString(token)}/pdf");
+                return bytes is { Length: > 0 } ? bytes : null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Invoice PDF not available for token {Token}", Mask(token));
+                return null;
+            }
+        }
+
+        /// <summary>The last four characters only — never the token.</summary>
+        private static string Mask(string? token)
+            => string.IsNullOrWhiteSpace(token) || token.Length < 8 ? "****" : "****" + token[^4..];
 
         private sealed class IssueResult
         {

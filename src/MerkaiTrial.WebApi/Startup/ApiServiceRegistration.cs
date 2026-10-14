@@ -51,6 +51,16 @@
 //   are ICommandHandlers, found by the scan. AddApiBackgroundServices adds
 //   InboundEmailWorker beside the outbound one.
 //
+// 085 — OUTBOUND TRACKING
+//   Two more hand registrations, because neither is an ICommandHandler
+//   and the Scrutor scan does not see them:
+//     IInvoiceCustomerEmail  queues the invoice email (PDF + /i/ link)
+//     IEmailDeliveryEvents   applies Resend's delivered / bounced /
+//                            complained / failed events, which arrive on
+//                            the SAME webhook as received mail
+//   The new handlers (SentEmailHandlers, InvoiceEmailHandlers) are
+//   ICommandHandlers and are found by the scan.
+//
 // The API may depend on Domain, Application and Infrastructure. It must
 // not depend on a host. If something in Application is ever needed by
 // both, it belongs in Application — which both hosts already reference —
@@ -205,6 +215,10 @@ public static class ApiServiceRegistration
         // no ICommandHandler, so the Scrutor scan above does not see it.
         services.AddScoped<IQuoteCustomerEmail, QuoteCustomerEmail>();
 
+        // 085. The invoice email to the customer — same reasoning as the
+        // quote one above.
+        services.AddScoped<IInvoiceCustomerEmail, InvoiceCustomerEmail>();
+
         // Cross-cutting
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<ILeadScoringService, LeadScoringService>();
@@ -307,6 +321,11 @@ public static class ApiServiceRegistration
         // as the sender. Its own typed HttpClient: a slow attachment
         // download must never hold up an outgoing send.
         services.AddScoped<IInboundEmailReceiver, InboundEmailReceiver>();
+
+        // 085: delivery events (delivered / delayed / bounced / complained /
+        // failed) come in on the same webhook; the receiver hands them here
+        // after checking the signature.
+        services.AddScoped<IEmailDeliveryEvents, EmailDeliveryEvents>();
 
         if (options.IsConfigured)
         {

@@ -2,6 +2,17 @@
 // Invoice.cs
 // Location: MerkaiTrial.Domain/Entities/Invoice.cs
 //
+// CHANGES (085) — EMAILING THE INVOICE
+//   ✅ Invoice.PublicLinkToken — the customer's link, /i/{token}. Random,
+//      40 characters, made the first time the invoice is emailed and kept,
+//      so every email for this invoice carries the same link. NULL until
+//      then. Same shape and rules as Quote.PublicLinkToken.
+//   ✅ InvoiceSentCopy (new table) — the PDF exactly as last emailed, so
+//      the customer's page can offer it for download. In its own table,
+//      not a column here: every invoice read loads the whole Invoice row,
+//      and a PDF column would ride along on all of them.
+//   Sql/085_OutboundTracking.sql.
+//
 // CHANGES (082) — InvoiceLine.CustomFieldsSnapshot: the product's printed
 // custom fields for the line (see the property). Sql/082_LineCustomFields.sql.
 // (081 added Invoice.CustomFieldsSnapshot / CustomFieldsFrozenAtUtc.)
@@ -102,6 +113,13 @@ namespace MerkaiTrial.Domain.Entities
 
         // Additional fields
         public string? PdfUrl { get; set; }
+
+        /// <summary>
+        /// 085. The token in the customer's link (/i/{token}). Made on the
+        /// first email and never changed, so an older email still opens.
+        /// It IS the credential for that page — never log it whole.
+        /// </summary>
+        public string? PublicLinkToken { get; set; }
         public string? Notes { get; set; }
 
         // ── Workflow (018) ────────────────────────────────────────────
@@ -324,5 +342,31 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>"DRAFT-3F9A1C2B" — unique enough per tenant; the unique index is the backstop.</summary>
         public static string NewDraftNumber()
             => DraftPrefix + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+    }
+
+    /// <summary>
+    /// 085. The PDF as it was last emailed to the customer — what the
+    /// "Download PDF" button on their /i/{token} page serves. One row per
+    /// invoice, replaced on every email.
+    ///
+    /// WHY A STORED COPY. The public page has no signed-in workspace, and
+    /// the PDF renderer reads the workspace's currency, date format and tax
+    /// label from the signed-in context. Rendering it again for an
+    /// anonymous visitor would print it with the wrong locale. The copy is
+    /// the document the customer was actually sent, which is also the right
+    /// answer for "what did we send them?".
+    /// </summary>
+    public class InvoiceSentCopy
+    {
+        /// <summary>Also the key: one copy per invoice.</summary>
+        public Guid InvoiceId { get; set; }
+        public Guid TenantId { get; set; }
+
+        public string FileName { get; set; } = string.Empty;
+        public long SizeBytes { get; set; }
+        public byte[] PdfContent { get; set; } = Array.Empty<byte>();
+
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+        public string? CreatedBy { get; set; }
     }
 }

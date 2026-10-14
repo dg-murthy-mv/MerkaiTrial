@@ -82,7 +82,8 @@ await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
 // 063: was app.UseSerilogRequestLogging(). Same line, same position, but
 // the public quote token is taken out of the path before it is written —
 // /api/quotes/public/****bSxl rather than the whole thing. See
-// Startup/ApiPipeline.cs.
+// Startup/ApiPipeline.cs. 085: invoice tokens (/api/invoices/public/…) too,
+// through the same PublicLinkPaths rule.
 app.UseMaskedRequestLogging();
 app.UseCorrelationId();
 app.UseApiSwaggerInDevelopment();
@@ -103,9 +104,16 @@ app.Run();
    ENDPOINTS THAT MUST STAY [AllowAnonymous] under the FallbackPolicy
      GET  /api/quotes/public/{token}
      PUT  /api/quotes/public/{token}/status
+     GET  /api/invoices/public/{token}      ← 085. The customer's invoice page.
+     GET  /api/invoices/public/{token}/pdf  ← 085. Its "Download PDF" button.
      POST /api/inbound/resend              ← 083. Resend's webhook. Protected
                                              by Resend's signature (svix-*
                                              headers), not by a login.
+                                             085: the SAME endpoint also takes
+                                             email.delivered / delivery_delayed
+                                             / bounced / complained / failed —
+                                             tick those events on the Resend
+                                             webhook (SETUP.md for 085).
      GET  /health
 
    AZURE, NOT CODE: restrict this App Service's inbound access to

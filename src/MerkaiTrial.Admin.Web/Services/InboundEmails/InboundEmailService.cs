@@ -16,6 +16,13 @@
 // with { error } becomes an InvalidOperationException carrying it.
 //
 // Registered in AdminWebServiceRegistration.AddAdminWebModuleServices.
+//
+// CHANGES (085)
+//   + GetSentForRecordAsync — the quote and invoice emails WE sent for a
+//     deal / contact / lead (api/sent-emails/for/…), so the record's
+//     Emails tab shows both directions. It lives here rather than in
+//     SentEmailService so the three detail pages, which already hand
+//     this service to RecordEmailsVm.LoadAsync, need no change at all.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -29,6 +36,9 @@ namespace MerkaiTrial.Admin.Web.Services.InboundEmails
         Task<int> GetUnmatchedCountAsync();
         Task<InboundEmailDetailDto> GetAsync(Guid id);
         Task<RecordEmailsDto> GetForRecordAsync(string entityType, Guid entityId);
+
+        /// <summary>085. Emails we sent about the record's quotes and invoices. Throws on failure.</summary>
+        Task<SentEmailsDto> GetSentForRecordAsync(string entityType, Guid entityId);
         Task<List<InboundLinkTargetDto>> SearchTargetsAsync(Guid emailId, string? search);
 
         Task LinkAsync(Guid id, string entityType, Guid entityId);
@@ -84,6 +94,11 @@ namespace MerkaiTrial.Admin.Web.Services.InboundEmails
             => await Read(() => _api.GetAsync<RecordEmailsDto>(
                    $"api/inbound-emails/for/{Uri.EscapeDataString(entityType)}/{entityId}"), "a record's emails")
                ?? new RecordEmailsDto(new(), null, false);
+
+        public async Task<SentEmailsDto> GetSentForRecordAsync(string entityType, Guid entityId)
+            => await Read(() => _api.GetAsync<SentEmailsDto>(
+                   $"api/sent-emails/for/{Uri.EscapeDataString(entityType)}/{entityId}"), "a record's sent emails")
+               ?? new SentEmailsDto(new(), false);
 
         public async Task<List<InboundLinkTargetDto>> SearchTargetsAsync(Guid emailId, string? search)
         {

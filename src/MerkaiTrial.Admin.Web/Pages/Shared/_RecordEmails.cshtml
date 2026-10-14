@@ -9,6 +9,13 @@
      on the email page, inside a sandboxed frame.
    • The "copy" button uses the layout's delegated [data-copy] handler —
      no script here, so the partial can appear on any page.
+
+   085 — BOTH DIRECTIONS
+   • Quote and invoice emails WE sent are merged in, newest first, with
+     their delivery state (Delivered, Bounced, …). A sent row opens
+     /Emails/Sent/{id}; a received row still opens /Emails/View/{id}.
+   • The two lists fail separately — a failed half says so in one line
+     and the other half still shows.
    ===================================================================== *@
 
 <div class="card border-0 shadow-sm mb-4 re-card">
@@ -19,37 +26,114 @@
             {
                 <span class="badge bg-secondary ms-1">@Model.Count</span>
             }
+            @if (Model.ProblemCount > 0)
+            {
+                <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle ms-1"
+                      title="Emails we sent that were not delivered">
+                    <i class="bi bi-envelope-x"></i> @Model.ProblemCount not delivered
+                </span>
+            }
         </h6>
-        @if (Model.Count >= 50)
+        @if (Model.HasMore)
         {
-            <small class="text-muted">Latest 50</small>
+            <small class="text-muted">Latest only</small>
         }
     </div>
 
     <div class="card-body p-0">
-        @if (Model.LoadFailed)
+        @if (Model.AllFailed)
         {
             <div class="alert alert-warning m-3 mb-3 d-flex gap-2 align-items-start">
                 <i class="bi bi-exclamation-triangle mt-1"></i>
                 <span>The emails for this @Model.RecordLabel could not be loaded just now. Refresh the page to try again.</span>
             </div>
         }
+        else
+        {
+            if (Model.LoadFailed)
+            {
+                <div class="alert alert-warning m-3 mb-0 py-2 small d-flex gap-2 align-items-start">
+                    <i class="bi bi-exclamation-triangle mt-1"></i>
+                    <span>Received emails could not be loaded just now — only the emails we sent are shown. Refresh to try again.</span>
+                </div>
+            }
+            if (Model.SentLoadFailed)
+            {
+                <div class="alert alert-warning m-3 mb-0 py-2 small d-flex gap-2 align-items-start">
+                    <i class="bi bi-exclamation-triangle mt-1"></i>
+                    <span>The quote and invoice emails we sent could not be loaded just now — only received emails are shown. Refresh to try again.</span>
+                </div>
+            }
+        }
+
+        @if (Model.AllFailed)
+        {
+            // nothing more to draw — the warning above says it all
+        }
         else if (Model.Count == 0)
         {
             <div class="text-center text-muted py-4 px-3">
                 <i class="bi bi-envelope-open" style="font-size:2.2rem;opacity:.3;"></i>
                 <p class="mb-1 mt-2">No emails on this @Model.RecordLabel yet.</p>
-                @if (Model.ReceivingOn)
-                {
-                    <p class="small mb-0">Customer replies to quote emails appear here by themselves.</p>
-                }
+                <p class="small mb-0">
+                    @(Model.ReceivingOn
+                        ? "Quotes and invoices you email from Merkai appear here, and so do the customer's replies."
+                        : "Quotes and invoices you email from Merkai appear here.")
+                </p>
             </div>
         }
         else
         {
             <div class="list-group list-group-flush">
-                @foreach (var e in Model.Items)
+                @foreach (var row in Model.Timeline)
                 {
+                    if (row.Out is { } s)
+                    {
+                        <a class="list-group-item list-group-item-action re-row" href="/Emails/Sent/@s.Id">
+                            <div class="d-flex gap-3 align-items-start">
+                                <div class="re-ico @(s.IsProblem ? "re-bad" : "re-sent")" title="Sent from Merkai">
+                                    <i class="bi bi-send"></i>
+                                </div>
+                                <div class="flex-grow-1 min-w-0">
+                                    <div class="d-flex justify-content-between gap-2">
+                                        <div class="re-who text-truncate">
+                                            <span class="text-muted">To</span> @s.ToDisplay
+                                            @if (!string.IsNullOrWhiteSpace(s.SentByName))
+                                            {
+                                                <span class="text-muted small">· sent by @s.SentByName</span>
+                                            }
+                                        </div>
+                                        <small class="text-muted text-nowrap" title="@Model.FormatDateTime(s.CreatedAtUtc)">
+                                            @Model.FormatDateTime(s.CreatedAtUtc)
+                                        </small>
+                                    </div>
+                                    <div class="re-subject text-truncate">@s.Subject</div>
+                                    @if (s.IsProblem)
+                                    {
+                                        <div class="re-snippet text-danger text-truncate">@s.StateHint</div>
+                                    }
+                                    <div class="d-flex flex-wrap gap-1 mt-1">
+                                        <span class="badge @s.StateBadge" title="@s.StateHint">
+                                            <i class="bi @s.StateIcon"></i> @s.StateLabel
+                                        </span>
+                                        @if (!string.IsNullOrWhiteSpace(s.EntityLabel))
+                                        {
+                                            <span class="badge bg-light text-dark border">@s.EntityLabel</span>
+                                        }
+                                        @if (s.AttachmentCount > 0)
+                                        {
+                                            <span class="badge bg-light text-dark border">
+                                                <i class="bi bi-paperclip"></i> @s.AttachmentCount
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                        continue;
+                    }
+
+                    var e = row.In!;
                     <a class="list-group-item list-group-item-action re-row" href="/Emails/View/@e.Id">
                         <div class="d-flex gap-3 align-items-start">
                             <div class="re-ico @(e.Direction == "SentByUser" ? "re-out" : "re-in")" title="@e.DirectionLabel">
@@ -136,6 +220,8 @@
     }
     .re-in  { background: #eff6ff; color: #2563eb; }
     .re-out { background: #f0fdf4; color: #16a34a; }
+    .re-sent { background: #f5f3ff; color: #7c3aed; }
+    .re-bad  { background: #fef2f2; color: #dc2626; }
     .re-who { font-size: 13.5px; font-weight: 600; color: #0f172a; }
     .re-subject { font-size: 13.5px; color: #1e293b; }
     .re-snippet { font-size: 12.5px; }

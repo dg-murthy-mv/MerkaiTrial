@@ -16,6 +16,13 @@
 //                  showing every colleague's notification emails is not
 //                  something an ordinary user should browse.
 //
+// 085 — THE LOG SHOWS WHAT HAPPENED AFTER SENDING. Each row carries the
+// delivery result (Delivered / Bounced / spam / delayed), and the status
+// filter also takes "Delivered", "Bounced" and "Problems" (bounced, spam
+// or not delivered, plus anything that failed to send). The filter is
+// still the one `status` parameter, so the controller and the Admin.Web
+// service are unchanged.
+//
 // THE LOG DOES NOT SHOW MESSAGE BODIES
 //   Subject, recipient, status and error only. A rendered body can quote a
 //   deal value or a customer's name, and a log page is exactly the sort of
@@ -553,7 +560,24 @@ namespace MerkaiTrial.Application.Commands.Notifications
             var deadCount = await all.CountAsync(m => m.Status == OutboundStatus.Dead, ct);
 
             var filtered = all;
-            if (!string.IsNullOrWhiteSpace(status)
+            if (string.Equals(status, "Delivered", StringComparison.OrdinalIgnoreCase))
+            {
+                // 085
+                filtered = filtered.Where(m => m.DeliveryStatus == OutboundDeliveryStatus.Delivered);
+            }
+            else if (string.Equals(status, "Bounced", StringComparison.OrdinalIgnoreCase))
+            {
+                filtered = filtered.Where(m => m.DeliveryStatus == OutboundDeliveryStatus.Bounced);
+            }
+            else if (string.Equals(status, "Problems", StringComparison.OrdinalIgnoreCase))
+            {
+                filtered = filtered.Where(m =>
+                    m.Status == OutboundStatus.Dead
+                    || m.DeliveryStatus == OutboundDeliveryStatus.Bounced
+                    || m.DeliveryStatus == OutboundDeliveryStatus.Complained
+                    || m.DeliveryStatus == OutboundDeliveryStatus.Failed);
+            }
+            else if (!string.IsNullOrWhiteSpace(status)
                 && Enum.TryParse<OutboundStatus>(status, ignoreCase: true, out var wanted))
             {
                 filtered = filtered.Where(m => m.Status == wanted);
@@ -578,7 +602,12 @@ namespace MerkaiTrial.Application.Commands.Notifications
                     m.LastError,
                     m.ProviderMessageId,
                     m.EntityType,
-                    m.EntityId))
+                    m.EntityId,
+                    m.DeliveryStatus.ToString(),        // 085
+                    m.DeliveryDetail,
+                    m.DeliveryStatusAtUtc,
+                    m.CcAddresses,
+                    m.Attachments.Count()))
                 .ToListAsync(ct);
 
             var hasMore = rows.Count > take;

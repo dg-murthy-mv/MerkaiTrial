@@ -33,6 +33,7 @@
     <Folder Include="Services\Audit\" />
     <Folder Include="Services\CustomFields\" />
     <Folder Include="Services\InboundEmails\" />
+    <Folder Include="Services\Emails\" />
     <Folder Include="Services\Notifications\" />
     <Folder Include="Services\Security\" />
     <Folder Include="Services\Pipeline\" />

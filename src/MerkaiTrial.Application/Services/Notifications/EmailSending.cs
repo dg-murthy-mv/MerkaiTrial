@@ -36,6 +36,16 @@
 //   reply+<token> address AND the workspace's own mailbox, so the reply is
 //   filed on the deal and still lands where the team has always read it.
 //
+// 085 — COPIES AND ATTACHMENTS
+//   EmailMessage gains Cc (invoice emails can copy the customer's accounts
+//   team) and Attachments (the invoice PDF). Both trailing and optional, so
+//   every existing caller compiles unchanged. Resend takes attachments as
+//   base64 in the same JSON request — 40 MB per email after encoding; the
+//   queue side caps a file at 5 MB.
+//
+//   RedirectAllTo also swallows the copies: a test environment pointed at
+//   one inbox must never email a customer's accounts team by the CC line.
+//
 // RATE LIMIT
 //   Resend's default is 2 requests per second. The worker paces itself;
 //   this class also treats HTTP 429 as retryable rather than fatal, so a
@@ -149,7 +159,12 @@ public sealed record EmailMessage(
     string Subject,
     string BodyHtml,
     string BodyText,
-    string? ReplyToAddress);
+    string? ReplyToAddress,
+    string? CcAddresses = null,                               // 085: comma-separated
+    IReadOnlyList<EmailAttachment>? Attachments = null);      // 085
+
+/// <summary>085. One file sent with an email.</summary>
+public sealed record EmailAttachment(string FileName, string ContentType, byte[] Content);
 
 /// <summary>
 /// Outcome of one attempt. Retryable is the important field: it separates
@@ -207,9 +222,13 @@ public sealed class ResendEmailSender : IEmailSender
             ? message.ToAddress
             : _options.RedirectAllTo!;
 
-        var subject = string.IsNullOrWhiteSpace(_options.RedirectAllTo)
+        var redirected = !string.IsNullOrWhiteSpace(_options.RedirectAllTo);
+
+        var subject = !redirected
             ? message.Subject
-            : $"[to: {message.ToAddress}] {message.Subject}";
+            : string.IsNullOrWhiteSpace(message.CcAddresses)
+                ? $"[to: {message.ToAddress}] {message.Subject}"
+                : $"[to: {message.ToAddress}; cc: {message.CcAddresses}] {message.Subject}";
 
         var payload = new ResendRequest
         {
@@ -220,7 +239,18 @@ public sealed class ResendEmailSender : IEmailSender
             Subject = subject,
             Html = message.BodyHtml,
             Text = message.BodyText,
-            ReplyTo = SplitReplyTo(message.ReplyToAddress)
+            ReplyTo = SplitReplyTo(message.ReplyToAddress),
+
+            // 085. Never while redirected — see the header.
+            Cc = redirected ? null : SplitReplyTo(message.CcAddresses),
+
+            Attachments = message.Attachments is { Count: > 0 } files
+                ? files.Select(f => new ResendAttachment
+                  {
+                      Filename = f.FileName,
+                      Content = Convert.ToBase64String(f.Content)
+                  }).ToArray()
+                : null
         };
 
         try
@@ -301,6 +331,7 @@ public sealed class ResendEmailSender : IEmailSender
 
     /// <summary>
     /// 083. "reply+abc@in.example.com, sales@acme.com" → two addresses.
+    /// 085: also splits the CC list, which has the same shape.
     /// Null when there are none, so the field is left out of the request
     /// entirely rather than sent as an empty array.
     /// </summary>
@@ -328,6 +359,25 @@ public sealed class ResendEmailSender : IEmailSender
         [JsonPropertyName("reply_to")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string[]? ReplyTo { get; set; }
+
+        // 085
+        [JsonPropertyName("cc")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string[]? Cc { get; set; }
+
+        [JsonPropertyName("attachments")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ResendAttachment[]? Attachments { get; set; }
+    }
+
+    // 085. Resend's attachment shape: base64 content in the same request.
+    // No content type is sent — Resend works it out from the file name
+    // (".pdf"), which is the documented behaviour and one field fewer for
+    // an API version change to reject.
+    private sealed class ResendAttachment
+    {
+        [JsonPropertyName("filename")] public string Filename { get; set; } = string.Empty;
+        [JsonPropertyName("content")]  public string Content { get; set; } = string.Empty;
     }
 }
 
@@ -353,8 +403,8 @@ public sealed class NullEmailSender : IEmailSender
     public Task<EmailSendResult> SendAsync(EmailMessage message, CancellationToken ct = default)
     {
         _logger.LogInformation(
-            "EMAIL NOT SENT (no provider configured) — to {To}, subject \"{Subject}\"",
-            message.ToAddress, message.Subject);
+            "EMAIL NOT SENT (no provider configured) — to {To}, subject \"{Subject}\", {Files} attachment(s)",
+            message.ToAddress, message.Subject, message.Attachments?.Count ?? 0);
 
         return Task.FromResult(EmailSendResult.TransientFailure(
             "Email is not configured on this environment — the message is still queued."));

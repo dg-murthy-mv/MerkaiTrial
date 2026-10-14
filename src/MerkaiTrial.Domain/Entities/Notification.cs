@@ -70,7 +70,22 @@ namespace MerkaiTrial.Domain.Entities
         /// quote, a new message from a known contact, or one a colleague
         /// forwarded to the workspace address.
         /// </summary>
-        CustomerEmailReceived = 8
+        CustomerEmailReceived = 8,
+
+        /// <summary>
+        /// 085. An invoice was emailed to the customer. The EventType of the
+        /// CUSTOMER's outbound message (the way QuoteSent is for quotes) —
+        /// not a notification anybody subscribes to, so it is deliberately
+        /// absent from NotificationDefaults.AllInDisplayOrder: a setting
+        /// that switches nothing on would be the Reports bug again.
+        /// </summary>
+        InvoiceSent = 9,
+
+        /// <summary>
+        /// 085. An email I sent to a customer could not be delivered — it
+        /// bounced, was marked as spam, or the provider gave up on it.
+        /// </summary>
+        EmailBounced = 10
     }
 
     public class Notification

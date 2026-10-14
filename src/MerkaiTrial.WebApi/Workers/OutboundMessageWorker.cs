@@ -47,6 +47,24 @@
 //   Idempotency-Key on the send is what stops that retry becoming a second
 //   email. Claiming prevents concurrency; idempotency prevents crash
 //   duplicates. You need both.
+//
+// CHANGES (085 — outbound tracking)
+//   ✅ CC and ATTACHMENTS reach the sender. An invoice email carries its
+//      PDF (OutboundMessageAttachments) and up to five Cc addresses. The
+//      attachment bytes are read one message at a time, just before that
+//      message is sent — never the whole batch's PDFs at once — and with
+//      IgnoreQueryFilters for the same reason as note 2.
+//   ✅ SAVED AFTER EACH MESSAGE, not once per batch. Resend can report
+//      "delivered" within a second or two of accepting an email, and the
+//      webhook finds the email by the ProviderMessageId saved here. With
+//      one save at the end of a 20-message batch (600ms apart) the early
+//      ones were still unsaved when their events arrived. The webhook also
+//      answers 503 to a not-yet-known email so Resend retries — this
+//      makes that the rare case rather than the usual one. It is also
+//      safer: a crash mid-batch no longer forgets that the first emails
+//      went out.
+//   ✅ Addresses and phone numbers are MASKED in log lines
+//      ("wo****@example.com", "****1234") — the rule everywhere else.
 // =====================================================================
 
 using System.Data;
@@ -199,6 +217,10 @@ public sealed class OutboundMessageWorker : BackgroundService
             await SendOneAsync(db, email, whatsApp, message, ct);
             processed++;
 
+            // 085: saved per message — see the header. CancellationToken.None:
+            // the email has gone; shutting down must not forget that it did.
+            await db.SaveChangesAsync(CancellationToken.None);
+
             // Pace for the provider's rate limit.
             if (processed < messages.Count)
             {
@@ -211,8 +233,8 @@ public sealed class OutboundMessageWorker : BackgroundService
             }
         }
 
-        // One save for the whole batch. Each message's outcome is already on
-        // its tracked entity.
+        // 085: anything still pending (a message skipped by cancellation is
+        // untouched, so normally nothing) — harmless when there are no changes.
         await db.SaveChangesAsync(CancellationToken.None);
 
         return processed;
@@ -239,7 +261,7 @@ public sealed class OutboundMessageWorker : BackgroundService
         var result = message.Channel switch
         {
             OutboundChannel.WhatsApp => await SendWhatsAppAsync(whatsApp, message, ct),
-            OutboundChannel.Email    => await SendEmailAsync(email, message, ct),
+            OutboundChannel.Email    => await SendEmailAsync(db, email, message, ct),
 
             // Sms, or a channel added later and not wired here. Permanent:
             // retrying a channel with no sender sixteen times helps nobody,
@@ -273,7 +295,7 @@ public sealed class OutboundMessageWorker : BackgroundService
 
             _logger.LogError(
                 "Message {Id} to {To} gave up after {Attempts} attempt(s): {Error}",
-                message.Id, message.ToAddress, message.AttemptCount, message.LastError);
+                message.Id, MaskRecipient(message.ToAddress), message.AttemptCount, message.LastError);
             return;
         }
 
@@ -282,7 +304,7 @@ public sealed class OutboundMessageWorker : BackgroundService
 
         _logger.LogWarning(
             "Message {Id} to {To} failed (attempt {Attempts}), next try {Next}: {Error}",
-            message.Id, message.ToAddress, message.AttemptCount,
+            message.Id, MaskRecipient(message.ToAddress), message.AttemptCount,
             message.NextAttemptAtUtc, message.LastError);
     }
 
@@ -295,11 +317,22 @@ public sealed class OutboundMessageWorker : BackgroundService
         bool Success, string? ProviderMessageId, string? Error, bool Retryable);
 
     private static async Task<SendOutcome> SendEmailAsync(
-        IEmailSender sender, OutboundMessage message, CancellationToken ct)
+        FlowDbContext db, IEmailSender sender, OutboundMessage message, CancellationToken ct)
     {
         if (!sender.IsEnabled)
             return new SendOutcome(false, null,
                 "Email is not configured on this environment — still queued.", true);
+
+        // 085: this message's files only, read now — see the header.
+        // IgnoreQueryFilters for the same reason as note 2; the explicit
+        // TenantId keeps the read to the message's own workspace anyway.
+        var files = await db.OutboundMessageAttachments
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(a => a.OutboundMessageId == message.Id && a.TenantId == message.TenantId)
+            .OrderBy(a => a.CreatedAtUtc)
+            .Select(a => new EmailAttachment(a.FileName, a.ContentType, a.Content))
+            .ToListAsync(ct);
 
         var r = await sender.SendAsync(new EmailMessage(
             IdempotencyKey: message.Id,          // see the header
@@ -308,7 +341,9 @@ public sealed class OutboundMessageWorker : BackgroundService
             Subject: message.Subject,
             BodyHtml: message.BodyHtml,
             BodyText: message.BodyText,
-            ReplyToAddress: message.ReplyToAddress), ct);
+            ReplyToAddress: message.ReplyToAddress,
+            CcAddresses: message.CcAddresses,
+            Attachments: files.Count == 0 ? null : files), ct);
 
         return new SendOutcome(r.Success, r.ProviderMessageId, r.Error, r.Retryable);
     }
@@ -528,6 +563,24 @@ WHERE  Status IN (0, 3)
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// 085. "wo****@example.com" for an email address, "****1234" for a
+    /// phone number — never the whole thing in a log line.
+    /// </summary>
+    private static string MaskRecipient(string? to)
+    {
+        if (string.IsNullOrWhiteSpace(to)) return "(none)";
+
+        var at = to.IndexOf('@');
+        if (at > 0)
+        {
+            var local = to[..at];
+            return (local.Length <= 2 ? local[..1] : local[..2]) + "****" + to[at..];
+        }
+
+        return to.Length <= 4 ? "****" : "****" + to[^4..];
     }
 
     private static string? Truncate(string? value, int max)

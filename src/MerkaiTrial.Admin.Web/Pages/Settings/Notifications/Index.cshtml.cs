@@ -16,6 +16,13 @@
 // it independently. The page hiding the tab is a courtesy, not the
 // control: a non-admin who guesses the URL gets a 403 turned into a plain
 // message rather than a blank screen.
+//
+// CHANGES (085 — delivery tracking)
+//   The email log now says what happened AFTER an email left: a Delivery
+//   column (Delivered / Delayed / Bounced / Marked as spam / Not
+//   delivered), filters for Delivered, Bounced and Problems (bounced,
+//   spam, not delivered, or out of attempts), and every row opens the
+//   email's own page (/Emails/Sent/{id}) with the full timeline.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Notifications;
@@ -151,9 +158,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
 
         public string? LoadError { get; private set; }
 
-        /// <summary>The statuses the log's filter offers.</summary>
+        /// <summary>The statuses the log's filter offers. 085: + Delivered, Bounced, Problems.</summary>
         public static readonly string[] StatusFilters =
-            { "Pending", "Sending", "Sent", "Failed", "Dead", "Cancelled" };
+            { "Problems", "Pending", "Sending", "Sent", "Delivered", "Bounced", "Failed", "Dead", "Cancelled" };
+
+        /// <summary>085. What each filter button says.</summary>
+        public static string FilterLabel(string filter) => filter switch
+        {
+            "Problems" => "Problems",
+            "Dead"     => "Gave up",
+            _          => filter
+        };
+
+        /// <summary>085. What each filter means, for its tooltip.</summary>
+        public static string FilterHint(string filter) => filter switch
+        {
+            "Problems"  => "Bounced, marked as spam, not delivered, or out of automatic attempts",
+            "Sent"      => "Accepted by the email provider (delivered or not yet known)",
+            "Delivered" => "The recipient's mail server accepted it",
+            "Bounced"   => "The recipient's mail server refused it",
+            "Failed"    => "Failed, and will be tried again automatically",
+            "Dead"      => "Out of automatic attempts — retry by hand once the cause is fixed",
+            _           => filter
+        };
 
         // =============================================================
         // GET

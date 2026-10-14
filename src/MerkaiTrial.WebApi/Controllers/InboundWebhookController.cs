@@ -2,7 +2,9 @@
 // InboundWebhookController.cs
 // Location: MerkaiTrial.WebApi/Controllers/InboundWebhookController.cs
 //
-// NEW FILE (083). The address Resend calls when an email arrives:
+// NEW FILE (083). The address Resend calls when an email arrives —
+// and, 085, when something happens to an email we SENT (delivered,
+// bounced, marked as spam). Same address, same signature check:
 //
 //     POST /api/inbound/resend
 //
@@ -29,6 +31,8 @@
 //   503  receiving not configured here. Resend retries later — so mail
 //        that arrives while you are still setting up is delivered once
 //        the secret is in place, not lost.
+//   503  085: also a delivery event for an email we sent seconds ago
+//        and have not finished recording — Resend retries it shortly.
 //   500  anything unexpected (the database was down). Resend retries.
 // =====================================================================
 
@@ -88,6 +92,7 @@ namespace MerkaiTrial.WebApi.Controllers
                     InboundReceiveOutcome.Unauthorised  => Unauthorized(),
                     InboundReceiveOutcome.NotConfigured => StatusCode(503, new { error = result.Detail }),
                     InboundReceiveOutcome.Malformed     => BadRequest(new { error = result.Detail }),
+                    InboundReceiveOutcome.RetryLater    => StatusCode(503, new { error = result.Detail }),
                     _                                   => StatusCode(500)
                 };
             }

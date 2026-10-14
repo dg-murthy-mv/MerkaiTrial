@@ -61,6 +61,11 @@
 //   with the outbox row — same transaction, same rule as everything else.
 //   With receiving off, Reply-To is exactly what it was before 083.
 //
+// 085 — WHO SENT IT. QueueAsync takes the sender's user id (trailing and
+// optional, so the automatic path on Sent is unchanged). It lands on
+// OutboundMessage.SentByUserId: if the email bounces, that person is told.
+// Without it, a bounce notification goes to the deal's owner.
+//
 // THE FROM LINE IS STILL OURS
 //   Resend only accepts a From on a domain we have verified. The envelope
 //   is Merkai's; Reply-To is the TENANT's, so a customer hitting reply
@@ -99,7 +104,8 @@ public interface IQuoteCustomerEmail
         Quote quote,
         Guid tenantId,
         string? sentBy,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        Guid? sentByUserId = null);      // 085 — last, so positional callers still compile
 }
 
 public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
@@ -122,7 +128,8 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
         Quote quote,
         Guid tenantId,
         string? sentBy,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid? sentByUserId = null)
     {
         if (quote is null) return "No quote.";
 
@@ -246,6 +253,7 @@ public sealed class QuoteCustomerEmail : IQuoteCustomerEmail
             ToAddress      = Truncate(contact.Email, 320)!,
             ToName         = Truncate(contact.DisplayName, 200),
             ReplyToAddress = replyTo,             // 083: already fitted to 320 by CombineReplyTo
+            SentByUserId   = sentByUserId,        // 085: told if it bounces
 
             Subject  = Truncate(rendered.Subject, 300)!,
             BodyHtml = rendered.Html,

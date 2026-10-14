@@ -1,0 +1,381 @@
+@page "/i/{Token}"
+@model MerkaiTrial.Admin.Web.Pages.Public.InvoiceViewModel
+@{
+    Layout = null;   // Standalone public page — no sidebar, and no _Layout,
+                     // which injects ICurrentTenantService and would throw
+                     // for a visitor with no tenant claim. See Program.cs.
+    ViewData["Title"] = Model.Invoice != null ? $"Invoice {Model.Invoice.Number}" : "Invoice";
+    var inv = Model.Invoice;
+
+    // The status sentences, built here rather than glued together inline
+    // (Razor reads a word followed directly by an at-sign as an email
+    // address, and would print the expression instead of running it).
+    string overdueLine = "", dueLine = "";
+    if (inv != null)
+    {
+        var lateBy = Model.DaysToDue is int lateDays && lateDays < 0
+            ? $" by {-lateDays} day{(lateDays == -1 ? "" : "s")}" : "";
+        overdueLine = $"{Model.FormatCurrency(inv.Balance)} is overdue{lateBy}.";
+
+        var by = inv.DueDateUtc is DateTime dueBy
+            ? $" by {MerkaiTrial.Admin.Web.Pages.Public.InvoiceViewModel.FormatDate(dueBy)}" : "";
+        var received = Model.IsPartlyPaid ? $" — {Model.FormatCurrency(inv.TotalPaid)} already received, thank you" : "";
+        dueLine = $"{Model.FormatCurrency(inv.Balance)} due{by}{received}.";
+    }
+}
+@* =====================================================================
+   Public/InvoiceView.cshtml — NEW (085). The customer's invoice page,
+   opened from the link in an invoice email. Read-only.
+
+   Same look and the same rules as Public/QuoteView:
+     • Every value is Razor-encoded text.
+     • Money in the invoice's OWN currency and culture (no tenant context).
+     • Discount and tax-code columns only when a line has one.
+     • noindex — a customer's invoice must never end up in a search engine.
+   ===================================================================== *@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>@ViewData["Title"] — Merkai</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <style>
+        body { background: #f0f4ff; font-family: 'Segoe UI', sans-serif; }
+        .inv-card {
+            background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(99,102,241,0.1);
+            max-width: 920px; margin: 2rem auto; overflow: hidden;
+        }
+        .inv-head { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; padding: 2rem 2.5rem; }
+        .inv-body { padding: 2rem 2.5rem; }
+        .inv-number { font-size: 1.6rem; font-weight: 700; }
+        .company-name { font-size: 1.1rem; opacity: 0.9; }
+        .contact-name { font-size: 0.9rem; opacity: 0.75; }
+        .section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6366f1; margin-bottom: 0.5rem; }
+        .totals-box { background: #f8f9ff; border: 1px solid #e0e7ff; border-radius: 12px; padding: 1.25rem 1.5rem; }
+        .grand-total-row { font-size: 1.35rem; font-weight: 700; color: #4f46e5; border-top: 2px solid #e0e7ff; padding-top: 0.75rem; margin-top: 0.5rem; }
+        .due-row { font-size: 1.15rem; font-weight: 700; }
+        .head-badge { display: inline-block; background: rgba(255,255,255,0.2); border-radius: 6px; padding: 0.2rem 0.75rem; font-size: 0.85rem; }
+        .status-banner { border-radius: 10px; padding: 1.1rem 1.4rem; font-weight: 600; font-size: 1rem; }
+        .seller { padding: 1.25rem 2.5rem 0; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+        .seller .lbl { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; font-weight: 700; margin-bottom: .3rem; }
+        .seller .nm  { font-weight: 700; color: #0f172a; font-size: .98rem; }
+        .seller .ln  { color: #64748b; font-size: .84rem; line-height: 1.5; }
+        .seller .tax { color: #0f172a; font-size: .84rem; margin-top: .35rem; font-weight: 600; }
+        .seller a { color: #4f46e5; text-decoration: none; }
+        .seller a:hover { text-decoration: underline; }
+        .iv-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .5rem 1.5rem;
+                      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: .85rem 1rem; }
+        .iv-details .k { font-size: .75rem; color: #64748b; }
+        .iv-details .v { font-weight: 600; color: #0f172a; overflow-wrap: anywhere; }
+        .qty-cell { white-space: nowrap; }
+        .discount-cell { white-space: nowrap; color: #059669; font-weight: 600; }
+        .discount-none { color: #cbd5e1; font-weight: 400; }
+        .tax-code-cell { white-space: nowrap; font-size: .9rem; color: #334155; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .tax-code-none { color: #cbd5e1; font-weight: 400; font-family: inherit; }
+        .action-bar { background: #f8f9ff; border-top: 1px solid #e0e7ff; padding: 1.25rem 2.5rem; display: flex; gap: 1rem; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .notes { white-space: pre-wrap; color: #334155; font-size: .92rem; }
+        @@media (max-width: 600px) {
+            .inv-head, .inv-body, .action-bar, .seller { padding-left: 1.25rem; padding-right: 1.25rem; }
+            .action-bar .btn { width: 100%; }
+        }
+        @@media print {
+            body { background: white; }
+            .inv-card { box-shadow: none; margin: 0; }
+            .action-bar { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+@if (inv == null)
+{
+    <div class="inv-card mt-5">
+        <div class="inv-head text-center py-5">
+            <i class="bi bi-exclamation-circle fs-1 mb-3 d-block"></i>
+            <h2>Invoice not found</h2>
+            <p class="opacity-75 mb-0">This link may be mistyped, or the invoice is no longer available. Please contact the sender.</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="inv-card">
+
+        <!-- ── Header ───────────────────────────────────────────────── -->
+        <div class="inv-head">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div>
+                    <div class="small opacity-75 text-uppercase" style="letter-spacing:.08em;">Invoice</div>
+                    <div class="inv-number mb-1">@inv.Number</div>
+                    @if (!string.IsNullOrWhiteSpace(Model.CustomerHeading))
+                    {
+                        <div class="company-name">@Model.CustomerHeading</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Model.CustomerSubheading))
+                    {
+                        <div class="contact-name"><i class="bi bi-person me-1"></i>@Model.CustomerSubheading</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(inv.MilestoneLabel))
+                    {
+                        <div class="opacity-75 small mt-1">@inv.MilestoneLabel</div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(inv.QuoteNumber))
+                    {
+                        <div class="opacity-75 small mt-1">For quote @inv.QuoteNumber</div>
+                    }
+                </div>
+                <div class="text-end">
+                    <div class="head-badge mb-1">
+                        <i class="bi bi-calendar3 me-1"></i>Issued @MerkaiTrial.Admin.Web.Pages.Public.InvoiceViewModel.FormatDate(inv.IssueDateUtc)
+                    </div>
+                    @if (inv.DueDateUtc is DateTime due)
+                    {
+                        <div class="small opacity-75 mt-1">Due @MerkaiTrial.Admin.Web.Pages.Public.InvoiceViewModel.FormatDate(due)</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Status ───────────────────────────────────────────────── -->
+        <div class="mx-4 mt-4">
+            @if (Model.IsVoid)
+            {
+                <div class="status-banner bg-secondary bg-opacity-10 text-secondary-emphasis border border-secondary border-opacity-25">
+                    <i class="bi bi-slash-circle me-2"></i>This invoice has been cancelled and is no longer payable.
+                </div>
+            }
+            else if (Model.IsPaid)
+            {
+                <div class="status-banner bg-success bg-opacity-10 text-success-emphasis border border-success border-opacity-25">
+                    <i class="bi bi-check-circle-fill me-2"></i>Paid in full — thank you.
+                </div>
+            }
+            else if (Model.IsOverdue)
+            {
+                <div class="status-banner bg-danger bg-opacity-10 text-danger-emphasis border border-danger border-opacity-25">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    @overdueLine
+                    Please arrange payment, or contact us if it has already been paid.
+                </div>
+            }
+            else
+            {
+                <div class="status-banner bg-primary bg-opacity-10 text-primary-emphasis border border-primary border-opacity-25">
+                    <i class="bi bi-receipt me-2"></i>
+                    @dueLine
+                </div>
+            }
+
+            @if (Model.PdfFailed)
+            {
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>The PDF could not be downloaded just now. Please try again in a moment.
+                </div>
+            }
+        </div>
+
+        <!-- ── Who it is from ───────────────────────────────────────── -->
+        @if (Model.ShowSeller)
+        {
+            var seller = Model.Seller!;
+            <div class="seller">
+                <div>
+                    <div class="lbl">Invoice from</div>
+                    <div class="nm">@seller.DisplayName</div>
+                    <div class="ln">
+                        @foreach (var line in seller.AddressLines())
+                        {
+                            @line<br />
+                        }
+                    </div>
+                    @{ var sellerTax = seller.TaxLine(); }
+                    @if (sellerTax is not null)
+                    {
+                        <div class="tax">@sellerTax</div>
+                    }
+                </div>
+
+                @{ var sellerContact = seller.ContactLine(); }
+                @if (!string.IsNullOrWhiteSpace(sellerContact))
+                {
+                    <div style="margin-left:auto; text-align:right;">
+                        <div class="lbl">Questions?</div>
+                        <div class="ln">
+                            @if (!string.IsNullOrWhiteSpace(seller.Phone))
+                            {
+                                <a href="tel:@seller.Phone">@seller.Phone</a><br />
+                            }
+                            @if (!string.IsNullOrWhiteSpace(seller.Email))
+                            {
+                                <a href="mailto:@seller.Email">@seller.Email</a><br />
+                            }
+                            @if (!string.IsNullOrWhiteSpace(seller.Website))
+                            {
+                                <span>@seller.Website</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- ── Body ─────────────────────────────────────────────────── -->
+        <div class="inv-body">
+
+            @if (Model.PrintedDetails.Count > 0)
+            {
+                <div class="section-label mb-2">Additional details</div>
+                <div class="iv-details mb-4">
+                    @foreach (var d in Model.PrintedDetails)
+                    {
+                        <div>
+                            <div class="k">@d.Label</div>
+                            <div class="v">@d.Value</div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <div class="section-label mb-2">Items</div>
+            <div class="table-responsive mb-4">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">#</th>
+                            <th scope="col">Item</th>
+                            @if (Model.HasAnyLineTaxCode)
+                            {
+                                <th scope="col">@Model.TaxCodeLabel</th>
+                            }
+                            <th scope="col" class="text-center">Qty</th>
+                            <th scope="col" class="text-end">Unit price</th>
+                            @if (Model.HasAnyLineDiscount)
+                            {
+                                <th scope="col" class="text-end">Discount</th>
+                            }
+                            <th scope="col" class="text-end">@Model.TaxLabel</th>
+                            <th scope="col" class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < inv.Lines.Count; i++)
+                        {
+                            var line = inv.Lines[i];
+                            var discount = Model.FormatLineDiscount(line);
+                            <tr>
+                                <td class="text-muted">@(i + 1)</td>
+                                <td>
+                                    <div class="fw-semibold">@line.Name</div>
+                                    @if (!string.IsNullOrWhiteSpace(line.Description))
+                                    {
+                                        <div class="text-muted small">@line.Description</div>
+                                    }
+                                    @{ var lineDetails = Model.LineDetails(line); }
+                                    @if (lineDetails.Length > 0)
+                                    {
+                                        <div class="small" style="color:#475569;">@lineDetails</div>
+                                    }
+                                </td>
+                                @if (Model.HasAnyLineTaxCode)
+                                {
+                                    <td class="tax-code-cell @(line.HasTaxCode ? "" : "tax-code-none")">@(line.HasTaxCode ? line.TaxCode : "—")</td>
+                                }
+                                <td class="text-center qty-cell">@line.QuantityDisplay</td>
+                                <td class="text-end">@Model.FormatCurrency(line.UnitPrice)</td>
+                                @if (Model.HasAnyLineDiscount)
+                                {
+                                    <td class="text-end discount-cell @(discount == "—" ? "discount-none" : "")">@discount</td>
+                                }
+                                <td class="text-end text-muted">@Model.FormatTaxRate(line.TaxRate)</td>
+                                <td class="text-end fw-semibold">@Model.FormatCurrency(line.LineGrandTotal)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="row justify-content-end">
+                <div class="col-md-5 col-12">
+                    <div class="totals-box">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Subtotal</span>
+                            <span>@Model.FormatCurrency(inv.Subtotal)</span>
+                        </div>
+                        @if (inv.DiscountTotal > 0)
+                        {
+                            <div class="d-flex justify-content-between mb-1 text-success">
+                                <span>Discount</span>
+                                <span>-@Model.FormatCurrency(inv.DiscountTotal)</span>
+                            </div>
+                        }
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">@Model.TaxLabel</span>
+                            <span>@Model.FormatCurrency(inv.TaxTotal)</span>
+                        </div>
+                        <div class="d-flex justify-content-between grand-total-row">
+                            <span>Total</span>
+                            <span>@Model.FormatCurrency(inv.GrandTotal) @inv.Currency</span>
+                        </div>
+                        @if (!Model.IsVoid && inv.TotalPaid > 0)
+                        {
+                            <div class="d-flex justify-content-between mt-2 text-success">
+                                <span>Paid</span>
+                                <span>-@Model.FormatCurrency(inv.TotalPaid)</span>
+                            </div>
+                        }
+                        @if (!Model.IsVoid)
+                        {
+                            <div class="d-flex justify-content-between mt-1 due-row @(Model.IsPaid ? "text-success" : Model.IsOverdue ? "text-danger" : "")">
+                                <span>Balance due</span>
+                                <span>@Model.FormatCurrency(Math.Max(0, inv.Balance))</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(inv.MilestoneBasisNote))
+            {
+                <div class="text-muted small mt-3"><i class="bi bi-calendar2-check me-1"></i>@inv.MilestoneBasisNote</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(inv.Notes))
+            {
+                <div class="mt-4">
+                    <div class="section-label mb-2">Notes</div>
+                    <div class="notes">@inv.Notes</div>
+                </div>
+            }
+        </div>
+
+        <!-- ── Actions ──────────────────────────────────────────────── -->
+        <div class="action-bar">
+            <div class="small text-muted">
+                @if (Model.Data!.HasPdf && Model.Data.PdfSentAtUtc is DateTime sentAt)
+                {
+                    <span>The PDF is the copy sent to you on @MerkaiTrial.Admin.Web.Pages.Public.InvoiceViewModel.FormatDate(sentAt).</span>
+                }
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+                    <i class="bi bi-printer me-1"></i>Print
+                </button>
+                @if (Model.Data.HasPdf)
+                {
+                    <a class="btn btn-primary" asp-page-handler="Pdf" asp-route-Token="@Model.Token" rel="nofollow">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>Download PDF
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+
+    <p class="text-center text-muted small mb-4">Sent with Merkai CRM</p>
+}
+
+</body>
+</html>

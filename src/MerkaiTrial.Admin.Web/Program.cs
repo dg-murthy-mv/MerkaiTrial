@@ -79,6 +79,8 @@ if (!app.Environment.IsDevelopment())
 // 063: was app.UseSerilogRequestLogging(). Same line, same position, but
 // the public quote token is taken out of the path before it is written —
 // /q/****bSxl rather than the whole thing. See Startup/RequestLogging.cs.
+// 085: invoice links (/i/{token}) are masked the same way, by the same
+// PublicLinkPaths rule — nothing to change here.
 app.UseMaskedRequestLogging();
 
 // UseHsts + UseHttpsRedirection + UseRouting + UseAuthentication +
@@ -117,9 +119,12 @@ app.Run();
                                   the login page; and before 060 the page
                                   did not exist at all.
      The public quote page      — customers have no account
+     The public invoice page    — 085: Pages/Public/InvoiceView (/i/{token}),
+                                  opened from the link in an invoice email
 
    PAGES THAT MUST SET Layout = null
      Pages/Public/QuoteView.cshtml   — does
+     Pages/Public/InvoiceView.cshtml — does (085)
      Pages/Error.cshtml              — does, as of 060
 
    Both are reachable with no TenantId claim, and _Layout.cshtml line 10

@@ -23,6 +23,13 @@
 // in that inbox as it always did. An email notification on top would be
 // the same message twice.
 //
+// 085 — EmailBounced: in the app AND by email, by default. It is the
+// third event that blocks something: an invoice that never arrived is a
+// payment that is not coming, and the person who sent it has no other way
+// to find out. It fires rarely — only when an email WE sent fails — so it
+// does not become the noise the rule below guards against.
+// InvoiceSent is the customer email's own EventType and is not a setting.
+//
 // WHY EMAIL DEFAULTS ARE MOSTLY OFF
 //   The fastest way to make people ignore your product's email is to send
 //   them one for everything. Only the two approval events default to
@@ -92,6 +99,7 @@ namespace MerkaiTrial.Domain.Entities
         {
             NotificationEventType.QuoteApprovalRequested => true,
             NotificationEventType.QuoteApprovalDecided   => true,
+            NotificationEventType.EmailBounced           => true,    // 085 — see the header
             _                                             => false
         };
 
@@ -123,6 +131,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.QuoteAccepted,
             NotificationEventType.QuoteRejected,
             NotificationEventType.CustomerEmailReceived,     // 083
+            NotificationEventType.EmailBounced,              // 085
             NotificationEventType.DealStageChanged,
             NotificationEventType.DealAssigned,
             NotificationEventType.LeadAssigned
@@ -140,6 +149,8 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.LeadAssigned           => "A lead is assigned to me",
             NotificationEventType.DealAssigned           => "A deal is assigned to me",
             NotificationEventType.CustomerEmailReceived  => "A customer emails about one of my records",
+            NotificationEventType.EmailBounced           => "An email I sent to a customer couldn't be delivered",
+            NotificationEventType.InvoiceSent            => "An invoice is emailed to a customer",
             _                                             => eventType.ToString()
         };
 
@@ -152,6 +163,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.QuoteAccepted          => "Quotes",
             NotificationEventType.QuoteRejected          => "Quotes",
             NotificationEventType.CustomerEmailReceived  => "Email",
+            NotificationEventType.EmailBounced           => "Email",
             _                                             => "Deals and leads"
         };
     }

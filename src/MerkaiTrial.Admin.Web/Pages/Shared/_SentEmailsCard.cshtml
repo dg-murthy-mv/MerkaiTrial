@@ -1,0 +1,146 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.SentEmailsCardVm
+@using MerkaiTrial.Admin.Web.Pages.Shared
+@* =====================================================================
+   _SentEmailsCard.cshtml — NEW (085)
+   "Email history" on Quotes/Detail and Invoices/Detail.
+
+   • Each row opens /Emails/Sent/{id} — the full email, its delivery
+     timeline and (for a quote or invoice email) the body as sent.
+   • "Send again" only for an email that never left, only when the page
+     allows sending, and it posts to the Sent page's Retry handler (with
+     an antiforgery token) so the rule lives in one place.
+   • Everything shown is Razor-encoded text: addresses, subjects and the
+     provider's bounce reason are never written as markup.
+   ===================================================================== *@
+
+<div class="card border-0 shadow-sm mb-4 se-card" id="email-history">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between gap-2">
+        <h6 class="mb-0">
+            <i class="bi bi-send me-2"></i>Email history
+            @if (Model.Count > 0)
+            {
+                <span class="badge bg-secondary ms-1">@Model.Count</span>
+            }
+        </h6>
+        @if (Model.Latest is { } latest)
+        {
+            <span class="badge @latest.StateBadge" title="@latest.StateHint">
+                <i class="bi @latest.StateIcon"></i> Last: @latest.StateLabel
+            </span>
+        }
+    </div>
+
+    <div class="card-body p-0">
+        @if (Model.LoadFailed)
+        {
+            <div class="alert alert-warning m-3 d-flex gap-2 align-items-start">
+                <i class="bi bi-exclamation-triangle mt-1"></i>
+                <span>The email history for this @Model.DocumentLabel could not be loaded just now. Refresh the page to try again.</span>
+            </div>
+        }
+        else if (Model.Count == 0)
+        {
+            <div class="text-center text-muted py-4 px-3">
+                <i class="bi bi-envelope-paper" style="font-size:2rem;opacity:.3;"></i>
+                <p class="mb-1 mt-2">This @Model.DocumentLabel hasn't been emailed yet.</p>
+                @if (!string.IsNullOrWhiteSpace(Model.EmptyHint))
+                {
+                    <p class="small mb-0">@Model.EmptyHint</p>
+                }
+            </div>
+        }
+        else
+        {
+            if (Model.ProblemCount > 0)
+            {
+                <div class="alert alert-danger m-3 mb-0 py-2 small d-flex gap-2 align-items-start">
+                    <i class="bi bi-envelope-x mt-1"></i>
+                    <span>
+                        @(Model.ProblemCount == 1 ? "One email" : $"{Model.ProblemCount} emails") to the customer
+                        did not arrive. Open it to see why, correct the address if needed, and send the @Model.DocumentLabel again.
+                    </span>
+                </div>
+            }
+
+            <div class="list-group list-group-flush">
+                @foreach (var e in Model.Items)
+                {
+                    <div class="list-group-item se-row">
+                        <div class="d-flex gap-3 align-items-start">
+                            <div class="se-ico @(e.IsProblem ? "se-bad" : e.State == "Delivered" ? "se-ok" : "se-neutral")">
+                                <i class="bi @e.StateIcon"></i>
+                            </div>
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex justify-content-between gap-2 flex-wrap">
+                                    <a class="se-to text-truncate text-decoration-none" href="/Emails/Sent/@e.Id"
+                                       title="Open this email">
+                                        <span class="text-muted">To</span> @e.ToDisplay
+                                    </a>
+                                    <small class="text-muted text-nowrap">@Model.FormatDateTime(e.CreatedAtUtc)</small>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(e.CcAddresses))
+                                {
+                                    <div class="small text-muted text-truncate">Cc @e.CcAddresses</div>
+                                }
+
+                                <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+                                    <span class="badge @e.StateBadge">
+                                        <i class="bi @e.StateIcon"></i> @e.StateLabel
+                                    </span>
+                                    @if (e.AttachmentCount > 0)
+                                    {
+                                        <span class="badge bg-light text-dark border" title="Attachments">
+                                            <i class="bi bi-paperclip"></i> @e.AttachmentCount
+                                        </span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(e.SentByName))
+                                    {
+                                        <small class="text-muted">by @e.SentByName</small>
+                                    }
+                                </div>
+
+                                <div class="small mt-1 @(e.IsProblem ? "text-danger" : "text-muted")">@e.StateHint</div>
+
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <a class="btn btn-outline-secondary btn-sm" href="/Emails/Sent/@e.Id">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                    @if (Model.CanRetry && SentEmailsCardVm.IsRetryable(e))
+                                    {
+                                        <form method="post" class="d-inline"
+                                              asp-page="/Emails/Sent" asp-page-handler="Retry"
+                                              asp-route-id="@e.Id" asp-route-returnUrl="@Model.ReturnUrl">
+                                            <button type="submit" class="btn btn-outline-primary btn-sm"
+                                                    onclick="this.disabled=true;this.form.submit();">
+                                                <i class="bi bi-arrow-repeat"></i> Send again
+                                            </button>
+                                        </form>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            if (Model.HasMore)
+            {
+                <div class="card-footer bg-white small text-muted">Showing the latest @Model.Count emails.</div>
+            }
+        }
+    </div>
+</div>
+
+<style>
+    .se-row { padding: 12px 16px; }
+    .se-ico {
+        width: 32px; height: 32px; border-radius: 8px; flex: 0 0 32px;
+        display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .se-ok      { background: #f0fdf4; color: #16a34a; }
+    .se-bad     { background: #fef2f2; color: #dc2626; }
+    .se-neutral { background: #eff6ff; color: #2563eb; }
+    .se-to { font-size: 13.5px; font-weight: 600; color: #0f172a; }
+    .se-card .min-w-0 { min-width: 0; }
+</style>

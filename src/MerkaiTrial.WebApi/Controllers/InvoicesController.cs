@@ -29,9 +29,25 @@
 //      nothing. A required field left empty is a 400 with the sentence.
 //   ✅ UpdatedBy on PUT is the signed-in user, not whatever the body said:
 //      it is what the audit log and the custom field rows record.
+//
+// CHANGES (085 — emailing invoices)
+//   GET  api/invoices/{id}/email-prefill   Invoices.Read   + visible   what the dialog starts from
+//   POST api/invoices/{id}/email           Invoices.Update + visible   PDF attached + /i/ link
+//   GET  api/invoices/public/{token}       ANONYMOUS                   the customer's page
+//   GET  api/invoices/public/{token}/pdf   ANONYMOUS                   the PDF as last emailed
+//
+//   The two public routes are [AllowAnonymous] on a controller that has
+//   no class-level [Authorize] — every other action carries its own
+//   policy, as before. The token is the whole security of the customer's
+//   link, so it is NEVER logged whole: Mask() here, and PublicLinkPaths
+//   masks /api/invoices/public/{token} in the request log.
+//
+//   An unknown, deleted, draft or malformed token is a plain 404 with no
+//   hint which of those it was.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Invoices;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Queries.Invoices;
 using MerkaiTrial.Application.Services;
@@ -70,6 +86,13 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly VoidInvoiceHandler _void;
         private readonly ReversePaymentHandler _reversePayment;
         private readonly GetInvoiceWorkflowHandler _workflow;
+
+        // 085
+        private readonly GetInvoiceEmailPrefillHandler _emailPrefill;
+        private readonly SendInvoiceEmailHandler _sendEmail;
+        private readonly GetInvoiceByTokenHandler _byToken;
+        private readonly GetInvoicePublicPdfHandler _publicPdf;
+
         private readonly ICurrentUserService _currentUserService;
         private readonly ILogger<InvoicesController> _logger;
 
@@ -93,6 +116,10 @@ namespace MerkaiTrial.WebApi.Controllers
             VoidInvoiceHandler voidInvoice,
             ReversePaymentHandler reversePayment,
             GetInvoiceWorkflowHandler workflow,
+            GetInvoiceEmailPrefillHandler emailPrefill,
+            SendInvoiceEmailHandler sendEmail,
+            GetInvoiceByTokenHandler byToken,
+            GetInvoicePublicPdfHandler publicPdf,
             ICurrentUserService currentUserService,
             ILogger<InvoicesController> logger)
         {
@@ -111,6 +138,10 @@ namespace MerkaiTrial.WebApi.Controllers
             _void = voidInvoice;
             _reversePayment = reversePayment;
             _workflow = workflow;
+            _emailPrefill = emailPrefill;
+            _sendEmail = sendEmail;
+            _byToken = byToken;
+            _publicPdf = publicPdf;
             _currentUserService = currentUserService;
             _logger = logger;
         }
@@ -584,6 +615,82 @@ namespace MerkaiTrial.WebApi.Controllers
                 await _reversePayment.Handle(tenantId, id, paymentId, dto?.Reason, ct);
                 return Ok();
             }, "reversing payment", ct);
+
+        // ==================== EMAIL (085) ====================
+
+        [HttpGet("{id:guid}/email-prefill")]
+        [Authorize(Policy = "Invoices.Read")]
+        [ProducesResponseType(typeof(InvoiceEmailPrefillDto), StatusCodes.Status200OK)]
+        public Task<IActionResult> GetEmailPrefill(Guid id, CancellationToken ct)
+            => RunGuarded(id, async tenantId => Ok(await _emailPrefill.Handle(tenantId, id, ct)), "preparing invoice email", ct);
+
+        [HttpPost("{id:guid}/email")]
+        [Authorize(Policy = "Invoices.Update")]
+        [ProducesResponseType(typeof(SendInvoiceEmailResultDto), StatusCodes.Status200OK)]
+        public Task<IActionResult> SendEmail(Guid id, [FromBody] SendInvoiceEmailDto dto, CancellationToken ct)
+            => RunGuarded(id, async tenantId =>
+            {
+                var result = await _sendEmail.Handle(tenantId, id, dto, ct);
+
+                // The address is masked; the link (which carries the token) is not logged at all.
+                _logger.LogInformation("Queued invoice {InvoiceId} email to {To} (+{Cc} cc), message {MessageId}",
+                    id, MaskAddress(result.To), result.CcCount, result.MessageId);
+
+                return Ok(result);
+            }, "emailing invoice", ct);
+
+        // ==================== THE CUSTOMER'S LINK (085, anonymous) ====================
+
+        [HttpGet("public/{token}")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(PublicInvoiceDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetByToken(string token, CancellationToken ct)
+        {
+            try
+            {
+                var invoice = await _byToken.HandleAsync(token, ct);
+                return invoice is null
+                    ? NotFound(new { error = "This invoice link is not valid any more." })
+                    : Ok(invoice);
+            }
+            catch (Exception ex)
+            {
+                // Never the whole token — see the header.
+                _logger.LogError(ex, "Failed to open invoice by token {Token}", Mask(token));
+                return StatusCode(500, new { error = "The invoice could not be opened. Please try again." });
+            }
+        }
+
+        [HttpGet("public/{token}/pdf")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicPdf(string token, CancellationToken ct)
+        {
+            try
+            {
+                var pdf = await _publicPdf.HandleAsync(token, ct);
+                if (pdf is null)
+                    return NotFound(new { error = "No PDF is available for this link." });
+
+                return File(pdf.Value.Content, "application/pdf", pdf.Value.FileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to serve invoice PDF by token {Token}", Mask(token));
+                return StatusCode(500, new { error = "The PDF could not be downloaded. Please try again." });
+            }
+        }
+
+        private static string Mask(string? token) => PublicLinkPaths.MaskToken(token);
+
+        /// <summary>"wo****@example.com" — the rule used everywhere addresses are logged.</summary>
+        private static string MaskAddress(string? address)
+        {
+            if (string.IsNullOrWhiteSpace(address)) return "(none)";
+            var at = address.IndexOf('@');
+            if (at <= 0) return "****";
+            var local = address[..at];
+            return (local.Length <= 2 ? local[..1] : local[..2]) + "****" + address[at..];
+        }
 
         /// <summary>Visibility check + the usual exception → status mapping.</summary>
         private async Task<IActionResult> RunGuarded(

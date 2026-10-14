@@ -6,6 +6,12 @@
 // halves of the same feature and neither is long enough to justify its
 // own file.
 //
+// 085 — CcAddresses, SentByUserId, DeliveryStatus / DeliveryStatusAtUtc /
+// DeliveryDetail, the attachments table, and IX_OutboundMessages_Provider:
+// Resend's delivery webhook names an email only by ITS id, so finding the
+// row it is about is a lookup on ProviderMessageId. Filtered to non-null —
+// a queued message has none yet.
+//
 // THE INDEX THAT MATTERS
 //   IX_OutboundMessages_Claim is filtered to Pending and Failed only. The
 //   worker asks "what is due?" every few seconds, for ever. Without the
@@ -40,6 +46,13 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             builder.Property(m => m.ToName).HasMaxLength(200);
             builder.Property(m => m.ReplyToAddress).HasMaxLength(320);
 
+            // 085. Up to five addresses, comma-separated.
+            builder.Property(m => m.CcAddresses).HasMaxLength(1700);
+
+            builder.Property(m => m.DeliveryStatus).HasConversion<int>().IsRequired()
+                   .HasDefaultValue(OutboundDeliveryStatus.None);
+            builder.Property(m => m.DeliveryDetail).HasMaxLength(500);
+
             builder.Property(m => m.Subject).IsRequired().HasMaxLength(300);
 
             // nvarchar(max): an HTML email body has no sensible bound, and
@@ -73,6 +86,40 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             // "What did we send about this quote?"
             builder.HasIndex(m => new { m.TenantId, m.EntityType, m.EntityId })
                    .HasDatabaseName("IX_OutboundMessages_Entity");
+
+            // 085. The delivery webhook's lookup — see the header.
+            builder.HasIndex(m => m.ProviderMessageId)
+                   .HasDatabaseName("IX_OutboundMessages_Provider")
+                   .HasFilter("[ProviderMessageId] IS NOT NULL");
+
+            builder.HasMany(m => m.Attachments)
+                   .WithOne(a => a.Message)
+                   .HasForeignKey(a => a.OutboundMessageId)
+                   .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Ignore(m => m.IsFinished);
+            builder.Ignore(m => m.NeedsAttention);
+        }
+    }
+
+    /// <summary>
+    /// 085. Files sent with a message. Cascade-deleted with it, so the
+    /// worker's retention removes the bytes too.
+    /// </summary>
+    public class OutboundMessageAttachmentConfiguration : IEntityTypeConfiguration<OutboundMessageAttachment>
+    {
+        public void Configure(EntityTypeBuilder<OutboundMessageAttachment> builder)
+        {
+            builder.ToTable("OutboundMessageAttachments");
+            builder.HasKey(a => a.Id);
+
+            builder.Property(a => a.TenantId).IsRequired();
+            builder.Property(a => a.FileName).IsRequired().HasMaxLength(255);
+            builder.Property(a => a.ContentType).IsRequired().HasMaxLength(100);
+            builder.Property(a => a.Content).IsRequired();   // varbinary(max)
+
+            builder.HasIndex(a => a.OutboundMessageId)
+                   .HasDatabaseName("IX_OutboundMessageAttachments_Message");
         }
     }
 

@@ -30,6 +30,9 @@
 //   customer's email links to the email itself (/Emails/View/{id}), with
 //   the button reading "Read the email". Kept identical to
 //   NotificationDto.Url, which got the same line in the same round.
+// 085 — links for invoices and for a sent email (EmailBounced), and the
+// quote link fixed: /Quotes/Detail takes ?id=, so /Quotes/Detail/{id}
+// opened a 404 from every quote notification email.
 // =====================================================================
 
 using System.Net;
@@ -176,6 +179,8 @@ Change them under Settings &rarr; Notifications.
         "Deal"  => "Open the deal",
         "Lead"  => "Open the lead",
         "InboundEmail" => "Read the email",     // 083
+        "Invoice" => "Open the invoice",        // 085
+        "OutboundMessage" => "See what happened", // 085
         _       => "Open Merkai"
     };
 
@@ -190,10 +195,12 @@ Change them under Settings &rarr; Notifications.
 
         var path = (entityType, entityId) switch
         {
-            ("Quote", { } id) => $"/Quotes/Detail/{id}",
+            ("Quote", { } id) => $"/Quotes/Detail?id={id}",     // 085: was /{id} — a 404
+            ("Invoice", { } id) => $"/Invoices/Detail?id={id}", // 085
             ("Deal",  { } id) => $"/Pipeline/Detail/{id}",
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
             ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
+            ("OutboundMessage", { } id) => $"/Emails/Sent/{id}", // 085
             _                 => "/"
         };
 

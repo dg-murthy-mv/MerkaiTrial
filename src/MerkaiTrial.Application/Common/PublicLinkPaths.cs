@@ -15,6 +15,13 @@
 //   sits in Application where both hosts already reference it. The
 //   Serilog wiring is thin and lives in each host.
 //
+// 085 — THE INVOICE LINK. /i/{token} (the customer's invoice page) and
+// /api/invoices/public/{token} (its API read and PDF download) join the
+// list, exactly as the note above predicted. The invoice token shows a
+// customer's amounts and address; it gets the quote token's treatment.
+// The cheap guard admits "/i" as well as "/q" — "/Inbox" and "/Invoices"
+// pass the guard but never match the lookbehind, which wants "/i/".
+//
 // WHAT IS BEING PROTECTED
 //   The public quote token is the ENTIRE security of the customer's
 //   link. Anyone who can read it can open the quote and accept it on the
@@ -43,6 +50,9 @@ public static class PublicLinkPaths
     ///     /q/{token}                              the customer's page
     ///     /api/quotes/public/{token}              the API read
     ///     /api/quotes/public/{token}/status       accept / decline
+    ///     /i/{token}                              085: the customer's invoice page
+    ///     /api/invoices/public/{token}            085: the invoice API read
+    ///     /api/invoices/public/{token}/pdf        085: the PDF download
     ///
     /// A lookbehind so only the token itself is replaced and the rest of
     /// the path survives — "/api/quotes/public/****bSxl/status" still
@@ -53,7 +63,9 @@ public static class PublicLinkPaths
     /// </summary>
     private static readonly Regex TokenSegment = new(
         @"(?<=^/q/)[^/?#]+" +
-        @"|(?<=^/api/quotes/public/)[^/?#]+",
+        @"|(?<=^/api/quotes/public/)[^/?#]+" +
+        @"|(?<=^/i/)[^/?#]+" +                          // 085
+        @"|(?<=^/api/invoices/public/)[^/?#]+",         // 085
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         TimeSpan.FromMilliseconds(100));
 
@@ -69,7 +81,8 @@ public static class PublicLinkPaths
         // Cheap guard before the regex. Most requests are neither of
         // these, and a request log runs on every single one.
         if (path.Length < 3) return path;
-        if (path[1] != 'q' && path[1] != 'Q' && !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
+        var c = char.ToLowerInvariant(path[1]);
+        if (c != 'q' && c != 'i' && !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
             return path;
 
         try

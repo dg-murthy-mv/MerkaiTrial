@@ -1,6 +1,25 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Detail.cshtml.cs
 //
+// CHANGES (085 — emailing invoices)
+//   ✅ "Email invoice" button and dialog (To, Cc, a personal message). The
+//      email carries the PDF as an attachment AND a secure link
+//      (/i/{token}) where the customer can view the invoice and download
+//      it again. Replies to it are filed on the deal automatically when
+//      receiving is set up.
+//        • Gate: invoices.update (ValidatePermissionAsync(Actions.Update)),
+//          and the API checks it again plus that this invoice is visible.
+//        • Only an ISSUED invoice: a draft has no number and is not a tax
+//          invoice; a void one is not owed. The button says why when it is
+//          not available instead of disappearing.
+//        • A refused send ("not a valid address") comes back with the
+//          dialog re-opened and what was typed still in it.
+//   ✅ "Email history" card (_SentEmailsCard, shared with the quote page):
+//      each email, to whom, by whom, and Delivered / Bounced / Spam /
+//      Failed with the reason; "Send again" for one that never left.
+//   Both load like every other optional panel — a failure costs the
+//   dialog's prefill or the card, never the page.
+//
 // CHANGES (081 — custom fields on invoices)
 //   ✅ The invoice's custom fields, in the shared _CustomFieldValues card —
 //      Edit link only while it is a draft (the API's rule: an issued tax
@@ -72,6 +91,7 @@
 
 using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldDisplayVm, DocumentFieldsVm
 using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
+using MerkaiTrial.Admin.Web.Services.Emails;         // 085
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Deals;
 using MerkaiTrial.Application.Authorization;
@@ -82,6 +102,7 @@ using MerkaiTrial.Application.Services.Tenants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;                               // 085 — the dialog's draft after a refusal
 
 namespace MerkaiTrial.Admin.Web.Pages.Invoices
 {
@@ -92,6 +113,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         private readonly ICurrentUserService _currentUserService;
         private readonly ICurrentTenantService _tenantService;
         private readonly ICustomFieldService _customFields;      // 081
+        private readonly ISentEmailService _sentEmails;          // 085
         private readonly ILogger<DetailModel> _logger;
 
         public DetailModel(
@@ -100,11 +122,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             ICurrentUserService currentUserService,
             ICurrentTenantService tenantService,
             ICustomFieldService customFields,                    // 081
+            ISentEmailService sentEmails,                        // 085
             IAuthorizationService authorizationService,
             ILogger<DetailModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
             _customFields = customFields;
+            _sentEmails = sentEmails;
             _invoiceService = invoiceService;
             _dealService = dealService;
             _currentUserService = currentUserService;
@@ -128,6 +152,44 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
+
+        // ── 085: emailing the invoice ────────────────────────────────────
+
+        /// <summary>What the dialog starts from. Null when it could not be loaded.</summary>
+        public InvoiceEmailPrefillDto? EmailPrefill { get; private set; }
+
+        /// <summary>The Email history card. Never null; LoadFailed says when it could not load.</summary>
+        public SentEmailsCardVm EmailHistory { get; private set; } = new();
+
+        /// <summary>What was typed before a refused send — so the dialog re-opens with it.</summary>
+        public InvoiceEmailDraft? EmailDraft { get; private set; }
+
+        /// <summary>Re-open the dialog on load (after a refused send).</summary>
+        public bool ReopenEmailDialog => EmailDraft is not null;
+
+        [TempData] public string? InvoiceEmailDraftJson { get; set; }
+
+        public sealed record InvoiceEmailDraft(string? To, string? Cc, string? Message);
+
+        /// <summary>The button is drawn at all: this person can send invoices.</summary>
+        public bool ShowEmailButton => CanUpdate && Invoice != null;
+
+        /// <summary>Why the button is disabled, or null when it can be used.</summary>
+        public string? EmailBlockedReason
+        {
+            get
+            {
+                if (Invoice == null) return "";
+                if (IsDraft) return "Issue the invoice first — a draft has no invoice number and isn't a tax invoice yet.";
+                if (IsVoid) return "This invoice is void, so it can't be emailed.";
+                if (EmailPrefill is null) return "The email details could not be loaded just now. Refresh the page to try again.";
+                return EmailPrefill.CanSend ? null : EmailPrefill.BlockedReason ?? "This invoice can't be emailed right now.";
+            }
+        }
+
+        /// <summary>The file name the customer will receive — shown in the dialog.</summary>
+        public string AttachmentName => Invoice == null ? "invoice.pdf"
+            : new string(Invoice.Number.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray()) + ".pdf";
 
         // ── 081: custom fields ───────────────────────────────────────────────
 
@@ -267,6 +329,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     CustomFieldDefinitions = new();
                     CustomFieldsLoadFailed = true;
                 }
+
+                // ── 085: the email dialog and the history card ──────────────
+                // Neither ever blocks the page.
+                if (CanUpdate && !IsDraft && !IsVoid)
+                {
+                    try
+                    {
+                        EmailPrefill = await _invoiceService.GetEmailPrefillAsync(Id);
+                    }
+                    catch (Exception epEx)
+                    {
+                        _logger.LogWarning(epEx, "Could not load the email prefill for invoice {Id}", Id);
+                    }
+                }
+
+                EmailDraft = ReadEmailDraft();
+
+                EmailHistory = await SentEmailsCardVm.LoadAsync(
+                    _sentEmails, "invoice", Id, "invoice",
+                    canRetry:       CanUpdate,
+                    returnUrl:      $"/Invoices/Detail?id={Id}#email-history",
+                    formatDateTime: d => FormatDateTime(d),
+                    logger:         _logger,
+                    emptyHint:      IsDraft
+                        ? "Issue it first; then use Email invoice to send it with the PDF attached."
+                        : CanUpdate ? "Use Email invoice to send it with the PDF attached and a link to view it online." : null);
 
                 _logger.LogInformation("Loaded invoice {Number}", Invoice.Number);
                 return Page();
@@ -488,6 +576,91 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
             return RedirectToPage(new { id = Id });
         }
+
+        // ── EMAIL INVOICE (085) ──────────────────────────────────────────────
+
+        public async Task<IActionResult> OnPostEmailAsync(string? toAddress, string? ccAddresses, string? message)
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+            if (permissionCheck != null) return permissionCheck;
+
+            if (Id == Guid.Empty)
+            {
+                ErrorMessage = "Invalid invoice ID";
+                return RedirectToPage("/Invoices/Index");
+            }
+
+            // Cheap checks first, with the same wording as the API — the API
+            // checks everything again regardless.
+            if (string.IsNullOrWhiteSpace(toAddress))
+                return EmailRefused("Enter the customer's email address in To.", toAddress, ccAddresses, message);
+
+            if (message is { Length: > 2000 })
+                return EmailRefused("Keep the message under 2000 characters.", toAddress, ccAddresses, message);
+
+            try
+            {
+                var result = await _invoiceService.SendEmailAsync(Id, new SendInvoiceEmailDto(
+                    ToAddress:   toAddress.Trim(),
+                    ToName:      null,          // the API names the contact when the address is theirs
+                    CcAddresses: string.IsNullOrWhiteSpace(ccAddresses) ? null : ccAddresses.Trim(),
+                    Message:     string.IsNullOrWhiteSpace(message) ? null : message.Trim(),
+                    BaseUrl:     $"{Request.Scheme}://{Request.Host}{Request.PathBase}"));
+
+                SuccessMessage = result.CcCount > 0
+                    ? $"Invoice emailed to {result.To} (and {result.CcCount} in copy). Delivery shows under Email history in a minute or so."
+                    : $"Invoice emailed to {result.To}. Delivery shows under Email history in a minute or so.";
+
+                return Redirect($"/Invoices/Detail?id={Id}#email-history");
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The API's own sentence ("…isn't a valid email address").
+                return EmailRefused(ex.Message, toAddress, ccAddresses, message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to email invoice {Id}", Id);
+                return EmailRefused("The invoice could not be emailed just now. Please try again.", toAddress, ccAddresses, message);
+            }
+        }
+
+        /// <summary>Back to the page with the reason, and the dialog re-opened with what was typed.</summary>
+        private IActionResult EmailRefused(string reason, string? to, string? cc, string? message)
+        {
+            ErrorMessage = reason;
+            try
+            {
+                InvoiceEmailDraftJson = JsonSerializer.Serialize(new InvoiceEmailDraft(
+                    Clip(to, 254), Clip(cc, 1700), Clip(message, 2000)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not keep the email draft for invoice {Id}", Id);
+            }
+
+            return RedirectToPage(new { id = Id });
+        }
+
+        private InvoiceEmailDraft? ReadEmailDraft()
+        {
+            if (string.IsNullOrWhiteSpace(InvoiceEmailDraftJson)) return null;
+            try
+            {
+                return JsonSerializer.Deserialize<InvoiceEmailDraft>(InvoiceEmailDraftJson);
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                InvoiceEmailDraftJson = null;   // one use
+            }
+        }
+
+        private static string? Clip(string? value, int max)
+            => string.IsNullOrEmpty(value) ? value : value.Length <= max ? value : value[..max];
 
         // ── DOWNLOAD PDF ──────────────────────────────────────────────────────
 

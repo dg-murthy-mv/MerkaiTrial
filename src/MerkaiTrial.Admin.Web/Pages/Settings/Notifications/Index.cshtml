@@ -7,6 +7,10 @@
 @*
     038 — Settings → Notifications. Two tabs, one page.
 
+    085 — the Email log shows DELIVERY too: a Delivery column (Delivered,
+    Bounced, Marked as spam…), filters for Delivered / Bounced / Problems,
+    and each row opens /Emails/Sent/{id}.
+
     THE CHECKBOX TRAP THIS PAGE AVOIDS
       An unchecked checkbox posts NOTHING. Bind a List<T> of rows and the
       indexes collapse the moment someone unticks a box in the middle, so
@@ -139,6 +143,8 @@
         vertical-align: top;
     }
     .ns-log-table tr:last-child td { border-bottom: none; }
+    .ns-open { color: inherit; text-decoration: none; }
+    .ns-open:hover { color: #4f46e5; text-decoration: underline; }
 
     .ns-subject { color: #0f172a; }
     .ns-to { color: #64748b; font-size: 12px; display: block; margin-top: 2px; }
@@ -601,8 +607,15 @@
 
             @foreach (var s in MerkaiTrial.Admin.Web.Pages.Settings.Notifications.IndexModel.StatusFilters)
             {
-                <a class="btn btn-sm @(string.Equals(Model.Status, s, StringComparison.OrdinalIgnoreCase) ? "btn-secondary" : "btn-outline-secondary")"
-                   asp-page="./Index" asp-route-tab="log" asp-route-status="@s">@s</a>
+                var on = string.Equals(Model.Status, s, StringComparison.OrdinalIgnoreCase);
+                var off = s == "Problems" ? "btn-outline-danger" : "btn-outline-secondary";
+                var active = s == "Problems" ? "btn-danger" : "btn-secondary";
+                <a class="btn btn-sm @(on ? active : off)"
+                   title="@MerkaiTrial.Admin.Web.Pages.Settings.Notifications.IndexModel.FilterHint(s)"
+                   asp-page="./Index" asp-route-tab="log" asp-route-status="@s">
+                    @if (s == "Problems") { <i class="bi bi-exclamation-triangle"></i> }
+                    @MerkaiTrial.Admin.Web.Pages.Settings.Notifications.IndexModel.FilterLabel(s)
+                </a>
             }
         </div>
 
@@ -625,6 +638,7 @@
                         <tr>
                             <th>Message</th>
                             <th>Status</th>
+                            <th>Delivery</th>
                             <th>Created</th>
                             <th></th>
                         </tr>
@@ -634,9 +648,17 @@
                         {
                             <tr>
                                 <td>
-                                    <span class="ns-subject">@m.Subject</span>
+                                    <a class="ns-subject ns-open" href="/Emails/Sent/@m.Id" title="Open this email">@m.Subject</a>
                                     <span class="ns-to">
                                         @m.ToAddress
+                                        @if (!string.IsNullOrWhiteSpace(m.CcAddresses))
+                                        {
+                                            <text> &middot; cc @m.CcAddresses</text>
+                                        }
+                                        @if (m.AttachmentCount > 0)
+                                        {
+                                            <text> &middot; <i class="bi bi-paperclip"></i>@m.AttachmentCount</text>
+                                        }
                                         @if (m.AttemptCount > 0)
                                         {
                                             <text> &middot; @m.AttemptCount attempt@(m.AttemptCount == 1 ? "" : "s")</text>
@@ -658,6 +680,26 @@
                                     }
                                 </td>
 
+                                @* 085 — what happened after it left *@
+                                <td>
+                                    @if (m.Status == "Sent")
+                                    {
+                                        <span class="ns-badge @m.StateBadge" title="@m.StateHint">@m.StateLabel</span>
+                                        if (m.DeliveryStatusAtUtc.HasValue)
+                                        {
+                                            <span class="ns-to">@Model.Since(m.DeliveryStatusAtUtc.Value)</span>
+                                        }
+                                        if (!string.IsNullOrWhiteSpace(m.DeliveryDetail) && m.DeliveryStatus is "Bounced" or "Complained" or "Failed" or "Delayed")
+                                        {
+                                            <span class="ns-err">@m.DeliveryDetail</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">—</span>
+                                    }
+                                </td>
+
                                 <td style="white-space:nowrap;">
                                     <span title="@Model.FormatDateTime(m.CreatedAtUtc)">
                                         @Model.Since(m.CreatedAtUtc)
@@ -669,6 +711,9 @@
                                 </td>
 
                                 <td style="white-space:nowrap;">
+                                    <a class="btn btn-sm btn-outline-secondary" href="/Emails/Sent/@m.Id" title="Open this email">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
                                     @if (m.CanRetry)
                                     {
                                         <form method="post" asp-page-handler="Retry" asp-route-id="@m.Id"

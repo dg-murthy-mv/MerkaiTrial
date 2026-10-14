@@ -28,6 +28,17 @@
 //   seconds and fail for a dozen reasons. Different problem, different
 //   mechanism.
 //
+// 085 — WHAT HAPPENED AFTER IT LEFT
+//   Sent only ever meant "Resend accepted it". The customer's mail server
+//   could still refuse it a minute later. DeliveryStatus records what
+//   Resend's webhook tells us afterwards — Delivered, Bounced, marked as
+//   spam — so the quote and invoice pages can say "Delivered" or
+//   "Bounced: the address doesn't exist" instead of a hopeful "Sent".
+//
+//   Also new: CcAddresses (invoice emails can copy the customer's accounts
+//   team), SentByUserId (who to tell when it bounces), and attachments
+//   (the invoice PDF) in their own table, OutboundMessageAttachments.
+//
 // IDEMPOTENCY
 //   Id doubles as the Resend idempotency key. If we time out waiting for a
 //   response and retry, Resend recognises the key and does not send twice.
@@ -100,6 +111,31 @@ namespace MerkaiTrial.Domain.Entities
         Cancelled = 5
     }
 
+    /// <summary>
+    /// 085. What the recipient's side did with a message Resend accepted.
+    /// Stored as an int — append, never renumber.
+    /// </summary>
+    public enum OutboundDeliveryStatus
+    {
+        /// <summary>Nothing heard yet (or the message predates 085).</summary>
+        None = 0,
+
+        /// <summary>The recipient's mail server accepted it.</summary>
+        Delivered = 1,
+
+        /// <summary>Delivery is being retried by the provider — not a failure yet.</summary>
+        Delayed = 2,
+
+        /// <summary>Refused by the recipient's server — wrong address, full mailbox, blocked.</summary>
+        Bounced = 3,
+
+        /// <summary>The recipient marked it as spam.</summary>
+        Complained = 4,
+
+        /// <summary>The provider could not send it at all after accepting it.</summary>
+        Failed = 5
+    }
+
     public class OutboundMessage
     {
         /// <summary>
@@ -136,6 +172,20 @@ namespace MerkaiTrial.Domain.Entities
 
         /// <summary>Where replies go — normally the tenant's ReplyToEmail.</summary>
         public string? ReplyToAddress { get; set; }
+
+        /// <summary>
+        /// 085. Copies, comma-separated ("accounts@acme.com, cfo@acme.com").
+        /// Null for almost everything; invoice emails may carry up to five.
+        /// </summary>
+        public string? CcAddresses { get; set; }
+
+        /// <summary>
+        /// 085. The person who pressed Send, when a person did. They are the
+        /// one told if it bounces. Null for automatic emails (notifications,
+        /// a quote moved to Sent by a status change) — a bounce then goes to
+        /// the owner of the deal it is about.
+        /// </summary>
+        public Guid? SentByUserId { get; set; }
 
         // ── What it says ──────────────────────────────────────────────
         public string Subject { get; set; } = string.Empty;
@@ -178,6 +228,21 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>Why the last attempt failed. Shown in the log.</summary>
         public string? LastError { get; set; }
 
+        // ── After it left (085) ───────────────────────────────────────
+
+        /// <summary>What the recipient's side did, from Resend's webhook.</summary>
+        public OutboundDeliveryStatus DeliveryStatus { get; set; } = OutboundDeliveryStatus.None;
+
+        /// <summary>When DeliveryStatus last changed.</summary>
+        public DateTime? DeliveryStatusAtUtc { get; set; }
+
+        /// <summary>
+        /// 085. The reason, for a bounce or failure, in the words the
+        /// provider gave ("Permanent: the address does not exist"). Shown
+        /// on the record so the rep knows what to fix.
+        /// </summary>
+        public string? DeliveryDetail { get; set; }
+
         // ── Audit ─────────────────────────────────────────────────────
         public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
         public DateTime? SentAtUtc { get; set; }
@@ -185,6 +250,9 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>Who retried or cancelled it by hand, if anyone.</summary>
         public string? UpdatedBy { get; set; }
         public DateTime? UpdatedAtUtc { get; set; }
+
+        /// <summary>085. Files sent with it — the invoice PDF.</summary>
+        public ICollection<OutboundMessageAttachment> Attachments { get; set; } = new List<OutboundMessageAttachment>();
 
         // ── Computed ──────────────────────────────────────────────────
 
@@ -195,5 +263,32 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>Needs a person: out of attempts, or cancelled by mistake.</summary>
         [NotMapped]
         public bool NeedsAttention => Status == OutboundStatus.Dead;
+    }
+
+    /// <summary>
+    /// 085. A file sent with an outbound message — today, the invoice PDF.
+    ///
+    /// The BYTES are stored here, not a path on disk. The PDF is made at
+    /// queue time (that is when the tenant context exists to render it),
+    /// sent seconds later, and removed with its message by the worker's
+    /// retention (cascade delete). A file on disk would outlive its row
+    /// the first time a retention pass deleted the message.
+    ///
+    /// Capped by the sender (5 MB per file); an invoice PDF is ~50–200 KB.
+    /// </summary>
+    public class OutboundMessageAttachment
+    {
+        public Guid Id { get; set; } = Guid.NewGuid();
+        public Guid OutboundMessageId { get; set; }
+        public Guid TenantId { get; set; }
+
+        public string FileName { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "application/pdf";
+        public long SizeBytes { get; set; }
+        public byte[] Content { get; set; } = Array.Empty<byte>();
+
+        public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+        public OutboundMessage? Message { get; set; }
     }
 }

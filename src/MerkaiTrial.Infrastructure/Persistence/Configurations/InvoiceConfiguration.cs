@@ -1,4 +1,13 @@
-﻿using MerkaiTrial.Domain.Entities;
+// =====================================================================
+// InvoiceConfiguration.cs
+// Location: MerkaiTrial.Infrastructure/Persistence/Configurations/
+//
+// 085 — PublicLinkToken (nvarchar(64), unique where set: a token names
+// exactly one invoice) and InvoiceSentCopy, the PDF as last emailed.
+// Columns and table: Sql/085_OutboundTracking.sql.
+// =====================================================================
+
+using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -95,6 +104,11 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
                 .HasMaxLength(1000)
                 .IsRequired(false);
 
+            // 085 — the customer's link.
+            builder.Property(x => x.PublicLinkToken)
+                .HasMaxLength(64)
+                .IsRequired(false);
+
             // Audit fields
             builder.Property(x => x.CreatedAtUtc)
                 .IsRequired()
@@ -157,10 +171,41 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             builder.HasIndex(x => new { x.DueDateUtc, x.Status })
                 .HasFilter("[IsDeleted] = 0 AND [DueDateUtc] IS NOT NULL");
 
+            // 085. One invoice per token, looked up by the public page.
+            builder.HasIndex(x => x.PublicLinkToken)
+                .IsUnique()
+                .HasDatabaseName("UX_Invoices_PublicLinkToken")
+                .HasFilter("[PublicLinkToken] IS NOT NULL");
+
             // Ignore calculated properties
             builder.Ignore(x => x.TotalPaid);
             builder.Ignore(x => x.IsFullyPaid);
             builder.Ignore(x => x.IsOverdue);
+        }
+    }
+
+    /// <summary>
+    /// 085. The PDF as last emailed — one row per invoice, keyed by it.
+    /// No navigation from Invoice on purpose: nothing that reads an
+    /// invoice should be able to drag the bytes along by accident.
+    /// </summary>
+    public class InvoiceSentCopyConfiguration : IEntityTypeConfiguration<InvoiceSentCopy>
+    {
+        public void Configure(EntityTypeBuilder<InvoiceSentCopy> builder)
+        {
+            builder.ToTable("InvoiceSentCopies");
+            builder.HasKey(x => x.InvoiceId);
+            builder.Property(x => x.InvoiceId).ValueGeneratedNever();
+
+            builder.Property(x => x.TenantId).IsRequired();
+            builder.Property(x => x.FileName).IsRequired().HasMaxLength(255);
+            builder.Property(x => x.PdfContent).IsRequired();   // varbinary(max)
+            builder.Property(x => x.CreatedBy).HasMaxLength(200);
+
+            builder.HasOne<Invoice>()
+                .WithMany()
+                .HasForeignKey(x => x.InvoiceId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

@@ -17,6 +17,11 @@
 // 083 — CustomerEmailReceived: an envelope icon, and a link straight to
 //   the email (/Emails/View/{id}). NotificationEmailTemplate.BuildUrl
 //   carries the same route, so the bell and the email go to one place.
+//
+// 085 — EmailBounced: a red envelope, and a link to the sent email's page
+//   (/Emails/Sent/{id}), which says why it bounced and links to the quote
+//   or invoice. ALSO FIXED: quote links were /Quotes/Detail/{id}, but that
+//   page takes ?id= (plain @page) — every quote notification opened a 404.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -50,6 +55,7 @@ namespace MerkaiTrial.Application.DTOs
             nameof(NotificationEventType.LeadAssigned)            => "bi-person-plus",
             nameof(NotificationEventType.DealAssigned)            => "bi-briefcase",
             nameof(NotificationEventType.CustomerEmailReceived)   => "bi-envelope-open",   // 083
+            nameof(NotificationEventType.EmailBounced)            => "bi-envelope-x",      // 085
             _                                                     => "bi-bell"
         };
 
@@ -60,6 +66,7 @@ namespace MerkaiTrial.Application.DTOs
             nameof(NotificationEventType.QuoteRejected)          => "text-danger",
             nameof(NotificationEventType.QuoteApprovalRequested) => "text-warning",
             nameof(NotificationEventType.CustomerEmailReceived)  => "text-info",       // 083
+            nameof(NotificationEventType.EmailBounced)           => "text-danger",     // 085
             _                                                    => "text-primary"
         };
 
@@ -70,10 +77,12 @@ namespace MerkaiTrial.Application.DTOs
         /// </summary>
         public string? Url => (EntityType, EntityId) switch
         {
-            ("Quote", { } id) => $"/Quotes/Detail/{id}",
+            ("Quote", { } id) => $"/Quotes/Detail?id={id}",     // 085: was /{id} — a 404
+            ("Invoice", { } id) => $"/Invoices/Detail?id={id}", // 085
             ("Deal",  { } id) => $"/Pipeline/Detail/{id}",
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
             ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
+            ("OutboundMessage", { } id) => $"/Emails/Sent/{id}", // 085
             _                 => null
         };
     }

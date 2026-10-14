@@ -7,6 +7,12 @@
 // Covers both halves of the Settings → Notifications page: the per-user
 // channel preferences everyone sees, and the email log workspace admins
 // see.
+//
+// 085 — OutboundMessageDto gains the delivery result (Delivered / Bounced
+// / spam …) as TRAILING parameters with defaults, so nothing that builds
+// one today has to change. State / StateLabel / StateBadge fold the two
+// columns into one word through SentEmailState — the same rule the quote
+// and invoice pages use.
 // =====================================================================
 
 namespace MerkaiTrial.Application.DTOs
@@ -201,8 +207,21 @@ namespace MerkaiTrial.Application.DTOs
         string? LastError,
         string? ProviderMessageId,
         string? EntityType,
-        Guid? EntityId)
+        Guid? EntityId,
+
+        // 085 — what happened after it left. Trailing, with defaults.
+        string DeliveryStatus = "None",
+        string? DeliveryDetail = null,
+        DateTime? DeliveryStatusAtUtc = null,
+        string? CcAddresses = null,
+        int AttachmentCount = 0)
     {
+        /// <summary>085. The one word for people — see SentEmailState.</summary>
+        public string State => SentEmailState.Of(Status, DeliveryStatus);
+        public string StateLabel => SentEmailState.Label(State);
+        public string StateBadge => SentEmailState.Badge(State);
+        public string StateHint => SentEmailState.Hint(State, DeliveryDetail, LastError);
+
         public bool CanRetry => Status is "Dead" or "Failed" or "Cancelled";
         public bool CanCancel => Status is "Pending" or "Failed";
 

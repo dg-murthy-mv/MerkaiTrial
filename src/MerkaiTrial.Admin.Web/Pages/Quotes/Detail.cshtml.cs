@@ -103,11 +103,22 @@
 //      (Settings → Custom Fields → Quotes → "Copy to invoice field").
 //   If the field list cannot be loaded the card says so; the rest of the
 //   page is unaffected.
+//
+// CHANGES (085 — email history)
+//
+//   ✅ "Email history" card (_SentEmailsCard, shared with the invoice
+//      page): every time this quote was emailed, to whom, by whom, and
+//      what happened — Delivered, Bounced, Marked as spam, Failed — with
+//      the reason. A failed email gets "Send again" when this person can
+//      update quotes (CanUpdate); the API checks again.
+//   ✅ Loaded like every other optional panel: a failure costs the card,
+//      which says so, never the page.
 // =====================================================================
 
 using System.Globalization;
 using MerkaiTrial.Admin.Web.Pages.Shared;            // 081 — CustomFieldDisplayVm, DocumentFieldsVm
 using MerkaiTrial.Admin.Web.Services.CustomFields;   // 081
+using MerkaiTrial.Admin.Web.Services.Emails;         // 085
 using MerkaiTrial.Admin.Web.Services.Invoices;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Application.Authorization;
@@ -131,6 +142,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         private readonly IQuoteApprovalService  _approvals;
         private readonly IQuoteMilestoneService _milestones;          // 071
         private readonly ICustomFieldService    _customFields;        // 081
+        private readonly ISentEmailService      _sentEmails;          // 085
         private readonly ILogger<DetailModel>   _logger;
 
         protected override string ModuleName => Modules.Quotes;
@@ -143,11 +155,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             IQuoteApprovalService  approvals,
             IQuoteMilestoneService milestones,
             ICustomFieldService    customFields,                     // 081
+            ISentEmailService      sentEmails,                       // 085
             IAuthorizationService  authorizationService,
             ILogger<DetailModel>   logger)
             : base(authorizationService, currentUserService, logger)
         {
             _customFields       = customFields;
+            _sentEmails         = sentEmails;
             _quoteService       = quoteService;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
@@ -164,6 +178,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         [TempData] public string? SuccessMessage { get; set; }
 
         public QuoteDto?           Quote       { get; set; }
+
+        /// <summary>085. The Email history card. Never null; LoadFailed says when it could not load.</summary>
+        public SentEmailsCardVm    EmailHistory { get; private set; } = new();
         public InvoiceDto?         Invoice     { get; set; }
         public List<AttachmentDto> Attachments { get; set; } = new();
 
@@ -418,6 +435,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                     _logger.LogWarning(apEx, "Failed to load approval state for quote {QuoteId}", Id);
                     Approval = null;
                 }
+
+                // ── 085: Email history ────────────────────────────────
+                // Never throws — a failure sets LoadFailed and the card
+                // says so.
+                EmailHistory = await SentEmailsCardVm.LoadAsync(
+                    _sentEmails, "quote", Id, "quote",
+                    canRetry:       CanUpdate,
+                    returnUrl:      $"/Quotes/Detail?id={Id}#email-history",
+                    formatDateTime: d => FormatDateTime(d),
+                    logger:         _logger,
+                    emptyHint:      "It is emailed to the customer automatically when you mark it Sent.");
 
                 return Page();
             }
