@@ -53,6 +53,31 @@
 //
 //   SMS is still not here. The queue and the worker are channel-agnostic;
 //   only a sender is missing.
+//
+// CHANGES (086b — WhatsApp headline wording)
+//   NotificationRequest gains an optional, trailing Headline: the SUBJECT
+//   of the event — "Quote QUO-0042", "Priya Shah", "Acme fit-out is now
+//   Negotiation" — without the verb.
+//
+//   Why: each approved WhatsApp template already names the event in its
+//   fixed text ("A quote in your Merkai account has been accepted."), and
+//   {{headline}} used to be filled with the Title, which names it AGAIN:
+//
+//     A quote in your Merkai account has been accepted. Quote QUO-0042
+//     was accepted — Acme fit-out — THB 25,000.00. Sign in …
+//
+//   Now {{headline}} is the Headline (falling back to the Title for any
+//   producer that does not set one), so the message reads once:
+//
+//     A quote in your Merkai account has been accepted. Quote QUO-0042 —
+//     Acme fit-out — THB 25,000.00. Sign in …
+//
+//   The bell and the email keep using the Title — there, nothing else
+//   names the event. Trailing and optional, so every existing
+//   `new NotificationRequest(…)` compiles unchanged.
+//
+//   The template wording itself does NOT change, so templates Meta has
+//   already approved stay approved. See WhatsAppVariables.For.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -90,7 +115,14 @@ public sealed record NotificationRequest(
     Guid? ActorUserId = null,
 
     /// <summary>Their name, or something like "the customer".</summary>
-    string? ActorName = null);
+    string? ActorName = null,
+
+    /// <summary>
+    /// 086b. The event's SUBJECT, for WhatsApp's {{headline}} — "Quote
+    /// QUO-0042", not "Quote QUO-0042 was accepted": the approved template's
+    /// fixed text already says what happened. Null falls back to Title.
+    /// </summary>
+    string? Headline = null);
 
 public interface INotificationDispatcher
 {
@@ -385,7 +417,8 @@ public sealed class NotificationDispatcher : INotificationDispatcher
             return;
         }
 
-        var variables = WhatsAppVariables.For(request.Title, request.Body);
+        // 086b: the headline, not the title — see the header.
+        var variables = WhatsAppVariables.For(request);
 
         if (template.VariableCount != variables.Count)
         {

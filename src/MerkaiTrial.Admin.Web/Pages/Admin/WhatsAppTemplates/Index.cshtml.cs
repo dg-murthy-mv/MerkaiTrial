@@ -16,6 +16,11 @@
 // Handlers are injected DIRECTLY rather than called over the API, the
 // same as Pages/Admin/Plans. They are registered in
 // AddAdminWebDirectHandlers.
+//
+// CHANGES (086b) — each row shows the wording to submit to Meta
+// (WhatsAppTemplateWording), sample values for Meta's form, and a preview
+// of the message as the person will read it, with Copy buttons and a
+// "Use as reference" button that fills the row's Approved body.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Notifications;      // 046
@@ -110,6 +115,10 @@ public class IndexModel : PageModel
     /// </summary>
     public bool LiveButBroken(WhatsAppTemplateRow row)
         => row.IsActive && BlockedByMeta(row);
+
+    /// <summary>086b. The wording to submit to Meta for this row's event, or null.</summary>
+    public WhatsAppWording? WordingFor(WhatsAppTemplateRow row)
+        => WhatsAppTemplateWording.For(row.EventType);
 
     public IEnumerable<IGrouping<string, WhatsAppTemplateRow>> Groups
         => (Data?.Items ?? new List<WhatsAppTemplateRow>()).GroupBy(i => i.Group);

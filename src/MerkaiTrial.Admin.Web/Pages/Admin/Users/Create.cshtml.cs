@@ -1,8 +1,21 @@
-﻿using MerkaiTrial.Admin.Web.Services.Roles;
+// =====================================================================
+// FILE: MerkaiTrial.Admin.Web/Pages/Admin/Users/Create.cshtml.cs
+//
+// CHANGES (086)
+//   ✅ The invite is EMAILED to the new person (IAccountEmails), and the
+//      link is still shown once on screen as a backup. Before, the page
+//      only showed the link and someone had to forward it by hand.
+//   ✅ The link comes from IAccountEmails like every other sign-in link,
+//      using Email:AppBaseUrl when it is set (AccountLinkBase).
+// =====================================================================
+
+using MerkaiTrial.Admin.Web.Pages.Account;
+using MerkaiTrial.Admin.Web.Services.Roles;
 using MerkaiTrial.Admin.Web.Services.Tenants;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -15,22 +28,23 @@ public class CreateModel : PageModel
     private readonly IUserService _userService;
     private readonly IRoleService _roleService;
     private readonly ITenantService _tenantService;
-    private readonly IUserTokenService _tokens;
+    private readonly IAccountEmails _accountEmails;     // 086
+    private readonly IConfiguration _config;            // 086
     private readonly ILogger<CreateModel> _logger;
-
-    private static readonly TimeSpan InviteLifetime = TimeSpan.FromHours(72);
 
     public CreateModel(
         IUserService userService,
         IRoleService roleService,
         ITenantService tenantService,
-        IUserTokenService tokens,
+        IAccountEmails accountEmails,
+        IConfiguration config,
         ILogger<CreateModel> logger)
     {
         _userService = userService;
         _roleService = roleService;
         _tenantService = tenantService;
-        _tokens = tokens;
+        _accountEmails = accountEmails;
+        _config = config;
         _logger = logger;
     }
 
@@ -46,6 +60,10 @@ public class CreateModel : PageModel
     public string? CreatedUserName { get; set; }
     public string? CreatedUserEmail { get; set; }
     public bool InviteFailed { get; set; }
+
+    /// <summary>086. The invite email was queued.</summary>
+    public bool InviteEmailed { get; set; }
+    public string? InviteEmailSkippedReason { get; set; }
 
     public class InputModel
     {
@@ -135,12 +153,14 @@ public class CreateModel : PageModel
         // than implying nothing happened.
         try
         {
-            var token = await _tokens.IssueAsync(
-                result.Id, TenantId, TokenPurpose.Invite,
-                InviteLifetime, User.Identity?.Name ?? "SuperAdmin");
+            // 086: emailed AND shown once.
+            var invite = await _accountEmails.IssueInviteAsync(
+                result.Id, AccountLinkBase.Resolve(_config, Request),
+                User.Identity?.Name ?? "SuperAdmin", sendEmail: true);
 
-            InviteUrl = $"{Request.Scheme}://{Request.Host}/Account/SetPassword"
-                      + $"?token={Uri.EscapeDataString(token)}&purpose=Invite";
+            InviteUrl = invite.Url;
+            InviteEmailed = invite.EmailQueued;
+            InviteEmailSkippedReason = invite.EmailSkippedReason;
         }
         catch (Exception ex)
         {

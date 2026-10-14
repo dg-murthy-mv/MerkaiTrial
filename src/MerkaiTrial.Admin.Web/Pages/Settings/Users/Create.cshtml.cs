@@ -15,9 +15,15 @@
 //   Only this tenant's roles are offered, and tenant_admin is filtered
 //   out — the "make them an administrator" checkbox is the one control
 //   for that, matching what PermissionHandler actually reads.
+//
+// CHANGES (086)
+//   ✅ The invite is EMAILED to the new person (IAccountEmails); the link
+//      is still shown once as a backup. The page used to say "You'll get
+//      a link to send them" — and that was the only way they got it.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages.Account;            // 086
 using MerkaiTrial.Admin.Web.Services.Roles;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
@@ -25,6 +31,7 @@ using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications; // 086
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,16 +43,16 @@ public class CreateModel : AuthorizedPageModel
 {
     private readonly IUserService _userService;
     private readonly IRoleService _roleService;
-    private readonly IUserTokenService _tokens;
-
-    private static readonly TimeSpan InviteLifetime = TimeSpan.FromHours(72);
+    private readonly IAccountEmails _accountEmails;   // 086
+    private readonly IConfiguration _config;          // 086
 
     protected override string ModuleName => Modules.Users;
 
     public CreateModel(
         IUserService userService,
         IRoleService roleService,
-        IUserTokenService tokens,
+        IAccountEmails accountEmails,
+        IConfiguration config,
         IAuthorizationService authorizationService,
         ICurrentUserService currentUserService,
         ILogger<CreateModel> logger)
@@ -53,7 +60,8 @@ public class CreateModel : AuthorizedPageModel
     {
         _userService = userService;
         _roleService = roleService;
-        _tokens      = tokens;
+        _accountEmails = accountEmails;
+        _config        = config;
     }
 
     [BindProperty] public InputModel Input { get; set; } = new();
@@ -68,6 +76,10 @@ public class CreateModel : AuthorizedPageModel
     public string? CreatedUserName { get; set; }
     public string? CreatedUserEmail { get; set; }
     public bool InviteFailed { get; set; }
+
+    /// <summary>086. The invite email was queued.</summary>
+    public bool InviteEmailed { get; set; }
+    public string? InviteEmailSkippedReason { get; set; }
     private string ActorName =>
        User.Identity?.Name
        ?? User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
@@ -164,11 +176,13 @@ public class CreateModel : AuthorizedPageModel
         // the admin looking for someone who is already there.
         try
         {
-            var token = await _tokens.IssueAsync(
-                result.Id, tenantId, TokenPurpose.Invite,InviteLifetime, ActorName);
+            // 086: emailed AND shown once.
+            var invite = await _accountEmails.IssueInviteAsync(
+                result.Id, AccountLinkBase.Resolve(_config, Request), ActorName, sendEmail: true);
 
-            InviteUrl = $"{Request.Scheme}://{Request.Host}/Account/SetPassword"
-                      + $"?token={Uri.EscapeDataString(token)}&purpose=Invite";
+            InviteUrl = invite.Url;
+            InviteEmailed = invite.EmailQueued;
+            InviteEmailSkippedReason = invite.EmailSkippedReason;
         }
         catch (Exception ex)
         {

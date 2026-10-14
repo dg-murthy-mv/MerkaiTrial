@@ -55,6 +55,12 @@
 // and is documented at MapError below — a wrong answer here either
 // hammers Meta with something that will never work, or throws away a
 // message that would have gone on the next attempt.
+//
+// CHANGES (086b) — WhatsAppVariables.For(NotificationRequest): {{headline}}
+// is the request's Headline (the event's subject) rather than its Title,
+// so a message no longer says the same thing twice, and a trailing full
+// stop is dropped so "…{{detail}}. Sign in" never prints "..". The sender
+// itself is unchanged.
 // =====================================================================
 
 using System.Net;
@@ -571,5 +577,40 @@ public static class WhatsAppVariables
         => index >= 0 && index < Names.Count ? Names[index] : $"param{index + 1}";
 
     public static IReadOnlyList<string> For(string title, string? body)
-        => new[] { title, string.IsNullOrWhiteSpace(body) ? "—" : body };
+        => new[] { Tidy(title) ?? "—", Tidy(body) ?? "—" };
+
+    /// <summary>
+    /// 086b. The two values for a notification: the HEADLINE (the event's
+    /// subject — the template's fixed text already says what happened), and
+    /// the detail.
+    ///
+    ///   {{headline}}  Headline, else Title for producers that set none
+    ///   {{detail}}    Body, else "by {actor}", else a dash
+    ///
+    /// Both are tidied: the approved bodies read "… {{headline}} —
+    /// {{detail}}. Sign in …", so a value that already ends in a full stop
+    /// would print "…THB 250,000.00.. Sign in". The trailing stop goes.
+    /// </summary>
+    public static IReadOnlyList<string> For(NotificationRequest request)
+    {
+        var headline = Tidy(request.Headline) ?? Tidy(request.Title) ?? "—";
+
+        var detail = Tidy(request.Body)
+                     ?? (string.IsNullOrWhiteSpace(request.ActorName) ? null : $"by {request.ActorName!.Trim()}")
+                     ?? "—";
+
+        return new[] { headline, detail };
+    }
+
+    /// <summary>Trimmed, one line, without a trailing full stop. Null when empty.</summary>
+    private static string? Tidy(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var text = value.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        while (text.EndsWith('.') && !text.EndsWith("..."))
+            text = text[..^1].TrimEnd();
+
+        return text.Length == 0 ? null : text;
+    }
 }

@@ -1,5 +1,9 @@
 @* =====================================================================
    USER DETAIL PAGE
+
+   086: a "Sign-in" card — Send reset email, Copy reset link (shown once,
+   not emailed), Send invite — plus error messages, which the page never
+   displayed, and initials that cannot crash on an empty name.
    ===================================================================== *@
 @page "/Admin/Users/Detail/{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Admin.Users.DetailModel
@@ -13,7 +17,7 @@
         <div>
             <h2 class="mb-1">
                 <div style="background-color: #007bff; color: white; width: 50px; height: 50px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 15px;">
-                    @Model.User.FirstName[0]@Model.User.LastName[0]
+                    @Model.Initials
                 </div>
                 @Model.User.FirstName @Model.User.LastName
                 @if (Model.User.IsTenantAdmin)
@@ -42,12 +46,64 @@
         </div>
     </div>
 
-    <!-- Success Alert -->
+    <!-- Alerts -->
     @if (TempData["Success"] != null)
     {
         <div class="alert alert-success alert-dismissible fade show">
             <i class="bi bi-check-circle me-2"></i>@TempData["Success"]
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["Error"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    }
+
+    @* 086 — a link shown ONCE. Only its hash is stored, so this response is
+       the only place it exists. *@
+    @if (!string.IsNullOrEmpty(Model.IssuedLink))
+    {
+        <div class="card border-success mb-4">
+            <div class="card-header bg-success text-white">
+                <i class="bi bi-link-45deg"></i>
+                @(Model.IssuedLinkKind == "invite" ? "New invite link" : "New password reset link")
+                for @Model.User.Email
+            </div>
+            <div class="card-body">
+                <p class="mb-2 small">
+                    @if (Model.IssuedLinkEmailed)
+                    {
+                        <text>It has been emailed to them. Here it is as well, in case the email doesn't arrive.</text>
+                    }
+                    else
+                    {
+                        <text><strong>Not emailed.</strong> Send it to them yourself — WhatsApp, LINE or a chat they trust.</text>
+                    }
+                    It works once and expires in @Model.IssuedLinkLifetime.
+                    @if (Model.IssuedLinkKind == "reset")
+                    {
+                        <text>Any older reset link has stopped working.</text>
+                    }
+                </p>
+                <div class="input-group mb-2">
+                    <input type="text" id="issuedLink" class="form-control font-monospace"
+                           value="@Model.IssuedLink" readonly onclick="this.select();" />
+                    <button class="btn btn-primary" type="button" id="copyIssued">
+                        <i class="bi bi-clipboard"></i> Copy
+                    </button>
+                </div>
+                <div id="copyConfirm" class="text-success small" style="display:none;">
+                    <i class="bi bi-check-circle"></i> Copied.
+                </div>
+                <div class="alert alert-warning small mt-3 mb-0">
+                    <i class="bi bi-shield-lock me-1"></i>
+                    Anyone with this link can set this person's password. Send it only to them,
+                    and don't paste it into a group chat. It is shown once and not stored.
+                </div>
+            </div>
         </div>
     }
 
@@ -142,6 +198,66 @@
                         </div>
                     </div>
 
+                    @* 086 — getting this person (back) in. *@
+                    <div class="card mb-3">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="bi bi-key"></i> Sign-in</h6>
+                        </div>
+                        <div class="card-body">
+                            @if (!Model.User.IsActive)
+                            {
+                                <p class="small text-muted mb-0">
+                                    Deactivated — they can't sign in. Reactivate them on
+                                    <a asp-page="./Edit" asp-route-tenantId="@Model.TenantId" asp-route-id="@Model.Id">Edit</a>
+                                    before sending a link.
+                                </p>
+                            }
+                            else
+                            {
+                                @if (Model.NeverSignedIn)
+                                {
+                                    <p class="small text-muted mb-2">
+                                        <i class="bi bi-hourglass-split"></i> Hasn't signed in yet — the invite was probably never used.
+                                    </p>
+                                    <form method="post" asp-page-handler="SendInvite"
+                                          asp-route-tenantId="@Model.TenantId" asp-route-id="@Model.Id" class="mb-2 js-once">
+                                        <button type="submit" class="btn btn-primary btn-sm w-100">
+                                            <i class="bi bi-envelope"></i> Send a new invite
+                                        </button>
+                                    </form>
+                                }
+
+                                <form method="post" asp-page-handler="SendReset"
+                                      asp-route-tenantId="@Model.TenantId" asp-route-id="@Model.Id" class="mb-2 js-once">
+                                    <button type="submit" class="btn @(Model.NeverSignedIn ? "btn-outline-primary" : "btn-primary") btn-sm w-100">
+                                        <i class="bi bi-envelope-arrow-up"></i> Send reset email
+                                    </button>
+                                </form>
+
+                                <form method="post" asp-page-handler="CopyResetLink"
+                                      asp-route-tenantId="@Model.TenantId" asp-route-id="@Model.Id" class="js-once">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm w-100"
+                                            title="Creates a link without emailing it — for when the email isn't arriving">
+                                        <i class="bi bi-link-45deg"></i> Copy reset link instead
+                                    </button>
+                                </form>
+
+                                <p class="small text-muted mt-2 mb-0">
+                                    Reset links work once, for 2 hours. A new one cancels the old.
+                                </p>
+
+                                @if (!Model.LinkBaseConfigured)
+                                {
+                                    <p class="small text-warning-emphasis mt-2 mb-0">
+                                        <i class="bi bi-exclamation-triangle"></i>
+                                        <code>Email:AppBaseUrl</code> isn't set on Admin.Web, so links use this
+                                        page's address. Set it before production (SETUP 086).
+                                    </p>
+                                }
+                            }
+                        </div>
+                    </div>
+
                     <div class="card">
                         <div class="card-header bg-secondary text-white">
                             <h6 class="mb-0"><i class="bi bi-info-circle"></i> Metadata</h6>
@@ -229,10 +345,10 @@
                         @foreach (var role in Model.AvailableRoles)
                         {
                             <div class="form-check mb-2">
-                                <input type="checkbox" class="form-check-input" 
+                                <input type="checkbox" class="form-check-input" id="role-@role.Id"
                                        name="roleIds" value="@role.Id"
                                        checked="@Model.User.Roles.Contains(role.DisplayName)" />
-                                <label class="form-check-label">
+                                <label class="form-check-label" for="role-@role.Id">
                                     <strong>@role.DisplayName</strong>
                                     <small class="text-muted d-block">@role.Name</small>
                                 </label>
@@ -254,3 +370,28 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        // 086 — copy the one-time link, and one submit per press on the
+        // sign-in buttons (each press really does issue a new link).
+        (function () {
+            var copy = document.getElementById('copyIssued');
+            if (copy) {
+                copy.addEventListener('click', function () {
+                    var el = document.getElementById('issuedLink');
+                    el.select();
+                    navigator.clipboard.writeText(el.value).then(function () {
+                        document.getElementById('copyConfirm').style.display = 'block';
+                    });
+                });
+            }
+            document.querySelectorAll('form.js-once').forEach(function (f) {
+                f.addEventListener('submit', function () {
+                    var b = f.querySelector('button[type=submit]');
+                    if (b) { b.disabled = true; }
+                });
+            });
+        })();
+    </script>
+}

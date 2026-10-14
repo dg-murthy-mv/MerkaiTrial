@@ -9,6 +9,10 @@
     FILE: MerkaiTrial.Admin.Web/Pages/Settings/Users/Index.cshtml
 
     Alerts are rendered globally by _Layout — not repeated here.
+
+    086: "Reset password" emails a colleague a new reset link (the link is
+    never shown here — see the page model). "Invite" now emails the invite
+    as well as showing the link once.
 *@
 
 <div class="d-flex justify-content-between align-items-start mb-4">
@@ -47,7 +51,15 @@
         </div>
         <div class="card-body">
             <p class="mb-2" style="font-size:13.5px;">
-                Send this to them. It works once and expires in 72 hours.
+                @if (Model.InviteEmailed)
+                {
+                    <text>We've emailed it to them. Here it is as well, in case the email doesn't arrive.</text>
+                }
+                else
+                {
+                    <text>It could not be emailed — send this to them yourself.</text>
+                }
+                It works once and expires in 72 hours.
             </p>
             <div class="input-group mb-2">
                 <input type="text" id="inviteUrl" class="form-control font-monospace"
@@ -218,8 +230,21 @@
                                         <form method="post" asp-page-handler="ResendInvite"
                                               asp-route-userId="@user.Id" class="d-inline">
                                             <button type="submit" class="btn btn-sm btn-outline-primary"
-                                                    title="Generate a new invite link">
+                                                    title="Email them a new invite link">
                                                 <i class="bi bi-envelope"></i> Invite
+                                            </button>
+                                        </form>
+                                    }
+
+                                    @* 086 — email a reset link. Not on yourself. *@
+                                    @if (user.LastLoginUtc.HasValue && user.IsActive && !isSelf)
+                                    {
+                                        <form method="post" asp-page-handler="SendReset"
+                                              asp-route-userId="@user.Id" class="d-inline"
+                                              onsubmit="return confirm('Email this person a link to choose a new password? Their current password keeps working until they use it.');">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                    title="Email them a link to choose a new password">
+                                                <i class="bi bi-key"></i> Reset password
                                             </button>
                                         </form>
                                     }
@@ -309,6 +334,16 @@
                                       asp-route-userId="@user.Id" class="flex-fill">
                                     <button type="submit" class="btn btn-sm btn-outline-primary w-100">
                                         <i class="bi bi-envelope me-1"></i>Invite
+                                    </button>
+                                </form>
+                            }
+                            @if (user.LastLoginUtc.HasValue && user.IsActive)
+                            {
+                                <form method="post" asp-page-handler="SendReset"
+                                      asp-route-userId="@user.Id" class="flex-fill"
+                                      onsubmit="return confirm('Email this person a link to choose a new password?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+                                        <i class="bi bi-key me-1"></i>Reset
                                     </button>
                                 </form>
                             }

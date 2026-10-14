@@ -9,13 +9,15 @@
     FILE: MerkaiTrial.Admin.Web/Pages/Settings/Users/Create.cshtml
 
     Alerts are rendered globally by _Layout — not repeated here.
+
+    086: the invite is emailed to them; the link stays on screen as a backup.
 *@
 
 <div class="d-flex justify-content-between align-items-start mb-4">
     <div>
         <h1 class="lf-page-title mb-1">Add a person</h1>
         <p class="text-muted mb-0" style="font-size:13.5px;">
-            They'll get a link to set their own password.
+            We'll email them a link to set their own password.
         </p>
     </div>
     <a asp-page="./Index" class="btn btn-outline-secondary">
@@ -39,12 +41,21 @@
     <div class="card border-success mb-4">
         <div class="card-header bg-success text-white">
             <i class="bi bi-check-circle me-1"></i>
-            @Model.CreatedUserName added — send them this link
+            @Model.CreatedUserName added@(Model.InviteEmailed ? " — invite emailed" : " — send them this link")
         </div>
         <div class="card-body">
             <p class="mb-2" style="font-size:13.5px;">
-                <strong>@Model.CreatedUserEmail</strong> has no password yet.
-                This link lets them set one. It works once and expires in 72 hours.
+                @if (Model.InviteEmailed)
+                {
+                    <text>We've emailed <strong>@Model.CreatedUserEmail</strong> a link to set their password.
+                    Here it is as well, in case the email doesn't arrive.</text>
+                }
+                else
+                {
+                    <text><strong>@Model.CreatedUserEmail</strong> has no password yet and the invite was not emailed
+                    (@Model.InviteEmailSkippedReason). Send them this link yourself.</text>
+                }
+                It works once and expires in 72 hours.
             </p>
 
             <div class="input-group mb-2">
@@ -217,7 +228,7 @@ else if (Model.InviteFailed)
                     </div>
                     <div class="card-body small text-muted">
                         <ol class="mb-0 ps-3">
-                            <li class="mb-2">You'll get a link to send them.</li>
+                            <li class="mb-2">We email them a link (you'll see it too, as a backup).</li>
                             <li class="mb-2">They open it and choose a password.</li>
                             <li class="mb-0">They sign in and see what their role allows.</li>
                         </ol>

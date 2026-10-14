@@ -4,6 +4,11 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (086b — WhatsApp headline wording)
+//   the quote status notification (sent / accepted / rejected) now carries
+//   Headline "Quote QUO-0042" for WhatsApp — the approved template already
+//   says what happened, and the Title said it again. Nothing else changed.
+//
 // 081 — CUSTOM FIELDS ON QUOTES
 //   ✅ GetQuotes: each row carries its "Show on the list" values.
 //   ✅ GetQuoteById: every stored value (CustomFieldValues) and what the
@@ -1107,7 +1112,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         // about it. When a colleague did it, the dispatcher
                         // drops them from their own notification.
                         ActorUserId: currentUser?.UserId,
-                        ActorName:   currentUser?.FullName ?? "the customer"),
+                        ActorName:   currentUser?.FullName ?? "the customer",
+
+                        // 086b: the template names the event ("has been
+                        // accepted"), so WhatsApp's headline is the quote.
+                        Headline:    $"Quote {quote.Number}"),
                     deal.OwnerUserId);
             }
             catch (Exception ex)

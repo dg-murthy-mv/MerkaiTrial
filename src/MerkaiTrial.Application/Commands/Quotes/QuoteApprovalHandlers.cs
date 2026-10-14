@@ -4,6 +4,12 @@
 //
 // COMPLETE FILE — replaces the 017/018/040 version.
 //
+// CHANGES (086b — WhatsApp headline wording)
+//   the two approval notifications now carry a Headline for WhatsApp — "Quote QUO-0042 (step 1 of 2)" and
+//   "Quote QUO-0042 approved — ready to send" / "sent back for changes". The
+//   approved templates already say "needs your approval" / "has been
+//   decided"; the Title repeated that. Nothing else in this file changed.
+//
 // WHAT CHANGED (052a)
 //   One compile error, mine, from round 040 and carried into 052 because I
 //   rebuilt this file from the 040 copy. NotifyRequesterAsync asked for a
@@ -1137,7 +1143,11 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         EntityType: "Quote",
                         EntityId: quote.Id,
                         ActorUserId: me.UserId,
-                        ActorName: me.FullName),
+                        ActorName: me.FullName,
+
+                        // 086b: the template already says "needs your
+                        // approval" — the headline is just which quote.
+                        Headline: $"Quote {quote.Number}{step}"),
                     recipients, ct);
             }
             catch (Exception ex)
@@ -1400,7 +1410,13 @@ namespace MerkaiTrial.Application.Commands.Quotes
                         EntityType: "Quote",
                         EntityId: quoteId,
                         ActorUserId: me.UserId,
-                        ActorName: me.FullName),
+                        ActorName: me.FullName,
+
+                        // 086b: the template only says "has been decided" —
+                        // so here the headline must carry WHICH way.
+                        Headline: approve
+                            ? $"Quote {quoteNumber} approved — ready to send"
+                            : $"Quote {quoteNumber} sent back for changes"),
                     new[] { request.RequestedByUserId }, ct);
 
                 // See the summary: this save is the deliberate exception.

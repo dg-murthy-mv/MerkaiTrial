@@ -18,15 +18,30 @@
 // GUARDS: you cannot deactivate or demote YOURSELF, and the workspace
 // must keep at least one admin. Without those, one click locks the client
 // out of their own workspace and only you can fix it.
+//
+// CHANGES (086 — sign-in help without waiting for MadeeVision)
+//   ✅ "Reset password" on anyone who has signed in before: EMAILS them a
+//      new 2-hour reset link (older ones stop working). The link is NOT
+//      shown to the administrator — an admin who could read a colleague's
+//      reset link could sign in as that colleague, and everything they did
+//      would be recorded under the colleague's name. Only the super admin
+//      page offers a copyable reset link.
+//        • users.update, like Invite and Deactivate
+//        • not on yourself (use Forgot password, or your profile)
+//        • at most 5 per person per hour, so a stuck button can't flood
+//          someone's inbox
+//   ✅ "Invite" now EMAILS the invite as well as showing the link once.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
+using MerkaiTrial.Admin.Web.Pages.Account;            // 086
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications; // 086
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -36,22 +51,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Users;
 public class IndexModel : AuthorizedPageModel
 {
     private readonly IUserService _userService;
-    private readonly IUserTokenService _tokens;
+    private readonly IAccountEmails _accountEmails;   // 086
+    private readonly IConfiguration _config;          // 086
 
-    private static readonly TimeSpan InviteLifetime = TimeSpan.FromHours(72);
+    /// <summary>086. Admin-sent reset emails per person per hour.</summary>
+    private const int MaxResetsPerHour = 5;
 
     protected override string ModuleName => Modules.Users;
 
     public IndexModel(
         IUserService userService,
-        IUserTokenService tokens,
+        IAccountEmails accountEmails,
+        IConfiguration config,
         IAuthorizationService authorizationService,
         ICurrentUserService currentUserService,
         ILogger<IndexModel> logger)
         : base(authorizationService, currentUserService, logger)
     {
         _userService = userService;
-        _tokens      = tokens;
+        _accountEmails = accountEmails;
+        _config        = config;
     }
 
     public PaginatedUsersResponse Users { get; set; } = null!;
@@ -68,6 +87,9 @@ public class IndexModel : AuthorizedPageModel
     /// <summary>Set after a resend. Shown once, same as on create.</summary>
     public string? InviteUrl { get; set; }
     public string? InviteForEmail { get; set; }
+
+    /// <summary>086. The resent invite was emailed as well.</summary>
+    public bool InviteEmailed { get; set; }
 
     /// <summary>So the view can stop someone acting on their own account.</summary>
     public Guid CurrentUserId { get; private set; }
@@ -152,15 +174,16 @@ public class IndexModel : AuthorizedPageModel
 
         try
         {
+            // Scoped to this workspace — throws for anyone else's user.
             var user = await _userService.GetByIdAsync(tenantId, userId);
 
-            var token = await _tokens.IssueAsync(
-                userId, tenantId, TokenPurpose.Invite,
-                                InviteLifetime, ActorName);
+            // 086: emailed AND shown once.
+            var invite = await _accountEmails.IssueInviteAsync(
+                userId, AccountLinkBase.Resolve(_config, Request), ActorName, sendEmail: true);
 
-            InviteUrl      = $"{Request.Scheme}://{Request.Host}/Account/SetPassword"
-                           + $"?token={Uri.EscapeDataString(token)}&purpose=Invite";
+            InviteUrl      = invite.Url;
             InviteForEmail = user.Email;
+            InviteEmailed  = invite.EmailQueued;
 
             await InitializePermissionsAsync();
             await LoadDataAsync();
@@ -168,12 +191,70 @@ public class IndexModel : AuthorizedPageModel
             // NOT a redirect: the raw token exists only in this response.
             return Page();
         }
+        catch (InvalidOperationException ex)
+        {
+            TempData["ErrorMessage"] = ex.Message;
+            return RedirectToPage(new { PageSize });
+        }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to reissue invite for user {UserId}", userId);
             TempData["ErrorMessage"] = "Could not generate a new invite link. Please try again.";
             return RedirectToPage(new { PageSize });
         }
+    }
+
+    // =================================================================
+    // 086 — RESET PASSWORD (emailed only; see the header)
+    // =================================================================
+    public async Task<IActionResult> OnPostSendResetAsync(Guid userId)
+    {
+        var permissionCheck = await ValidatePermissionAsync(Actions.Update);
+        if (permissionCheck != null) return permissionCheck;
+
+        var tenantId = CurrentUserService.GetCurrentTenantId();
+
+        if (userId == CurrentUserService.GetCurrentUserId())
+        {
+            TempData["ErrorMessage"] = "To change your own password, sign out and use \"Forgot your password?\" on the sign-in page.";
+            return RedirectToPage(new { PageSize });
+        }
+
+        try
+        {
+            // Scoped to this workspace — throws for anyone else's user, so
+            // a hand-made POST can never mail a stranger.
+            var user = await _userService.GetByIdAsync(tenantId, userId);
+
+            if (await _accountEmails.CountRecentResetsAsync(userId, TimeSpan.FromHours(1)) >= MaxResetsPerHour)
+            {
+                TempData["ErrorMessage"] =
+                    $"{user.FirstName} has had several reset emails in the last hour. Ask them to check their spam folder, or try again later.";
+                return RedirectToPage(new { PageSize });
+            }
+
+            var result = await _accountEmails.IssuePasswordResetAsync(
+                userId, AccountLinkBase.Resolve(_config, Request), ActorName, sendEmail: true);
+
+            TempData[result.EmailQueued ? "SuccessMessage" : "ErrorMessage"] = result.EmailQueued
+                ? $"Reset email sent to {result.ToAddress}. The link works once, for {AccountLinkLifetimes.Describe(result.Lifetime)}."
+                : $"No email was sent: {result.EmailSkippedReason} Add an email address to their account first.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["ErrorMessage"] = ex.Message;
+        }
+        catch (KeyNotFoundException)
+        {
+            TempData["ErrorMessage"] = "That person could not be found.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to send a reset email for user {UserId}", userId);
+            TempData["ErrorMessage"] = "The reset email could not be sent. Please try again.";
+        }
+
+        return RedirectToPage(new { PageSize });
     }
 
     // =================================================================

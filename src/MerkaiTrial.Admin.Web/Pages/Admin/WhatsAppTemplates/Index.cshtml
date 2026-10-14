@@ -11,7 +11,12 @@
    The parallel-array binding is the same pattern as the notification
    settings page: a hidden id per row, checkboxes matched by value. An
    unchecked checkbox posts nothing, so a bound list of objects would
-   shift every row after the one you unticked. *@
+   shift every row after the one you unticked.
+
+   086b: under each row, "Wording for Meta" — the exact body to submit,
+   the sample values Meta's form asks for, and a preview of the real
+   message. {{headline}} is now the event's SUBJECT ("Quote QUO-0042"),
+   so the message no longer repeats the template's own sentence. *@
 
 <div class="page-content">
 
@@ -140,7 +145,8 @@
         <i class="bi bi-info-circle mt-1"></i>
         <div class="small">
             Every template takes <strong>two variables</strong>:
-            <code>{{headline}}</code> the notification's headline,
+            <code>{{headline}}</code> what the event is about — "Quote QUO-0042", "Priya Shah"
+            (not a sentence saying what happened: the template's own text says that) — and
             <code>{{detail}}</code> its detail. So an approved body reads
             something like
             <em>"A lead has been assigned to you in Merkai. {{headline}} —
@@ -270,10 +276,55 @@
                                             Approved body <span class="text-muted">(for reference — Meta sends its own copy)</span>
                                         </label>
                                         <input type="text" class="form-control form-control-sm"
-                                               name="Previews" value="@item.BodyPreview"
+                                               name="Previews" value="@item.BodyPreview" id="preview-@item.Id"
                                                placeholder="… {{headline}} — {{detail}}. Sign in to your account to view it." />
                                     </div>
                                 </div>
+
+                                @* 086b — what to submit to Meta, and what people will read. *@
+                                @{ var wording = Model.WordingFor(item); }
+                                @if (wording is not null)
+                                {
+                                    <details class="tpl-wording mt-2">
+                                        <summary class="small">
+                                            <i class="bi bi-magic"></i> Wording for Meta
+                                            <span class="text-muted">— suggested name <code>@wording.SuggestedName</code></span>
+                                        </summary>
+                                        <div class="tpl-wording-body">
+                                            <div class="small text-muted mb-1">Body (paste into WhatsApp Manager, category Utility, language English)</div>
+                                            <div class="d-flex gap-2 align-items-start mb-2">
+                                                <code class="tpl-code flex-grow-1" id="body-@item.Id">@wording.Body</code>
+                                                <button type="button" class="btn btn-sm btn-outline-info js-copy" data-copy-from="body-@item.Id"
+                                                        title="Copy the body">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary js-use" data-use-from="body-@item.Id"
+                                                        data-use-into="preview-@item.Id" title="Put this in Approved body (then Save)">
+                                                    Use as reference
+                                                </button>
+                                            </div>
+
+                                            <div class="row g-2 small mb-2">
+                                                <div class="col-md-6">
+                                                    <span class="text-muted">Sample for <code>headline</code>:</span>
+                                                    <span class="tpl-sample">@wording.SampleHeadline</span>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <span class="text-muted">Sample for <code>detail</code>:</span>
+                                                    <span class="tpl-sample">@wording.SampleDetail</span>
+                                                </div>
+                                            </div>
+
+                                            <div class="small text-muted mb-1">What the person reads</div>
+                                            <div class="tpl-bubble">@wording.Preview</div>
+
+                                            @if (!string.IsNullOrWhiteSpace(wording.Note))
+                                            {
+                                                <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> @wording.Note</div>
+                                            }
+                                        </div>
+                                    </details>
+                                }
                             </div>
 
                             <div class="tpl-actions">
@@ -489,6 +540,36 @@
     cursor: not-allowed;
 }
 
+/* ── 086b: wording for Meta ─────────────────────────────────────── */
+.tpl-wording summary { cursor: pointer; color: #67e8f9; }
+.tpl-wording-body {
+    margin-top: .5rem;
+    padding: .75rem .9rem;
+    border: 1px dashed rgba(103,232,249,.25);
+    border-radius: 10px;
+    background: rgba(15,28,46,.6);
+}
+.tpl-code {
+    display: block;
+    white-space: normal;
+    word-break: break-word;
+    padding: .45rem .6rem;
+    border-radius: 6px;
+    background: rgba(0,0,0,.25);
+    font-size: .8rem;
+}
+.tpl-sample { color: #e2e8f0; }
+.tpl-bubble {
+    display: inline-block;
+    max-width: 520px;
+    padding: .55rem .8rem;
+    border-radius: 10px 10px 10px 2px;
+    background: #134e4a;
+    color: #ecfeff;
+    font-size: .85rem;
+    line-height: 1.45;
+}
+
 @@media (max-width: 900px) {
     .tpl-row { flex-direction: column; gap: .75rem; }
     .tpl-event, .tpl-actions { flex: 1 1 auto; text-align: left; }
@@ -498,4 +579,34 @@
 .empty-state i { font-size: 3rem; display: block; margin-bottom: 1rem; }
 .empty-state h5 { color: #94a3b8; }
 </style>
+}
+
+@section Scripts {
+<script>
+    // 086b — copy a suggested body, or put it in the row's Approved body.
+    // Text is read from the element (textContent), never built into markup.
+    (function () {
+        document.querySelectorAll('.js-copy').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var src = document.getElementById(btn.getAttribute('data-copy-from'));
+                if (!src) return;
+                navigator.clipboard.writeText(src.textContent.trim()).then(function () {
+                    var old = btn.innerHTML;
+                    btn.innerHTML = '<i class="bi bi-check2"></i>';
+                    setTimeout(function () { btn.innerHTML = old; }, 1500);
+                });
+            });
+        });
+        document.querySelectorAll('.js-use').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var src = document.getElementById(btn.getAttribute('data-use-from'));
+                var dst = document.getElementById(btn.getAttribute('data-use-into'));
+                if (!src || !dst) return;
+                dst.value = src.textContent.trim();
+                dst.focus();
+                btn.textContent = 'Filled — remember to Save';
+            });
+        });
+    })();
+</script>
 }

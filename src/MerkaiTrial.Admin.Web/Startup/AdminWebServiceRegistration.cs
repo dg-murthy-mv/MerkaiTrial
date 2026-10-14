@@ -11,6 +11,8 @@
 //       record Emails sections, Settings → Inbound Email).
 // (085) + ISentEmailService — emails WE sent (quote / invoice history
 //       cards, /Emails/Sent/{id}).
+// (086) + IAccountEmails — invite / password reset / password changed
+//       emails, run in-process by the Account and user pages.
 //
 // WHY THE MODULE SERVICES ARE STILL A LIST (not a scan)
 //   They are thin wrappers over IApiService. A naming-convention scan
@@ -316,6 +318,15 @@ public static class AdminWebServiceRegistration
         services.AddScoped<GetWhatsAppTemplatesHandler>();
         services.AddScoped<SaveWhatsAppTemplatesHandler>();
         services.AddScoped<SendWhatsAppTestHandler>();
+
+        // 086 — account emails (invite, password reset, "password changed").
+        // Run in-process by Account/ForgotPassword, Account/SetPassword,
+        // Admin/Users and Settings/Users — the same pages that already
+        // issued tokens here through IUserTokenService. It only WRITES the
+        // outbound row; the WebApi's worker sends it, so no email key ever
+        // lives in Admin.Web. Without this line ForgotPassword throws
+        // "Unable to resolve service for type 'IAccountEmails'".
+        services.AddScoped<IAccountEmails, AccountEmails>();
 
         return services;
     }

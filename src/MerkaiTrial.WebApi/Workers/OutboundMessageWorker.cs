@@ -65,6 +65,16 @@
 //      went out.
 //   ✅ Addresses and phone numbers are MASKED in log lines
 //      ("wo****@example.com", "****1234") — the rule everywhere else.
+//
+// CHANGES (086 — account emails)
+//   ✅ An ACCOUNT email (EventType AccountSecurity: an invite, a password
+//      reset, "your password was changed") has its body WIPED once it is
+//      sent. The body of an invite or reset holds a working one-time
+//      sign-in link; after Resend has it, keeping a copy in our database
+//      only adds a place the link could leak from. The row itself stays
+//      (subject, address, status, delivery) so the email log can still
+//      answer "did it go?". A failed one keeps its body until it is sent
+//      or given up on, so an automatic retry still has something to send.
 // =====================================================================
 
 using System.Data;
@@ -279,6 +289,14 @@ public sealed class OutboundMessageWorker : BackgroundService
             message.LastError = null;
             message.LockedUntilUtc = null;
             message.NextAttemptAtUtc = null;
+
+            // 086 — see the header. Saved with the rest of this message.
+            if (message.EventType == NotificationEventType.AccountSecurity)
+            {
+                message.BodyHtml = AccountBodyRemoved;
+                message.BodyText = AccountBodyRemoved;
+            }
+
             return;
         }
 
@@ -564,6 +582,10 @@ WHERE  Status IN (0, 3)
 
         return total;
     }
+
+    /// <summary>086. What an account email's body becomes once it has been sent.</summary>
+    private const string AccountBodyRemoved =
+        "(Removed after sending — this email contained a one-time sign-in link.)";
 
     /// <summary>
     /// 085. "wo****@example.com" for an email address, "****1234" for a

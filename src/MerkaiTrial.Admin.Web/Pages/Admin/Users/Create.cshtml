@@ -4,6 +4,9 @@
 
    Complete file — replace yours with this one.
 
+   086: the invite is now EMAILED to them as well; the link below stays
+   as a backup.
+
    WHAT CHANGED
      - Success panel showing the invite link, with a copy button
      - The form is hidden once the user exists, so the same person cannot
@@ -55,13 +58,22 @@
             <div class="card-header bg-success text-white">
                 <h5 class="mb-0">
                     <i class="bi bi-check-circle"></i>
-                    @Model.CreatedUserName created — send them this link
+                    @Model.CreatedUserName created@(Model.InviteEmailed ? " — invite emailed" : " — send them this link")
                 </h5>
             </div>
             <div class="card-body">
                 <p class="mb-2">
-                    <strong>@Model.CreatedUserEmail</strong> has no password yet.
-                    This link lets them set one. It works once and expires in 72 hours.
+                    @if (Model.InviteEmailed)
+                    {
+                        <text>We've emailed <strong>@Model.CreatedUserEmail</strong> a link to set their password.
+                        Here it is too, in case the email doesn't arrive.</text>
+                    }
+                    else
+                    {
+                        <text><strong>@Model.CreatedUserEmail</strong> has no password yet, and the invite was not emailed
+                        (@Model.InviteEmailSkippedReason). Send them this link yourself.</text>
+                    }
+                    It works once and expires in 72 hours.
                 </p>
 
                 <div class="input-group mb-2">
@@ -77,8 +89,8 @@
 
                 <div class="alert alert-warning mt-3 mb-3 small">
                     <i class="bi bi-exclamation-triangle me-1"></i>
-                    Shown once and not stored anywhere. If you lose it, send a
-                    password reset for this user instead.
+                    Shown once and not stored anywhere. If you lose it, open the user and use
+                    <strong>Send a new invite</strong>.
                 </div>
 
                 <a asp-page="./Index" asp-route-tenantId="@Model.TenantId"
@@ -256,7 +268,7 @@
                                 <li class="mb-2">Roles can be assigned now or later</li>
                                 @* Was "active by default" — true but misleading. They
                                    are active AND cannot sign in until they use the invite. *@
-                                <li class="mb-0">You'll get an invite link to send them</li>
+                                <li class="mb-0">We email them an invite to set a password (and show you the link)</li>
                             </ul>
                         </div>
                     </div>

@@ -85,7 +85,22 @@ namespace MerkaiTrial.Domain.Entities
         /// 085. An email I sent to a customer could not be delivered — it
         /// bounced, was marked as spam, or the provider gave up on it.
         /// </summary>
-        EmailBounced = 10
+        EmailBounced = 10,
+
+        /// <summary>
+        /// 086. An account email to ONE person about their own sign-in: an
+        /// invite to set a password, a password reset link, or "your
+        /// password was changed". Not a notification anybody subscribes to,
+        /// so — like InvoiceSent — it is deliberately absent from
+        /// NotificationDefaults.AllInDisplayOrder: these go out whatever
+        /// someone's notification settings say, because without them a
+        /// person cannot get into their account at all.
+        ///
+        /// The worker wipes the body of these once they are sent: the body
+        /// holds a working one-time link, and a sent email has no further
+        /// use for it (OutboundMessageWorker, 086).
+        /// </summary>
+        AccountSecurity = 11
     }
 
     public class Notification

@@ -25,6 +25,10 @@
 //   INotificationDispatcher BEFORE its own SaveChangesAsync, so the
 //   notification commits in the same transaction as the change it
 //   describes. See INotificationDispatcher's header for why that matters.
+//
+// CHANGES (086b) — each request now carries a Headline for WhatsApp: the
+// deal or lead itself, without "you were assigned", which the approved
+// template already says. The bell and the email keep the full Title.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -86,7 +90,13 @@ public static class DealNotifications
             // Null actor means the system moved it — a quote was accepted
             // or an invoice was paid. "the system" is honest and stops the
             // email reading "by".
-            ActorName: actorName);
+            ActorName: actorName,
+
+            // 086b. The template says "has moved to a new stage"; the
+            // headline says which deal and where to.
+            Headline: isReopen
+                ? $"{dealTitle} reopened — now {toStageName}"
+                : $"{dealTitle} is now {toStageName}");
     }
 
     // ── Assigned ──────────────────────────────────────────────────────
@@ -126,7 +136,8 @@ public static class DealNotifications
             EntityType: "Deal",
             EntityId: dealId,
             ActorUserId: actorUserId,
-            ActorName: actorName);
+            ActorName: actorName,
+            Headline: dealTitle);                       // 086b
     }
 
     public static NotificationRequest LeadAssigned(
@@ -155,6 +166,7 @@ public static class DealNotifications
             EntityType: "Lead",
             EntityId: leadId,
             ActorUserId: actorUserId,
-            ActorName: actorName);
+            ActorName: actorName,
+            Headline: leadName);                        // 086b
     }
 }
