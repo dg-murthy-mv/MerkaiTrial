@@ -1,4 +1,4 @@
-﻿@* =====================================================================
+@* =====================================================================
    FILE: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Create.cshtml
    Replaces the existing file.
    ===================================================================== *@
@@ -31,37 +31,42 @@
 
     <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
 
-    @* ── Duplicate trial warnings ─────────────────────────────────────
-       Shown after the first submit when the check finds something. The
-       form redisplays with everything filled in; only the confirmation
-       is missing. Nothing has been created at this point. *@
-    @if (Model.DuplicateWarnings.Any())
-    {
-        <div class="alert alert-warning">
-            <h5 class="alert-heading">
-                <i class="bi bi-exclamation-triangle me-2"></i>This may be a repeat trial
-            </h5>
-            <ul class="mb-3">
-                @foreach (var w in Model.DuplicateWarnings)
-                {
-                    <li>@w</li>
-                }
-            </ul>
-            <p class="mb-3 small">
-                Nothing has been created yet. A second trial is sometimes the right answer —
-                tick below to go ahead, or change the details above.
-            </p>
-            <div class="form-check">
-                <input asp-for="Input.ConfirmDespiteWarnings" class="form-check-input" type="checkbox" />
-                <label asp-for="Input.ConfirmDespiteWarnings" class="form-check-label fw-semibold">
-                    I have reviewed these and want to create the workspace anyway
-                </label>
-            </div>
-        </div>
-    }
-
     <form method="post">
-        <input type="hidden" asp-for="Input.ConfirmDespiteWarnings" />
+        @* ── Duplicate trial warnings ─────────────────────────────────────
+           Shown after the first submit when the check finds something. The
+           form redisplays with everything filled in; only the confirmation
+           is missing. Nothing has been created at this point.
+
+           087: this block now sits INSIDE the form. It used to sit above it,
+           so ticking the box posted nothing; a hidden copy of the same field
+           inside the form posted "false" instead. Once a warning appeared the
+           workspace could never be created — every submit showed the warning
+           again. The checkbox tag helper adds its own hidden "false" at the
+           end of the form, which is all an unticked box needs. *@
+        @if (Model.DuplicateWarnings.Any())
+        {
+            <div class="alert alert-warning">
+                <h5 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle me-2"></i>This may be a repeat trial
+                </h5>
+                <ul class="mb-3">
+                    @foreach (var w in Model.DuplicateWarnings)
+                    {
+                        <li>@w</li>
+                    }
+                </ul>
+                <p class="mb-3 small">
+                    Nothing has been created yet. A second trial is sometimes the right answer —
+                    tick the box to go ahead, or change the details below.
+                </p>
+                <div class="form-check">
+                    <input asp-for="Input.ConfirmDespiteWarnings" class="form-check-input" type="checkbox" />
+                    <label asp-for="Input.ConfirmDespiteWarnings" class="form-check-label fw-semibold">
+                        I have reviewed these and want to create the workspace anyway
+                    </label>
+                </div>
+            </div>
+        }
 
         <div class="row">
             <div class="col-lg-8">

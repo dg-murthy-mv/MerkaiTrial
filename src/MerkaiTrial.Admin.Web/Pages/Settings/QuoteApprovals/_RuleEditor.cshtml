@@ -24,6 +24,17 @@
    A row whose Kind is blank is an unused spare and the server skips it.
    Three spares are always rendered, so the chain can be extended with
    JavaScript switched off.
+
+   088c — "RULE IS ON" AND "LET THE PERSON WHO ASKED SIGN" NEVER SAVED AS ON.
+   Each switch posted a hidden "false" BEFORE its checkbox, so a ticked box
+   sent "false,true". ASP.NET Core's bool binder reads the FIRST value, so
+   both always saved as false: every rule created here was switched OFF
+   (and so ignored — a rep's 15% quote went straight to the customer), and
+   self-approval could never be allowed. The hidden "false" now comes
+   AFTER the checkbox — exactly what asp-for renders, for this reason —
+   so ticked posts "true,false" (true wins) and unticked posts "false".
+   Found by the E2E test "A rep's discounted quote waits for the team
+   manager". Rules saved before this fix: Sql/088c_ReactivateApprovalRules.sql.
    ===================================================================== *@
 
 <form method="post" asp-page-handler="SaveRule" data-max-steps="@Model.MaxSteps">
@@ -57,14 +68,16 @@
 
             <div class="mb-3">
                 <div class="form-check form-switch">
-                    @* Hidden "false" first: an unticked checkbox posts nothing at
-                       all, so without this a property defaulting to TRUE could
-                       never be switched off. Checked posts "false,true" and the
-                       bool binder takes the true — the same pair asp-for emits. *@
-                    <input type="hidden" name="RuleActive" value="false" />
+                    @* 088c: checkbox FIRST, hidden "false" AFTER it. An unticked
+                       checkbox posts nothing, so the hidden field is what lets
+                       a property defaulting to TRUE be switched off; but the
+                       bool binder takes the FIRST value, so the checkbox has to
+                       come first or a ticked box saves as false. Same order
+                       asp-for renders. Do not swap them back. *@
                     <input class="form-check-input" type="checkbox" role="switch"
                            id="@($"a-{key}")" name="RuleActive" value="true"
                            checked="@(r?.IsActive ?? true)" />
+                    <input type="hidden" name="RuleActive" value="false" />
                     <label class="form-check-label small" for="@($"a-{key}")">
                         Rule is on
                     </label>
@@ -199,10 +212,11 @@
                                placeholder="Label for this step, e.g. Senior manager sign-off (optional)" />
 
                         <div class="form-check">
-                            <input type="hidden" data-field="Self" name="@($"Steps[{i}].Self")" value="false" />
+                            @* 088c: checkbox first, hidden "false" after — see RuleActive. *@
                             <input class="form-check-input" type="checkbox" data-field="Self"
                                    id="@($"self-{key}-{i}")" name="@($"Steps[{i}].Self")" value="true"
                                    checked="@(st?.AllowSelfApproval ?? false)" />
+                            <input type="hidden" data-field="Self" name="@($"Steps[{i}].Self")" value="false" />
                             <label class="form-check-label small" for="@($"self-{key}-{i}")">
                                 Let the person who asked sign this step
                             </label>

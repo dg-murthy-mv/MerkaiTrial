@@ -1,6 +1,10 @@
 @* =====================================================================
    NOTES TAB - Add and View Notes
    Location: MerkaiTrial.Admin.Web/Pages/Pipeline/_NotesTab.cshtml
+
+   090b — the author's NAME (CreatedByName). CreatedBy holds the user's id,
+   and this tab printed it where a name belongs. Old rows that stored a
+   name have no CreatedByName and show CreatedBy as before.
    ===================================================================== *@
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.DetailModel
 
@@ -51,7 +55,7 @@
                         <div class="d-flex w-100 justify-content-between align-items-start mb-2">
                             <div>
                                 <small class="text-muted">
-                                    <i class="bi bi-person me-1"></i>@note.CreatedBy
+                                    <i class="bi bi-person me-1"></i>@(note.CreatedByName ?? note.CreatedBy)
                                 </small>
                             </div>
                             <div class="d-flex align-items-center gap-2">

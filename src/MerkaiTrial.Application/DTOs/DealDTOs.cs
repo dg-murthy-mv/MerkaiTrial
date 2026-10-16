@@ -28,6 +28,9 @@
 //      construction still compiles. Set for an "Email" item, which links
 //      to the email page; null for everything else, as before.
 //
+// CHANGES (090b)
+//   ✅ DealNoteDto.CreatedByName — the author's name; CreatedBy holds an id.
+//
 // Stage values are NOT canonical here any more — PipelineStages is the
 // source of truth per tenant. DealStages below survives only as the seed
 // vocabulary and as CreateDealDto's fallback; see the note on it.
@@ -235,7 +238,15 @@ namespace MerkaiTrial.Application.DTOs
         Guid DealId,       // ✅ required — was missing in handler projections
         string Note,
         DateTime CreatedAtUtc,
-        string? CreatedBy
+        string? CreatedBy,
+        /// <summary>
+        /// 090b. The author's name. CreatedBy stores the user's ID (that is
+        /// what the deal page sends), and the Notes tab printed it as it was
+        /// — "7872dba5-9c4c-…" where a name belongs. Trailing and defaulted,
+        /// so every existing construction still compiles. Null on old rows
+        /// that hold a name in CreatedBy already; show CreatedBy then.
+        /// </summary>
+        string? CreatedByName = null
     );
 
     public class CreateDealNoteDto

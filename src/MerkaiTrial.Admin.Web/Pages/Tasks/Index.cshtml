@@ -40,18 +40,14 @@
     </form>
 </div>
 
-@if (!string.IsNullOrEmpty(Model.SuccessMessage))
+@* 090: no Success/Error banners here — _Layout renders TempData once. These
+   two blocks drew every message a second time ("Task done." twice). Only a
+   failure to load THIS page is shown here, from LoadError. *@
+@if (!string.IsNullOrEmpty(Model.LoadError))
 {
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="bi bi-check-circle me-2"></i>@Model.SuccessMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-}
-@if (!string.IsNullOrEmpty(Model.ErrorMessage))
-{
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle me-2"></i>@Model.ErrorMessage
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle"></i>
+        <span>@Model.LoadError</span>
     </div>
 }
 

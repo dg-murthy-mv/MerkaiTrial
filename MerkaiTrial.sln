@@ -12,6 +12,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MerkaiTrial.Admin.Web", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MerkaiTrial.Application", "src\MerkaiTrial.Application\MerkaiTrial.Application.csproj", "{06145CB1-4946-4346-ABC8-725FD5FDF861}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MerkaiTrial.E2E", "tests\MerkaiTrial.E2E\MerkaiTrial.E2E.csproj", "{A75598EA-297D-6F2F-5657-B864080248B5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,6 +40,10 @@ Global
 		{06145CB1-4946-4346-ABC8-725FD5FDF861}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{06145CB1-4946-4346-ABC8-725FD5FDF861}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{06145CB1-4946-4346-ABC8-725FD5FDF861}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A75598EA-297D-6F2F-5657-B864080248B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A75598EA-297D-6F2F-5657-B864080248B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A75598EA-297D-6F2F-5657-B864080248B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A75598EA-297D-6F2F-5657-B864080248B5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

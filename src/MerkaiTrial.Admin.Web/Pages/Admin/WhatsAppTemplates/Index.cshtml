@@ -13,6 +13,9 @@
    unchecked checkbox posts nothing, so a bound list of objects would
    shift every row after the one you unticked.
 
+   087: the guidance and the "Wording for Meta" text now match what
+   Meta actually approved ("This is a notification from your Merkai CRM
+   account. … : {{headline}} ({{detail}}). Sign in to view the details.").
    086b: under each row, "Wording for Meta" — the exact body to submit,
    the sample values Meta's form asks for, and a preview of the real
    message. {{headline}} is now the event's SUBJECT ("Quote QUO-0042"),
@@ -147,13 +150,13 @@
             Every template takes <strong>two variables</strong>:
             <code>{{headline}}</code> what the event is about — "Quote QUO-0042", "Priya Shah"
             (not a sentence saying what happened: the template's own text says that) — and
-            <code>{{detail}}</code> its detail. So an approved body reads
-            something like
-            <em>"A lead has been assigned to you in Merkai. {{headline}} —
-            {{detail}}. Sign in to your account to view it."</em>
+            <code>{{detail}}</code> its detail. The wording Meta approves reads
+            <em>"This is a notification from your Merkai CRM account. A lead has been
+            assigned to you: {{headline}} ({{detail}}). Sign in to view the details."</em>
+            Open <strong>Wording for Meta</strong> under any template for its exact text.
             <div class="mt-2">
-                Three rules Meta enforces when you create one, each of which
-                rejects the template outright:
+                Rules Meta enforces when you create one, each of which
+                rejects the template or turns it into Marketing:
                 <ul class="mb-0 mt-1">
                     <li>
                         <strong>Named variables only.</strong> <code>{{1}}</code>
@@ -172,6 +175,16 @@
                         blocked for people who only opted into notifications.
                         Naming the event in the fixed text — "A lead has been
                         assigned to you" — reads as an account notice and passes.
+                    </li>
+                    <li>
+                        <strong>No prices in the samples.</strong> An amount in the
+                        sample values ("THB 250,000") gets the template flagged
+                        "Category does not match" and moved to Marketing. Use the
+                        samples shown under each template.
+                    </li>
+                    <li>
+                        <strong>No header.</strong> Leave the Header field empty and
+                        put everything in the body; language English.
                     </li>
                 </ul>
             </div>
@@ -277,7 +290,7 @@
                                         </label>
                                         <input type="text" class="form-control form-control-sm"
                                                name="Previews" value="@item.BodyPreview" id="preview-@item.Id"
-                                               placeholder="… {{headline}} — {{detail}}. Sign in to your account to view it." />
+                                               placeholder="… {{headline}} ({{detail}}). Sign in to view the details." />
                                     </div>
                                 </div>
 

@@ -61,6 +61,12 @@
 //   ✅ CreateDealHandler    — sets VerticalId from CreateDealDto
 //   ✅ UpdateDealHandler    — sets VerticalId from UpdateDealDto
 //
+// CHANGES (090b — note authors)
+//   ✅ GetDealNotesHandler returns the author's NAME (DealNoteDto.
+//      CreatedByName). The deal page stores the user's id in CreatedBy, and
+//      the Notes tab printed it — "7872dba5-9c4c-…" where a name belongs.
+//      Found by the 090 notes test. Nothing else in this file changes.
+//
 // NOTIFICATIONS (039)
 //   DealStageChanged fires on all THREE stage paths, and DealAssigned on
 //   create and on an owner change. Every message is built by
@@ -1234,11 +1240,24 @@ namespace MerkaiTrial.Application.Commands.Deals
             if (!Guid.TryParse(tenantId, out var t) || !await _scope.CanSeeDealAsync(_db, t, dealId))
                 return new List<DealNoteDto>();
 
-            return await _db.DealNotes
-                .Where(n => n.DealId == dealId && n.TenantId.ToString() == tenantId && !n.IsDeleted)
+            // 090b — compared as a Guid (t), not TenantId.ToString(), so the
+            // index is used; and the author's NAME resolved in one query the
+            // way the activity list does it. CreatedBy stays the stored id.
+            var notes = await _db.DealNotes
+                .AsNoTracking()
+                .Where(n => n.DealId == dealId && n.TenantId == t && !n.IsDeleted)
                 .OrderByDescending(n => n.CreatedAtUtc)
-                .Select(n => new DealNoteDto(n.Id, n.DealId, n.Note, n.CreatedAtUtc, n.CreatedBy))
+                .Select(n => new { n.Id, n.DealId, n.Note, n.CreatedAtUtc, n.CreatedBy })
                 .ToListAsync();
+
+            var names = await MerkaiTrial.Application.Commands.Activities.ActivityReadModel.UserNamesAsync(
+                _db, t, notes.Select(n => n.CreatedBy), CancellationToken.None);
+
+            return notes
+                .Select(n => new DealNoteDto(
+                    n.Id, n.DealId, n.Note, n.CreatedAtUtc, n.CreatedBy,
+                    MerkaiTrial.Application.Commands.Activities.ActivityReadModel.Lookup(names, n.CreatedBy)))
+                .ToList();
         }
     }
 

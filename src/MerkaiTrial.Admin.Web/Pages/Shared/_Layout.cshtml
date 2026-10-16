@@ -772,8 +772,16 @@
                 left: 0;
             }
 
+            /* 087: width reset as well as margin. .lf-main's desktop rule
+               sets width: calc(100% - var(--sidebar-w)) — right for a page
+               with a 260px sidebar beside it, and this block only zeroed
+               the margin. On a 375px phone the main column stayed
+               375 - 260 = 115px wide, which is why every page was squeezed
+               into a strip on the left with the rest of the screen empty
+               (first noticed on the Dashboard). */
             .lf-main {
                 margin-left: 0;
+                width: 100%;
                 padding: 16px;
             }
 
@@ -805,6 +813,14 @@
         }
 
         /* Utility */
+
+        /* 087: pages use class="min-width-0" on flex children so long
+           names truncate instead of pushing the row wider than the
+           screen. Bootstrap has no such class, so it did nothing. */
+        .min-width-0 {
+            min-width: 0;
+        }
+
         .lf-page-title {
             font-family: var(--font-display);
             font-size: 22px;

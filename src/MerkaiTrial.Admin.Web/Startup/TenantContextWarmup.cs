@@ -42,6 +42,20 @@
 // to requests that do not need them. SETUP.md has the three lines to
 // enable it on that host if its thread pool ever becomes the problem.
 //
+// 087b — A REQUEST THE BROWSER ABANDONED WAS LOGGED AS A 500. When
+// someone clicks on before a page has finished loading (the end-to-end
+// tests do it constantly; people do it too), ASP.NET cancels
+// ctx.RequestAborted. TryWarmUpAsync passes that token to its queries,
+// so the cancellation surfaced here as a TaskCanceledException, escaped
+// the middleware, and Serilog wrote "HTTP GET /Inbox responded 500" with
+// a stack trace — an error nobody saw and nothing caused. Enough of
+// those and real 500s get lost among them.
+//
+// Now: if the browser has gone, stop quietly. There is nobody to send a
+// page to, so carrying on would only run the page's queries for nothing.
+// A cancellation while the browser is still there (which should not
+// happen) still propagates exactly as before.
+//
 // PLACEMENT. After UseMerkaiAuthPipeline() — which calls
 // UseAuthentication() and UseAuthorization() — because the TenantId
 // claim does not exist before authentication runs. Before
@@ -83,7 +97,15 @@ public static class TenantContextWarmup
             // Return value ignored on purpose. False means "nothing to
             // warm" or "could not warm", and both are fine — the sync
             // getters still work. There is no failure to handle here.
-            await tenant.TryWarmUpAsync(ctx.RequestAborted);
+            try
+            {
+                await tenant.TryWarmUpAsync(ctx.RequestAborted);
+            }
+            catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+            {
+                // 087b. The browser left before we started. Nobody to answer.
+                return;
+            }
 
             await next(ctx);
         });

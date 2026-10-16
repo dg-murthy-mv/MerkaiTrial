@@ -1,5 +1,26 @@
+// =====================================================================
+// FILE: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Create.cshtml.cs
+//
+// 087: THE NEW ADMINISTRATOR'S INVITE IS EMAILED. Every other invite has
+// been emailed since 086; this one was only shown on the Result page for
+// you to pass on by hand. Now, right after provisioning, IAccountEmails
+// issues the invite and queues the email — the same email, lifetime and
+// link shape as Settings → Users → Add person — and the Result page shows
+// that link as the backup.
+//
+// The link is built from Email:AppBaseUrl (AccountLinkBase), not from the
+// request's Host header, like every other sign-in link since 086.
+//
+// The token provisioning issued itself is left unused: its raw value is
+// never shown or stored, so nobody can ever hold it, and it expires on its
+// own after 72 hours. It is only shown if issuing the emailed invite
+// fails, so provisioning never ends with no way in.
+// =====================================================================
+
 using System.ComponentModel.DataAnnotations;
+using MerkaiTrial.Admin.Web.Pages.Account;                 // 087: AccountLinkBase
 using MerkaiTrial.Admin.Web.Services.Tenants;
+using MerkaiTrial.Application.Services.Notifications;      // 087: IAccountEmails
 using MerkaiTrial.Application.Commands.Plans;
 using MerkaiTrial.Application.Commands.Tenants;
 using MerkaiTrial.Application.DTOs;
@@ -14,17 +35,23 @@ public class CreateModel : PageModel
     private readonly ITenantProvisioningService _provisioning;
     private readonly ITenantService _tenantService;
     private readonly GetPublicPlansHandler _getPlans;
+    private readonly IAccountEmails _accountEmails;   // 087
+    private readonly IConfiguration _config;          // 087
     private readonly ILogger<CreateModel> _logger;
 
     public CreateModel(
         ITenantProvisioningService provisioning,
         ITenantService tenantService,
         GetPublicPlansHandler getPlans,
+        IAccountEmails accountEmails,
+        IConfiguration config,
         ILogger<CreateModel> logger)
     {
         _provisioning = provisioning;
         _tenantService = tenantService;
         _getPlans = getPlans;
+        _accountEmails = accountEmails;
+        _config = config;
         _logger = logger;
     }
 
@@ -140,15 +167,49 @@ public class CreateModel : PageModel
 
             var result = await _provisioning.ProvisionAsync(request, provisionedBy);
 
+            // ── 087: email the administrator their invite ────────────
+            // The workspace exists and is committed at this point, so a
+            // failure here must not read as "provisioning failed": it
+            // falls back to the provisioning token's link, not emailed.
+            var baseUrl = AccountLinkBase.Resolve(_config, Request);
+            string inviteUrl;
+            bool emailed;
+            string? emailSkipped;
+            DateTime inviteUntil;
+
+            try
+            {
+                var invite = await _accountEmails.IssueInviteAsync(
+                    result.AdminUserId, baseUrl, provisionedBy, sendEmail: true);
+
+                inviteUrl    = invite.Url;
+                emailed      = invite.EmailQueued;
+                emailSkipped = invite.EmailSkippedReason;
+                inviteUntil  = DateTime.UtcNow.Add(invite.Lifetime);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "Workspace {TenantId} was created, but emailing the administrator's invite failed",
+                    result.TenantId);
+
+                inviteUrl    = $"{baseUrl}/Account/SetPassword?token={Uri.EscapeDataString(result.InviteToken)}&purpose=Invite";
+                emailed      = false;
+                emailSkipped = "the invite email could not be created — see the log";
+                inviteUntil  = result.InviteExpiresAtUtc;
+            }
+
             // ── Hand the result to the Result page via TempData ──────
-            // NOT a query string. The raw invite token would land in
-            // Serilog's request log and the browser history, and it is a
-            // credential — anyone holding it can set the admin password.
+            // NOT a query string. The invite link would land in Serilog's
+            // request log and the browser history, and it is a credential
+            // — anyone holding it can set the admin password.
             TempData["Provision.TenantId"] = result.TenantId.ToString();
             TempData["Provision.TenantName"] = result.TenantName;
             TempData["Provision.AdminEmail"] = result.AdminEmail;
-            TempData["Provision.Token"] = result.InviteToken;
-            TempData["Provision.InviteUntil"] = result.InviteExpiresAtUtc.ToString("u");
+            TempData["Provision.InviteUrl"] = inviteUrl;
+            TempData["Provision.Emailed"] = emailed ? "1" : "0";
+            TempData["Provision.EmailSkipped"] = emailSkipped ?? "";
+            TempData["Provision.InviteUntil"] = inviteUntil.ToString("u");
             TempData["Provision.TrialUntil"] = result.TrialExpiresAtUtc?.ToString("u") ?? "";
 
             return RedirectToPage("./Result");

@@ -195,6 +195,13 @@
 // QuotesController with QuoteApprovalEngine.CanRead/CanWriteQuoteAsync —
 // the controller, not the handlers, because the customer's public link
 // uses the same status handler with no signed-in user.
+//
+// 087e — SENDING A QUOTE FAILED AT RANDOM, about 1 time in 20, with
+// "Index and length must refer to a location within the string". The
+// public link token was cut to 40 characters from a Base-64 string that
+// was sometimes shorter. Now PublicLinkTokens.New() (Common), always 40.
+// The "public link generated" log line also printed the whole link; it
+// now shows the last four characters only.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;   // 081
@@ -910,9 +917,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // ✅ When sending to customer — generate unique public link token
             if (newStatus == QuoteStatus.Sent && string.IsNullOrEmpty(quote.PublicLinkToken))
             {
-                var tokenBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
-                var token = Convert.ToBase64String(tokenBytes)
-                    .Replace("+", "").Replace("/", "").Replace("=", "")[..40];
+                // 087e: PublicLinkTokens. The old Base-64 trim came up short
+                // of 40 characters on about 1 send in 20 and threw "Index and
+                // length must refer to a location within the string".
+                var token = PublicLinkTokens.New();
 
                 quote.PublicLinkToken = token;
 
@@ -922,7 +930,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 quote.PaymentLinkUrl = $"{baseUrl}/q/{token}";
 
                 _logger.LogInformation(
-                    "Quote {QuoteId} public link generated: {Url}", quoteId, quote.PaymentLinkUrl);
+                    // 087e: the token masked. This line logged the whole
+                    // link — the one thing that lets anyone open and accept
+                    // the quote — on every send.
+                    "Quote {QuoteId} public link generated: /q/{Token}", quoteId, PublicLinkTokens.Mask(token));
             }
             var oldStatus = quote.Status;
             quote.Status = newStatus;

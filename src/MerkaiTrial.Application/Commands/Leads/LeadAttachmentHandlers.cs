@@ -9,8 +9,15 @@
 // see the lead first (RecordScopeGuards). Writes on a lead outside scope
 // → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
 // answer as for a lead that doesn't exist.
+//
+// 090b — AttachmentDto.FileUrl is AttachmentLinks.Download(id), a page that
+// checks the person, instead of the storage path nothing served (every
+// Download was a 404). The list also shows the uploader's NAME: the page
+// stores the user's id, which the list printed as it was.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Activities;    // 090b — ActivityReadModel (names)
+using MerkaiTrial.Application.Commands.Attachments;   // 090b
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services.Storage;
@@ -76,7 +83,7 @@ public class UploadLeadAttachmentHandler : ICommandHandler
         return new AttachmentDto(
              attachment.Id,
              attachment.FileName,
-             _storage.GetDownloadUrl(attachment.FileUrl),
+             AttachmentLinks.Download(attachment.Id),   // 090b
              attachment.FileSize,
              attachment.MimeType,
              attachment.CreatedAtUtc,
@@ -127,15 +134,19 @@ public class GetLeadAttachmentsHandler : ICommandHandler
                 .OrderByDescending(a => a.CreatedAtUtc)
                 .ToListAsync(ct);
 
-            // ✅ Object initializer — matches class-based AttachmentDto
+            // 090b — uploaders are stored as a user id; show the name.
+            // Older rows hold a name already and are shown as they are.
+            var names = await ActivityReadModel.UserNamesAsync(
+                _db, tenantId, rows.Select(r => r.CreatedBy), ct);
+
             return rows.Select(a => new AttachmentDto(
                 a.Id,
                 a.FileName,
-                _storage.GetDownloadUrl(a.FileUrl),
+                AttachmentLinks.Download(a.Id),   // 090b
                 a.FileSize,
                 a.MimeType,
                 a.CreatedAtUtc,
-                a.CreatedBy,
+                ActivityReadModel.Lookup(names, a.CreatedBy) ?? a.CreatedBy,   // 090b
                 a.TenantId,
                 a.EntityType,
                 a.EntityId

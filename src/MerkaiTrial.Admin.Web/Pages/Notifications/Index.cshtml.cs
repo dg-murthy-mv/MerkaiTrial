@@ -15,6 +15,16 @@
 //   Putting a module permission here would hide the bell from exactly the
 //   read-only users who most need telling that something is waiting on them.
 //
+// CHANGES (089 — messages that were never shown)
+//   "All notifications marked as read." and "Cleared everything you had
+//   already read." — and every refusal from the API — were put in
+//   TempData["Success"] / TempData["Error"]. _Layout renders only
+//   TempData["SuccessMessage"] and TempData["ErrorMessage"], and this page
+//   (rightly) renders no TempData of its own, so those sentences were
+//   never shown to anybody: the button appeared to do nothing, and a
+//   refusal looked like success. They now use the two keys the layout
+//   shows. Nothing else changes.
+//
 // THE ?open= ROUTE
 //   The bell dropdown links here with ?open={id}. That marks the item read
 //   and then redirects to whatever it points at. Doing it server-side keeps
@@ -182,7 +192,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Notifications
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
 
             return RedirectToSelf();
@@ -194,11 +204,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Notifications
             try
             {
                 await _notifications.MarkAllReadAsync();
-                TempData["Success"] = "All notifications marked as read.";
+                TempData["SuccessMessage"] = "All notifications marked as read.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
 
             return RedirectToSelf();
@@ -213,7 +223,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Notifications
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
 
             return RedirectToSelf();
@@ -225,11 +235,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Notifications
             try
             {
                 await _notifications.DismissReadAsync();
-                TempData["Success"] = "Cleared everything you had already read.";
+                TempData["SuccessMessage"] = "Cleared everything you had already read.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
 
             // Back to the first page: the list just got shorter, so whatever

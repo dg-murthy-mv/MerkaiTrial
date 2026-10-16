@@ -8,8 +8,13 @@
 // see the lead first (RecordScopeGuards). Writes on a lead outside scope
 // → KeyNotFound → 404. Lists for a lead outside scope → empty, the same
 // answer as for a lead that doesn't exist.
+//
+// 090b — GetLeadNotesHandler returns the author's NAME (CreatedByName).
+// The page stores the user's id in CreatedBy, and the Notes tab printed
+// that id where a name belongs.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Activities;   // 090b — ActivityReadModel (names)
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -107,16 +112,19 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .AsNoTracking()
                     .Where(n => n.LeadId == leadId && n.TenantId == tenantId && !n.IsDeleted)
                     .OrderByDescending(n => n.CreatedAtUtc)
-                    .Select(n => new LeadNoteDto(
-                        n.Id,
-                        n.LeadId,
-                        n.Note,
-                        n.CreatedAtUtc,
-                        n.CreatedBy
-                    ))
+                    .Select(n => new { n.Id, n.LeadId, n.Note, n.CreatedAtUtc, n.CreatedBy })
                     .ToListAsync(cancellationToken);
 
-                return notes;
+                // 090b — the author's NAME, resolved in one query the way the
+                // activity list does it. CreatedBy stays the stored id.
+                var names = await ActivityReadModel.UserNamesAsync(
+                    _context, tenantId, notes.Select(n => n.CreatedBy), cancellationToken);
+
+                return notes
+                    .Select(n => new LeadNoteDto(
+                        n.Id, n.LeadId, n.Note, n.CreatedAtUtc, n.CreatedBy,
+                        ActivityReadModel.Lookup(names, n.CreatedBy)))
+                    .ToList();
             }
             catch (Exception ex)
             {

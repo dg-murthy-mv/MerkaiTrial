@@ -9,6 +9,19 @@
 // else's overdue list, and having to open each lead to do it is what
 // makes people give up and use a spreadsheet.
 //
+// 090 — EVERY MESSAGE WAS SHOWN TWICE, AND A LOAD FAILURE ONE PAGE LATE.
+//   SuccessMessage / ErrorMessage are [TempData], which _Layout already
+//   renders as the green / red banner. The view rendered them a second
+//   time, so "Task done." appeared twice after every Done. The view's own
+//   copies are gone; the layout's banner is the one shown.
+//
+//   And "Couldn't load your tasks" was put in [TempData] ErrorMessage on a
+//   request that RENDERS the page rather than redirecting — a value set
+//   that way is kept for the NEXT request, so the person saw an empty list
+//   with no explanation, then the message on whatever page they opened
+//   next. It is LoadError now, an ordinary property the view shows on
+//   this response only. Found by the 090 task test.
+//
 // PERMISSIONS — deliberately NOT a new module in ModuleCatalog.
 //   Gated on leads.read OR deals.read, so every existing role gets it
 //   with no permission-JSON migration. Per-record enforcement still
@@ -74,8 +87,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
         public int OverdueCount => Groups.FirstOrDefault(g => g.Key == "overdue")?.Tasks.Count ?? 0;
         public int TodayCount   => Groups.FirstOrDefault(g => g.Key == "today")?.Tasks.Count ?? 0;
 
+        /// <summary>After a redirect — rendered once, by _Layout. Never by this view (090).</summary>
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
+
+        /// <summary>090. The list could not be loaded on THIS request. Not TempData — see the header.</summary>
+        public string? LoadError { get; private set; }
 
         public record TaskGroup(string Key, string Title, string BadgeClass, List<ActivityDto> Tasks);
 
@@ -108,7 +125,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load tasks");
-                ErrorMessage = "Couldn't load your tasks. Please try again.";
+                LoadError = "Couldn't load your tasks. Please try again.";   // 090: not TempData
                 Groups = new();
                 return Page();
             }

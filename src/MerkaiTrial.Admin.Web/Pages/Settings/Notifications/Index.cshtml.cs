@@ -17,6 +17,19 @@
 // control: a non-admin who guesses the URL gets a 403 turned into a plain
 // message rather than a blank screen.
 //
+// CHANGES (089 — messages that were never shown)
+//   Every message on this page — "Your notification preferences have been
+//   saved.", "Workspace defaults saved. 1 event is locked…", "Queued for
+//   another attempt.", and every refusal from the API (a WhatsApp number
+//   that could not be read, "Nothing was submitted") — was put in
+//   TempData["Success"] / TempData["Error"]. _Layout renders only
+//   TempData["SuccessMessage"] and TempData["ErrorMessage"], and the view
+//   (rightly) renders no TempData of its own. So nothing was ever shown:
+//   Save looked like it did nothing, and a refused save looked exactly
+//   like a successful one. Found by the 089 notification test, which
+//   waits for "Your notification preferences have been saved". They now
+//   use the two keys the layout shows. Nothing else changes.
+//
 // CHANGES (085 — delivery tracking)
 //   The email log now says what happened AFTER an email left: a Delivery
 //   column (Delivered / Delayed / Bounced / Marked as spam / Not
@@ -225,7 +238,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
 
             if (items.Count == 0)
             {
-                TempData["Error"] = "Nothing was submitted — please try again.";
+                TempData["ErrorMessage"] = "Nothing was submitted — please try again.";
                 return RedirectToPage(new { tab = "preferences" });
             }
 
@@ -236,16 +249,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
                 await _settings.SavePreferencesAsync(new SaveNotificationPreferencesDto(
                     items, MobileNumber, WhatsAppOptIn));
 
-                TempData["Success"] = "Your notification preferences have been saved.";
+                TempData["SuccessMessage"] = "Your notification preferences have been saved.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Could not save notification preferences");
-                TempData["Error"] = "Your preferences could not be saved just now.";
+                TempData["ErrorMessage"] = "Your preferences could not be saved just now.";
             }
 
             return RedirectToPage(new { tab = "preferences" });
@@ -270,7 +283,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
 
             if (items.Count == 0)
             {
-                TempData["Error"] = "Nothing was submitted — please try again.";
+                TempData["ErrorMessage"] = "Nothing was submitted — please try again.";
                 return RedirectToPage(new { tab = "defaults" });
             }
 
@@ -279,18 +292,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
                 await _settings.SaveDefaultsAsync(new SaveTenantNotificationDefaultsDto(items));
 
                 var locked = items.Count(i => i.IsLocked);
-                TempData["Success"] = locked > 0
+                TempData["SuccessMessage"] = locked > 0
                     ? $"Workspace defaults saved. {locked} event{(locked == 1 ? " is" : "s are")} locked — people cannot turn those off."
                     : "Workspace defaults saved.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Could not save the workspace notification defaults");
-                TempData["Error"] = "The workspace defaults could not be saved just now.";
+                TempData["ErrorMessage"] = "The workspace defaults could not be saved just now.";
             }
 
             return RedirectToPage(new { tab = "defaults" });
@@ -302,16 +315,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
             try
             {
                 await _settings.RetryAsync(id);
-                TempData["Success"] = "Queued for another attempt.";
+                TempData["SuccessMessage"] = "Queued for another attempt.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Could not retry message {Id}", id);
-                TempData["Error"] = "That message could not be retried just now.";
+                TempData["ErrorMessage"] = "That message could not be retried just now.";
             }
 
             return RedirectToPage(new { tab = "log", status = Status, skip = Skip });
@@ -323,16 +336,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Notifications
             try
             {
                 await _settings.CancelAsync(id);
-                TempData["Success"] = "That message will not be sent.";
+                TempData["SuccessMessage"] = "That message will not be sent.";
             }
             catch (InvalidOperationException ex)
             {
-                TempData["Error"] = ex.Message;
+                TempData["ErrorMessage"] = ex.Message;
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Could not cancel message {Id}", id);
-                TempData["Error"] = "That message could not be cancelled just now.";
+                TempData["ErrorMessage"] = "That message could not be cancelled just now.";
             }
 
             return RedirectToPage(new { tab = "log", status = Status, skip = Skip });

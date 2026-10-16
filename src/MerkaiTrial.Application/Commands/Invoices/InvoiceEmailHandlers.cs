@@ -81,9 +81,12 @@ namespace MerkaiTrial.Application.Commands.Invoices
             }
         }
 
-        public static string NewPublicToken()
-            => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-                   .Replace("+", "").Replace("/", "").Replace("=", "")[..40];
+        /// <summary>
+        /// 087e: PublicLinkTokens.New(). The Base-64 trim this used came up
+        /// short of 40 characters about 1 time in 20 and threw — the first
+        /// email of an invoice failed at random.
+        /// </summary>
+        public static string NewPublicToken() => PublicLinkTokens.New();
 
         public static string PdfFileName(string number)
         {

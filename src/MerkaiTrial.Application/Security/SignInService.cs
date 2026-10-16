@@ -9,6 +9,23 @@
 // (Unchanged: this class replaces DemoAuthenticationHandler as the source
 // of identity. Claims are built once, server-side, from a verified
 // password — never from a cookie or header the browser can set.)
+//
+// 087b — SIGNING IN WITH AN UNKNOWN EMAIL CRASHED (found by the
+// end-to-end tests). To make a missing account take as long as a wrong
+// password, the code checked the password against a made-up hash — but
+// that hash was not valid Base-64, so PasswordHasher threw FormatException
+// and the person got a 500 error page. Worse than ugly: a real email said
+// "Email or password is incorrect" and an unknown one crashed, which is
+// exactly the leak the timing trick was there to prevent.
+//
+//   • The stand-in hash is now a REAL hash, made once by the same
+//     PasswordService that makes every other hash, so it verifies (and
+//     fails) in the same time a real one does.
+//   • "No password set yet" (an invite not accepted) does the same
+//     stand-in check, so it is not measurably faster either.
+//   • A stored hash that cannot be read (corrupt row, hand-edited
+//     database) now counts as a wrong password and is logged, instead of
+//     taking the sign-in page down for that person.
 // =====================================================================
 
 using System.Security.Claims;
@@ -55,6 +72,13 @@ public class SignInService : ISignInService
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// 087b. A genuine hash of a random value nobody knows, made on first
+    /// use and kept for the life of the process. Checked against when
+    /// there is no real hash to check, so every "no" costs the same time.
+    /// </summary>
+    private static string? _standInHash;
+
     private readonly FlowDbContext _db;
     private readonly IPasswordService _passwords;
     private readonly IHttpContextAccessor _http;
@@ -88,7 +112,7 @@ public class SignInService : ISignInService
         if (user is null)
         {
             // Equalise timing so a missing account is not measurably faster.
-            _passwords.Verify("AQAAAAIAAYagAAAAEK5t0000000000000000000000000000000000000000000000000000==", password);
+            SpendTheSameTime(password);
             return new SignInResult(SignInOutcome.InvalidCredentials, null, generic);
         }
 
@@ -97,12 +121,27 @@ public class SignInService : ISignInService
                 "Account temporarily locked after repeated failed attempts. Try again in 15 minutes.");
 
         if (string.IsNullOrEmpty(user.PasswordHash))
+        {
+            SpendTheSameTime(password);   // 087b — as slow as a real "no"
             return new SignInResult(SignInOutcome.NoPasswordSet, null, generic);
+        }
 
         if (!user.IsActive)
             return new SignInResult(SignInOutcome.Inactive, null, generic);
 
-        var verify = _passwords.Verify(user.PasswordHash, password);
+        // 087b: an unreadable stored hash is a failed sign-in, not a crash.
+        Microsoft.AspNetCore.Identity.PasswordVerificationResult verify;
+        try
+        {
+            verify = _passwords.Verify(user.PasswordHash, password);
+        }
+        catch (FormatException ex)
+        {
+            _logger.LogError(ex,
+                "User {UserId} has a stored password hash that cannot be read. " +
+                "Sign-in refused; send them a password reset.", user.Id);
+            verify = Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed;
+        }
         if (verify == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed)
         {
             user.FailedLoginCount++;
@@ -149,6 +188,21 @@ public class SignInService : ISignInService
 
         _logger.LogInformation("Sign-in succeeded for user {UserId} in tenant {TenantId}", user.Id, user.TenantId);
         return new SignInResult(SignInOutcome.Success, user);
+    }
+
+    /// <summary>
+    /// 087b. Runs one real password check against a hash nobody has the
+    /// password for, so "no such account" and "no password set yet" take
+    /// as long as "wrong password". The result is ignored.
+    /// </summary>
+    private void SpendTheSameTime(string password)
+    {
+        // A benign race: two first requests may both make one; either is
+        // a valid hash, and the last one written wins.
+        _standInHash ??= _passwords.Hash(Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"));
+
+        try { _passwords.Verify(_standInHash, password); }
+        catch (FormatException) { /* cannot happen with our own hash; never let it reach the user */ }
     }
 
     public async Task SignOutAsync() => await _http.HttpContext!.SignOutAsync(Scheme);

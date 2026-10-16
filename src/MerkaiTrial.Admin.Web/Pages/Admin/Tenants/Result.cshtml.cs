@@ -1,8 +1,13 @@
-using System.ComponentModel.DataAnnotations;
-using MerkaiTrial.Admin.Web.Services.Tenants;
-using MerkaiTrial.Application.Commands.Plans;
-using MerkaiTrial.Application.Commands.Tenants;
-using MerkaiTrial.Application.DTOs;
+// =====================================================================
+// FILE: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Result.cshtml.cs
+//
+// 087: the invite link now arrives READY-MADE from Create (issued and
+// emailed by IAccountEmails), with whether the email was queued. This page
+// no longer builds the link from the raw token and the request's Host
+// header — sign-in links come from Email:AppBaseUrl since 086.
+// =====================================================================
+
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -18,18 +23,29 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
         public DateTime? InviteExpiresUtc { get; private set; }
         public DateTime? TrialExpiresUtc { get; private set; }
 
+        /// <summary>087. The invite email was queued for the administrator.</summary>
+        public bool InviteEmailed { get; private set; }
+
+        /// <summary>087. Why it wasn't, when it wasn't.</summary>
+        public string? EmailSkippedReason { get; private set; }
+
         public IActionResult OnGet()
         {
-            var token = TempData["Provision.Token"] as string;
+            var inviteUrl = TempData["Provision.InviteUrl"] as string;
 
-            // Direct navigation or a refresh � TempData is read-once, so
+            // Direct navigation or a refresh — TempData is read-once, so
             // there is nothing to show and nothing to recover.
-            if (string.IsNullOrEmpty(token))
+            if (string.IsNullOrEmpty(inviteUrl))
             {
                 TempData["Error"] = "That provisioning result is no longer available. "
-                                  + "If the invite link was not copied, issue a password reset for the workspace administrator.";
+                                  + "If the invite didn't arrive, open the administrator in Admin → Users "
+                                  + "and use Send a new invite.";
                 return RedirectToPage("./Index");
             }
+
+            InviteUrl = inviteUrl;
+            InviteEmailed = TempData["Provision.Emailed"] as string == "1";
+            EmailSkippedReason = TempData["Provision.EmailSkipped"] as string is { Length: > 0 } why ? why : null;
 
             TenantName = TempData["Provision.TenantName"] as string ?? "";
             AdminEmail = TempData["Provision.AdminEmail"] as string ?? "";
@@ -37,16 +53,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
             if (Guid.TryParse(TempData["Provision.TenantId"] as string, out var id))
                 TenantId = id;
 
-            if (DateTime.TryParse(TempData["Provision.InviteUntil"] as string, out var inv))
+            // Written with "u" (UTC, invariant). Read back the same way so
+            // the time shown is UTC whatever the server's culture or zone.
+            if (DateTime.TryParse(TempData["Provision.InviteUntil"] as string, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var inv))
                 InviteExpiresUtc = inv;
 
-            if (DateTime.TryParse(TempData["Provision.TrialUntil"] as string, out var tr))
+            if (DateTime.TryParse(TempData["Provision.TrialUntil"] as string, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var tr))
                 TrialExpiresUtc = tr;
-
-            // Built from the current request so it works on localhost and in
-            // Azure without configuration.
-            InviteUrl = $"{Request.Scheme}://{Request.Host}/Account/SetPassword"
-                      + $"?token={Uri.EscapeDataString(token)}&purpose=Invite";
 
             return Page();
         }

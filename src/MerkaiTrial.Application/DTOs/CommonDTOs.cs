@@ -18,6 +18,9 @@
 // send null and behave exactly as before. A dictionary means "these are
 // the values"; a key with an empty value clears that field; an absent
 // key is left alone.
+//
+// 090b — LeadNoteDto.CreatedByName: the author's name. CreatedBy holds the
+// user's id, which the Notes tab printed as it was.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -315,7 +318,13 @@ namespace MerkaiTrial.Application.DTOs
         Guid LeadId,
         string Note,
         DateTime CreatedAtUtc,
-        string? CreatedBy
+        string? CreatedBy,
+        /// <summary>
+        /// 090b. The author's name — CreatedBy stores the user's id. Trailing
+        /// and defaulted, so every existing construction still compiles.
+        /// Null on old rows that hold a name already; show CreatedBy then.
+        /// </summary>
+        string? CreatedByName = null
     );
 
     // ========== LEAD ACTIVITIES ==========

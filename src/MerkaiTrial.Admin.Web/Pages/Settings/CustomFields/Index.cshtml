@@ -37,6 +37,19 @@
 
    082 — the Products tab shows "Prints" too: those fields print under the
    product's line on quotes and invoices.
+
+   089b — THE "COPY TO" CHOICES COULD NEVER BE PICKED ON THE ADD FORM.
+   The script re-enables the options matching the type picked, but skipped
+   any option carrying data-cf-taken — and every option carried it:
+   <option> is handled by a tag helper, and for those Razor writes
+   data-cf-taken="" when the value is null rather than dropping the
+   attribute. So after choosing Number or Dropdown, the matching contact
+   and deal fields stayed greyed out, the browser sent nothing for them,
+   and the field was saved with no mapping. Only a Text lead field (the
+   type the form opens on) could be mapped when it was added. The script
+   now checks for the value "true". Found by the 089 custom field test,
+   whose trace showed the form posting no Input.MapToContactFieldId or
+   Input.MapToDealFieldId at all.
    ===================================================================== *@
 
 <style>
@@ -570,7 +583,13 @@
                         if (!t) return;
                         var mismatch = t !== type;
                         opt.hidden = mismatch;
-                        if (!opt.hasAttribute('data-cf-taken')) opt.disabled = mismatch;
+                        // 089b: compare the VALUE, not whether the attribute
+                        // exists. <option> is a tag-helper element, so Razor
+                        // renders data-cf-taken="" for a null value instead of
+                        // leaving the attribute out — hasAttribute() was true
+                        // for every option, and a matching field could never
+                        // be picked on the Add form after changing the type.
+                        if (opt.getAttribute('data-cf-taken') !== 'true') opt.disabled = mismatch;
                     });
                     var picked = sel.options[sel.selectedIndex];
                     if (picked && picked.hidden) sel.value = '';

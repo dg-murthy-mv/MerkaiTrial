@@ -5,8 +5,17 @@
 // Uses polymorphic Attachments table (EntityType="Deal", EntityId=dealId).
 // Storage is abstracted behind IFileStorageService — swap Local→Azure
 // in Program.cs only.
+//
+// 090b — THE LINK IS A PAGE, NOT A PATH. AttachmentDto.FileUrl was the
+// storage path (/uploads/<workspace>/deal/<year>/<file>), which nothing
+// served: every Download answered 404. It is now
+// AttachmentLinks.Download(id) — /Attachments/Download/{id} on Admin.Web,
+// which fetches the file through GET api/attachments/{id}/download with
+// the signed-in person's own permissions. The stored FileUrl is unchanged
+// and still what storage reads and deletes.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Attachments;   // 090b
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Storage;
@@ -45,7 +54,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             return rows.Select(a => new AttachmentDto(
                     a.Id,
                     a.FileName,
-                    _storage.GetDownloadUrl(a.FileUrl),
+                    AttachmentLinks.Download(a.Id),   // 090b
                     a.FileSize,
                     a.MimeType,
                     a.CreatedAtUtc,
@@ -130,7 +139,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             return new AttachmentDto(
                  attachment.Id,
                  attachment.FileName,
-                 _storage.GetDownloadUrl(attachment.FileUrl),
+                 AttachmentLinks.Download(attachment.Id),   // 090b
                  attachment.FileSize,
                  attachment.MimeType,
                  attachment.CreatedAtUtc,

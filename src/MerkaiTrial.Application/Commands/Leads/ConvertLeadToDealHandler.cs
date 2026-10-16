@@ -27,6 +27,17 @@
 //   3. The LeadConverted audit row records how many values were copied,
 //      and a contact CREATED here gets its own ContactCreated row (078b),
 //      as the deal already got DealCreated.
+//
+// 088b — THE DEAL NOW CARRIES ITS COMPANY
+//   The company was found or created and linked to the CONTACT, but the
+//   deal itself was saved with CompanyId = null. Every deal query joins
+//   Companies on Deal.CompanyId, so a converted deal showed no company in
+//   its header, its overview, the deals list, or a search by company
+//   name — found by the E2E test "Converting a lead creates its contact
+//   and company once". The deal now gets the lead's company, or, when
+//   the lead named none, the company its contact already belongs to.
+//   Sql/088b_BackfillConvertedDealCompanies.sql repairs deals converted
+//   before this fix.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;     // 079
@@ -247,6 +258,18 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 // ── STEP 4: CREATE DEAL ───────────────────────────────────────
 
+                // 088b — the deal's own company. The lead's, when it named
+                // one (the lead is what this deal is about); otherwise
+                // whatever company the reused contact is already in.
+                var dealCompanyId = companyId;
+                if (!dealCompanyId.HasValue)
+                {
+                    dealCompanyId = await _db.Contacts
+                        .Where(c => c.Id == contactId && !c.IsDeleted)
+                        .Select(c => c.CompanyId)
+                        .FirstOrDefaultAsync();
+                }
+
                 var stages = await _stages.GetAsync(dto.TenantId);
                 var chosen = stages.ResolveOrDefault(dto.Stage)
                     ?? throw new InvalidOperationException(
@@ -265,6 +288,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     Id = Guid.NewGuid(),
                     TenantId = dto.TenantId,
                     ContactId = contactId,
+                    CompanyId = dealCompanyId,                       // 088b
                     LeadId = dto.LeadId,
                     Title = dto.DealTitle,
                     Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),   // 079 — note 2
@@ -338,6 +362,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                         stage = deal.Stage,
                         value = deal.ExpectedValue,
                         currency = deal.Currency,
+                        companyId = deal.CompanyId,                  // 088b
                         fromLeadId = lead.Id
                     });
 

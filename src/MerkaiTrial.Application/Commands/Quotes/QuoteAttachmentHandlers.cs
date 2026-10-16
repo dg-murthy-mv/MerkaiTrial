@@ -2,8 +2,14 @@
 // QuoteAttachmentHandlers.cs
 // Location: MerkaiTrial.Application/Commands/Quotes/QuoteAttachmentHandlers.cs
 // Uses polymorphic Attachments table (EntityType="Quote", EntityId=quoteId)
+//
+// 090b — AttachmentDto.FileUrl is AttachmentLinks.Download(id), a page that
+// checks the person, instead of the storage path nothing served (every
+// Download was a 404). See DealAttachmentHandlers.cs and
+// AttachmentDownloadHandler.cs.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Attachments;   // 090b
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Storage;
@@ -42,7 +48,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             return rows.Select(a => new AttachmentDto(
                  a.Id,
                  a.FileName,
-                 _storage.GetDownloadUrl(a.FileUrl),
+                 AttachmentLinks.Download(a.Id),   // 090b
                  a.FileSize,
                  a.MimeType,
                  a.CreatedAtUtc,
@@ -119,7 +125,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             return new AttachmentDto(
                  attachment.Id,
                  attachment.FileName,
-                 _storage.GetDownloadUrl(attachment.FileUrl),
+                 AttachmentLinks.Download(attachment.Id),   // 090b
                  attachment.FileSize,
                  attachment.MimeType,
                  attachment.CreatedAtUtc,

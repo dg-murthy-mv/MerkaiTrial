@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    087: end-to-end tests. They drive a real browser (Chromium, through
+    Playwright) against Merkai running on this machine, the way a person
+    would: sign in, add a lead, send a quote, accept it as the customer,
+    invoice it, record the payment.
+
+    Deliberately NO project references. The tests only see what a browser
+    sees, plus a direct connection to the test database for the two things
+    a browser cannot do: set a known super admin password, and read a reset
+    link out of the outbox (no email is sent during a test run).
+
+    Run them with run-e2e.ps1, which starts the two apps against the test
+    database first. See SETUP.md (round 087).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>MerkaiTrial.E2E</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.47.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <!-- PasswordHasher only, the same one Merkai's PasswordService uses. -->
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="8.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="NUnit.Framework" />
+    <Using Include="Microsoft.Playwright" />
+  </ItemGroup>
+
+</Project>

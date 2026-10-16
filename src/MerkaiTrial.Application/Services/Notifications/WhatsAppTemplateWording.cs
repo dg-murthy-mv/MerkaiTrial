@@ -2,27 +2,35 @@
 // WhatsAppTemplateWording.cs
 // Location: MerkaiTrial.Application/Services/Notifications/WhatsAppTemplateWording.cs
 //
-// NEW FILE (086b). The wording to submit to Meta for each notification
-// event, with sample values and a preview of what the person will read —
-// shown on /Admin/WhatsAppTemplates so nobody has to remember the rules.
+// The wording to submit to Meta for each notification event, with sample
+// values and a preview of what the person will read. Shown on
+// /Admin/WhatsAppTemplates, so nobody has to remember the rules.
 //
-// THE SHAPE, for every event:
+// 087 — UPDATED TO THE WORDING META ACTUALLY APPROVED. The 086b shape
+// ("A deal has been assigned to you in Merkai. {{headline}} — {{detail}}.
+// Sign in to your account to view it.") was refused in WhatsApp Manager.
+// What passed, for every event, is:
 //
-//     {fixed sentence naming the event} {{headline}} — {{detail}}. Sign in to your account to view it.
+//     This is a notification from your Merkai CRM account. {event sentence}:
+//     {{headline}} ({{detail}}). Sign in to view the details.
 //
-//   • The fixed sentence names the event, which is what gets the template
-//     classified as Utility rather than Marketing (round 048).
-//   • {{headline}} is the event's SUBJECT ("Quote QUO-0042") — NOT a
-//     sentence saying what happened, because the fixed text already did
+//   • The opening sentence says it is an account notification. Together
+//     with the event sentence, that keeps the category Utility rather than
+//     Marketing.
+//   • {{headline}} is the event's SUBJECT ("Quote QUO-0042"), not a
+//     sentence saying what happened; the event sentence already says that
 //     (086b; NotificationRequest.Headline).
-//   • Text on both sides of the variables — Meta rejects a body that
-//     starts or ends with one.
+//   • There is text on both sides of the variables. Meta rejects a body
+//     that starts or ends with one.
+//   • The SAMPLES carry no prices. Amounts in the sample values were what
+//     triggered "Category does not match" (Marketing). What Merkai really
+//     sends in {{detail}} can still contain an amount; Meta judges the
+//     template, not each message.
 //
-// These are the same fixed sentences round 048 put in the reference
-// column, so a template already approved with that wording needs NO
-// re-approval: only what Merkai puts in {{headline}} changed.
+// Templates already approved with the wording you typed need nothing: the
+// only thing that has to match exactly is the template NAME in Merkai.
 //
-// Reference only. Nothing here is sent — Meta sends its own approved copy.
+// Reference only. Nothing here is sent; Meta sends its own approved copy.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -45,60 +53,64 @@ public sealed record WhatsAppWording(
 
 public static class WhatsAppTemplateWording
 {
-    private const string Tail = " {{headline}} — {{detail}}. Sign in to your account to view it.";
+    private const string Opening = "This is a notification from your Merkai CRM account. ";
+    private const string Tail = ": {{headline}} ({{detail}}). Sign in to view the details.";
+
+    /// <summary>The approved shape around one event sentence.</summary>
+    public static string BodyFor(string eventSentence) => Opening + eventSentence + Tail;
 
     public static WhatsAppWording? For(NotificationEventType eventType) => eventType switch
     {
         NotificationEventType.LeadAssigned => new(
             "lead_assigned_v1",
-            "A lead has been assigned to you in Merkai." + Tail,
-            "Priya Shah", "Acme Ltd · INR 95,000.00"),
+            BodyFor("A lead has been assigned to you"),
+            "Priya Shah", "Acme Ltd"),
 
         NotificationEventType.DealAssigned => new(
             "deal_assigned_v1",
-            "A deal has been assigned to you in Merkai." + Tail,
-            "Acme office fit-out", "Proposal · THB 250,000.00"),
+            BodyFor("A deal has been assigned to you"),
+            "Acme office fit-out", "Proposal stage"),
 
         NotificationEventType.DealStageChanged => new(
             "deal_stage_changed_v1",
-            "A deal in your Merkai account has moved to a new stage." + Tail,
-            "Acme office fit-out is now Negotiation", "From Proposal"),
+            BodyFor("A deal has moved to a new stage"),
+            "Acme office fit-out", "now Negotiation, from Proposal"),
 
         NotificationEventType.QuoteSent => new(
             "quote_sent_v1",
-            "A quote has been sent from your Merkai account." + Tail,
-            "Quote QUO-0042", "Acme office fit-out — THB 250,000.00"),
+            BodyFor("A quote has been sent to a customer"),
+            "Quote QUO-0042", "Acme office fit-out"),
 
         NotificationEventType.QuoteAccepted => new(
             "quote_accepted_v1",
-            "A quote in your Merkai account has been accepted." + Tail,
-            "Quote QUO-0042", "Acme office fit-out — THB 250,000.00"),
+            BodyFor("A customer has accepted a quote"),
+            "Quote QUO-0042", "Acme office fit-out"),
 
         NotificationEventType.QuoteRejected => new(
             "quote_rejected_v1",
-            "A quote in your Merkai account has been declined." + Tail,
-            "Quote QUO-0042", "Acme office fit-out — THB 250,000.00"),
+            BodyFor("A customer has declined a quote"),
+            "Quote QUO-0042", "Acme office fit-out"),
 
         NotificationEventType.QuoteApprovalRequested => new(
             "quote_approval_requested_v1",
-            "A quote in your Merkai account needs your approval." + Tail,
-            "Quote QUO-0042", "Somchai Wiriya is asking you to approve THB 250,000.00"),
+            BodyFor("A quote is waiting for your approval"),
+            "Quote QUO-0042", "requested by Somchai Wiriya"),
 
         NotificationEventType.QuoteApprovalDecided => new(
             "quote_approval_decided_v1",
-            "An approval request in your Merkai account has been decided." + Tail,
-            "Quote QUO-0042 approved — ready to send", "Nattaporn Srisai approved it"),
+            BodyFor("Your approval request has been decided"),
+            "Quote QUO-0042 approved", "by Nattaporn Srisai"),
 
         NotificationEventType.CustomerEmailReceived => new(
             "customer_email_received_v1",
-            "A customer email has been filed on one of your records in Merkai." + Tail,
-            "Email from priya@acme.com filed on your record", "Re: Quote QUO-0042",
-            "Optional. Email already tells people about this; WhatsApp for every customer email can get noisy."),
+            BodyFor("A customer email has been filed on one of your records"),
+            "Email from priya@acme.com", "Re: Quote QUO-0042",
+            "Optional. Email already tells people about this; a WhatsApp for every customer email can get noisy."),
 
         NotificationEventType.EmailBounced => new(
             "email_bounced_v1",
-            "An email you sent from Merkai could not be delivered." + Tail,
-            "Invoice INV-0003 to priya@acme.com bounced", "The recipient's mailbox does not exist",
+            BodyFor("An email you sent could not be delivered"),
+            "Invoice INV-0003 to priya@acme.com", "the mailbox does not exist",
             "Optional. Useful if reps rarely read email."),
 
         _ => null

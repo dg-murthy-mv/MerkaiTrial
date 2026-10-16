@@ -34,6 +34,15 @@
 //      the kanban still worked. The 020 migration seeded the four
 //      existing tenants; nothing seeded a new one.
 //
+//   7. (087b) NO LEAD STATUSES. Found by the end-to-end tests: a
+//      workspace provisioned here could not add a single lead —
+//      CreateLeadHandler needs a starting status and refused with "This
+//      workspace has no lead statuses set up." Lead statuses became tenant
+//      data in round 025 (DefaultLeadStatuses), and this service was never
+//      taught to seed them. It does now, in the same transaction as
+//      everything else. Workspaces already created without them are fixed
+//      by Sql/087b_SeedMissingLeadStatuses.sql.
+//
 // EVERYTHING RUNS IN ONE TRANSACTION. A half-provisioned tenant is worse
 // than a failed one — MadeeVision's missing TenantSettings row is exactly
 // that failure, already sitting in your database.
@@ -291,6 +300,7 @@ public class TenantProvisioningService : ITenantProvisioningService
             SeedTaxRates(tenant.Id, country, now, provisionedBy);
             SeedLeadSourcesAndChannels(tenant.Id, country?.Code, now, provisionedBy);
             SeedPipelineStagesAndProcess(tenant.Id, now, provisionedBy);
+            SeedLeadStatuses(tenant.Id, now, provisionedBy);          // 087b
 
             // ── 5. ADMIN USER ────────────────────────────────────────
             // No password. They set one through the invite link, which
@@ -479,6 +489,36 @@ public class TenantProvisioningService : ITenantProvisioningService
         _db.ProcessTransitions.AddRange(
             ProcessTemplates.BuildRows(
                 tenantId, stages, ProcessTemplates.ForNewTenants, now, by));
+    }
+
+    /// <summary>
+    /// 087b. The lead statuses a new workspace starts with — New, Working,
+    /// Qualified, Unqualified and the system Converted status — from
+    /// DefaultLeadStatuses, the same list round 025's migration used for
+    /// the existing tenants.
+    ///
+    /// Without these CreateLeadHandler has no starting status and refuses
+    /// every lead, and ConvertLeadToDealHandler has no Qualified category
+    /// to check against. Colour is left NULL on purpose: StatusColors
+    /// resolves it at display time, exactly as for every other tenant.
+    /// </summary>
+    private void SeedLeadStatuses(Guid tenantId, DateTime now, string by)
+    {
+        _db.LeadStatusDefinitions.AddRange(DefaultLeadStatuses.All.Select(s => new LeadStatusDefinition
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            Key = s.Key,
+            Name = s.Name,
+            SortOrder = s.SortOrder,
+            Score = s.Score,
+            Category = s.Category,
+            IsActive = true,
+            IsDefault = s.IsDefault,
+            IsSystem = s.IsSystem,
+            CreatedAtUtc = now,
+            CreatedBy = by,
+        }));
     }
 
     /// <summary>

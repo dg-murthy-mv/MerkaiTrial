@@ -1,4 +1,7 @@
-﻿using System.Net;
+// 090b — GetFileAsync (attachment downloads): the file with its name and
+// type, null on 404/403. Nothing else in this file changes.
+
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -333,6 +336,34 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             var response = await _http.GetAsync(url);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsByteArrayAsync();
+        }
+
+        /// <summary>
+        /// 090b. See IApiService.GetFileAsync. 404 and 403 come back as null —
+        /// the download page turns that into "not found" without saying which,
+        /// exactly as the API intends.
+        /// </summary>
+        public async Task<ApiFile?> GetFileAsync(string url)
+        {
+            using var response = await _http.GetAsync(url);
+
+            if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
+                return null;
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                ThrowForFailure(response, body, "GET", url);
+            }
+
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var type  = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+
+            var disposition = response.Content.Headers.ContentDisposition;
+            var name = disposition?.FileNameStar ?? disposition?.FileName?.Trim('"');
+            if (string.IsNullOrWhiteSpace(name)) name = "attachment";
+
+            return new ApiFile(bytes, type, name);
         }
     }
 }

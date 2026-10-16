@@ -9,18 +9,64 @@
 }
 
 <style>
+    /* 087: the header bleeds to the edges of the content area with
+       negative margins, which must equal _Layout's .lf-main padding at
+       every width — 24px/28px on desktop, 16px up to 991px, 12px on
+       phones. They didn't: this used 767px and 16px, so between 768 and
+       991px the header stuck out 12px past the right edge, and under
+       576px it stuck out 4px each side — both give the page a sideways
+       scroll on a phone or tablet.
+       The negative TOP margin only applies when the header is the first
+       block on the page. When a trial banner or an alert sits above it,
+       pulling the header up 24px covered the bottom of that banner. */
     .dash-header {
         background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
         color: white;
         padding: 1.75rem 1.5rem;
-        margin: -24px -28px 24px;
+        margin: 0 -28px 24px;
         border-radius: 0 0 16px 16px;
     }
 
-    @@media (max-width: 767px) {
+    .lf-main > div.dash-header:first-of-type {
+        margin-top: -24px;
+    }
+
+    .dash-period {
+        min-width: 190px;
+    }
+
+    @@media (max-width: 991.98px) {
         .dash-header {
-            margin: -16px -16px 16px;
+            margin: 0 -16px 16px;
             border-radius: 0;
+        }
+
+        .lf-main > div.dash-header:first-of-type {
+            margin-top: -16px;
+        }
+    }
+
+    @@media (max-width: 575.98px) {
+        .dash-header {
+            margin: 0 -12px 12px;
+            padding: 1.25rem 1rem;
+        }
+
+        .lf-main > div.dash-header:first-of-type {
+            margin-top: -12px;
+        }
+
+        /* Period picker on its own full-width line; the plan badge and
+           Add Lead sit below it. A fixed 190px select next to them was
+           what pushed the header wider than the phone. */
+        .dash-actions,
+        .dash-actions #periodForm {
+            width: 100%;
+        }
+
+        .dash-period {
+            min-width: 0;
+            flex: 1 1 auto;
         }
     }
 
@@ -305,7 +351,7 @@
             </p>
         </div>
 
-        <div class="d-flex align-items-center gap-2 flex-wrap">
+        <div class="dash-actions d-flex align-items-center gap-2 flex-wrap">
 
             @* ── 043: the financial period ────────────────────────────
                A GET form, so the chosen period lives in the URL and the
@@ -314,8 +360,7 @@
             <form method="get" class="d-flex align-items-center gap-2" id="periodForm">
                 <label for="periodSelect" class="visually-hidden">Period</label>
                 <select name="period" id="periodSelect"
-                        class="form-select form-select-sm"
-                        style="min-width:190px;"
+                        class="form-select form-select-sm dash-period"
                         asp-items="Model.PeriodOptions"
                         title="@(string.IsNullOrEmpty(Model.FiscalYearDescription)
                                   ? "Financial period"
