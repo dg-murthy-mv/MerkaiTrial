@@ -1,5 +1,19 @@
 // 090b — GetFileAsync (attachment downloads): the file with its name and
 // type, null on 404/403. Nothing else in this file changes.
+//
+// 091 — PostMultipartAsync (every attachment upload: leads, deals, quotes)
+//   told people things like "Response status code does not indicate
+//   success: 400 (Bad Request)" and "Error while copying content to a
+//   stream." Now:
+//     • A file over 10 MB is refused HERE, before it is sent:
+//       "'huge.pdf' is 11.0 MB. Files can be up to 10 MB." The API stops
+//       reading an upload that big partway through, so nothing it could
+//       say would ever reach the page.
+//     • A refusal from the API (wrong type of file, record not found…)
+//       comes back as its own sentence, through ThrowForFailure like every
+//       other call here — an InvalidOperationException, which all three
+//       pages already show word for word.
+//     • An upload cut off on the way says so, instead of naming a stream.
 
 using System.Net;
 using System.Net.Http;
@@ -209,12 +223,63 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
         }
 
+        /// <summary>
+        /// 091. The API's own upload limit (RequestSizeLimit on every
+        /// attachment endpoint, and LocalFileStorageService). Checked here
+        /// first because an upload over it is cut off by the API mid-way,
+        /// with no reason the page could show.
+        /// </summary>
+        public const long MaxUploadBytes = 10 * 1024 * 1024;
+
         public async Task<T> PostMultipartAsync<T>(string url, MultipartFormDataContent content)
         {
-            var response = await _http.PostAsync(url, content);
-            response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<T>(json, _json)!;
+            // 091: too big → say so before sending a byte. ContentLength is
+            // known for an uploaded file (its stream can seek); when it is
+            // not, the API's limit still applies and the catch below
+            // explains what happened.
+            foreach (var part in content)
+            {
+                var size = part.Headers.ContentLength;
+                if (size is > MaxUploadBytes)
+                {
+                    var name = part.Headers.ContentDisposition?.FileNameStar
+                            ?? part.Headers.ContentDisposition?.FileName?.Trim('"')
+                            ?? "That file";
+                    var mb = (size.Value / (1024d * 1024d)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+                    _logger.LogInformation("Upload to {Url} refused before sending: {Bytes} bytes", url, size.Value);
+                    throw new InvalidOperationException(
+                        $"'{name}' is {mb} MB. Files can be up to {MaxUploadBytes / (1024 * 1024)} MB.");
+                }
+            }
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _http.PostAsync(url, content);
+            }
+            catch (HttpRequestException ex)
+            {
+                // The connection was closed under the upload — in practice
+                // the API's size limit when the length was not known above.
+                _logger.LogWarning(ex, "Upload to {Url} was cut off", url);
+                throw new InvalidOperationException(
+                    "The upload was cut off before it finished. Files can be up to " +
+                    $"{MaxUploadBytes / (1024 * 1024)} MB — if this one is smaller, please try again.");
+            }
+
+            using (response)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+                    throw new InvalidOperationException(
+                        $"That file is too big. Files can be up to {MaxUploadBytes / (1024 * 1024)} MB.");
+
+                if (!response.IsSuccessStatusCode)
+                    ThrowForFailure(response, body, "POST", url);
+
+                return Deserialize<T>(body, "POST", url);
+            }
         }
         public async Task<T> PutAsync<T>(string url, object? payload)
         {

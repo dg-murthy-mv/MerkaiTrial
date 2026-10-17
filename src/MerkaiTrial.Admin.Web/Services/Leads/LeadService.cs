@@ -35,6 +35,13 @@
 //     must be a valid date." } arrives (IApiService converts it), and a
 //     person leaving a required field empty is not a system fault. The
 //     page shows the sentence.
+//
+// 092 — ExportAsync takes the custom field filters too (optional, last),
+//   sent as repeated ?cf= exactly like the list, so the Export button
+//   downloads the rows on screen. It downloads through GetFileAsync, so a
+//   refusal from the API (the row ceiling) arrives as an
+//   InvalidOperationException carrying the API's sentence, and is NOT
+//   logged as an error — the page shows it.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -101,7 +108,8 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
         Task<List<TimelineItemDto>> GetTimelineAsync(Guid tenantId, Guid leadId);
 
         // Export/Import
-        Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo);
+        Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 092
        // Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy);
 
         // Attachments
@@ -561,7 +569,8 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
 
         // ==================== EXPORT/IMPORT ====================
 
-        public async Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo)
+        public async Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null)
         {
             try
             {
@@ -572,6 +581,10 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                     queryParams.Add($"status={Uri.EscapeDataString(status)}");          // 079 — was raw
                 if (!string.IsNullOrWhiteSpace(assignedTo))
                     queryParams.Add($"assignedTo={Uri.EscapeDataString(assignedTo)}");
+
+                // 092 — the list's custom filters, escaped as a whole like GetPaginatedAsync.
+                foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
+                    queryParams.Add($"cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}");
 
                 var query = string.Join("&", queryParams);
 
@@ -589,7 +602,22 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                 // GetBytesAsync returns the body untouched, which is what
                 // IApiService added it for and what DownloadPdfAsync in
                 // QuoteService has always used.
-                return await _api.GetBytesAsync($"/api/leads/export?{query}");
+                //
+                // 092: GetFileAsync rather than GetBytesAsync. GetBytesAsync
+                // throws a bare HttpRequestException on any failure, so the
+                // API's "That list has 61,000 leads…" reached the page as
+                // "Response status code does not indicate success: 400".
+                // GetFileAsync turns a 400 { error } into an
+                // InvalidOperationException carrying the sentence, and a
+                // 403/404 into null.
+                var file = await _api.GetFileAsync($"/api/leads/export?{query}");
+                if (file is null)
+                    throw new InvalidOperationException("You don't have access to export leads.");
+                return file.Content;
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // 092 — the API's own sentence; the page shows it
             }
             catch (Exception ex)
             {

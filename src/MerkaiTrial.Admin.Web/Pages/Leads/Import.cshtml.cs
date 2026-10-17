@@ -11,6 +11,18 @@
 //
 // The parsed file stays on the API side, referenced by SessionId, so a
 // 2,000-row sheet is never round-tripped through the browser.
+//
+// 092 — CUSTOM FIELDS, AND A MAPPING SCREEN THAT SURVIVES AN ERROR
+//   • The mapping screen lists the workspace's Lead custom fields under
+//     the built-in ones, from the upload result (ImportUploadResult.Fields).
+//     Their keys ("cf_…") ride in Mapping like any other field.
+//   • ★ A FAILED CHECK LEFT A BLANK PAGE. When "Check the file" failed,
+//     the page went back to step 2 — but step 2 only drew itself when
+//     there was an upload result, and there is none on that request. The
+//     person saw the error and nothing under it, and had to start again.
+//     Step 2 now redraws from the posted headers and mapping, with the
+//     field list fetched on its own (GetFieldsAsync); only the sample
+//     values are missing, and the page says so.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Leads;
@@ -47,7 +59,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         public ImportPreview? Preview { get; private set; }
         public ImportResult? Result { get; private set; }
 
-        public IReadOnlyList<ImportField> Fields => ImportFields.All;
+        /// <summary>092. Built-in fields, then the workspace's custom Lead fields.</summary>
+        public List<ImportField> Fields { get; private set; } = ImportFields.All.ToList();
+
+        public IEnumerable<ImportField> BuiltInFields => Fields.Where(f => !f.IsCustom);
+        public IEnumerable<ImportField> CustomFieldTargets => Fields.Where(f => f.IsCustom);
 
         // ── Form ──────────────────────────────────────────────────────
         [BindProperty] public IFormFile? File { get; set; }
@@ -101,8 +117,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 TotalRows = Upload.TotalRows;
                 Headers   = Upload.Headers.ToList();
 
+                // 092 — custom fields too, when the API sent them.
+                Fields = Upload.Fields?.ToList() ?? ImportFields.All.ToList();
+
                 // Start from the auto-detected mapping; -1 means "don't import".
-                Mapping = ImportFields.All.ToDictionary(
+                Mapping = Fields.ToDictionary(
                     f => f.Key,
                     f => Upload.SuggestedMapping.TryGetValue(f.Key, out var col) ? col : -1);
 
@@ -135,6 +154,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 _logger.LogWarning(ex, "Import preview failed");
                 ErrorMessage = Explain(ex, "Couldn't check that file.");
+                await LoadFieldsAsync();      // 092 — redraw step 2, not a blank page
                 Step = 2;
                 return Page();
             }
@@ -170,13 +190,31 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
                 // Back to preview so the mapping isn't lost.
                 try { Preview = await _import.PreviewAsync(BuildRequest()); Step = 3; }
-                catch { Step = 2; }
+                catch { await LoadFieldsAsync(); Step = 2; }
 
                 return Page();
             }
         }
 
         // =================================================================
+
+        /// <summary>
+        /// 092. The field list for a redrawn mapping screen. Falls back to
+        /// the built-in fields; any custom mapping the person had chosen is
+        /// still in Mapping, and still posted.
+        /// </summary>
+        private async Task LoadFieldsAsync()
+        {
+            try
+            {
+                Fields = await _import.GetFieldsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Import field list could not be loaded");
+                Fields = ImportFields.All.ToList();
+            }
+        }
 
         private ImportRequest BuildRequest() => new(
             SessionId: SessionId,
@@ -194,6 +232,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
         public string ColumnName(int index) =>
             index >= 0 && index < Headers.Count ? Headers[index] : "—";
+
+        /// <summary>092. Up to three sample values from a column, or "" when there is no upload to read them from.</summary>
+        public string SamplesFor(int column)
+        {
+            if (column < 0 || Upload is null || Upload.SampleRows.Count == 0) return string.Empty;
+            return string.Join(" · ", Upload.SampleRows
+                .Where(r => column < r.Count && !string.IsNullOrWhiteSpace(r[column]))
+                .Select(r => r[column])
+                .Take(3));
+        }
 
         public string VerdictBadge(string verdict) => verdict switch
         {

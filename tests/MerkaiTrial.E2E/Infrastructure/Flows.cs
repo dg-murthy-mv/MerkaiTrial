@@ -12,6 +12,14 @@
 // workspace, so a Thailand lead is THB with a Thai phone number. The
 // original SalesPipelineTests keeps its own inline copy; it passes and
 // is left alone.
+//
+// 092:
+//   • CreateLeadAsync takes an optional beforeSave step — the moment to
+//     fill in the lead's custom fields, which are on Add lead now.
+//   • OpenLeadAsync waits with Ui.WaitForPageAsync: the lead's page needs
+//     to be usable, not fully loaded, and if it is slow the failure says
+//     the SERVER was slow (one 089 run lost 20 seconds here and reported
+//     it as a missing page).
 // =====================================================================
 
 using System.Globalization;
@@ -45,8 +53,9 @@ public static class Flows
     /// the list and opens it. Returns the lead's id; the page is left on
     /// its detail screen.
     /// </summary>
+    /// <param name="beforeSave">092. Runs on the filled form just before Create Lead — custom fields.</param>
     public static async Task<Guid> CreateLeadAsync(IPage page, string fullName, string email, decimal value,
-        TestTenant? workspace = null, string? companyName = null)
+        TestTenant? workspace = null, string? companyName = null, Func<IPage, Task>? beforeSave = null)
     {
         var country  = workspace?.Country ?? "India";
         var currency = workspace?.Currency ?? "INR";
@@ -66,6 +75,8 @@ public static class Flows
         await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_ChannelId"));
 
         await page.Locator("#Input_EstimatedValue").FillAsync(value.ToString(CultureInfo.InvariantCulture));
+
+        if (beforeSave is not null) await beforeSave(page);     // 092
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Create Lead" }).ClickAsync();
 
@@ -92,8 +103,8 @@ public static class Flows
         await page.GotoAsync("/Leads?SearchTerm=" + Uri.EscapeDataString(fullName));
         var link = page.Locator(".lx-table a", new PageLocatorOptions { HasText = fullName }).First;
         await link.ClickAsync();
-        await page.WaitForURLAsync(u => u.Contains("/Leads/Detail", StringComparison.OrdinalIgnoreCase),
-            new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+        await Ui.WaitForPageAsync(page, u => u.Contains("/Leads/Detail", StringComparison.OrdinalIgnoreCase),
+            $"The lead \"{fullName}\"");      // 092
         return Ui.IdFromUrl(page.Url);
     }
 

@@ -33,6 +33,8 @@
 // 085 — links for invoices and for a sent email (EmailBounced), and the
 // quote link fixed: /Quotes/Detail takes ?id=, so /Quotes/Detail/{id}
 // opened a 404 from every quote notification email.
+// 091 — "Activity" (a task on a contact or a company) links to the Tasks
+// page, button "Open my tasks". Kept identical to NotificationDto.Url.
 // =====================================================================
 
 using System.Net;
@@ -181,6 +183,7 @@ Change them under Settings &rarr; Notifications.
         "InboundEmail" => "Read the email",     // 083
         "Invoice" => "Open the invoice",        // 085
         "OutboundMessage" => "See what happened", // 085
+        "Activity" => "Open my tasks",          // 091
         _       => "Open Merkai"
     };
 
@@ -201,6 +204,7 @@ Change them under Settings &rarr; Notifications.
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
             ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
             ("OutboundMessage", { } id) => $"/Emails/Sent/{id}", // 085
+            ("Activity", { })   => "/Tasks",                      // 091
             _                 => "/"
         };
 

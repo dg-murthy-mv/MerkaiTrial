@@ -3,6 +3,10 @@
 // Location: MerkaiTrial.Admin.Web/Services/Leads/LeadImportService.cs
 //
 // NEW FILE. Same pattern as ActivityService — thin wrapper over ApiService.
+//
+// 092 — GetFieldsAsync: every field a column can be mapped onto (built-in,
+// then the workspace's custom Lead fields), for a mapping screen redrawn
+// after a failed check.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -15,6 +19,7 @@ public interface ILeadImportService
     Task<ImportUploadResult> UploadAsync(IFormFile file, CancellationToken ct = default);
     Task<ImportPreview> PreviewAsync(ImportRequest request, CancellationToken ct = default);
     Task<ImportResult> CommitAsync(ImportRequest request, CancellationToken ct = default);
+    Task<List<ImportField>> GetFieldsAsync(CancellationToken ct = default);     // 092
 }
 
 public class LeadImportService : ILeadImportService
@@ -38,4 +43,7 @@ public class LeadImportService : ILeadImportService
 
     public Task<ImportResult> CommitAsync(ImportRequest request, CancellationToken ct = default)
         => _api.PostAsync<ImportResult>("api/leads/import/commit", request);
+
+    public Task<List<ImportField>> GetFieldsAsync(CancellationToken ct = default)
+        => _api.GetAsync<List<ImportField>>("api/leads/import/fields");
 }

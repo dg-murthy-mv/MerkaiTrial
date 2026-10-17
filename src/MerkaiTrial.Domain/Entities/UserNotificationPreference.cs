@@ -30,6 +30,10 @@
 // does not become the noise the rule below guards against.
 // InvoiceSent is the customer email's own EventType and is not a setting.
 //
+// 091 — TaskAssigned: in the app, NOT by email, by default — the rule
+// below. A rep can turn the email on for themselves, and an admin can
+// make it the workspace's default, like any other event.
+//
 // WHY EMAIL DEFAULTS ARE MOSTLY OFF
 //   The fastest way to make people ignore your product's email is to send
 //   them one for everything. Only the two approval events default to
@@ -134,7 +138,8 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.EmailBounced,              // 085
             NotificationEventType.DealStageChanged,
             NotificationEventType.DealAssigned,
-            NotificationEventType.LeadAssigned
+            NotificationEventType.LeadAssigned,
+            NotificationEventType.TaskAssigned               // 091
         };
 
         /// <summary>The label on the settings page. Written for a salesperson.</summary>
@@ -151,6 +156,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.CustomerEmailReceived  => "A customer emails about one of my records",
             NotificationEventType.EmailBounced           => "An email I sent to a customer couldn't be delivered",
             NotificationEventType.InvoiceSent            => "An invoice is emailed to a customer",
+            NotificationEventType.TaskAssigned           => "A task is assigned to me",   // 091
             _                                             => eventType.ToString()
         };
 

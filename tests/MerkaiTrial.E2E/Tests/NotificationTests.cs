@@ -28,6 +28,19 @@
 //        • the next lead assigned to her reaches her bell.
 //      The workspace default is put back afterwards, pass or fail.
 //
+//   3. (091) Giving someone a task tells them:
+//        • the rep's Settings → Notifications lists "A task is assigned to
+//          me", on in the app;
+//        • the admin gives the rep a task on the rep's lead, due tomorrow
+//          11:00: exactly one notification, for the rep, none for the
+//          admin, and no email (email is off for it by default);
+//        • on the rep's Notifications page it reads "You were given a
+//          task", with the due time in the workspace's time and the lead's
+//          name; clicking it in the bell opens the lead;
+//        • a task the admin gives HIMSELF tells nobody;
+//        • on the Tasks page the admin gives the rep's task to Sana: she
+//          gets exactly one notification, and the rep gets no second one.
+//
 // Notifications are read from the database only to COUNT them exactly
 // (one, not "at least one") and to check read/unread. Everything a person
 // would do — choosing settings, opening the bell, clicking — is done
@@ -47,6 +60,10 @@ public class NotificationTests : E2ETest
     /// settings rows post, and the number stored on a queued email.</summary>
     private const string LeadAssigned = "LeadAssigned";
     private const int LeadAssignedNumber = 6;
+
+    /// <summary>091. NotificationEventType.TaskAssigned.</summary>
+    private const string TaskAssigned = "TaskAssigned";
+    private const int TaskAssignedNumber = 12;
 
     private static TestTenant D => World.D ?? throw new InvalidOperationException("Workspace D was not built.");
 
@@ -233,8 +250,168 @@ public class NotificationTests : E2ETest
     }
 
     // =================================================================
+    // 3. Given a task → told (091)
+    // =================================================================
+
+    [Test]
+    public async Task Giving_someone_a_task_tells_them_and_handing_it_on_tells_the_next_person()
+    {
+        var rep = D["rep"];
+        var rep2 = D["rep2"];
+        var repPage = await SignedInAsync(rep);
+
+        await Step("The rep's notification settings list task assignments, on in the app", async () =>
+        {
+            await repPage.GotoAsync("/Settings/Notifications?tab=preferences");
+            var row = await EventRowAsync(repPage, "EventTypes", TaskAssigned, @"task[^.]*assign|assign[^.]*task");
+            await Assertions.Expect(row).ToContainTextAsync("A task is assigned to me");
+            await Assertions.Expect(row.Locator("input[type=checkbox][name=InAppOn]")).ToBeCheckedAsync();
+        });
+
+        var admin = await SignedInAsync(D.Admin);
+        var leadName = World.Unique("Kavya Tasks");
+
+        var leadId = await Step("The admin adds a lead and assigns it to the rep", async () =>
+        {
+            var id = await Flows.CreateLeadAsync(admin, leadName,
+                World.EmailFor("D", $"kavya{Random.Shared.Next(1000, 9999)}"), 240000m, D);
+            await AssignLeadAsync(admin, id, rep);
+            return id;
+        });
+
+        var subject = $"Call back about the site visit {World.Stamp}";
+        var local = DateTime.UtcNow + D.UtcOffset;
+        var due = local.Date.AddDays(1).AddHours(11);
+        var since = DateTime.UtcNow.AddSeconds(-5);
+
+        await Step("The admin gives the rep a task on that lead, due tomorrow 11:00", () =>
+            AddLeadTaskAsync(admin, leadId, subject, due, rep, "Task created and assigned"));
+
+        await Step("Exactly one notification was written, for the rep, none for the admin, and no email", async () =>
+        {
+            Assert.That(await Db.CountNotificationsAsync(rep.Email, subject), Is.EqualTo(1),
+                "Notifications for the rep about this task.");
+            Assert.That(await Db.CountNotificationsAsync(D.Admin.Email, subject), Is.EqualTo(0),
+                "The admin was notified about a task he gave someone else.");
+            Assert.That(await Db.CountQueuedEmailsAsync(rep.Email, TaskAssignedNumber, since, waitSeconds: 3), Is.EqualTo(0),
+                "Task assignments are not emailed by default, but an email was queued.");
+        });
+
+        await Step("The rep's Notifications page says who gave it, when it is due, and on which lead", async () =>
+        {
+            await repPage.GotoAsync("/Notifications");
+            var item = repPage.Locator(".nf-item", new() { HasText = subject });
+            await Assertions.Expect(item).ToHaveCountAsync(1);
+            await Assertions.Expect(item).ToContainTextAsync("You were given a task");
+            await Assertions.Expect(item).ToContainTextAsync(D.Admin.FullName);
+
+            var dueText = "Due " + due.ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
+            var shown = Regex.Replace(await item.InnerTextAsync(), @"\s+", " ");
+            Assert.That(shown, Does.Contain(dueText),
+                $"Expected \"{dueText}\" (the workspace's time), but the notification reads: \"{shown}\"");
+            Assert.That(shown, Does.Contain(leadName), $"The notification does not name the lead: \"{shown}\"");
+        });
+
+        await Step("Clicking it in the bell opens the lead", async () =>
+        {
+            var row = await OpenBellRowAsync(repPage, subject);
+            await row.ClickAsync();
+            await repPage.WaitForURLAsync(u => u.Contains($"/Leads/Detail/{leadId}", StringComparison.OrdinalIgnoreCase),
+                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+        });
+
+        await Step("A task the admin gives himself tells nobody", async () =>
+        {
+            var mine = $"Check the drawings {World.Stamp}";
+            await AddLeadTaskAsync(admin, leadId, mine, due, assignee: null, "Task created");
+            Assert.That(await Db.CountNotificationsAsync(D.Admin.Email, mine), Is.EqualTo(0),
+                "The admin was notified about a task he gave himself.");
+            Assert.That(await Db.CountNotificationsAsync(rep.Email, mine), Is.EqualTo(0),
+                "The rep was notified about the admin's own task.");
+        });
+
+        await Step("On the Tasks page the admin gives the rep's task to Sana: she is told once, the rep not again", async () =>
+        {
+            await admin.GotoAsync("/Tasks?scope=all");
+            var row = admin.Locator(".list-group-item", new() { HasText = subject });
+            try
+            {
+                await Assertions.Expect(row).ToHaveCountAsync(1);
+            }
+            catch (Exception ex) when (ex is not AssertionException)
+            {
+                throw new AssertionException(
+                    "The task is not on the admin's Tasks page (everyone's tasks). The page says: " +
+                    Regex.Replace(await admin.Locator("main").First.InnerTextAsync(), @"\s+", " "));
+            }
+
+            await row.Locator("a[title=Reassign]").ClickAsync();
+            row = admin.Locator(".list-group-item", new() { HasText = subject });
+            await Ui.SelectByTextAsync(row.Locator("select[name=NewAssigneeId]"), rep2.FullName);
+            await row.GetByRole(AriaRole.Button, new() { Name = "Save" }).ClickAsync();
+            await Ui.ExpectSuccessAsync(admin, "Task reassigned");
+
+            Assert.That(await Db.CountNotificationsAsync(rep2.Email, subject), Is.EqualTo(1),
+                "Sana was not told the task is now hers.");
+            Assert.That(await Db.CountNotificationsAsync(rep.Email, subject), Is.EqualTo(1),
+                "The rep got a second notification when the task was handed on.");
+        });
+    }
+
+    // =================================================================
     // Helpers
     // =================================================================
+
+    /// <summary>
+    /// 091. One event's row on Settings → Notifications: by the event type
+    /// its hidden input posts, or by its label.
+    /// </summary>
+    private static async Task<ILocator> EventRowAsync(IPage page, string hiddenName, string eventType, string labelPattern)
+    {
+        var byValue = page.Locator($".ns-row:has(input[type=hidden][name={hiddenName}][value='{eventType}'])");
+        if (await byValue.CountAsync() == 1) return byValue;
+
+        var byLabel = page.Locator(".ns-row", new() { HasTextRegex = new Regex(labelPattern, RegexOptions.IgnoreCase) });
+        if (await byLabel.CountAsync() == 1) return byLabel;
+
+        var rows = await page.Locator(".ns-row .ns-row-label").AllInnerTextsAsync();
+        throw new AssertionException(
+            $"Settings → Notifications ({Ui.PathOf(page.Url)}) has no single '{eventType}' row. " +
+            (rows.Count == 0
+                ? await Ui.DescribePageProblemsAsync(page)
+                : "Rows: " + string.Join(" | ", rows.Select(r => Regex.Replace(r, @"\s+", " ").Trim()))));
+    }
+
+    /// <summary>
+    /// 091. The lead's Tasks tab → Create Task, for
+    /// <paramref name="assignee"/> — null is "Me", the form's blank first
+    /// option — due <paramref name="dueLocal"/> (workspace time). Waits for
+    /// <paramref name="success"/>.
+    /// </summary>
+    private static async Task AddLeadTaskAsync(IPage page, Guid leadId, string subject, DateTime dueLocal,
+        TestUser? assignee, string success)
+    {
+        await page.GotoAsync($"/Leads/Detail/{leadId}");
+        await page.Locator("#tasks-tab").ClickAsync();
+        await Assertions.Expect(page.Locator("#tasks")).ToBeVisibleAsync();
+
+        await page.Locator("#TaskInput_ActivityType").SelectOptionAsync("Task");
+        await page.Locator("#TaskInput_Subject").FillAsync(subject);
+        await page.Locator("#TaskInput_DueDate").FillAsync(dueLocal.ToString("yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture));
+
+        var assign = page.Locator("#TaskInput_AssignedToUserId");
+        if (assignee is null)
+        {
+            if (await assign.CountAsync() > 0) await assign.SelectOptionAsync("");
+        }
+        else
+        {
+            await Ui.SelectByTextAsync(assign, assignee.FullName);
+        }
+
+        await page.Locator("#tasks form button[type=submit]").First.ClickAsync();
+        await Ui.ExpectSuccessAsync(page, success);
+    }
 
     /// <summary>
     /// The "lead assigned" row on Settings → Notifications: by the event

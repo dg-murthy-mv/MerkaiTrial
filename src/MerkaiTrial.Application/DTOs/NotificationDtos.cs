@@ -22,6 +22,12 @@
 //   (/Emails/Sent/{id}), which says why it bounced and links to the quote
 //   or invoice. ALSO FIXED: quote links were /Quotes/Detail/{id}, but that
 //   page takes ?id= (plain @page) — every quote notification opened a 404.
+//
+// 091 — TaskAssigned: a checkbox icon. A task on a lead or a deal links to
+//   that record (EntityType "Lead" / "Deal", as before). A task on a
+//   contact or a company points at the task itself (EntityType
+//   "Activity") and opens the person's Tasks page, where it is listed with
+//   a link to its record. NotificationEmailTemplate.BuildUrl has the same.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -56,6 +62,7 @@ namespace MerkaiTrial.Application.DTOs
             nameof(NotificationEventType.DealAssigned)            => "bi-briefcase",
             nameof(NotificationEventType.CustomerEmailReceived)   => "bi-envelope-open",   // 083
             nameof(NotificationEventType.EmailBounced)            => "bi-envelope-x",      // 085
+            nameof(NotificationEventType.TaskAssigned)            => "bi-check2-square",   // 091
             _                                                     => "bi-bell"
         };
 
@@ -83,6 +90,7 @@ namespace MerkaiTrial.Application.DTOs
             ("Lead",  { } id) => $"/Leads/Detail/{id}",
             ("InboundEmail", { } id) => $"/Emails/View/{id}",   // 083
             ("OutboundMessage", { } id) => $"/Emails/Sent/{id}", // 085
+            ("Activity", { })   => "/Tasks",                      // 091
             _                 => null
         };
     }

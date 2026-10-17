@@ -50,6 +50,19 @@
 //   source lead's — the same set as the deal's Emails tab. Dismissed and
 //   deleted emails are left out.
 //
+// 091 — "A TASK IS ASSIGNED TO ME" NOTIFICATIONS
+//   Giving a colleague a task now tells them: in the bell, and by email or
+//   WhatsApp if they chose that (Settings → Notifications). Three paths:
+//     • CreateActivityHandler   — a task made for someone else
+//     • ReassignActivityHandler — "Give to" on the Tasks page
+//     • UpdateActivityHandler   — Assign to changed on the edit form
+//   All three go through TaskAssignmentNotifier, BEFORE SaveChangesAsync,
+//   so the notification commits with the task. Nobody is told about a task
+//   they gave themselves, a logged activity, or a task already done.
+//   A failure to build the notification is logged and never fails the task.
+//   ActivityReadModel.EntityNamesAsync is no longer private, so the
+//   notification can name the lead or deal.
+//
 // GLOBAL QUERY FILTERS: nothing here uses IgnoreQueryFilters. Every query
 // also carries an explicit TenantId, which the filter agrees with, so the
 // two layers never contradict each other.
@@ -59,6 +72,7 @@ using DocumentFormat.OpenXml.Presentation;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
+using MerkaiTrial.Application.Services.Notifications;   // 091
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -245,7 +259,8 @@ namespace MerkaiTrial.Application.Commands.Activities
         public static string? Lookup(Dictionary<string, string> names, string? key) =>
             key != null && names.TryGetValue(key, out var name) ? name : null;
 
-        private static async Task<Dictionary<(string, Guid), string>> EntityNamesAsync(
+        // 091: public (the class is internal) — TaskAssignmentNotifier names the record.
+        public static async Task<Dictionary<(string, Guid), string>> EntityNamesAsync(
             FlowDbContext db, Guid tenantId, IReadOnlyCollection<Activity> rows, CancellationToken ct)
         {
             var result = new Dictionary<(string, Guid), string>();
@@ -307,6 +322,70 @@ namespace MerkaiTrial.Application.Commands.Activities
     }
 
     // =====================================================================
+    // 091 — TELL THE PERSON A TASK WAS GIVEN TO
+    // =====================================================================
+
+    internal static class TaskAssignmentNotifier
+    {
+        /// <summary>
+        /// Adds the "you were given a task" notification for the task's
+        /// current assignee. Call it BEFORE SaveChangesAsync. Does nothing
+        /// for a logged activity, a completed task, or a task the actor
+        /// gave themselves. Never throws — the task matters more than the
+        /// notification about it.
+        /// </summary>
+        public static async Task NotifyAsync(
+            FlowDbContext db,
+            INotificationDispatcher dispatcher,
+            ILogger logger,
+            Activity task,
+            string? actorUserId,
+            CancellationToken ct)
+        {
+            if (!task.IsTask || task.IsCompleted) return;
+            if (string.IsNullOrWhiteSpace(task.AssignedToUserId)) return;
+            if (string.Equals(task.AssignedToUserId, actorUserId, StringComparison.OrdinalIgnoreCase)) return;
+
+            try
+            {
+                var names = await ActivityReadModel.UserNamesAsync(db, task.TenantId, new[] { actorUserId }, ct);
+                var records = await ActivityReadModel.EntityNamesAsync(db, task.TenantId, new[] { task }, ct);
+
+                // Tenants is not tenant-filtered (it IS the tenant).
+                var timeZone = await db.Tenants.AsNoTracking()
+                    .Where(t => t.Id == task.TenantId)
+                    .Select(t => t.Timezone)
+                    .FirstOrDefaultAsync(ct);
+
+                var request = TaskNotifications.Assigned(
+                    tenantId:     task.TenantId,
+                    activityId:   task.Id,
+                    subject:      task.Subject,
+                    activityType: task.ActivityType,
+                    recordType:   task.EntityType,
+                    recordId:     task.EntityId,
+                    recordName:   records.GetValueOrDefault((task.EntityType, task.EntityId)),
+                    dueUtc:       task.DueDate,
+                    timeZoneId:   timeZone,
+                    actorUserId:  Guid.TryParse(actorUserId, out var actor) ? actor : null,
+                    actorName:    ActivityReadModel.Lookup(names, actorUserId));
+
+                var written = await dispatcher.AddForOwnerAsync(request, task.AssignedToUserId, ct);
+
+                logger.LogInformation(
+                    "Task {ActivityId} assigned to {UserId}: {Count} in-app notification(s) added",
+                    task.Id, task.AssignedToUserId, written);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex,
+                    "Could not notify {UserId} about task {ActivityId}; the task is saved without it",
+                    task.AssignedToUserId, task.Id);
+            }
+        }
+    }
+
+    // =====================================================================
     // ASSIGNEES — who a task can be given to
     // =====================================================================
 
@@ -353,14 +432,17 @@ namespace MerkaiTrial.Application.Commands.Activities
         private readonly ILogger<CreateActivityHandler> _logger;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
+        private readonly INotificationDispatcher _notifications;   // 091
         public CreateActivityHandler(
             FlowDbContext db,
             ILeadScoringService scoring,
             ILogger<CreateActivityHandler> logger,
             IAuditService audit,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            INotificationDispatcher notifications)
         {
             _db      = db;
+            _notifications = notifications;
             _scope   = scope;
             _scoring = scoring;
             _logger  = logger;
@@ -438,6 +520,10 @@ namespace MerkaiTrial.Application.Commands.Activities
             };
 
             _db.Activities.Add(activity);
+
+            // 091: a task made for someone else tells them — in the same save.
+            await TaskAssignmentNotifier.NotifyAsync(_db, _notifications, _logger, activity, dto.CreatedBy, ct);
+
             await _db.SaveChangesAsync(ct);
             await _audit.WriteAsync(
             activity.IsTask ? AuditAction.ActivityCreated : AuditAction.ActivityCreated,
@@ -708,12 +794,21 @@ namespace MerkaiTrial.Application.Commands.Activities
         private readonly FlowDbContext _db;
         private readonly ILeadScoringService _scoring;
         private readonly IAuditService _audit;
+        private readonly INotificationDispatcher _notifications;      // 091
+        private readonly ILogger<UpdateActivityHandler> _logger;      // 091
 
-        public UpdateActivityHandler(FlowDbContext db, ILeadScoringService scoring, IAuditService audit)
+        public UpdateActivityHandler(
+            FlowDbContext db,
+            ILeadScoringService scoring,
+            IAuditService audit,
+            INotificationDispatcher notifications,
+            ILogger<UpdateActivityHandler> logger)
         {
             _db = db;
             _scoring = scoring;
             _audit = audit;
+            _notifications = notifications;
+            _logger = logger;
         }
 
         public async Task Handle(UpdateActivityDto dto, CancellationToken ct = default)
@@ -786,6 +881,9 @@ namespace MerkaiTrial.Application.Commands.Activities
             a.UpdatedAtUtc = now;
             a.UpdatedBy    = dto.UpdatedBy;
 
+            // 091: handed to someone new on the edit form → tell them.
+            if (!string.Equals(oldAssignee, a.AssignedToUserId, StringComparison.OrdinalIgnoreCase))
+                await TaskAssignmentNotifier.NotifyAsync(_db, _notifications, _logger, a, dto.UpdatedBy, ct);
 
             await _db.SaveChangesAsync(ct);
 
@@ -823,11 +921,16 @@ namespace MerkaiTrial.Application.Commands.Activities
     {
         private readonly FlowDbContext _db;
         private readonly ILogger<ReassignActivityHandler> _logger;
+        private readonly INotificationDispatcher _notifications;      // 091
 
-        public ReassignActivityHandler(FlowDbContext db, ILogger<ReassignActivityHandler> logger)
+        public ReassignActivityHandler(
+            FlowDbContext db,
+            ILogger<ReassignActivityHandler> logger,
+            INotificationDispatcher notifications)
         {
             _db = db;
             _logger = logger;
+            _notifications = notifications;
         }
 
         public async Task Handle(ReassignActivityDto dto, CancellationToken ct = default)
@@ -845,9 +948,16 @@ namespace MerkaiTrial.Application.Commands.Activities
             if (!await ActivityGuards.IsTenantUserAsync(_db, dto.TenantId, dto.AssignedToUserId, ct))
                 throw new InvalidOperationException("The assignee is not an active user in this workspace.");
 
+            var previous = a.AssignedToUserId;                  // 091
+
             a.AssignedToUserId = dto.AssignedToUserId.Trim();
             a.UpdatedAtUtc     = DateTime.UtcNow;
             a.UpdatedBy        = dto.UpdatedBy;
+
+            // 091: "Give to" on the Tasks page → tell the new person. Saving
+            // the same person again tells nobody.
+            if (!string.Equals(previous, a.AssignedToUserId, StringComparison.OrdinalIgnoreCase))
+                await TaskAssignmentNotifier.NotifyAsync(_db, _notifications, _logger, a, dto.UpdatedBy, ct);
 
             await _db.SaveChangesAsync(ct);
 

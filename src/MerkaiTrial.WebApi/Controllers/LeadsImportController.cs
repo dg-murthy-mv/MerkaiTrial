@@ -7,6 +7,16 @@
 //
 // Tenant and user come from the signed-in principal, never the query
 // string. Import creates records, so it needs leads.create.
+//
+// 092 — CUSTOM FIELDS
+//   • Upload is async now (it reads the workspace's custom fields to
+//     suggest columns for them) and returns the full field list.
+//   • GET fields: the same list on its own, for a mapping screen redrawn
+//     after a failed check.
+//   • Preview and Commit stamp the request with the WORKSPACE's date
+//     format, the way they already stamp the tenant and the importer — a
+//     date format sent by the browser is ignored. Custom date columns are
+//     read in that format first.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Leads.Import;
@@ -25,6 +35,7 @@ public class LeadsImportController : ControllerBase
     private readonly UploadLeadImportHandler _upload;
     private readonly PreviewLeadImportHandler _preview;
     private readonly CommitLeadImportHandler _commit;
+    private readonly GetLeadImportFieldsHandler _fields;     // 092
     private readonly ICurrentUserService _currentUser;
     private readonly ICurrentTenantService _tenant;
     private readonly IAuthorizationService _auth;
@@ -34,6 +45,7 @@ public class LeadsImportController : ControllerBase
         UploadLeadImportHandler upload,
         PreviewLeadImportHandler preview,
         CommitLeadImportHandler commit,
+        GetLeadImportFieldsHandler fields,
         ICurrentUserService currentUser,
         ICurrentTenantService tenant,
         IAuthorizationService auth,
@@ -42,6 +54,7 @@ public class LeadsImportController : ControllerBase
         _upload      = upload;
         _preview     = preview;
         _commit      = commit;
+        _fields      = fields;
         _currentUser = currentUser;
         _tenant      = tenant;
         _auth        = auth;
@@ -63,9 +76,19 @@ public class LeadsImportController : ControllerBase
             using var ms = new MemoryStream();
             await file.CopyToAsync(ms, ct);
 
-            var result = _upload.Handle(tenantId, ms.ToArray(), file.FileName);
+            var result = await _upload.Handle(tenantId, ms.ToArray(), file.FileName, _tenant.GetDateFormat(), ct);
             return Ok(result);
         }, "uploading import file");
+
+    /// <summary>092 — every field a column can be mapped onto: built-in, then custom.</summary>
+    [HttpGet("fields")]
+    public Task<IActionResult> Fields(CancellationToken ct)
+        => Run(async () =>
+        {
+            var tenantId = _currentUser.GetCurrentTenantId();
+            var result = await _fields.Handle(tenantId, _tenant.GetDateFormat(), ct);
+            return Ok(result);
+        }, "listing import fields");
 
     /// <summary>Step 2 — validate every row and report what will happen.</summary>
     [HttpPost("preview")]
@@ -74,7 +97,7 @@ public class LeadsImportController : ControllerBase
         {
             var tenantId = _currentUser.GetCurrentTenantId();
             var result = await _preview.Handle(
-                request with { TenantId = tenantId },
+                request with { TenantId = tenantId, DateFormat = _tenant.GetDateFormat() },
                 _tenant.GetCurrencyCode(), _tenant.GetCountryCode(), ct);
             return Ok(result);
         }, "previewing import");
@@ -88,7 +111,7 @@ public class LeadsImportController : ControllerBase
             var userId   = _currentUser.GetCurrentUserId().ToString();
 
             var result = await _commit.Handle(
-                request with { TenantId = tenantId, ImportedBy = userId },
+                request with { TenantId = tenantId, ImportedBy = userId, DateFormat = _tenant.GetDateFormat() },
                 _tenant.GetCurrencyCode(), _tenant.GetCountryCode(), ct);
             return Ok(result);
         }, "committing import");

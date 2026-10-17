@@ -4,6 +4,28 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// 092 — CUSTOM FIELDS
+//   • UPLOAD suggests a column for each active Lead custom field (by exact
+//     label) and returns the full field list — built-in, then custom — so
+//     the mapping screen shows them. It needs the database for that now,
+//     so it is async. GetLeadImportFieldsHandler returns the same list on
+//     its own, for a mapping screen redrawn after an error.
+//   • RESOLVE reads every mapped custom column through ImportCellReader
+//     (ImportCustomFields.cs), which ends in CustomFieldValueRules — the
+//     same rules the forms and the API apply. An unreadable value is
+//     dropped with a message on the row; a REQUIRED field that is mapped
+//     but empty or unreadable on a row that would create a lead makes that
+//     row "won't import", in the Review step, before anything is written.
+//     A required field with no column matched gets ONE notice and the
+//     leads import without it, as every import did before 092.
+//   • COMMIT writes the values in the same transaction as the leads. On a
+//     new lead, every value read. On "Fill in the blanks", only fields the
+//     existing lead has no value for — the same never-overwrite rule as
+//     its email and phone.
+//   • COMMIT IS AUDITED. AuditAction.LeadsImported has existed since the
+//     importer was written and was never used. A failed audit write is
+//     logged and never undoes the import.
+//
 // THIS PASS: lead statuses are the tenant's, not an enum.
 //   Status resolution moved INTO ImportContext, alongside the other
 //   lookups (sources, channels, countries, owners). That matters because
@@ -48,6 +70,7 @@
 
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -114,19 +137,33 @@ public class ImportSessionStore : IImportSessionStore
 public class UploadLeadImportHandler : ICommandHandler
 {
     private readonly IImportSessionStore _sessions;
+    private readonly FlowDbContext _db;
 
-    public UploadLeadImportHandler(IImportSessionStore sessions) => _sessions = sessions;
+    public UploadLeadImportHandler(IImportSessionStore sessions, FlowDbContext db)
+    {
+        _sessions = sessions;
+        _db = db;
+    }
 
-    public ImportUploadResult Handle(Guid tenantId, byte[] bytes, string fileName)
+    /// <param name="dateFormat">The workspace's date format, for the custom date fields' hints.</param>
+    public async Task<ImportUploadResult> Handle(
+        Guid tenantId, byte[] bytes, string fileName, string? dateFormat, CancellationToken ct = default)
     {
         var grid = LeadFileParser.Parse(bytes, fileName);
+
+        // 092 — the custom fields, so they can be suggested and listed.
+        var custom = await ImportCustomFields.LoadAsync(_db, tenantId, ct);
+
         var sessionId = _sessions.Save(tenantId, fileName, grid);
 
-        var suggested = LeadFileParser.SuggestMapping(grid.Headers);
+        var suggested = LeadFileParser.SuggestMapping(
+            grid.Headers, custom.Select(c => (c.Key, c.Label)).ToList());
 
         var warnings = new List<string>(grid.Warnings);
         if (!suggested.ContainsKey(ImportFields.FullName))
             warnings.Add("Couldn't work out which column holds the name — please pick it below.");
+
+        var fields = ImportFields.All.Concat(ImportCustomFields.ToImportFields(custom, dateFormat)).ToList();
 
         return new ImportUploadResult(
             SessionId: sessionId,
@@ -135,7 +172,27 @@ public class UploadLeadImportHandler : ICommandHandler
             Headers: grid.Headers,
             SampleRows: grid.Rows.Take(5).ToList(),
             SuggestedMapping: suggested,
-            Warnings: warnings);
+            Warnings: warnings,
+            Fields: fields);
+    }
+}
+
+/// <summary>
+/// 092. Every field a column can be mapped onto — built-in, then the
+/// workspace's active Lead custom fields. The mapping screen asks for this
+/// when it is redrawn after a failed check, when there is no upload result
+/// to read the list from.
+/// </summary>
+public class GetLeadImportFieldsHandler : ICommandHandler
+{
+    private readonly FlowDbContext _db;
+
+    public GetLeadImportFieldsHandler(FlowDbContext db) => _db = db;
+
+    public async Task<List<ImportField>> Handle(Guid tenantId, string? dateFormat, CancellationToken ct = default)
+    {
+        var custom = await ImportCustomFields.LoadAsync(_db, tenantId, ct);
+        return ImportFields.All.Concat(ImportCustomFields.ToImportFields(custom, dateFormat)).ToList();
     }
 }
 
@@ -168,6 +225,18 @@ internal sealed class ImportContext
     /// <summary>Where an imported lead lands when no status is given.</summary>
     public required string DefaultStatusKey { get; init; }
 
+    /// <summary>092. The workspace's active Lead custom fields.</summary>
+    public required List<ImportCustomField> CustomFields { get; init; }
+
+    /// <summary>092. The workspace's date format, for custom date columns.</summary>
+    public string? DateFormat { get; init; }
+
+    /// <summary>
+    /// 092. Required custom fields with no column matched. Filled by
+    /// Resolve; the preview turns it into one notice.
+    /// </summary>
+    public List<string> RequiredButUnmapped { get; } = new();
+
     public HashSet<string> UnmatchedSources { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> UnmatchedOwners { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> UnmatchedCountries { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -193,7 +262,13 @@ internal sealed record ResolvedRow(
     string Currency,
     string? OwnerUserId,
     Guid? ExistingLeadId,
-    List<string> Messages);
+    List<string> Messages,
+    /// <summary>
+    /// 092. Custom field id → value in the wire shape, only for cells that
+    /// held a readable value. Empty cells are absent: on a new lead that is
+    /// "no value", on "Fill in the blanks" it is "leave alone".
+    /// </summary>
+    Dictionary<Guid, string>? CustomValues = null);
 
 internal static class ImportValidator
 {
@@ -203,7 +278,8 @@ internal static class ImportValidator
         string defaultCurrency,
         string? countryCode,
         TenantLeadStatuses statuses,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? dateFormat = null)
     {
         var sources = await db.LeadSources.AsNoTracking()
             .Where(s => s.TenantId == tenantId && !s.IsDeleted)
@@ -278,6 +354,8 @@ internal static class ImportValidator
             CountryCode      = countryCode,
             DefaultCurrency  = defaultCurrency,
             StatusesByName   = statusLookup,
+            CustomFields     = await ImportCustomFields.LoadAsync(db, tenantId, ct),   // 092
+            DateFormat       = dateFormat,                                            // 092
             DefaultStatusKey = statuses.Default?.Key
                 ?? throw new InvalidOperationException(
                     "This workspace has no lead statuses set up. Add them under Settings → Lead Statuses."),
@@ -295,6 +373,12 @@ internal static class ImportValidator
         // Duplicates WITHIN the file matter as much as against the database.
         var seenEmails = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var seenPhones = new Dictionary<string, int>();
+
+        // 092 — the custom fields this file actually has a column for, and
+        // the required ones it has not (one notice, not one per row).
+        var mappedCustom = ctx.CustomFields.Where(f => mapping.ContainsKey(f.Key)).ToList();
+        foreach (var f in ctx.CustomFields.Where(f => f.IsRequired && !mapping.ContainsKey(f.Key)))
+            ctx.RequiredButUnmapped.Add(f.Label);
 
         string? Get(IReadOnlyList<string> row, string field)
         {
@@ -460,6 +544,63 @@ internal static class ImportValidator
                 if (verdict == RowVerdict.Ok) verdict = RowVerdict.Warning;
             }
 
+            // ── Custom fields (092) ───────────────────────────────────
+            // Would this row CREATE a lead? Only then can a required field
+            // stop it: a row that updates an existing lead only fills its
+            // blanks, and a skipped row writes nothing.
+            var createsLead = verdict != RowVerdict.Duplicate
+                              || (existingId.HasValue && duplicateAction == DuplicateAction.Import);
+
+            Dictionary<Guid, string>? customValues = null;
+            var blocking = new List<string>();
+
+            foreach (var f in mappedCustom)
+            {
+                var cell = Get(row, f.Key);
+                var read = cell is null ? ImportCellResult.Empty : ImportCellReader.Read(f, cell, ctx.DateFormat);
+
+                if (read.Wire is not null)
+                {
+                    (customValues ??= new Dictionary<Guid, string>())[f.Id] = read.Wire;
+                    continue;
+                }
+
+                if (f.IsRequired && createsLead)
+                {
+                    blocking.Add(read.Problem is null
+                        ? $"{f.Label} is required, and this row leaves it empty"
+                        : $"{read.Problem} — and {f.Label} is required");
+                    continue;
+                }
+
+                if (read.Problem is not null)
+                {
+                    messages.Add(read.Problem + " — imported without it");
+                    if (verdict == RowVerdict.Ok) verdict = RowVerdict.Warning;
+                }
+            }
+
+            if (blocking.Count > 0)
+            {
+                // Name, email, phone and company stay on the row, so the
+                // person can find it in their file.
+                messages.InsertRange(0, blocking);
+                results.Add(new ResolvedRow(
+                    RowNumber: rowNumber,
+                    Verdict: RowVerdict.Error,
+                    FullName: fullName,
+                    Email: email,
+                    Phone: phoneRaw,
+                    CompanyName: Truncate(Get(row, ImportFields.CompanyName), 200),
+                    Address: null, CountryId: null, SourceId: null, SourceText: null,
+                    ChannelId: null, VerticalId: null,
+                    Status: status, Score: 0, EstimatedValue: null,
+                    Currency: ctx.DefaultCurrency, OwnerUserId: null,
+                    ExistingLeadId: existingId,
+                    Messages: messages));
+                continue;
+            }
+
             results.Add(new ResolvedRow(
                 RowNumber: rowNumber,
                 Verdict: verdict,
@@ -479,7 +620,8 @@ internal static class ImportValidator
                 Currency: currency ?? ctx.DefaultCurrency,
                 OwnerUserId: ownerUserId,
                 ExistingLeadId: existingId,
-                Messages: messages));
+                Messages: messages,
+                CustomValues: customValues));
 
             ResolvedRow Fail(int n, string reason) => new(
                 n, RowVerdict.Error, "", null, null, null, null, null, null, null,
@@ -538,7 +680,7 @@ public class PreviewLeadImportHandler : ICommandHandler
         var statuses = await _statusResolver.GetAsync(request.TenantId, ct);
 
         var ctx = await ImportValidator.BuildContextAsync(
-            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct);
+            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct, request.DateFormat);
 
         var rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
 
@@ -550,6 +692,8 @@ public class PreviewLeadImportHandler : ICommandHandler
         var dbDupes = dupes.Count(r => r.ExistingLeadId.HasValue);
         var fileDupes = dupes.Count - dbDupes;
 
+        // 092 — a database duplicate refused by a required custom field is
+        // an Error row, not a Duplicate one, so it is not double-counted.
         var willUpdate = request.Duplicates == DuplicateAction.Update ? dbDupes : 0;
         var willSkip   = fileDupes + (request.Duplicates == DuplicateAction.Skip ? dbDupes : 0);
         var willImport = rows.Count - errors - willUpdate - willSkip;
@@ -582,6 +726,14 @@ public class PreviewLeadImportHandler : ICommandHandler
     private static List<string> BuildNotices(ImportContext ctx, int fileDupes, int dbDupes)
     {
         var notices = new List<string>();
+
+        // 092 — once, not on every row.
+        if (ctx.RequiredButUnmapped.Count > 0)
+            notices.Add(
+                (ctx.RequiredButUnmapped.Count == 1
+                    ? $"\"{ctx.RequiredButUnmapped[0]}\" is required on the lead form, but no column is matched to it."
+                    : $"{string.Join(", ", ctx.RequiredButUnmapped.Select(l => $"\"{l}\""))} are required on the lead form, but no column is matched to them.") +
+                " New leads will be imported without it — fill it in when you next edit each lead, or match a column above.");
 
         if (ctx.UnmatchedSources.Count > 0)
             notices.Add($"These lead sources aren't set up in your workspace, so those rows will have no source: " +
@@ -617,6 +769,7 @@ public class CommitLeadImportHandler : ICommandHandler
     private readonly IImportSessionStore _sessions;
     private readonly ILeadStatusResolver _statusResolver;
     private readonly IRecordScopeService _scope;
+    private readonly IAuditService _audit;                 // 092
     private readonly ILogger<CommitLeadImportHandler> _logger;
 
     public CommitLeadImportHandler(
@@ -624,9 +777,11 @@ public class CommitLeadImportHandler : ICommandHandler
         IImportSessionStore sessions,
         ILeadStatusResolver statusResolver,
         IRecordScopeService scope,
+        IAuditService audit,
         ILogger<CommitLeadImportHandler> logger)
     {
         _db = db;
+        _audit = audit;
         _scope = scope;
         _sessions = sessions;
         _statusResolver = statusResolver;
@@ -645,7 +800,7 @@ public class CommitLeadImportHandler : ICommandHandler
         var statuses = await _statusResolver.GetAsync(request.TenantId, ct);
 
         var ctx = await ImportValidator.BuildContextAsync(
-            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct);
+            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct, request.DateFormat);
 
         var rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
 
@@ -673,6 +828,47 @@ public class CommitLeadImportHandler : ICommandHandler
         // leads "Update" may touch.
         var access = await _scope.GetAsync(RecordModules.Leads, ct);
         var defaultOwner = access.SeesAll ? null : access.UserId;
+
+        // 092 — custom fields by id, and which ones the existing leads that
+        // "Fill in the blanks" may touch already hold. One query, before the
+        // loop: (lead id, field id) pairs that must NOT be written.
+        var customById = ctx.CustomFields.ToDictionary(f => f.Id);
+        var filled = new HashSet<(Guid LeadId, Guid FieldId)>();
+
+        if (request.Duplicates == DuplicateAction.Update)
+        {
+            var updateIds = rows
+                .Where(r => r.Verdict == RowVerdict.Duplicate && r.ExistingLeadId.HasValue && r.CustomValues is { Count: > 0 })
+                .Select(r => r.ExistingLeadId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (updateIds.Count > 0)
+            {
+                var fieldIds = customById.Keys.ToList();
+                var held = await _db.CustomFieldValues.AsNoTracking()
+                    .Where(v => v.TenantId == request.TenantId &&
+                                updateIds.Contains(v.EntityId) && fieldIds.Contains(v.DefinitionId))
+                    .Select(v => new { v.EntityId, v.DefinitionId })
+                    .ToListAsync(ct);
+
+                foreach (var h in held) filled.Add((h.EntityId, h.DefinitionId));
+            }
+        }
+
+        var customWritten = 0;
+
+        void StageCustom(Guid leadId, Dictionary<Guid, string>? values)
+        {
+            if (values is null) return;
+            foreach (var (fieldId, wire) in values)
+            {
+                if (!customById.TryGetValue(fieldId, out var field)) continue;
+                if (!filled.Add((leadId, fieldId))) continue;     // already holds a value — never overwrite
+                if (ImportCustomFields.Stage(_db, request.TenantId, leadId, field, wire, request.ImportedBy, now))
+                    customWritten++;
+            }
+        }
 
         // ── One transaction: 400 good rows and one bad one means nothing
         //    is written, rather than a half-loaded list nobody can trust.
@@ -710,15 +906,21 @@ public class CommitLeadImportHandler : ICommandHandler
 
                     existing.UpdatedAtUtc = now;
                     existing.UpdatedBy = request.ImportedBy;
+
+                    // 092 — custom fields: blanks only, same as above.
+                    StageCustom(existing.Id, r.CustomValues);
+
                     updated++;
                     continue;
                 }
 
                 if (!ShouldCreate(r, request.Duplicates)) continue;
 
+                var leadId = Guid.NewGuid();
+
                 _db.Leads.Add(new Lead
                 {
-                    Id = Guid.NewGuid(),
+                    Id = leadId,
                     TenantId = request.TenantId,        // the old importer's bug
                     FullName = r.FullName,
                     Email = r.Email,
@@ -747,6 +949,10 @@ public class CommitLeadImportHandler : ICommandHandler
                     IsDeleted = false
                 });
 
+                // 092 — in the same SaveChanges, so a lead and its values
+                // are written together or not at all.
+                StageCustom(leadId, r.CustomValues);
+
                 imported++;
             }
 
@@ -767,8 +973,31 @@ public class CommitLeadImportHandler : ICommandHandler
         var skipped = rows.Count - imported - updated - failed.Count;
 
         _logger.LogInformation(
-            "Imported leads for tenant {TenantId}: {Imported} new, {Updated} updated, {Skipped} skipped, {Failed} failed",
-            request.TenantId, imported, updated, skipped, failed.Count);
+            "Imported leads for tenant {TenantId}: {Imported} new, {Updated} updated, {Skipped} skipped, {Failed} failed, {Custom} custom value(s)",
+            request.TenantId, imported, updated, skipped, failed.Count, customWritten);
+
+        // 092 — the import is committed; an audit failure never undoes it.
+        try
+        {
+            await _audit.WriteAsync(
+                AuditAction.LeadsImported, AuditEntityType.Lead, Guid.Empty, request.TenantId,
+                new
+                {
+                    file = session.FileName,
+                    rows = rows.Count,
+                    imported,
+                    updated,
+                    skipped,
+                    failed = failed.Count,
+                    customValues = customWritten,
+                    duplicates = request.Duplicates
+                },
+                ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Lead import for tenant {TenantId} succeeded but could not be audited", request.TenantId);
+        }
 
         return new ImportResult(
             TotalRows: rows.Count,

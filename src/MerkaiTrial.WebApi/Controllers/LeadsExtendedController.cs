@@ -42,10 +42,28 @@
 //      because this endpoint is the one an integration is most likely to
 //      call: omit ownerUserId and the owner is KEPT; send "" and the
 //      lead is unassigned.
+//
+// CHANGES (092 — the Export button)
+//
+//   ★ THE EXPORT READ THE TENANT FROM THE QUERY STRING — and the page never
+//     sent one. tenantId bound to Guid.Empty, so the export would have
+//     come back empty for everybody; nothing on the Leads page called it,
+//     which is why nobody noticed. It now uses the signed-in tenant, like
+//     LeadsImportController, and a ?tenantId= in the URL is ignored.
+//
+//   • ?cf= custom field filters, decoded exactly as GET /api/leads decodes
+//     them, so the file holds the rows the list shows.
+//   • A refusal (the row ceiling) is a 400 with the sentence, not a 500.
+//   • Every export is audited (AuditAction.LeadsExported): who, how many
+//     rows, which filters. A failed audit write never fails the download.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Leads;
+using MerkaiTrial.Application.Configuration;   // 092 — CustomFieldFilterCodec, CustomFieldLimits
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Services;        // 092 — ICurrentUserService, IAuditService
+using MerkaiTrial.Domain.Entities;             // 092 — AuditAction
 using Microsoft.AspNetCore.Authorization;      // 041a
 using Microsoft.AspNetCore.Mvc;
 
@@ -80,6 +98,10 @@ namespace MerkaiTrial.WebApi.Controllers
         // Export/Import
         private readonly ExportLeadsHandler _exportHandler;
 
+        // 092
+        private readonly ICurrentUserService _currentUser;
+        private readonly IAuditService _audit;
+
 
         public LeadsExtendedController(
             CreateLeadNoteHandler createNoteHandler,
@@ -93,8 +115,12 @@ namespace MerkaiTrial.WebApi.Controllers
             AssignLeadHandler assignLeadHandler,
             GetLeadTimelineHandler getTimelineHandler,
             ExportLeadsHandler exportHandler,
+            ICurrentUserService currentUser,
+            IAuditService audit,
             ILogger<LeadsExtendedController> logger)
         {
+            _currentUser = currentUser;
+            _audit = audit;
             _createNoteHandler = createNoteHandler;
             _getNotesHandler = getNotesHandler;
             _deleteNoteHandler = deleteNoteHandler;
@@ -388,28 +414,63 @@ namespace MerkaiTrial.WebApi.Controllers
         // 041a. Leads.Read, not "any signed-in user". This endpoint hands
         // back every lead the caller can see as an Excel file — the single
         // most useful thing in the product to walk out of the door with.
+        //
+        // 092. The tenant comes from the signed-in user (it was a query
+        // parameter nobody sent); ?cf= custom field filters as on the list;
+        // the row ceiling is a 400; every export is audited.
         [HttpGet("export")]
         [Authorize(Policy = "Leads.Read")]
         public async Task<IActionResult> ExportLeads(
-            [FromQuery] Guid tenantId,
             [FromQuery] string? search = null,
             [FromQuery] string? status = null,
-            [FromQuery] string? assignedTo = null)
+            [FromQuery] string? assignedTo = null,
+            [FromQuery(Name = "cf")] string[]? cf = null,
+            CancellationToken ct = default)
         {
             try
             {
-                var request = new ExportLeadsRequest(tenantId, search, status, assignedTo);
-                var fileBytes = await _exportHandler.Handle(request);
+                var tenantId = _currentUser.GetCurrentTenantId();
 
-                var fileName = $"Leads_Export_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx";
-                return File(fileBytes,
+                var filters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        filters.Add(filter);
+
+                var request = new ExportLeadsRequest(tenantId, search, status, assignedTo, filters);
+                var file = await _exportHandler.Handle(request, ct);
+
+                try
+                {
+                    await _audit.WriteAsync(
+                        AuditAction.LeadsExported, AuditEntityType.Lead, Guid.Empty, tenantId,
+                        new
+                        {
+                            rows = file.RowCount,
+                            search = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
+                            status,
+                            assignedTo,
+                            customFilters = filters.Count
+                        },
+                        ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Lead export for tenant {TenantId} could not be audited", tenantId);
+                }
+
+                var fileName = $"Leads_{DateTime.UtcNow:yyyyMMdd_HHmm}.xlsx";
+                return File(file.Content,
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     fileName);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to export leads");
-                return StatusCode(500, new { error = "Failed to export leads" });
+                return StatusCode(500, new { error = "The export couldn't be made. Please try again." });
             }
         }
 

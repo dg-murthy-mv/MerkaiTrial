@@ -33,6 +33,8 @@
 //        added up in memory. No conditional aggregates, nothing to fold,
 //        and it cannot break again when a status is renamed or a category
 //        is emptied.
+//   8. (092) The list's filters moved to LeadListFilter.Apply, unchanged
+//        in meaning, so the Export button applies the very same ones.
 // NOTE: Date formatting is NOT done in handlers — UTC always returned.
 //       Call _tenantService.FormatDate(utc) in your Razor Page models.
 // =====================================================================
@@ -118,66 +120,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     .Where(l => l.TenantId == tenantId && !l.IsDeleted)
                     .VisibleTo(access);
 
-                if (!string.IsNullOrWhiteSpace(query.SearchTerm))
-                {
-                    var s = query.SearchTerm.Trim().ToLower();
-
-                    // 079 — custom text values and dropdown choice names too.
-                    // Null = no custom field could match; keep the plain search.
-                    var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, s);
-
-                    if (cfMatches is null)
-                    {
-                        leadsQuery = leadsQuery.Where(l =>
-                            l.FullName.ToLower().Contains(s) ||
-                            (l.Email != null && l.Email.ToLower().Contains(s)) ||
-                            (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
-                            (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
-                    }
-                    else
-                    {
-                        leadsQuery = leadsQuery.Where(l =>
-                            l.FullName.ToLower().Contains(s) ||
-                            (l.Email != null && l.Email.ToLower().Contains(s)) ||
-                            (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
-                            (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)) ||
-                            cfMatches.Contains(l.Id));
-                    }
-                }
-
-                // Status: one key ("Working") or several ("New,Working,Qualified").
-                // The Leads page's Active tab sends several — every Open and
-                // Qualified status for this tenant.
-                if (!string.IsNullOrWhiteSpace(query.Status))
-                {
-                    var keys = query.Status.Split(',',
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-                    if (keys.Length == 1)
-                    {
-                        var key = keys[0];
-                        leadsQuery = leadsQuery.Where(l => l.Status == key);
-                    }
-                    else if (keys.Length > 1)
-                    {
-                        leadsQuery = leadsQuery.Where(l => keys.Contains(l.Status));
-                    }
-                }
-
-                if (!string.IsNullOrWhiteSpace(query.AssignedTo))
-                {
-                    var owner = query.AssignedTo.Trim();
-                    leadsQuery = leadsQuery.Where(l => l.OwnerUserId == owner);
-                }
-
-                // 079 — custom field filters, as id subqueries (shared helper).
-                foreach (var clause in CustomFieldListQuery.FilterClauses(_context, tenantId, defs, query.CustomFilters))
-                {
-                    var ids = clause.EntityIds;   // a local, so EF inlines the subquery
-                    leadsQuery = clause.Exclude
-                        ? leadsQuery.Where(l => !ids.Contains(l.Id))
-                        : leadsQuery.Where(l => ids.Contains(l.Id));
-                }
+                // 092 — search, status, owner and custom field filters live in
+                // LeadListFilter now, shared with the Export button, so an
+                // export always holds exactly the rows this list shows.
+                leadsQuery = LeadListFilter.Apply(
+                    _context, tenantId, leadsQuery, defs,
+                    query.SearchTerm, query.Status, query.AssignedTo, query.CustomFilters);
 
                 var totalCount = await leadsQuery.CountAsync(cancellationToken);
 

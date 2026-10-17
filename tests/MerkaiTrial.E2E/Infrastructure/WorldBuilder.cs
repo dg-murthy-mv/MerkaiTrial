@@ -27,6 +27,10 @@
 // EnsureWorkspaceDAsync the first time either fixture needs it. C and D
 // now share one builder (BuildExtraWorkspaceAsync); C is built exactly
 // as before.
+//
+// 092: EnsureWorkspaceCAsync — workspace C built the first time ANY
+// fixture needs it (the Own-visibility tests as well as the settings
+// tests), the same way D has been since 089.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -124,6 +128,27 @@ public sealed class WorldBuilder
     }
 
     private static readonly SemaphoreSlim WorkspaceDGate = new(1, 1);
+    private static readonly SemaphoreSlim WorkspaceCGate = new(1, 1);
+
+    /// <summary>
+    /// 092. Workspace C, built the first time a fixture asks for it — the
+    /// same rule as D. WorkspaceSettingsTests still builds it its own way
+    /// when it runs first; both check World.C, so it is built once.
+    /// </summary>
+    public static async Task<TestTenant> EnsureWorkspaceCAsync()
+    {
+        await WorkspaceCGate.WaitAsync();
+        try
+        {
+            if (World.C is null)
+                await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db).BuildSettingsWorkspaceAsync();
+            return World.C ?? throw new InvalidOperationException("Workspace C was not built.");
+        }
+        finally
+        {
+            WorkspaceCGate.Release();
+        }
+    }
 
     /// <summary>
     /// 089. Workspace D, built the first time a test fixture asks for it.

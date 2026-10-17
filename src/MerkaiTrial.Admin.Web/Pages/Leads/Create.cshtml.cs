@@ -33,13 +33,32 @@
 //   ✅ FromEmailId is a NULLABLE Guid on purpose: OnPostAsync still uses
 //      ModelState.IsValid, and a non-nullable hidden field would add an
 //      implicit Required error to every ordinary lead.
+//
+// CHANGES (092 — custom fields on Create)
+//   ✅ The workspace's Lead custom fields are on this form, through the
+//      same _CustomFieldInputs partial the Edit page has used since 079.
+//      Before this, a lead could only get its custom values AFTER it was
+//      created — and a REQUIRED field could not be filled in at all until
+//      someone opened Edit, which is exactly where the form then refused
+//      to save without it.
+//   ✅ Checked here first (CustomFieldForm.Validate), so each message sits
+//      under its own input, and checked again by the API, which is the
+//      rule that counts. If the field list cannot be loaded, CustomFields
+//      is sent as NULL and the lead is created with its standard fields
+//      only — the same "say nothing" rule every other caller uses.
+//   ✅ A refusal from the API (InvalidOperationException — for example a
+//      required field emptied in another tab) is shown in the summary on
+//      THIS response, not stored for the next page.
 // =====================================================================
 
+using MerkaiTrial.Admin.Web.Pages.Shared;             // 092
+using MerkaiTrial.Admin.Web.Services.CustomFields;    // 092
 using MerkaiTrial.Admin.Web.Services.InboundEmails;   // 083
 using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Meta;
+using MerkaiTrial.Application.Configuration;          // 092
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -58,6 +77,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         private readonly ILogger<CreateModel> _logger;
         private readonly IMetaService _metaService;
         private readonly IInboundEmailService _emails;      // 083
+        private readonly ICustomFieldService _customFields; // 092
 
         protected override string ModuleName => Modules.Leads;
 
@@ -68,10 +88,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             ICurrentTenantService tenantService,
             IMetaService metaService,
             IInboundEmailService emails,
+            ICustomFieldService customFields,
             ILogger<CreateModel> logger)
             : base(authorizationService, currentUserService, logger)
         {
             _emails = emails;
+            _customFields = customFields;
             _leadService = leadService;
             _currentUserService = currentUserService;
             _tenantService = tenantService;
@@ -82,6 +104,25 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         [BindProperty]
         public InputModel Input { get; set; } = new();
         public string CountryCodesJson { get; set; } = "{}";
+
+        // ── 092: custom fields ────────────────────────────────────────
+        /// <summary>Posted as CustomFields[&lt;field id&gt;] = value, exactly like Edit.</summary>
+        [BindProperty]
+        public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        /// <summary>Active custom fields for Leads, in order.</summary>
+        public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
+        public bool CustomFieldsLoadFailed { get; private set; }
+
+        /// <summary>The model for _CustomFieldInputs.</summary>
+        public CustomFieldFormVm CustomFieldInputs => new()
+        {
+            Fields       = ActiveCustomFields,
+            Values       = CustomFields,
+            LoadFailed   = CustomFieldsLoadFailed,
+            CanConfigure = UserCanRead(Modules.Settings),
+            EntityType   = CustomFieldEntityTypes.Lead
+        };
 
         public List<SelectListItem> VerticalOptions { get; set; } = new();
         public List<SelectListItem> ChannelOptions { get; set; } = new();
@@ -154,6 +195,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             {
                 LoadTenantContext();
                 await LoadDropdownsAsync();
+                await LoadCustomFieldsAsync();      // 092
 
                 // Set tenant defaults on the form — user can override
                 Input.CurrencyId = TenantCurrency;
@@ -186,6 +228,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
                 await InitializePermissionsAsync();
                 LoadTenantContext();
+                await LoadCustomFieldsAsync();      // 092
+
+                // 092 — each custom field's message under its own input.
+                CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
 
                 if (!ModelState.IsValid)
                 {
@@ -210,7 +256,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     EstimatedValue: Input.EstimatedValue,
                     OwnerUserId: Input.OwnerUserId,
                     CreatedBy: currentUserId.ToString()
-                );
+                )
+                {
+                    // 092 — null when the field list could not be loaded:
+                    // the lead is still created, with its standard fields.
+                    CustomFields = CustomFieldsLoadFailed
+                        ? null
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
+                };
 
                 var lead = await _leadService.CreateAsync(dto);
 
@@ -237,13 +290,48 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 TempData["SuccessMessage"] = $"Lead '{lead.FullName}' created successfully!";
                 return RedirectToPage("./Index");
             }
+            // 092 — the API's own sentence ("Renewal date is required."),
+            // shown once, in the summary on this response.
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogInformation("Lead create refused: {Message}", ex.Message);
+                ModelState.AddModelError(string.Empty, ex.Message);
+                LoadTenantContext();
+                await LoadDropdownsAsync();
+                if (ActiveCustomFields.Count == 0 && !CustomFieldsLoadFailed) await LoadCustomFieldsAsync();
+                return Page();
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating lead");
                 ErrorMessage = $"Failed to create lead: {ex.Message}";
                 LoadTenantContext();
                 await LoadDropdownsAsync();
+                if (ActiveCustomFields.Count == 0 && !CustomFieldsLoadFailed) await LoadCustomFieldsAsync();
                 return Page();
+            }
+        }
+
+        /// <summary>
+        /// 092. The active Lead fields. Non-fatal: on failure the form shows
+        /// the partial's "couldn't load" note and the lead is created
+        /// without custom values (CustomFields sent as null).
+        /// </summary>
+        private async Task LoadCustomFieldsAsync()
+        {
+            try
+            {
+                ActiveCustomFields = (await _customFields.GetDefinitionsAsync(CustomFieldEntityTypes.Lead, includeInactive: false))
+                    .Where(f => f.IsActive)
+                    .OrderBy(f => f.SortOrder)
+                    .ToList();
+                CustomFieldsLoadFailed = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Custom fields could not be loaded for the Create Lead form");
+                ActiveCustomFields = new List<CustomFieldDefinitionDto>();
+                CustomFieldsLoadFailed = true;
             }
         }
 

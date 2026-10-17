@@ -20,6 +20,10 @@
 //      person was sent about something, whether one has been read, and how
 //      many notification emails were queued to an address. Nothing in 5
 //      writes either.
+//   6. (092) READ-ONLY lead lookups for the import tests: a lead's id from
+//      its name, and the custom field values stored on it, by field name —
+//      what the importer actually wrote, which a screen would only show
+//      formatted. Nothing in 6 writes.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -299,6 +303,50 @@ public sealed class TestDatabase
             if (n >= atLeast || DateTime.UtcNow > deadline) return n;
             await Task.Delay(500);
         }
+    }
+
+    // ── 092: leads and their custom values (read-only) ────────────────
+
+    /// <summary>A live lead's id from its exact name; null when there is none.</summary>
+    public async Task<Guid?> LeadIdByNameAsync(Guid tenantId, string fullName)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT TOP 1 Id FROM Leads WHERE TenantId = @t AND FullName = @v AND IsDeleted = 0 ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@v", fullName);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : null;
+    }
+
+    /// <summary>Live leads in a workspace with this exact name.</summary>
+    public Task<int> CountLeadsAsync(Guid tenantId, string fullName) =>
+        CountAsync("SELECT COUNT(*) FROM Leads WHERE TenantId = @t AND FullName = @v AND IsDeleted = 0", tenantId, fullName);
+
+    /// <summary>One stored custom value, in its typed columns.</summary>
+    public sealed record StoredValue(string? Text, decimal? Number, DateOnly? Date, bool? Flag);
+
+    /// <summary>The custom field values on one record, keyed by the field's name.</summary>
+    public async Task<Dictionary<string, StoredValue>> CustomValuesAsync(Guid entityId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT d.Label, v.TextValue, v.NumberValue, v.DateValue, v.BoolValue
+              FROM CustomFieldValues v
+              JOIN CustomFieldDefinitions d ON d.Id = v.DefinitionId
+              WHERE v.EntityId = @e", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+
+        var result = new Dictionary<string, StoredValue>(StringComparer.Ordinal);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            result[r.GetString(0)] = new StoredValue(
+                r.IsDBNull(1) ? null : r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetDecimal(2),
+                r.IsDBNull(3) ? null : DateOnly.FromDateTime(r.GetDateTime(3)),
+                r.IsDBNull(4) ? null : r.GetBoolean(4));
+        }
+        return result;
     }
 
     private async Task<int> CountAsync(string sql, Guid tenantId, string value)

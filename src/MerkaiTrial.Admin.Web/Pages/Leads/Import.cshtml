@@ -68,8 +68,12 @@
     </div>
 }
 
-@* ═══════════════ STEP 2 — MAPPING ═══════════════ *@
-@if (Model.Step == 2 && Model.Upload is not null)
+@* ═══════════════ STEP 2 — MAPPING ═══════════════
+   092: drawn from the posted headers and mapping, so a failed check comes
+   back to this screen instead of a blank page. Sample values need the
+   upload result and are simply left out when it is not there. The
+   workspace's custom Lead fields follow the built-in ones. *@
+@if (Model.Step == 2)
 {
     <form method="post" asp-page-handler="Preview">
         <input type="hidden" asp-for="SessionId" />
@@ -89,27 +93,45 @@
             </div>
         </div>
 
-        @foreach (var w in Model.Upload.Warnings)
+        @if (Model.Upload is not null)
         {
-            <div class="alert alert-warning py-2"><i class="bi bi-info-circle me-2"></i>@w</div>
+            foreach (var w in Model.Upload.Warnings)
+            {
+                <div class="alert alert-warning py-2"><i class="bi bi-info-circle me-2"></i>@w</div>
+            }
         }
 
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-white"><h6 class="mb-0">Match your columns</h6></div>
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0" id="importMapping">
                     <thead class="table-light">
                         <tr>
                             <th style="width: 30%;">Merkai field</th>
                             <th style="width: 35%;">Your column</th>
-                            <th>Sample from your file</th>
+                            <th>@(Model.Upload is null ? "" : "Sample from your file")</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var field in Model.Fields)
+                        @{ var customHeaderShown = false; }
+                        @foreach (var field in Model.BuiltInFields.Concat(Model.CustomFieldTargets))
                         {
                             var selected = Model.Mapping.TryGetValue(field.Key, out var v) ? v : -1;
-                            <tr>
+
+                            if (field.IsCustom && !customHeaderShown)
+                            {
+                                customHeaderShown = true;
+                                <tr class="table-light">
+                                    <td colspan="3" class="small fw-semibold text-muted pt-3">
+                                        <i class="bi bi-ui-checks-grid me-1"></i>Your custom lead fields
+                                        <span class="fw-normal">
+                                            — optional. A required one, once matched, must be filled in on every new lead.
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+
+                            <tr data-field="@field.Key">
                                 <td>
                                     <span class="fw-semibold">@field.Label</span>
                                     @if (field.IsRequired)
@@ -122,7 +144,8 @@
                                     }
                                 </td>
                                 <td>
-                                    <select name="Mapping[@field.Key]" class="form-select form-select-sm">
+                                    <select name="Mapping[@field.Key]" class="form-select form-select-sm"
+                                            aria-label="Column for @field.Label">
                                         <option value="-1" selected="@(selected < 0)">— Don't import —</option>
                                         @for (var i = 0; i < Model.Headers.Count; i++)
                                         {
@@ -130,15 +153,7 @@
                                         }
                                     </select>
                                 </td>
-                                <td class="text-muted small">
-                                    @if (selected >= 0 && Model.Upload.SampleRows.Count > 0)
-                                    {
-                                        @string.Join(" · ", Model.Upload.SampleRows
-                                            .Where(r => selected < r.Count && !string.IsNullOrWhiteSpace(r[selected]))
-                                            .Select(r => r[selected])
-                                            .Take(3))
-                                    }
-                                </td>
+                                <td class="text-muted small">@Model.SamplesFor(selected)</td>
                             </tr>
                         }
                     </tbody>

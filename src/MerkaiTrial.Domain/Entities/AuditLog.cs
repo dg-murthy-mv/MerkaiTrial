@@ -122,6 +122,9 @@ namespace MerkaiTrial.Domain.Entities
         public const string LeadConverted = "LeadConverted";
         public const string LeadsImported = "LeadsImported";
 
+        /// <summary>092. Someone downloaded the Leads list as a spreadsheet.</summary>
+        public const string LeadsExported = "LeadsExported";
+
         // ── Deals ─────────────────────────────────────────────────────
         public const string DealCreated = "DealCreated";
         public const string DealUpdated = "DealUpdated";

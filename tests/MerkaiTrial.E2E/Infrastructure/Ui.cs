@@ -15,6 +15,19 @@
 // finish loading every resource — one run stopped there for 20 seconds
 // with "Your password is set" already on screen. It waits for the
 // address to change, then for that message.
+//
+// 092: A SLOW PAGE NOW SAYS IT WAS SLOW. When a wait ran out because the
+// page had not finished arriving, the failure read like a page problem —
+// "Expected a success message … The page shows no error message" — and
+// sent people looking for a validation bug that was not there. Now:
+//   • ExpectSuccessAsync and WaitUntilAsync check whether the page was
+//     still loading when time ran out, and say so first ("…was still
+//     loading after 20s — the server was slow to answer, not a form
+//     problem"), with the time to look for in webapi.out.log.
+//   • WaitForPageAsync: wait for an address, then for the page to be
+//     usable (DOMContentLoaded, not every font and image), with the same
+//     explanation when it does not arrive. Flows.OpenLeadAsync uses it —
+//     that is the wait one 089 run lost 20 seconds on.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -194,9 +207,77 @@ public static class Ui
             }
 
             if (DateTime.UtcNow > deadline)
-                throw new AssertionException($"{failure} (waited {timeoutMs / 1000:0}s; now at {page.Url})");
+            {
+                var loading = await StillLoadingAsync(page);
+                throw new AssertionException(
+                    $"{failure} (waited {timeoutMs / 1000:0}s; now at {page.Url})" +
+                    (loading is null ? "" : $". {loading}"));
+            }
             await page.WaitForTimeoutAsync(250);
         }
+    }
+
+    /// <summary>
+    /// 092. Waits for the address to match <paramref name="url"/> and the
+    /// page to be usable (DOMContentLoaded — not every image and font,
+    /// which is what the default "load" waits for). <paramref name="what"/>
+    /// names the page for the failure message, which says whether the
+    /// address never changed or the page was still arriving.
+    /// </summary>
+    public static async Task WaitForPageAsync(IPage page, Func<string, bool> url, string what,
+        float timeoutMs = E2ESettings.ActionTimeoutMs)
+    {
+        var started = DateTime.UtcNow;
+        try
+        {
+            await page.WaitForURLAsync(url, new PageWaitForURLOptions { Timeout = timeoutMs, WaitUntil = WaitUntilState.Commit });
+        }
+        catch (Exception ex) when (IsTimeout(ex))
+        {
+            throw new AssertionException(
+                $"{what} did not open: after {timeoutMs / 1000:0}s the browser was still on {PathOf(page.Url)}. " +
+                (await StillLoadingAsync(page) ?? await DescribePageProblemsAsync(page)));
+        }
+
+        var left = Math.Max(1000f, timeoutMs - (float)(DateTime.UtcNow - started).TotalMilliseconds);
+        try
+        {
+            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new PageWaitForLoadStateOptions { Timeout = left });
+        }
+        catch (Exception ex) when (IsTimeout(ex))
+        {
+            throw new AssertionException(
+                $"{what} ({PathOf(page.Url)}) was still loading after {timeoutMs / 1000:0}s. The server was slow to " +
+                $"answer — not a problem with the page itself. Look in webapi.out.log around {DateTime.Now:HH:mm:ss} " +
+                "for a slow request.");
+        }
+    }
+
+    /// <summary>
+    /// 092. A sentence when the page had NOT finished arriving — the
+    /// document still loading, or no document yet because a navigation was
+    /// in flight — and null when it had. Never throws and never waits more
+    /// than three seconds itself.
+    /// </summary>
+    public static async Task<string?> StillLoadingAsync(IPage page)
+    {
+        string? state;
+        try
+        {
+            var probe = page.EvaluateAsync<string>("() => document.readyState");
+            var done = await Task.WhenAny(probe, Task.Delay(3000));
+            state = done == probe ? await probe : null;
+        }
+        catch (Exception)
+        {
+            state = null;   // mid-navigation: there is no document to ask
+        }
+
+        if (state == "complete" || state == "interactive") return null;
+
+        return $"The page at {PathOf(page.Url)} was still loading when the wait ran out " +
+               $"({(state is null ? "no page had arrived yet" : "document " + state)}) — the server was slow to answer, " +
+               $"not a form problem. Look in webapi.out.log around {DateTime.Now:HH:mm:ss} for a slow request.";
     }
 
     /// <summary>
@@ -262,6 +343,14 @@ public static class Ui
         }
         catch (Exception ex) when (IsTimeout(ex))
         {
+            // 092 — a page that never finished arriving has no message to
+            // show; say that, rather than "the page shows no error".
+            var loading = await StillLoadingAsync(page);
+            if (loading is not null)
+                throw new AssertionException(
+                    $"Expected a success message containing \"{text}\", but no page came back in " +
+                    $"{E2ESettings.ActionTimeoutMs / 1000:0}s. {loading}");
+
             var green = await TextOrEmptyAsync(page.Locator(".alert-success"));
             throw new AssertionException(
                 $"Expected a success message containing \"{text}\" on {PathOf(page.Url)}. " +

@@ -30,6 +30,16 @@
 // 090b: every tab check reloads the deal first (see OpenTabAsync). The
 // download link is now /Attachments/Download/{id}, a page that checks the
 // person; the test reads it from the page as before.
+//
+// 091:
+//   • The two refusals must say WHY, in words: "isn't allowed" for the
+//     .html file, "Files can be up to 10 MB" for the big one. (Before,
+//     they read "Response status code does not indicate success: 400" and
+//     "Error while copying content to a stream".)
+//   5. Quote attachments: on a draft quote, a PDF uploads and is listed;
+//      an .html file and a file over 10 MB are refused with the same
+//      reasons; and Delete removes the PDF. Delete used to call an address
+//      the API did not have, so it always failed.
 // =====================================================================
 
 using System.Globalization;
@@ -283,7 +293,7 @@ public class DealWorkTests : E2ETest
         {
             var name = $"page-{World.Stamp}.html";
             await UploadAsync(admin, dealId, name, "text/html", Encoding.UTF8.GetBytes("<script>alert(1)</script>"));
-            await ExpectRefusedAsync(admin, dealId, name);
+            await ExpectRefusedAsync(admin, dealId, name, TypeRefusal);
         });
 
         await Step("A file over 10 MB is refused and not listed", async () =>
@@ -292,7 +302,7 @@ public class DealWorkTests : E2ETest
             var big = new byte[11 * 1024 * 1024];
             Array.Copy(pdf, big, pdf.Length);
             await UploadAsync(admin, dealId, name, "application/pdf", big);
-            await ExpectRefusedAsync(admin, dealId, name);
+            await ExpectRefusedAsync(admin, dealId, name, SizeRefusal);
         });
 
         await Step("Deleted, it leaves the list and its link stops working", async () =>
@@ -312,8 +322,67 @@ public class DealWorkTests : E2ETest
     }
 
     // =================================================================
+    // 5. Quote attachments (091)
+    // =================================================================
+
+    [Test]
+    public async Task A_quotes_attachment_can_be_added_and_deleted_and_bad_files_say_why()
+    {
+        var admin = await SignedInAsync(A.Admin);
+        var (_, dealTitle) = await Step("Make a deal", () => NewDealAsync(admin, "Asha Quote Files"));
+
+        var quoteUrl = await Step("Save a draft quote for it", async () =>
+        {
+            await Flows.FillQuoteAsync(admin, dealTitle, new QuoteLine("Site survey", 1, 45000m, TaxRate: 18));
+            await Flows.SubmitQuoteAsync(admin, send: false);
+            return admin.Url;
+        });
+
+        var pdfName = $"spec-{World.Stamp}.pdf";
+
+        await Step("Upload a PDF to the quote", async () =>
+        {
+            await QuoteUploadAsync(admin, quoteUrl, pdfName, "application/pdf", SmallPdf($"Spec {World.Stamp}"));
+            await Ui.ExpectSuccessAsync(admin, "uploaded successfully");
+            await Assertions.Expect(QuoteAttachment(admin, pdfName)).ToHaveCountAsync(1);
+        });
+
+        await Step("An .html file is refused, saying that type isn't allowed", async () =>
+        {
+            var name = $"page-{World.Stamp}.html";
+            await QuoteUploadAsync(admin, quoteUrl, name, "text/html", Encoding.UTF8.GetBytes("<b>hi</b>"));
+            await ExpectRedAsync(admin, name, TypeRefusal);
+            await admin.GotoAsync(quoteUrl);
+            await Assertions.Expect(QuoteAttachment(admin, name)).ToHaveCountAsync(0);
+        });
+
+        await Step("A file over 10 MB is refused, saying the limit", async () =>
+        {
+            var name = $"huge-{World.Stamp}.pdf";
+            await QuoteUploadAsync(admin, quoteUrl, name, "application/pdf", new byte[11 * 1024 * 1024]);
+            await ExpectRedAsync(admin, name, SizeRefusal);
+            await admin.GotoAsync(quoteUrl);
+            await Assertions.Expect(QuoteAttachment(admin, name)).ToHaveCountAsync(0);
+        });
+
+        await Step("Delete removes the PDF", async () =>
+        {
+            await admin.GotoAsync(quoteUrl);
+            await QuoteAttachment(admin, pdfName).Locator("form.qd-attdel button[type=submit]").ClickAsync();  // confirm() is accepted by the session
+            await Ui.ExpectSuccessAsync(admin, "Attachment deleted");
+
+            await admin.GotoAsync(quoteUrl);
+            await Assertions.Expect(QuoteAttachment(admin, pdfName)).ToHaveCountAsync(0);
+        });
+    }
+
+    // =================================================================
     // Helpers
     // =================================================================
+
+    /// <summary>091. What the red message must contain for each refusal.</summary>
+    private const string TypeRefusal = "isn't allowed";
+    private const string SizeRefusal = "Files can be up to 10 MB";
 
     /// <summary>Lead → qualify → convert in workspace A. Returns the deal's id and title.</summary>
     private static async Task<(Guid Id, string Title)> NewDealAsync(IPage page, string person)
@@ -356,8 +425,20 @@ public class DealWorkTests : E2ETest
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
     }
 
-    /// <summary>After an upload: a red message, and the file is not on the list.</summary>
-    private static async Task ExpectRefusedAsync(IPage page, Guid dealId, string name)
+    /// <summary>After an upload: a red message saying why, and the file is not on the list.</summary>
+    private static async Task ExpectRefusedAsync(IPage page, Guid dealId, string name, string why)
+    {
+        await ExpectRedAsync(page, name, why);
+
+        await OpenTabAsync(page, dealId, "attachments");
+        await Assertions.Expect(page.Locator("#attachments .list-group-item", new() { HasText = name })).ToHaveCountAsync(0);
+    }
+
+    /// <summary>
+    /// 091. A red message that names the file and contains
+    /// <paramref name="why"/> — not just any red message.
+    /// </summary>
+    private static async Task ExpectRedAsync(IPage page, string name, string why)
     {
         var red = page.Locator(".alert-danger");
         try
@@ -370,11 +451,28 @@ public class DealWorkTests : E2ETest
             throw new AssertionException(
                 $"Uploading {name} showed no refusal." + (green.Length > 0 ? $" The page said: {green}" : ""));
         }
-        TestContext.Progress.WriteLine($"[e2e] {name} refused: {OneLine(await red.First.InnerTextAsync())}");
 
-        await OpenTabAsync(page, dealId, "attachments");
-        await Assertions.Expect(page.Locator("#attachments .list-group-item", new() { HasText = name })).ToHaveCountAsync(0);
+        var said = OneLine(await red.First.InnerTextAsync());
+        TestContext.Progress.WriteLine($"[e2e] {name} refused: {said}");
+        Assert.That(said.Contains(why, StringComparison.OrdinalIgnoreCase), Is.True,
+            $"Uploading {name} was refused, but the message does not say why in words: \"{said}\"");
+        Assert.That(said, Does.Contain(name),
+            $"The refusal does not name the file {name}: \"{said}\"");
     }
+
+    /// <summary>091. The quote page → its Attachments card → choose a file → upload.</summary>
+    private static async Task QuoteUploadAsync(IPage page, string quoteUrl, string name, string mime, byte[] bytes)
+    {
+        await page.GotoAsync(quoteUrl);
+        var form = page.Locator("form[enctype='multipart/form-data']:has(input[type=file][name=file])");
+        await form.Locator("input[type=file]").SetInputFilesAsync(new FilePayload { Name = name, MimeType = mime, Buffer = bytes });
+        await form.Locator("button[type=submit]").ClickAsync();
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+    }
+
+    /// <summary>091. One attachment row on the quote page, by file name.</summary>
+    private static ILocator QuoteAttachment(IPage page, string name) =>
+        page.Locator(".qd-att", new() { HasText = name });
 
     private sealed record Fetched(int Status, byte[] Bytes);
 

@@ -21,6 +21,9 @@
 //
 // 090b — LeadNoteDto.CreatedByName: the author's name. CreatedBy holds the
 // user's id, which the Notes tab printed as it was.
+//
+// 092 — ExportLeadsRequest.CustomFilters (optional, trailing): the export
+// applies the Leads list's custom field filters too.
 // =====================================================================
 
 using MerkaiTrial.Domain.Enums;
@@ -413,11 +416,17 @@ namespace MerkaiTrial.Application.DTOs
    
 
     // ========== EXPORT/IMPORT ==========
+    /// <summary>
+    /// 092: CustomFilters is optional and TRAILING, so every existing
+    /// `new ExportLeadsRequest(...)` still compiles and means the same. With
+    /// it, the export applies exactly the Leads list's filters.
+    /// </summary>
     public record ExportLeadsRequest(
         Guid TenantId,
         string? SearchTerm,
         string? Status,
-        string? AssignedTo
+        string? AssignedTo,
+        IReadOnlyList<CustomFieldFilter>? CustomFilters = null
     );
 
     

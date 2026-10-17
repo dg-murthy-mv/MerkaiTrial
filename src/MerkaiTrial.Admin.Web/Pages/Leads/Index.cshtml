@@ -82,6 +82,12 @@
    • A failed load shows Model.PageError on this response (it was
      TempData, so it appeared one page late).
    • An empty FILTERED list says so and offers to clear.
+
+   092 — EXPORT. An "Export" button beside Import downloads the list AS
+   SHOWN: the current tab, search, owner and custom field filters, every
+   page (not just this one), as an Excel file whose columns the importer
+   recognises. Shown to anyone who can see leads; the file only ever holds
+   the leads that person can see.
    ===================================================================== *@
 
 <style>
@@ -216,6 +222,16 @@
         </div>
 
         <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            @* 092 — the list as shown, every page, as a spreadsheet. *@
+            @if (p.TotalCount > 0)
+            {
+                <a asp-page="./Index" asp-page-handler="Export" asp-all-route-data="Model.FilterRoute()"
+                   class="btn btn-sm btn-outline-secondary" id="leadsExport"
+                   title="Download these @p.TotalCount @(p.TotalCount == 1 ? "lead" : "leads") as an Excel file">
+                    <i class="bi bi-download me-1"></i>Export
+                </a>
+            }
+
             @if (Model.CanCreate)
             {
                 <a asp-page="./Import" class="btn btn-sm btn-outline-secondary">

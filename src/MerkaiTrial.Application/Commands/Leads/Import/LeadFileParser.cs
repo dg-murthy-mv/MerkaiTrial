@@ -12,6 +12,23 @@
 //   than an escaped quote, and it assumed fixed column positions, so any
 //   sheet whose columns weren't in its exact order imported garbage into
 //   the wrong fields.
+//
+// 092
+//   • EXCEL DATE CELLS ARE READ AS 2026-10-16. GetFormattedString renders
+//     a date cell in whatever format the cell carries — very often the
+//     US "m/d/yyyy" built-in — so 1 March came out as "3/1/2027", which a
+//     workspace that writes dates day-first would read as 3 January. A
+//     cell that IS a date is now written in ISO form, which nobody can
+//     read two ways. Every other cell is unchanged.
+//   • SuggestMapping knows custom fields, and tries the most certain
+//     match first: a heading that is exactly a field's OWN name (what the
+//     Export button writes), then a custom field's exact label, then the
+//     synonyms, and only then "contains" — for built-in fields only, so a
+//     custom column called "Account manager" is never grabbed by Company
+//     because it happens to contain "account".
+//   • ParseDecimal no longer reads a grouping comma as a decimal point:
+//     "₹1,25,000" was unreadable and "95,000" imported as 95 — in
+//     Estimated value as well as in the new custom number columns.
 // =====================================================================
 
 using System.Globalization;
@@ -180,7 +197,7 @@ public static class LeadFileParser
         // rather than as an OLE serial number.
         List<string> ReadRow(IXLRangeRow r) =>
             Enumerable.Range(1, lastCol)
-                      .Select(i => r.Cell(i).GetFormattedString().Trim())
+                      .Select(i => ReadCell(r.Cell(i)))
                       .ToList();
 
         var headers = ReadRow(allRows[0]);
@@ -191,6 +208,32 @@ public static class LeadFileParser
                           .ToList();
 
         return Finish(headers, rows.Select(r => r.ToList()).ToList(), warnings);
+    }
+
+    /// <summary>
+    /// 092. What one cell says. A real date cell is written as ISO
+    /// (2026-10-16, or 2026-10-16 14:30 when it carries a time) — see the
+    /// header. Anything else reads the way it looks in Excel.
+    /// </summary>
+    private static string ReadCell(IXLCell cell)
+    {
+        try
+        {
+            if (cell.DataType == XLDataType.DateTime)
+            {
+                var d = cell.GetDateTime();
+                return d.TimeOfDay == TimeSpan.Zero
+                    ? d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    : d.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+            }
+        }
+        catch (Exception)
+        {
+            // A cell flagged as a date that will not read as one: fall back
+            // to what the person sees, exactly as before 092.
+        }
+
+        return cell.GetFormattedString().Trim();
     }
 
     // =================================================================
@@ -248,39 +291,64 @@ public static class LeadFileParser
     }
 
     /// <summary>
-    /// Best-guess field for each column. Exact synonym match first, then
-    /// "contains" — so "Lead Owner Email" still finds Owner. A field is
-    /// never suggested twice; the leftmost column wins.
+    /// Best-guess field for each column. A field is never suggested twice
+    /// and a column never feeds two fields; the leftmost column wins.
+    ///
+    /// 092 — four passes, most certain first:
+    ///   1. a heading that is exactly a built-in field's own name
+    ///      ("Lead source", "Estimated value") — what Export writes;
+    ///   2. a heading that is exactly a custom field's label;
+    ///   3. a heading that is one of a built-in field's synonyms;
+    ///   4. a heading that CONTAINS a synonym — built-in fields only, so
+    ///      "Lead Owner Email" still finds Owner, but a custom column is
+    ///      never pulled into a built-in field by a coincidence of spelling.
     /// </summary>
-    public static Dictionary<string, int> SuggestMapping(IReadOnlyList<string> headers)
+    /// <param name="customFields">
+    /// (mapping key, label) for each active custom field. Optional, so the
+    /// old one-argument call still compiles and behaves as before.
+    /// </param>
+    public static Dictionary<string, int> SuggestMapping(
+        IReadOnlyList<string> headers,
+        IReadOnlyList<(string Key, string Label)>? customFields = null)
     {
         var result = new Dictionary<string, int>();
         var normalised = headers.Select(NormaliseHeader).ToList();
 
-        foreach (var (field, synonyms) in ImportFields.Synonyms)
+        void Take(string key, Func<string, bool> matches)
         {
-            for (var i = 0; i < normalised.Count; i++)
-            {
-                if (result.ContainsValue(i)) continue;
-                if (!synonyms.Contains(normalised[i])) continue;
-                result[field] = i;
-                break;
-            }
-        }
-
-        foreach (var (field, synonyms) in ImportFields.Synonyms)
-        {
-            if (result.ContainsKey(field)) continue;
-
+            if (result.ContainsKey(key)) return;
             for (var i = 0; i < normalised.Count; i++)
             {
                 if (result.ContainsValue(i)) continue;
                 if (string.IsNullOrEmpty(normalised[i])) continue;
-                if (!synonyms.Any(s => normalised[i].Contains(s))) continue;
-                result[field] = i;
-                break;
+                if (!matches(normalised[i])) continue;
+                result[key] = i;
+                return;
             }
         }
+
+        // 1 — a field's own name.
+        foreach (var field in ImportFields.All)
+        {
+            var own = NormaliseHeader(field.Label);
+            Take(field.Key, h => h == own);
+        }
+
+        // 2 — a custom field's exact label.
+        foreach (var (key, label) in customFields ?? Array.Empty<(string Key, string Label)>())
+        {
+            var own = NormaliseHeader(label);
+            if (own.Length == 0) continue;
+            Take(key, h => h == own);
+        }
+
+        // 3 — a synonym, exactly.
+        foreach (var (field, synonyms) in ImportFields.Synonyms)
+            Take(field, h => synonyms.Contains(h));
+
+        // 4 — contains a synonym. Built-in fields only.
+        foreach (var (field, synonyms) in ImportFields.Synonyms)
+            Take(field, h => synonyms.Any(syn => h.Contains(syn)));
 
         return result;
     }
@@ -360,7 +428,8 @@ public static class LeadFileParser
     /// <summary>
     /// Money as typed by humans: "฿95,000.00", "95 000", "1,234.56",
     /// "(500)" for negative, "₹1,40,000" with Indian grouping. Returns null
-    /// when there is no number in there at all.
+    /// when there is no number in there at all. Also reads custom NUMBER
+    /// columns (092).
     /// </summary>
     public static decimal? ParseDecimal(string? raw)
     {
@@ -376,14 +445,40 @@ public static class LeadFileParser
         var cleaned = sb.ToString();
         if (cleaned.Length == 0) return null;
 
-        // Decide which separator is the decimal point: whichever is last.
+        // Decide which separator is the decimal point.
+        //
+        // 092 — FIXED: "only commas" used to mean "the comma is the decimal
+        // point", so "₹1,25,000" became 1.25.000 (unreadable) and "95,000"
+        // became 95. In India, Thailand, the Philippines and the UAE a comma
+        // groups thousands. Now:
+        //   both kinds         the LAST one is the decimal point
+        //                      (1,234.56 and 1.234,56)
+        //   commas only        grouping — unless there is exactly one and
+        //                      it has one or two digits after it (12,5)
+        //   dots only          a decimal point — unless there are several
+        //                      (1.250.000 is grouping)
         var lastDot = cleaned.LastIndexOf('.');
         var lastComma = cleaned.LastIndexOf(',');
+        var commas = cleaned.Count(c => c == ',');
+        var dots = cleaned.Count(c => c == '.');
 
-        if (lastComma > lastDot)
-            cleaned = cleaned.Replace(".", "").Replace(',', '.');   // 1.234,56
-        else
-            cleaned = cleaned.Replace(",", "");                     // 1,234.56
+        if (commas > 0 && dots > 0)
+        {
+            cleaned = lastComma > lastDot
+                ? cleaned.Replace(".", "").Replace(',', '.')        // 1.234,56
+                : cleaned.Replace(",", "");                         // 1,234.56
+        }
+        else if (commas > 0)
+        {
+            var after = cleaned.Length - lastComma - 1;
+            cleaned = commas == 1 && after is 1 or 2
+                ? cleaned.Replace(',', '.')                         // 12,5
+                : cleaned.Replace(",", "");                         // 1,25,000 · 95,000
+        }
+        else if (dots > 1)
+        {
+            cleaned = cleaned.Replace(".", "");                     // 1.250.000
+        }
 
         if (!decimal.TryParse(cleaned, NumberStyles.Any, CultureInfo.InvariantCulture, out var value))
             return null;

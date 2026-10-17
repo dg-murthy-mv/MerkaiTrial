@@ -28,6 +28,9 @@
 //   DismissedAtUtc = "take it off my list" (hides it, keeps the record).
 //   A single IsRead flag would force "clear all" to be either a lie or a
 //   delete.
+//
+// 091 — TaskAssigned (12): someone gave me a task, or handed one on to
+//   me. Added at the END, as the rule below says.
 // =====================================================================
 
 using System.ComponentModel.DataAnnotations.Schema;
@@ -100,7 +103,14 @@ namespace MerkaiTrial.Domain.Entities
         /// holds a working one-time link, and a sent email has no further
         /// use for it (OutboundMessageWorker, 086).
         /// </summary>
-        AccountSecurity = 11
+        AccountSecurity = 11,
+
+        /// <summary>
+        /// 091. Someone gave me a task — on a lead, a deal, a contact or a
+        /// company — or handed one of theirs on to me. Not sent when I give
+        /// a task to myself.
+        /// </summary>
+        TaskAssigned = 12
     }
 
     public class Notification

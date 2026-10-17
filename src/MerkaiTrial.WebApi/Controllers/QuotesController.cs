@@ -18,6 +18,20 @@
 //      instead of "Failed to update quote status". Create / Update /
 //      Delete / Status all do this now.
 //   Public token endpoints are unchanged.
+//
+// CHANGES (091 — deleting a quote's attachment)
+//   ✅ DELETE api/quotes/attachments/{attachmentId} now exists. That is the
+//      address Admin.Web's QuoteService has always called ("no placeholder
+//      quoteId needed"), but the only delete route here was
+//      {id}/attachments/{attachmentId}, so every delete from the quote page
+//      missed and showed "Failed to delete attachment". Both addresses go
+//      to the same action, and it was already checked against the
+//      attachment's own quote, never the id in the address.
+//   ✅ It needs Quotes.Update, not Quotes.Delete — the same rule as the
+//      quote page's Delete button and handler, and as lead and deal
+//      attachments: removing a file from a quote changes the quote, it
+//      does not delete it. A rep with Update but not Delete saw the button
+//      and was always refused.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Quotes;
@@ -379,11 +393,13 @@ public class QuotesController : ControllerBase
         }
     }
 
-    // DELETE api/quotes/{id}/attachments/{attachmentId}?tenantId={guid}
+    // DELETE api/quotes/{id}/attachments/{attachmentId}
+    // DELETE api/quotes/attachments/{attachmentId}   (091 — what Admin.Web calls)
     [HttpDelete("{id:guid}/attachments/{attachmentId:guid}")]
-    [Authorize(Policy = "Quotes.Delete")]
+    [HttpDelete("attachments/{attachmentId:guid}")]
+    [Authorize(Policy = "Quotes.Update")]   // 091 — was Quotes.Delete; see the header
     public async Task<IActionResult> DeleteAttachment(
-        Guid id, Guid attachmentId, CancellationToken ct)
+        Guid attachmentId, CancellationToken ct)
     {
         var tenantId = _currentUserService.GetCurrentTenantId();
         try

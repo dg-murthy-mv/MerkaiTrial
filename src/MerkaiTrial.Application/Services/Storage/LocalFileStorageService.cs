@@ -17,6 +17,14 @@
 //     to recognise it, and only for the types already allowed here.
 //   • The extension written to disk is cleaned: letters and digits only,
 //     at most 10 — the name comes from a stranger's email.
+//
+// 091 — the two refusals in SaveAsync are written for the person who
+//   pressed Upload. They reach the page word for word, and used to read
+//   "File type 'text/html' is not allowed" and "File size 11534336
+//   exceeds maximum 10485760 bytes". Now:
+//     'page.html' can't be attached — that type of file isn't allowed. …
+//     'huge.pdf' is 11.0 MB. Files can be up to 10 MB.
+//   The checks themselves are unchanged.
 // =====================================================================
 
 using MerkaiTrial.Application.Services.Storage;
@@ -84,15 +92,15 @@ public class LocalFileStorageService : IFileStorageService
         IFormFile file,
         CancellationToken ct = default)
     {
-        // Validate size
+        // Validate size — 091: in words a person can act on.
         if (file.Length > MaxFileSizeBytes)
-            throw new InvalidOperationException(
-                $"File size {file.Length} exceeds maximum {MaxFileSizeBytes} bytes");
+            throw new InvalidOperationException(TooLargeMessage(file.FileName, file.Length));
 
-        // Validate MIME type
+        // Validate MIME type — 091: likewise.
         if (!AllowedMimeTypes.Contains(file.ContentType))
             throw new InvalidOperationException(
-                $"File type '{file.ContentType}' is not allowed");
+                $"'{SafeName(file.FileName)}' can't be attached — that type of file isn't allowed. " +
+                "Use a PDF, Word or Excel file, an image (JPG, PNG, GIF, WebP), or a text or CSV file.");
 
         var (fullPath, fileUrl) = BuildPath(tenantId, entityType, file.FileName);
 
@@ -152,6 +160,11 @@ public class LocalFileStorageService : IFileStorageService
         Stream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         return Task.FromResult<Stream?>(stream);
     }
+
+    /// <summary>091. "'huge.pdf' is 11.0 MB. Files can be up to 10 MB."</summary>
+    private static string TooLargeMessage(string? fileName, long sizeBytes)
+        => $"'{SafeName(fileName)}' is {(sizeBytes / (1024d * 1024d)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} MB. " +
+           $"Files can be up to {MaxFileSizeBytes / (1024 * 1024)} MB.";
 
     public string? WhyNotAllowed(string? contentType, long sizeBytes, string? fileName = null)
     {

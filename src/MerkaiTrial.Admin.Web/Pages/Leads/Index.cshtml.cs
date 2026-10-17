@@ -48,6 +48,16 @@
 //      reach those (FormatCurrency(x, 0) resolves to the base
 //      FormatCurrency(decimal, int?)). ICurrentTenantService went with
 //      them; TenantCurrency/TenantCurrencySymbol were set and never read.
+//
+// 092 — EXPORT
+//   OnGetExportAsync (?handler=Export) downloads the list AS SHOWN: the
+//   same tab (resolved to status keys exactly as the list does), search,
+//   owner and custom field filters — every page, not just this one. The
+//   API applies the very same filter code as the list and the signed-in
+//   user's record visibility, so the file can only hold leads this person
+//   could already see. Needs leads.read, like the list itself.
+//   A refusal (more rows than one export holds) comes back to the list,
+//   filters intact, with the API's sentence.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;
@@ -327,6 +337,63 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             }
 
             return StatusFilter;
+        }
+
+        // =============================================================
+        // EXPORT (092)
+        // =============================================================
+
+        public async Task<IActionResult> OnGetExportAsync()
+        {
+            var permissionCheck = await ValidatePermissionAsync(Actions.Read);
+            if (permissionCheck != null) return permissionCheck;
+
+            await InitializePermissionsAsync();
+
+            // The tab needs the statuses; the custom filters need the fields.
+            await LoadStatusesAsync();
+            await LoadCustomFieldsAsync(Request.Query);
+
+            try
+            {
+                var bytes = await _leadService.ExportAsync(
+                    _currentUserService.GetCurrentTenantId(),
+                    SearchTerm,
+                    ResolveStatusQuery(),
+                    AssignedToFilter,
+                    CustomFilters.Filters);
+
+                var tab = IsAllTab || IsActiveTab ? CurrentTabName : SafeFilePart(CurrentTabName);
+                var fileName = $"Leads-{tab}-{DateTime.UtcNow:yyyy-MM-dd}.xlsx";
+
+                return File(bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    fileName);
+            }
+            catch (InvalidOperationException ex)
+            {
+                TempData["ErrorMessage"] = ex.Message;     // the API's own reason
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting leads");
+                TempData["ErrorMessage"] = "The export couldn't be made. Please try again.";
+            }
+
+            // Back to the same list — tab, search, owner, custom filters, size.
+            var back = new RouteValueDictionary();
+            foreach (var (k, v) in FilterRoute()) back[k] = v;
+            back[nameof(PageSize)] = ClampPageSize(PageSize);
+            return RedirectToPage("./Index", back);
+        }
+
+        /// <summary>A status name made safe for a file name: letters, digits and dashes.</summary>
+        private static string SafeFilePart(string text)
+        {
+            var chars = text.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray();
+            var cleaned = new string(chars).Trim('-');
+            while (cleaned.Contains("--")) cleaned = cleaned.Replace("--", "-");
+            return cleaned.Length == 0 ? "Leads" : cleaned;
         }
 
         // =============================================================
