@@ -28,6 +28,9 @@
 //     usable (DOMContentLoaded, not every font and image), with the same
 //     explanation when it does not arrive. Flows.OpenLeadAsync uses it —
 //     that is the wait one 089 run lost 20 seconds on.
+//
+// 093d: SetPasswordFromLinkAsync waits up to 40 seconds for the redirect
+// after a new password, and says why when it does not come — see there.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -83,8 +86,26 @@ public static class Ui
         // 088c: Commit, not the default Load — the redirect is what proves
         // the password was accepted, and a slow web font on the sign-in
         // page must not fail the run. The message is checked instead.
-        await page.WaitForURLAsync(url => url.Contains("passwordSet=true", StringComparison.OrdinalIgnoreCase),
-            new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs, WaitUntil = WaitUntilState.Commit });
+        //
+        // 093d: twice the usual wait, and a reason when it still runs out.
+        // Setting a password hashes it on the server, and the first one in a
+        // freshly provisioned workspace also warms that workspace up — one
+        // run took longer than 20 seconds here and failed a whole fixture's
+        // setup with a bare "Timeout 20000ms exceeded". This runs once per
+        // person per run, so the longer wait costs nothing when all is well.
+        var wait = E2ESettings.ActionTimeoutMs * 2;
+        try
+        {
+            await page.WaitForURLAsync(url => url.Contains("passwordSet=true", StringComparison.OrdinalIgnoreCase),
+                new PageWaitForURLOptions { Timeout = wait, WaitUntil = WaitUntilState.Commit });
+        }
+        catch (Exception ex) when (IsTimeout(ex))
+        {
+            throw new AssertionException(
+                $"Setting the password from {MaskToken(link)} did not reach the sign-in page within {wait / 1000:0}s " +
+                $"(still on {PathOf(page.Url)}). " +
+                (await StillLoadingAsync(page) ?? await DescribePageProblemsAsync(page)));
+        }
         await page.GetByText("Your password is set").First
             .WaitForAsync(new LocatorWaitForOptions { Timeout = E2ESettings.ActionTimeoutMs });
     }

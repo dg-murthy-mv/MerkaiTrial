@@ -88,6 +88,16 @@
 //   4. A converted lead opened by URL is sent back to its page with a
 //      reason, as the Edit buttons are already hidden for it. The API
 //      refuses nothing here today, so the page is the guard that matters.
+//
+// 093 — DUPLICATE WARNING
+//   When the name, email, phone or company is CHANGED, the API is asked
+//   whether another lead (one this person can see, never this one) now
+//   looks like the same person. If so the form comes back with the
+//   matches, a "Save changes anyway" button, and — for someone allowed to
+//   merge (update and delete) — a "Merge these two leads" link on each.
+//   An edit that leaves those four fields alone is not checked, so a lead
+//   that already had a twin can still have its value or owner changed
+//   without being warned every time. A failed check never blocks a save.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;
@@ -103,6 +113,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using System.ComponentModel.DataAnnotations;
+using LeadDuplicateDto = MerkaiTrial.Application.Commands.Leads.LeadDuplicateDto;   // 093
 
 namespace MerkaiTrial.Admin.Web.Pages.Leads
 {
@@ -144,6 +155,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         /// <summary>079. Posted as CustomFields[&lt;field id&gt;] = value.</summary>
         [BindProperty]
         public Dictionary<string, string?> CustomFields { get; set; } = new();
+
+        // ── 093: duplicate warning ────────────────────────────────────
+        /// <summary>True only when posted by "Save changes anyway".</summary>
+        [BindProperty] public bool ConfirmDuplicate { get; set; }
+
+        public List<LeadDuplicateDto> Duplicates { get; private set; } = new();
+
+        public LeadDuplicateWarningVm DuplicateWarning => new()
+        {
+            Duplicates     = Duplicates,
+            CurrentLeadId  = Id,
+            CanMerge       = CanUpdate && CanDelete,
+            SaveAnywayText = "Save changes anyway"
+        };
 
         /// <summary>079. Country id → its currency code, for the sync script.</summary>
         public string CountryCurrencyJson { get; private set; } = "{}";
@@ -323,6 +348,30 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
             if (!ModelState.IsValid)
                 return Page();
+
+            // 093 — only when something that identifies a person changed.
+            if (!ConfirmDuplicate)
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                LeadDetailDto? before = null;
+                try { before = await _leadService.GetByIdAsync(tenantId, Id); }
+                catch (Exception ex) { _logger.LogInformation(ex, "Lead {Id} could not be re-read for the duplicate check", Id); }
+
+                var identityChanged = before is null
+                    || LeadDuplicateCheck.Changed(before.FullName, Input.FullName)
+                    || LeadDuplicateCheck.Changed(before.Email, Input.Email)
+                    || LeadDuplicateCheck.Changed(before.Phone, Input.Phone)
+                    || LeadDuplicateCheck.Changed(before.CompanyName, Input.CompanyName);
+
+                if (identityChanged)
+                {
+                    Duplicates = await LeadDuplicateCheck.FindAsync(_leadService, _logger,
+                        Input.Email, Input.Phone, Input.FullName, Input.CompanyName, excludeLeadId: Id);
+
+                    if (Duplicates.Count > 0)
+                        return Page();
+                }
+            }
 
             try
             {

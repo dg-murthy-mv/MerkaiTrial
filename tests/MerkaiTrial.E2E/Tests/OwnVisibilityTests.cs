@@ -22,6 +22,12 @@
 //      The hand-made requests are checked to have reached the page (not
 //      stopped at the anti-forgery check), so a pass means the server
 //      refused them, not that the request was malformed.
+//   3. (093) The duplicate warning does not leak: Ploy adds a lead; Ratt
+//      adding a lead with the SAME email is not warned (he cannot see
+//      Ploy's lead, and "this customer already exists" would tell him it
+//      is someone else's). The admin, who sees every lead, is warned.
+//      Ratt's lead is given its own phone number, so only the email could
+//      have matched.
 // =====================================================================
 
 using System.Text;
@@ -205,6 +211,63 @@ public class OwnVisibilityTests : E2ETest
         {
             foreach (var (module, scope) in restore)
                 await PutBackAsync(admin, repRole, module, scope);
+        }
+    }
+
+    // =================================================================
+    // 3. Duplicate warning (093)
+    // =================================================================
+
+    [Test]
+    public async Task The_duplicate_warning_only_compares_leads_the_rep_can_see()
+    {
+        var repRole = C.RoleOf["rep"];
+        var admin = await SignedInAsync(C.Admin);
+
+        var original = await Step($"Set \"{repRole}\" to Own for leads", () =>
+            RecordVisibility.SetAsync(admin, repRole, "Leads", "Own"));
+
+        try
+        {
+            var tag = $"DW{Random.Shared.Next(100000, 999999)}";
+            var email = World.EmailFor("C", "dw" + Random.Shared.Next(1000, 9999));
+            var ploysLead = $"Ploy Twin {tag}";
+
+            await Step("Ploy adds a lead", async () =>
+            {
+                var ploy = await SignedInAsync(C["rep2"]);
+                await Flows.CreateLeadAsync(ploy, ploysLead, email, 50000m, C);
+            });
+
+            await Step("Ratt adds a lead with the same email, and is not warned", async () =>
+            {
+                var ratt = await SignedInAsync(C["rep"]);
+                var ownPhone = "+6689" + Random.Shared.Next(1000000, 9999999);
+                await Flows.CreateLeadAsync(ratt, $"Ratt Twin {tag}", email, 50000m, C, $"Ratt Co {tag}",
+                    beforeSave: p => p.Locator("#Input_Phone").FillAsync(ownPhone),
+                    acceptDuplicate: false);
+            });
+
+            await Step("The admin adding the same email IS warned, naming Ploy's lead", async () =>
+            {
+                string? warning = null;
+                try
+                {
+                    await Flows.CreateLeadAsync(admin, $"Admin Twin {tag}", email, 50000m, C, $"Admin Co {tag}",
+                        acceptDuplicate: false);
+                }
+                catch (AssertionException ex) when (ex.Message.Contains("possible duplicate"))
+                {
+                    warning = ex.Message;
+                }
+
+                Assert.That(warning, Is.Not.Null, "The admin, who sees every lead, was not warned about the same email.");
+                Assert.That(warning, Does.Contain(ploysLead), $"The admin's warning does not name Ploy's lead: {warning}");
+            });
+        }
+        finally
+        {
+            await PutBackAsync(admin, repRole, "Leads", original);
         }
     }
 

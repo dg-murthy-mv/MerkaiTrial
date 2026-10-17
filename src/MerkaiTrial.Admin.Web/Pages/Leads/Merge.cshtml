@@ -1,0 +1,223 @@
+@* =====================================================================
+   MERGE LEADS - View
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/Merge.cshtml
+
+   NEW FILE (093). Step 1 finds the other lead; step 2 shows the two side
+   by side — the kept lead on the left — with a choice on every field
+   where they differ, and Merge.
+   ===================================================================== *@
+@page
+@using MerkaiTrial.Admin.Web.Pages.Leads
+@model MerkaiTrial.Admin.Web.Pages.Leads.MergeModel
+@{
+    ViewData["Title"] = "Merge Leads";
+    var k = Model.KeepLead;
+    var o = Model.OtherLead;
+}
+
+<style>
+    .mg-col-head { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+    .mg-pick { cursor: pointer; display: block; border: 1px solid #e2e8f0; border-radius: .5rem; padding: .45rem .65rem; margin: 0; min-height: 2.4rem; }
+    .mg-pick:hover { border-color: #a5b4fc; }
+    .mg-pick input { margin-right: .4rem; }
+    .mg-pick:has(input:checked) { border-color: #4f46e5; background: #eef2ff; }
+    .mg-empty { color: #94a3b8; font-style: italic; }
+    .mg-same td { color: #64748b; }
+    @@media (max-width: 767.98px) { .mg-table th:first-child, .mg-table td:first-child { min-width: 7rem; } }
+</style>
+
+<div class="container-fluid py-4">
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-4">
+        <div>
+            <h2 class="mb-1"><i class="bi bi-intersect me-2"></i>Merge leads</h2>
+            <p class="text-muted mb-0">
+                Two records of the same person become one. Everything on the other lead — activities,
+                tasks, notes, files and emails — moves to the one you keep, and the other is removed.
+            </p>
+        </div>
+        @if (k is not null)
+        {
+            <a asp-page="./Detail" asp-route-id="@k.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Back to @k.FullName
+            </a>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.PageError))
+    {
+        <div class="alert alert-danger" id="mergeError"><i class="bi bi-exclamation-triangle me-2"></i>@Model.PageError</div>
+    }
+
+    @* ═══════════ STEP 1 — FIND THE OTHER LEAD ═══════════ *@
+    @if (!Model.Comparing && k is not null)
+    {
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <p class="mb-3">
+                    Keeping <strong>@k.FullName</strong>
+                    <span class="text-muted">@string.Join(" · ", new[] { k.Email, k.Phone, k.CompanyName }.Where(s => !string.IsNullOrWhiteSpace(s)))</span>.
+                    Which lead should be merged into it?
+                </p>
+
+                <form method="get" class="d-flex gap-2 mb-3" style="max-width: 32rem;">
+                    <input type="hidden" name="keepId" value="@k.Id" />
+                    <input type="search" name="q" value="@Model.Q" class="form-control" id="mergeSearch"
+                           placeholder="Name, email, phone or company" aria-label="Find the other lead" autofocus />
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-search me-1"></i>Find</button>
+                </form>
+
+                @if (!string.IsNullOrWhiteSpace(Model.Q))
+                {
+                    if (Model.SearchResults.Count == 0)
+                    {
+                        <p class="text-muted mb-0">No other lead matches "@Model.Q". Converted leads can't be merged and are not listed.</p>
+                    }
+                    else
+                    {
+                        <div class="list-group" id="mergeResults">
+                            @foreach (var r in Model.SearchResults)
+                            {
+                                <a asp-page="./Merge" asp-route-keepId="@k.Id" asp-route-otherId="@r.Id"
+                                   class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                    <span>
+                                        <span class="fw-semibold">@r.FullName</span>
+                                        <span class="text-muted small ms-2">@string.Join(" · ", new[] { r.Email, r.Phone }.Where(s => !string.IsNullOrWhiteSpace(s)))</span>
+                                    </span>
+                                    <span class="badge bg-light text-dark border">@Model.StatusName(r.Status)</span>
+                                </a>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+
+    @* ═══════════ STEP 2 — SIDE BY SIDE ═══════════ *@
+    @if (Model.Comparing && k is not null && o is not null)
+    {
+        @if (Model.Blocked is not null)
+        {
+            <div class="alert alert-warning"><i class="bi bi-lock me-2"></i>@Model.Blocked</div>
+        }
+
+        <form method="post" id="mergeForm">
+            <input type="hidden" name="KeepId" value="@k.Id" />
+            <input type="hidden" name="OtherId" value="@o.Id" />
+
+            <div class="card shadow-sm mb-3">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0 mg-table">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 18%;"></th>
+                                <th style="width: 41%;">
+                                    <div class="mg-col-head">Keep</div>
+                                    <a asp-page="./Detail" asp-route-id="@k.Id" target="_blank" rel="noopener" class="fw-semibold">@k.FullName</a>
+                                    <div class="small text-muted">Added @Model.FormatDate(k.CreatedAtUtc)</div>
+                                </th>
+                                <th style="width: 41%;">
+                                    <div class="mg-col-head">Merge in, then remove</div>
+                                    <a asp-page="./Detail" asp-route-id="@o.Id" target="_blank" rel="noopener" class="fw-semibold">@o.FullName</a>
+                                    <div class="small text-muted">
+                                        Added @Model.FormatDate(o.CreatedAtUtc) ·
+                                        <a asp-page="./Merge" asp-route-keepId="@o.Id" asp-route-otherId="@k.Id" id="mergeSwap">Keep this one instead</a>
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!Model.DifferentRows.Any())
+                            {
+                                <tr><td colspan="3" class="text-muted">The two leads hold the same details. Merging moves everything onto the one you keep.</td></tr>
+                            }
+
+                            @foreach (var row in Model.DifferentRows)
+                            {
+                                var choice = Model.ChoiceFor(row);
+                                var idBase = "pick_" + row.Key;
+                                <tr data-merge-row="@row.Key">
+                                    <th scope="row" class="small">
+                                        @row.Label
+                                        @if (row.IsRetired)
+                                        {
+                                            <span class="badge bg-light text-muted border ms-1">Retired</span>
+                                        }
+                                    </th>
+                                    <td>
+                                        <label class="mg-pick" for="@(idBase)_keep">
+                                            <input type="radio" name="Pick[@row.Key]" value="@MergeModel.Keep" id="@(idBase)_keep"
+                                                   checked="@(choice == MergeModel.Keep)" />
+                                            @if (string.IsNullOrWhiteSpace(row.KeepText))
+                                            {
+                                                <span class="mg-empty">empty</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@row.KeepText</span>
+                                            }
+                                        </label>
+                                    </td>
+                                    <td>
+                                        <label class="mg-pick" for="@(idBase)_other">
+                                            <input type="radio" name="Pick[@row.Key]" value="@MergeModel.Other" id="@(idBase)_other"
+                                                   checked="@(choice == MergeModel.Other)" />
+                                            @if (string.IsNullOrWhiteSpace(row.OtherText))
+                                            {
+                                                <span class="mg-empty">empty</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@row.OtherText</span>
+                                            }
+                                        </label>
+                                    </td>
+                                </tr>
+                            }
+
+                            @if (Model.SameRows.Any())
+                            {
+                                <tr class="table-light">
+                                    <td colspan="3" class="small text-muted pt-3">The same on both</td>
+                                </tr>
+                                foreach (var row in Model.SameRows.Where(r => !string.IsNullOrWhiteSpace(r.KeepText)))
+                                {
+                                    <tr class="mg-same">
+                                        <th scope="row" class="small fw-normal">@row.Label</th>
+                                        <td colspan="2" class="small">@row.KeepText</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button type="submit" class="btn btn-primary" id="mergeSubmit"
+                        disabled="@(Model.Blocked is not null)"
+                        data-confirm="@($"Merge \"{o.FullName}\" into \"{k.FullName}\"? The other lead will be removed. This can't be undone.")">
+                    <i class="bi bi-intersect me-1"></i>Merge into @k.FullName
+                </button>
+                <a asp-page="./Merge" asp-route-keepId="@k.Id" class="btn btn-outline-secondary">Choose a different lead</a>
+                <span class="small text-muted">This can't be undone. The merge is noted on the kept lead's activities.</span>
+            </div>
+        </form>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // The question is in a data attribute, so a name with quotes in it
+        // can never break out of a script string.
+        (function () {
+            var form = document.getElementById('mergeForm');
+            var button = document.getElementById('mergeSubmit');
+            if (!form || !button) return;
+            form.addEventListener('submit', function (e) {
+                if (!window.confirm(button.getAttribute('data-confirm'))) e.preventDefault();
+            });
+        })();
+    </script>
+}

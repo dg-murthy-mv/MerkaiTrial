@@ -24,6 +24,9 @@
 //      its name, and the custom field values stored on it, by field name —
 //      what the importer actually wrote, which a screen would only show
 //      formatted. Nothing in 6 writes.
+//   7. (093) READ-ONLY merge checks: whether a lead is deleted, its
+//      estimated value, and how many activities on a record have a subject
+//      containing some text. Nothing in 7 writes.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -347,6 +350,37 @@ public sealed class TestDatabase
                 r.IsDBNull(4) ? null : r.GetBoolean(4));
         }
         return result;
+    }
+
+    // ── 093: merge checks (read-only) ─────────────────────────────────
+
+    /// <summary>True when the lead row is soft-deleted; null when there is no such row.</summary>
+    public async Task<bool?> IsLeadDeletedAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT IsDeleted FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        return await cmd.ExecuteScalarAsync() is bool b ? b : null;
+    }
+
+    /// <summary>A lead's estimated value.</summary>
+    public async Task<decimal?> LeadValueAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT EstimatedValue FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        return await cmd.ExecuteScalarAsync() is decimal d ? d : null;
+    }
+
+    /// <summary>Live activities and tasks on a record whose subject contains the text.</summary>
+    public async Task<int> CountActivitiesAsync(Guid entityId, string subjectContains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM Activities WHERE EntityId = @e AND IsDeleted = 0 AND Subject LIKE @s", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@s", "%" + subjectContains.Replace("[", "[[]").Replace("%", "[%]") + "%");
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
     }
 
     private async Task<int> CountAsync(string sql, Guid tenantId, string value)

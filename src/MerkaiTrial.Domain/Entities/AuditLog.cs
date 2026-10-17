@@ -125,6 +125,12 @@ namespace MerkaiTrial.Domain.Entities
         /// <summary>092. Someone downloaded the Leads list as a spreadsheet.</summary>
         public const string LeadsExported = "LeadsExported";
 
+        /// <summary>
+        /// 093. Two leads became one. Written on BOTH: the kept lead
+        /// (mergedFrom) and the removed one (mergedInto).
+        /// </summary>
+        public const string LeadMerged = "LeadMerged";
+
         // ── Deals ─────────────────────────────────────────────────────
         public const string DealCreated = "DealCreated";
         public const string DealUpdated = "DealUpdated";

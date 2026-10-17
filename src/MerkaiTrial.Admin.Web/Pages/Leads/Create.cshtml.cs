@@ -49,6 +49,17 @@
 //   ✅ A refusal from the API (InvalidOperationException — for example a
 //      required field emptied in another tab) is shown in the summary on
 //      THIS response, not stored for the next page.
+//
+// CHANGES (093 — duplicate warning)
+//   ✅ Before saving, the API is asked whether a lead with the same email,
+//      the same phone number, or the same name at the same company already
+//      exists (only among leads this person can see). If one does, the
+//      form comes back with the matches listed and a "Save as a new lead
+//      anyway" button; nothing is saved until the person chooses.
+//   ✅ ConfirmDuplicate is that button's value. It is never rendered as a
+//      field, so pressing Create Lead again checks again.
+//   ✅ A failed check is logged and the lead is saved — a duplicate check
+//      must never be the reason a lead is lost.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;             // 092
@@ -59,6 +70,7 @@ using MerkaiTrial.Admin.Web.Services.Meta;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Meta;
 using MerkaiTrial.Application.Configuration;          // 092
+using LeadDuplicateDto = MerkaiTrial.Application.Commands.Leads.LeadDuplicateDto;   // 093
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
@@ -104,6 +116,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         [BindProperty]
         public InputModel Input { get; set; } = new();
         public string CountryCodesJson { get; set; } = "{}";
+
+        // ── 093: duplicate warning ────────────────────────────────────
+        /// <summary>True only when posted by "Save as a new lead anyway".</summary>
+        [BindProperty] public bool ConfirmDuplicate { get; set; }
+
+        /// <summary>Leads that look like this one. Non-empty = the warning is shown.</summary>
+        public List<LeadDuplicateDto> Duplicates { get; private set; } = new();
+
+        public LeadDuplicateWarningVm DuplicateWarning => new()
+        {
+            Duplicates = Duplicates,
+            SaveAnywayText = "Save as a new lead anyway"
+        };
 
         // ── 092: custom fields ────────────────────────────────────────
         /// <summary>Posted as CustomFields[&lt;field id&gt;] = value, exactly like Edit.</summary>
@@ -237,6 +262,19 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 {
                     await LoadDropdownsAsync();
                     return Page();
+                }
+
+                // 093 — warn before creating a lead that may already exist.
+                if (!ConfirmDuplicate)
+                {
+                    Duplicates = await LeadDuplicateCheck.FindAsync(_leadService, _logger,
+                        Input.Email, Input.Phone, Input.FullName, Input.CompanyName, excludeLeadId: null);
+
+                    if (Duplicates.Count > 0)
+                    {
+                        await LoadDropdownsAsync();
+                        return Page();
+                    }
                 }
 
                 var currentUserId = _currentUserService.GetCurrentUserId();

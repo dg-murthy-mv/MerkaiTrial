@@ -1,0 +1,65 @@
+@* =====================================================================
+   _LeadDuplicateWarning.cshtml
+   Location: MerkaiTrial.Admin.Web/Pages/Leads/_LeadDuplicateWarning.cshtml
+
+   NEW FILE (093). Shown on Add lead and Edit lead when the lead being
+   saved looks like one that already exists. Renders nothing when there
+   are no matches.
+
+   MUST BE INSIDE THE <form>: "Save anyway" is a submit button carrying
+   ConfirmDuplicate=true, so everything typed is posted with it.
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Leads.LeadDuplicateWarningVm
+
+@if (Model.Duplicates.Count > 0)
+{
+    <div class="alert alert-warning mb-3" id="dupWarning" role="alert">
+        <div class="fw-semibold mb-2">
+            <i class="bi bi-people-fill me-1"></i>
+            @(Model.Duplicates.Count == 1
+                ? "This looks like a lead you already have"
+                : $"This looks like {Model.Duplicates.Count} leads you already have")
+        </div>
+
+        <ul class="list-unstyled mb-3">
+            @foreach (var d in Model.Duplicates)
+            {
+                var details = string.Join(" · ", new[] { d.Email, d.Phone, d.CompanyName }
+                    .Where(s => !string.IsNullOrWhiteSpace(s)));
+
+                <li class="dup-item border-start border-3 border-warning ps-2 mb-2" data-lead-id="@d.Id">
+                    <a asp-page="./Detail" asp-route-id="@d.Id" target="_blank" rel="noopener" class="fw-semibold">
+                        @d.FullName <i class="bi bi-box-arrow-up-right small"></i>
+                    </a>
+                    <span class="badge bg-light text-dark border ms-1">@d.StatusName</span>
+                    @if (d.IsConverted)
+                    {
+                        <span class="badge bg-success ms-1">Converted</span>
+                    }
+                    <div class="small">
+                        <span class="fw-semibold">@string.Join(", ", d.Reasons)</span>
+                        @if (details.Length > 0)
+                        {
+                            <span class="text-muted"> — @details</span>
+                        }
+                        <span class="text-muted"> · @(string.IsNullOrEmpty(d.OwnerName) ? "Unassigned" : d.OwnerName)</span>
+                    </div>
+                    @if (Model.CurrentLeadId is { } current && Model.CanMerge && !d.IsConverted)
+                    {
+                        <a asp-page="./Merge" asp-route-keepId="@current" asp-route-otherId="@d.Id"
+                           class="small dup-merge">
+                            <i class="bi bi-intersect me-1"></i>Merge these two leads
+                        </a>
+                    }
+                </li>
+            }
+        </ul>
+
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button type="submit" name="ConfirmDuplicate" value="true" class="btn btn-sm btn-warning" id="saveAnyway">
+                <i class="bi bi-check2 me-1"></i>@Model.SaveAnywayText
+            </button>
+            <span class="small text-muted">or open the lead above and update it instead.</span>
+        </div>
+    </div>
+}

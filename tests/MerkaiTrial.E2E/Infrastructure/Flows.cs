@@ -20,6 +20,17 @@
 //     to be usable, not fully loaded, and if it is slow the failure says
 //     the SERVER was slow (one 089 run lost 20 seconds here and reported
 //     it as a missing page).
+//
+// 093: Add lead can now answer "this looks like a lead you already
+// have". Every workspace's test leads share one sample phone number, so
+// most adds see it. CreateLeadAsync presses "Save as a new lead anyway"
+// by default (acceptDuplicate: true); a test about the warning passes
+// false, and then a warning fails the call with the warning's text — the
+// page is left on the form, with the warning showing.
+//
+// 093b: the required-field asterisks (span.text-danger, "*") are no longer
+// mistaken for an error. The first 093 run stopped at every warning with
+// "Add lead was refused: * | * | * | *".
 // =====================================================================
 
 using System.Globalization;
@@ -54,8 +65,13 @@ public static class Flows
     /// its detail screen.
     /// </summary>
     /// <param name="beforeSave">092. Runs on the filled form just before Create Lead — custom fields.</param>
+    /// <param name="acceptDuplicate">
+    /// 093. True: a duplicate warning is answered with "Save as a new lead
+    /// anyway". False: it fails the call with what the warning said.
+    /// </param>
     public static async Task<Guid> CreateLeadAsync(IPage page, string fullName, string email, decimal value,
-        TestTenant? workspace = null, string? companyName = null, Func<IPage, Task>? beforeSave = null)
+        TestTenant? workspace = null, string? companyName = null, Func<IPage, Task>? beforeSave = null,
+        bool acceptDuplicate = true)
     {
         var country  = workspace?.Country ?? "India";
         var currency = workspace?.Currency ?? "INR";
@@ -81,11 +97,35 @@ public static class Flows
         await page.GetByRole(AriaRole.Button, new() { Name = "Create Lead" }).ClickAsync();
 
         // 087b: either the page moves on, or it comes back with an error.
-        var problem = page.Locator(".alert-danger:visible, .validation-summary-errors:visible, span.text-danger:not(:empty)");
+        // 093: …or with the duplicate warning.
+        //
+        // 093b: the red "*" beside each required label is ALSO a
+        // span.text-danger. It never mattered while a successful save left
+        // the page; the duplicate warning keeps the form on screen, and four
+        // asterisks then read as "Add lead was refused: * | * | * | *".
+        // A lone asterisk is not a problem.
+        var problem = page.Locator(".alert-danger:visible, .validation-summary-errors:visible, span.text-danger:not(:empty)")
+            .Filter(new() { HasNotTextRegex = new Regex(@"^\s*\*\s*$") });
+        var duplicate = page.Locator("#dupWarning");
         await Ui.WaitUntilAsync(page,
             async () => !Ui.PathOf(page.Url).EndsWith("/Leads/Create", StringComparison.OrdinalIgnoreCase)
-                        || await problem.CountAsync() > 0,
+                        || await problem.CountAsync() > 0
+                        || await duplicate.CountAsync() > 0,
             "Add lead neither saved nor showed an error.");
+
+        if (Ui.PathOf(page.Url).EndsWith("/Leads/Create", StringComparison.OrdinalIgnoreCase)
+            && await problem.CountAsync() == 0 && await duplicate.CountAsync() > 0)
+        {
+            var warning = (await duplicate.InnerTextAsync()).Trim();
+            if (!acceptDuplicate)
+                throw new AssertionException("Add lead warned about a possible duplicate: " + warning);
+
+            await page.Locator("#saveAnyway").ClickAsync();
+            await Ui.WaitUntilAsync(page,
+                async () => !Ui.PathOf(page.Url).EndsWith("/Leads/Create", StringComparison.OrdinalIgnoreCase)
+                            || await problem.CountAsync() > 0,
+                "\"Save as a new lead anyway\" neither saved nor showed an error.");
+        }
 
         if (Ui.PathOf(page.Url).EndsWith("/Leads/Create", StringComparison.OrdinalIgnoreCase))
         {

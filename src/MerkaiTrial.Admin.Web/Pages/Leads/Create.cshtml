@@ -15,6 +15,10 @@
    092: "Additional details" — the workspace's Lead custom fields, through
    the shared _CustomFieldInputs partial (the same one Edit uses), and a
    summary line when any field needs attention.
+
+   093: the duplicate warning (_LeadDuplicateWarning) at the top of the
+   form when a lead like this one already exists. Its "Save anyway"
+   button is inside the form, so everything typed is posted with it.
    ===================================================================== *@
 @page
 @model MerkaiTrial.Admin.Web.Pages.Leads.CreateModel
@@ -67,6 +71,9 @@
                                 <span>Some fields need attention — they are marked below.</span>
                             </div>
                         }
+
+                        @* 093 *@
+                        <partial name="_LeadDuplicateWarning" model="Model.DuplicateWarning" />
 
                         @if (Model.FromEmailId.HasValue)
                         {

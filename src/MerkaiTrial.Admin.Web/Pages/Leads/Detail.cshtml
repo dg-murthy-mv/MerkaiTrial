@@ -18,6 +18,11 @@
 
    083: an "Emails" tab (the shared _RecordEmails partial) between
    Activities and Timeline.
+
+   093: a "Merge" button beside Edit — merge this lead with another one.
+   Shown only for a lead that is still a lead (not converted) and to
+   someone who can both update and delete leads, because a merge changes
+   this lead and removes the other.
    ===================================================================== *@
 @page "{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
@@ -115,6 +120,15 @@
                     }
                     @* If IsEditableState=true but CanUpdate=false → user has no update
                        permission, button is simply hidden (viewer/sales_rep with read-only) *@
+
+                    @* 093 — Merge: needs update AND delete, and a lead that is still a lead *@
+                    @if (Model.IsEditableState && Model.CanUpdate && Model.CanDelete)
+                    {
+                        <a asp-page="./Merge" asp-route-keepId="@Model.Lead.Id"
+                           class="btn btn-outline-secondary" id="leadMerge">
+                            <i class="bi bi-intersect me-2"></i>Merge
+                        </a>
+                    }
 
                     @* ✅ Delete — requires record not locked AND role has delete permission *@
                     @if (Model.IsDeletableState && Model.CanDelete)

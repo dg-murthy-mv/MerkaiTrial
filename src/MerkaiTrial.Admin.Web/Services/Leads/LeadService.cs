@@ -42,9 +42,24 @@
 //   refusal from the API (the row ceiling) arrives as an
 //   InvalidOperationException carrying the API's sentence, and is NOT
 //   logged as an error — the page shows it.
+//
+// 093 — DUPLICATES AND MERGE
+//   • FindDuplicatesAsync: leads that look like the same person (email,
+//     phone, or name + company), only among those the user can see.
+//     A failure is the CALLER's to swallow — a duplicate check must never
+//     stop a lead being saved.
+//   • MergeAsync: two leads into one. The API's refusals (converted lead,
+//     no delete permission) arrive as InvalidOperationException with the
+//     sentence, and are not logged as errors.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
+// 093 — aliases, not the whole namespace: Commands.Leads holds many
+// types, and one sharing a name with Application.DTOs would make every
+// use of that name ambiguous here.
+using LeadDuplicateDto = MerkaiTrial.Application.Commands.Leads.LeadDuplicateDto;
+using MergeLeadsDto = MerkaiTrial.Application.Commands.Leads.MergeLeadsDto;
+using MergeLeadsResultDto = MerkaiTrial.Application.Commands.Leads.MergeLeadsResultDto;
 using MerkaiTrial.Application.Configuration;   // 079 — CustomFieldFilterCodec
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Domain.Enums;
@@ -110,6 +125,11 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
         // Export/Import
         Task<byte[]> ExportAsync(Guid tenantId, string? search, string? status, string? assignedTo,
             IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 092
+
+        // 093 — duplicates and merge
+        Task<List<LeadDuplicateDto>> FindDuplicatesAsync(string? email, string? phone, string? fullName,
+            string? companyName, Guid? excludeLeadId = null);
+        Task<MergeLeadsResultDto> MergeAsync(MergeLeadsDto dto);
        // Task<ImportLeadsResult> ImportAsync(Guid tenantId, IFormFile file, string? importedBy);
 
         // Attachments
@@ -622,6 +642,41 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error exporting leads");
+                throw;
+            }
+        }
+
+        // ==================== DUPLICATES & MERGE (093) ====================
+
+        public async Task<List<LeadDuplicateDto>> FindDuplicatesAsync(string? email, string? phone, string? fullName,
+            string? companyName, Guid? excludeLeadId = null)
+        {
+            var q = new List<string>();
+            if (!string.IsNullOrWhiteSpace(email))       q.Add($"email={Uri.EscapeDataString(email.Trim())}");
+            if (!string.IsNullOrWhiteSpace(phone))       q.Add($"phone={Uri.EscapeDataString(phone.Trim())}");
+            if (!string.IsNullOrWhiteSpace(fullName))    q.Add($"name={Uri.EscapeDataString(fullName.Trim())}");
+            if (!string.IsNullOrWhiteSpace(companyName)) q.Add($"company={Uri.EscapeDataString(companyName.Trim())}");
+            if (excludeLeadId is { } ex && ex != Guid.Empty) q.Add($"excludeId={ex}");
+
+            if (q.Count == 0 || (q.Count == 1 && excludeLeadId.HasValue)) return new List<LeadDuplicateDto>();
+
+            return await _api.GetAsync<List<LeadDuplicateDto>>($"/api/leads/duplicates?{string.Join("&", q)}")
+                   ?? new List<LeadDuplicateDto>();
+        }
+
+        public async Task<MergeLeadsResultDto> MergeAsync(MergeLeadsDto dto)
+        {
+            try
+            {
+                return await _api.PostAsync<MergeLeadsResultDto>("/api/leads/merge", dto);
+            }
+            catch (InvalidOperationException)
+            {
+                throw;   // the API's own sentence — the page shows it
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error merging lead {Other} into {Keep}", dto.MergeLeadId, dto.KeepLeadId);
                 throw;
             }
         }
