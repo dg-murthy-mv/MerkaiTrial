@@ -31,6 +31,10 @@
 //      as-is and the Detail page could not resolve it. A legacy value not
 //      in the table is still offered, so an Edit never silently changes it.
 //
+//   095: [EmailRule] and [PhoneNumber] on the input model — the shared
+//   rules (InputRules), in the browser and here. The phone and mobile are
+//   checked against the contact's Country when typed without a + code.
+//
 //   On success it now goes to the new contact's Detail page rather than
 //   the list, so the person sees what they saved — including the custom
 //   fields — instead of hunting for it.
@@ -120,16 +124,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         {
             public Guid? CompanyId { get; set; }
 
+            // 095 — the length messages say what to do; [EmailRule] and
+            // [PhoneNumber] are the shared rules (InputRules), checked here
+            // when the form posts and in the browser before it does. The
+            // phone numbers are checked against the contact's own Country
+            // when they are typed without a + code.
             [Required(ErrorMessage = "First name is required")]
-            [StringLength(100)] public string FirstName { get; set; } = string.Empty;
-            [StringLength(100)] public string? LastName { get; set; }
-            [StringLength(100)] public string? JobTitle { get; set; }
+            [StringLength(100, ErrorMessage = Keep)] public string FirstName { get; set; } = string.Empty;
+            [StringLength(100, ErrorMessage = Keep)] public string? LastName { get; set; }
+            [StringLength(100, ErrorMessage = Keep)] public string? JobTitle { get; set; }
 
-            [EmailAddress][StringLength(320)] public string? Email { get; set; }
-            [StringLength(32)] public string? Phone   { get; set; }
-            [StringLength(32)] public string? Mobile  { get; set; }
-            [StringLength(500)] public string? Address { get; set; }
-            [StringLength(100)] public string? City    { get; set; }
+            [EmailRule][StringLength(320, ErrorMessage = Keep)] public string? Email { get; set; }
+
+            [PhoneNumber(CountryCodeProperty = nameof(Country))]
+            [StringLength(32, ErrorMessage = Keep)] public string? Phone { get; set; }
+
+            [PhoneNumber(CountryCodeProperty = nameof(Country))]
+            [StringLength(32, ErrorMessage = Keep)] public string? Mobile { get; set; }
+
+            [StringLength(500, ErrorMessage = Keep)] public string? Address { get; set; }
+            [StringLength(100, ErrorMessage = Keep)] public string? City    { get; set; }
 
             // 100, matching the column. The old 5 was a free-text guard;
             // the value now comes from a dropdown, and a legacy value
@@ -138,7 +152,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             [Display(Name = "Country")]
             public string? Country { get; set; }  // ✅ TENANT: defaulted to tenant country on GET
 
-            [StringLength(20)] public string? PostalCode { get; set; }
+            [StringLength(20, ErrorMessage = Keep)] public string? PostalCode { get; set; }
+
+            /// <summary>095. "Keep it to 100 characters." — {1} is the limit.</summary>
+            private const string Keep = "Keep it to {1} characters.";
             public string? Notes    { get; set; }
             public bool IsPrimary   { get; set; }
         }

@@ -1,36 +1,342 @@
-﻿@*
+@*
     =====================================================================
     VALIDATION SCRIPTS PARTIAL
     Location: MerkaiTrial.Admin.Web/Views/Shared/_ValidationScriptsPartial.cshtml
-    (NOTE: the previous header said Pages/Shared/ — it has always lived in
-     Views/Shared/. Razor Pages falls back to Views/Shared when resolving a
-     partial, which is why it worked despite the wrong comment.)
 
-    Purpose: Client-side validation scripts for forms.
+    095 — CHECKING IN THE BROWSER, AT LAST.
 
-    ── DISABLED 2026-08-01 ──────────────────────────────────────────────
-    Both scripts pointed at ~/lib/..., but wwwroot/lib/ does not exist and
-    there is no libman.json. They 404'd on every page that includes this
-    partial (~25 pages), costing 1.2–3.3s per page load in the Admin.Web
-    logs. Client-side validation was therefore NEVER working — this is a
-    missing feature, not a regression. Server-side validation is intact
-    and is what actually protects the data.
+    Until now this file loaded nothing: the jQuery validation scripts it
+    pointed at had never existed (no wwwroot/lib), so they were commented
+    out on 2026-08-01, and every form was checked only after it posted.
 
-    TO RE-ENABLE properly (do this alongside the real-auth work):
-      1. jQuery must be loaded first — check _Layout.cshtml. As of this
-         change the layout loads only bootstrap.bundle.min.js, which does
-         NOT include jQuery. Uncommenting these lines without adding
-         jQuery will throw a JS error instead of a 404.
-      2. Then either add libman.json and restore wwwroot/lib/, or switch
-         both tags to cdnjs.cloudflare.com — several Admin pages
-         (Admin/Roles, Admin/Users, Admin/Tenants) already use cdnjs, so
-         that route is consistent with existing practice.
-      3. Once wired, the existing [Required] attributes will populate the
-         asp-validation-for spans with no further changes.
-    ─────────────────────────────────────────────────────────────────────
+    This is a small validator of our own instead of jQuery + jquery-
+    validation + unobtrusive: no library, no CDN, nothing to download, and
+    it works on a laptop with no internet. It reads the same data-val-*
+    attributes ASP.NET already writes on every asp-for input, so the
+    [Required], [StringLength], [Range] and [EmailAddress] on the page
+    models — and 095's [PhoneNumber], [EmailRule] and [Money] — now act
+    before the form is sent, with the SAME sentences the server uses.
+
+    HOW IT BEHAVES
+      • On Save it checks the form. If something is wrong, nothing is
+        sent: each message appears under its own box (the span that
+        asp-validation-for already renders), the box turns red, and the
+        cursor goes to the first one.
+      • After that first try, a box is re-checked as you change it, so the
+        red goes away the moment it is fixed.
+      • It runs BEFORE any other submit script on the page, so a "Are you
+        sure?" question is never asked about a form that cannot be saved.
+      • Hidden and disabled boxes are skipped (a closed section is not the
+        person's problem).
+      • The browser's own rules still count — required, min, max, type=
+        email on boxes without data-val — but their message is shown in
+        the same place, not in a browser bubble.
+      • A button with formnovalidate, or a form with data-validate="off",
+        is sent without checking.
+      • Errors the SERVER found (a page that came back) get the same red
+        boxes when the page loads.
+
+    THE SERVER STILL DECIDES. This is for the person: it saves a round
+    trip and says what is wrong while they are looking at it. The page
+    model and the API check everything again.
+
+    THE PHONE AND EMAIL RULES are copies of InputRules.Phone and
+    InputRules.Email (MerkaiTrial.Application/Validation/InputRules.cs).
+    Change one, change the other. The browser does not know a record's
+    country, so a number WITHOUT + is only counted here (7–15 digits); a
+    +91 / +66 / +63 / +971 number is checked against its market. The
+    server, which knows the country, checks the rest.
+    =====================================================================
 *@
 
-@*
-<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
-<script src="~/lib/jquery-validation-unobtrusive/jquery.validate.unobtrusive.min.js"></script>
-*@
+<script>
+    (function () {
+        'use strict';
+        if (window.MerkaiValidate) return;            // the partial can be included twice
+
+        // ── the shared rules (copies of InputRules) ───────────────────
+        var MAX_MONEY = 999999999999;
+        var EMAIL = /^[^\s@@<>()\[\]\\,;:"]+@@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+        var MARKETS = [
+            { code: 'IN', dial: '91',  min: 10, max: 10, msg: 'An Indian number has 10 digits after +91 (leave out the first 0).' },
+            { code: 'TH', dial: '66',  min: 8,  max: 9,  msg: 'A Thai number has 8 or 9 digits after +66 (leave out the first 0).' },
+            { code: 'PH', dial: '63',  min: 8,  max: 10, msg: 'A Philippine number has 8 to 10 digits after +63 (leave out the first 0).' },
+            { code: 'AE', dial: '971', min: 8,  max: 9,  msg: 'A UAE number has 8 or 9 digits after +971 (leave out the first 0).' }
+        ];
+
+        function fits(m, national) {
+            if (!national || national.charAt(0) === '0') return false;
+            if (national.length >= m.min && national.length <= m.max) return true;
+            return m.code === 'IN' && national.length === 11 &&
+                   (national.indexOf('1800') === 0 || national.indexOf('1860') === 0);
+        }
+
+        function phoneError(value, charsMsg) {
+            var s = (value || '').trim();
+            if (!s) return null;
+            if (s.length > 32) return 'A phone number can be up to 32 characters.';
+            var plus = s.charAt(0) === '+';
+            var d = '';
+            for (var i = plus ? 1 : 0; i < s.length; i++) {
+                var ch = s.charAt(i);
+                if (ch >= '0' && ch <= '9') d += ch;
+                else if (' -.()/\u00A0'.indexOf(ch) >= 0) continue;
+                else return charsMsg;
+            }
+            if (!plus && d.indexOf('00') === 0) { plus = true; d = d.substring(2); }
+            if (d.length < 7) return 'That is too short for a phone number — it needs at least 7 digits.';
+            if (d.length > 15) return 'That is too long for a phone number — it can have at most 15 digits.';
+            if (!plus) return null;                    // the country check needs the record's country: the server's job
+            for (var k = 0; k < MARKETS.length; k++) {
+                var m = MARKETS[k];
+                if (d.indexOf(m.dial) === 0) {
+                    var national = d.substring(m.dial.length);
+                    if (national.charAt(0) === '0') national = national.substring(1);
+                    return fits(m, national) ? null : m.msg;
+                }
+            }
+            return null;
+        }
+
+        function emailError(value, msg) {
+            var s = (value || '').trim();
+            if (!s) return null;
+            if (s.length > 320) return 'An email address can be up to 320 characters.';
+            return EMAIL.test(s) ? null : msg;
+        }
+
+        // [EmailAddress] on the server only asks for one at-sign with something
+        // either side, so the browser asks no more of a plain data-val-email
+        // box: never stricter than the server. [EmailRule] boxes get the
+        // full check above.
+        function looseEmailError(value, msg) {
+            var s = (value || '').trim();
+            if (!s) return null;
+            var at = s.indexOf('@@');
+            return at > 0 && at === s.lastIndexOf('@@') && at < s.length - 1 ? null : msg;
+        }
+
+        // The server's number binder accepts thousands separators
+        // ("1,50,000"), so the browser must too.
+        function num(v) { return Number(String(v).replace(/[,\s\u00A0]/g, '')); }
+
+        function cap(s) { return s ? s.charAt(0).toUpperCase() + s.substring(1) : s; }
+
+        function moneyError(value, label, allowZero, max) {
+            var s = (value || '').trim();
+            if (!s) return null;
+            var n = num(s);
+            if (!isFinite(n)) return null;              // data-val-number says so
+            if (n < 0) return cap(label) + " can't be negative.";
+            if (!allowZero && n === 0) return cap(label) + ' must be more than 0.';
+            if (n > max) return cap(label) + ' can be at most ' + max.toLocaleString('en-US') + '. Check for an extra digit.';
+            return null;
+        }
+
+        // ── which boxes, which forms ──────────────────────────────────
+        function checkable(el) {
+            if (el.disabled || el.readOnly && el.tagName !== 'SELECT') return false;
+            var t = (el.type || '').toLowerCase();
+            if (t === 'hidden' || t === 'submit' || t === 'button' || t === 'reset' || t === 'image') return false;
+            // In a closed section (d-none, collapsed): not the person's problem.
+            if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') return false;
+            return true;
+        }
+
+        function fields(form) {
+            return Array.prototype.filter.call(form.elements, function (el) {
+                return el.matches && el.matches('input, select, textarea') && checkable(el);
+            });
+        }
+
+        function wantsChecking(form) {
+            if (!form || form.getAttribute('data-validate') === 'off') return false;
+            if (form.method && form.method.toLowerCase() === 'get') return false;   // searches and filters
+            // A form its page marked novalidate itself is left alone — the
+            // page had a reason. (The ones we take over are marked data-mv.)
+            if (form.hasAttribute('novalidate') && !form.hasAttribute('data-mv')) return false;
+            return form.querySelector('[data-val="true"], [required], [pattern], [min], [max], [maxlength], input[type=email]') !== null;
+        }
+
+        function val(el) {
+            var t = (el.type || '').toLowerCase();
+            if (t === 'checkbox') return el.checked ? 'true' : '';
+            if (t === 'radio') {
+                var form = el.form, name = el.name;
+                var on = form ? form.querySelector('input[type=radio][name="' + CSS.escape(name) + '"]:checked') : null;
+                return on ? on.value : '';
+            }
+            return el.value == null ? '' : String(el.value);
+        }
+
+        function a(el, name) { return el.getAttribute(name); }
+
+        // ── one box ───────────────────────────────────────────────────
+        // The first problem, or null. data-val rules first (they carry the
+        // server's own words), then the browser's own checks.
+        function problem(el) {
+            var v = val(el), t = (el.type || '').toLowerCase(), empty = v.trim() === '';
+
+            if (a(el, 'data-val') === 'true') {
+                // Like jquery.validate.unobtrusive: a checkbox's "required"
+                // is only the bool's binder talking, never a rule.
+                if (a(el, 'data-val-required') !== null && empty && t !== 'checkbox')
+                    return a(el, 'data-val-required');
+
+                if (!empty) {
+                    var max = a(el, 'data-val-length-max') || a(el, 'data-val-maxlength-max');
+                    if (max && v.length > Number(max))
+                        return a(el, 'data-val-length') || a(el, 'data-val-maxlength');
+                    var min = a(el, 'data-val-length-min') || a(el, 'data-val-minlength-min');
+                    if (min && v.length < Number(min))
+                        return a(el, 'data-val-length') || a(el, 'data-val-minlength');
+
+                    if (a(el, 'data-val-number') !== null && t !== 'number' && !isFinite(num(v)))
+                        return a(el, 'data-val-number');
+
+                    if (a(el, 'data-val-range') !== null) {
+                        var n = num(v), lo = a(el, 'data-val-range-min'), hi = a(el, 'data-val-range-max');
+                        if (isFinite(n) && ((lo !== null && lo !== '' && n < Number(lo)) || (hi !== null && hi !== '' && n > Number(hi))))
+                            return a(el, 'data-val-range');
+                    }
+
+                    if (a(el, 'data-val-regex-pattern')) {
+                        try {
+                            if (!new RegExp('^(?:' + a(el, 'data-val-regex-pattern') + ')$').test(v))
+                                return a(el, 'data-val-regex');
+                        } catch (e) { /* a pattern JS cannot read: the server checks it */ }
+                    }
+
+                    if (a(el, 'data-val-merkaiphone') !== null) {
+                        var p = phoneError(v, a(el, 'data-val-merkaiphone'));
+                        if (p) return p;
+                    }
+                    if (a(el, 'data-val-merkaiemail') !== null) {
+                        var em = emailError(v, a(el, 'data-val-merkaiemail'));
+                        if (em) return em;
+                    } else if (a(el, 'data-val-email') !== null) {
+                        var em2 = looseEmailError(v, a(el, 'data-val-email'));
+                        if (em2) return em2;
+                    }
+                    if (a(el, 'data-val-merkaimoney') !== null) {
+                        var mo = moneyError(v, a(el, 'data-val-merkaimoney'),
+                                            a(el, 'data-val-merkaimoney-allowzero') !== 'false',
+                                            Number(a(el, 'data-val-merkaimoney-max') || MAX_MONEY));
+                        if (mo) return mo;
+                    }
+                }
+            }
+
+            // The browser's own rules (required, min, max, type=email, a
+            // number box holding letters). Its words, in our place.
+            if (el.willValidate && el.validity && !el.validity.valid)
+                return a(el, 'data-msg') || el.validationMessage || 'Please check this.';
+
+            return null;
+        }
+
+        // ── showing it ────────────────────────────────────────────────
+        function messageSpot(el) {
+            var form = el.form || document;
+            var name = el.name;
+            if (name) {
+                var spans = form.querySelectorAll('[data-valmsg-for]');
+                for (var i = 0; i < spans.length; i++)
+                    if (spans[i].getAttribute('data-valmsg-for') === name) return spans[i];
+            }
+            // No asp-validation-for span: make one, after the box (or after
+            // its input-group, so it is not squeezed inside the group).
+            var anchor = el.closest('.input-group') || el;
+            var next = anchor.nextElementSibling;
+            if (next && next.classList.contains('mv-msg')) return next;
+            var div = document.createElement('div');
+            div.className = 'mv-msg text-danger small';
+            anchor.parentNode.insertBefore(div, anchor.nextSibling);
+            return div;
+        }
+
+        function show(el, msg) {
+            var spot = messageSpot(el);
+            var group = (el.type === 'radio' && el.form)
+                ? el.form.querySelectorAll('input[type=radio][name="' + CSS.escape(el.name) + '"]')
+                : [el];
+            for (var i = 0; i < group.length; i++) {
+                group[i].classList.toggle('is-invalid', !!msg);
+                group[i].classList.toggle('input-validation-error', !!msg);
+                if (msg) group[i].setAttribute('aria-invalid', 'true');
+                else group[i].removeAttribute('aria-invalid');
+            }
+            spot.textContent = msg || '';
+            spot.classList.toggle('field-validation-error', !!msg);
+            spot.classList.toggle('field-validation-valid', !msg);
+            if (!spot.id) spot.id = 'mv-' + Math.random().toString(36).slice(2, 9);
+            if (msg) el.setAttribute('aria-describedby', spot.id);
+        }
+
+        function checkOne(el) {
+            var msg = problem(el);
+            show(el, msg);
+            return !msg;
+        }
+
+        function checkForm(form) {
+            var first = null, seen = {};
+            fields(form).forEach(function (el) {
+                if (el.type === 'radio') {                 // one check per group
+                    if (seen[el.name]) return;
+                    seen[el.name] = true;
+                }
+                if (!checkOne(el) && !first) first = el;
+            });
+            if (first) {
+                try { first.focus({ preventScroll: true }); } catch (e) { first.focus(); }
+                first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            return !first;
+        }
+
+        // ── wiring ────────────────────────────────────────────────────
+        // CAPTURE phase on document: runs before any submit listener on the
+        // form itself, so a confirm() or a JSON-serialising script never
+        // runs for a form that is about to be refused.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!wantsChecking(form)) return;
+            if (e.submitter && e.submitter.formNoValidate) return;
+
+            form.setAttribute('data-mv-tried', '1');
+            if (!checkForm(form)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+
+        // After the first try, re-check a box as it changes.
+        function live(e) {
+            var el = e.target;
+            if (!el || !el.form || el.form.getAttribute('data-mv-tried') !== '1') return;
+            if (!el.matches || !el.matches('input, select, textarea') || !checkable(el)) return;
+            checkOne(el);
+        }
+        document.addEventListener('input', live);
+        document.addEventListener('change', live);
+
+        // Our messages, not the browser's bubbles, on every form we check.
+        // Errors the server sent back get the same red box.
+        function prepare() {
+            Array.prototype.forEach.call(document.forms, function (f) {
+                if (wantsChecking(f)) {
+                    f.setAttribute('data-mv', '1');
+                    f.noValidate = true;
+                }
+            });
+            document.querySelectorAll('.input-validation-error').forEach(function (el) {
+                el.classList.add('is-invalid');
+            });
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', prepare);
+        else prepare();
+
+        window.MerkaiValidate = { checkForm: checkForm, checkOne: checkOne, phoneError: phoneError, emailError: emailError };
+    })();
+</script>

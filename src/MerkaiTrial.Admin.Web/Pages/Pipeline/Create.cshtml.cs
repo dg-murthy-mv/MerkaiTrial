@@ -50,6 +50,15 @@
 //   the probability with 20 on every page load, undoing the work this file
 //   does below to resolve them properly.
 //
+// CHANGES (095 — input checks)
+//
+//   1. THE VALUE CAP WAS 999,999,999 — under a hundred crore. A ₹150-crore
+//      project could not be entered at all. [Money] uses the shared cap
+//      (InputRules.MaxMoney, just under one trillion), still more than 0.
+//   2. A close date outside 2000 – twenty years ahead is refused with a
+//      sentence ("Check the year"): 2062 for 2026, or 0026, used to save.
+//   3. The title's length message says what to do.
+//
 // WHAT CHANGED EARLIER
 //   The stage dropdown, its default and its probability all come from the
 //   tenant's PipelineStages now. Previously a tenant could add "Site
@@ -194,10 +203,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         public class DealInputModel
         {
             [Required(ErrorMessage = "Deal title is required")]
-            [StringLength(200)]
+            [StringLength(200, ErrorMessage = "Keep it to {1} characters.")]
             public string Title { get; set; } = string.Empty;
 
-            [StringLength(2000)]
+            [StringLength(2000, ErrorMessage = "Keep it to {1} characters.")]
             public string? Description { get; set; }
 
             [Required(ErrorMessage = "Please select a contact")]
@@ -206,7 +215,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             public Guid? CompanyId { get; set; }
 
             [Required(ErrorMessage = "Expected value is required")]
-            [Range(0.01, 999999999)]
+            [Money("the expected value", AllowZero = false)]     // 095 — was Range(0.01, 999999999)
             public decimal ExpectedValue { get; set; }
 
             // ✅ Currency set from tenant on GET — never hardcoded
@@ -357,6 +366,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             // 077 — each custom field's message under its own input.
             await LoadCustomFieldsAsync();
             CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
+            // 095 — a year that cannot be meant.
+            var closeError = MerkaiTrial.Application.Validation.InputRules.DateInRange(Input.ExpectedCloseDate, "the expected close date");
+            if (closeError is not null) ModelState.AddModelError("Input.ExpectedCloseDate", closeError);
 
             if (!ModelState.IsValid)
             {

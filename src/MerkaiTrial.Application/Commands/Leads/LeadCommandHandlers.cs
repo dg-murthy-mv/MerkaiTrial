@@ -69,6 +69,21 @@
 //      `using DocumentFormat.OpenXml.Spreadsheet;` — IDE auto-imports that
 //      nothing used. Spreadsheet alone declares types called Company and
 //      Column; one ambiguous name away from a baffling compile error.
+//
+//  10. (095) Create and Update check a name, the column lengths and the
+//      estimated value (not negative, not absurd) with the shared
+//      InputRules, before anything is staged — every problem at once, as
+//      an InputValidationException (an InvalidOperationException, so the
+//      existing catch re-throws it without an error log and the controller
+//      answers 400).
+//
+//      THE EMAIL AND PHONE FORMATS ARE NOT CHECKED HERE, ON PURPOSE. This
+//      handler also takes the website enquiry form. A
+//      visitor who types "98765 43210 after 6pm" is still a customer;
+//      refusing the enquiry would lose them, where saving it lets a rep
+//      call and fix the number. The Admin.Web Add lead / Edit lead pages
+//      check both formats, in the browser and on the server, before they
+//      get here — so a lead a PERSON types is checked fully.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;    // 079
@@ -80,6 +95,7 @@ using MerkaiTrial.Application.Security;   // IRecordScopeService, VisibleTo
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Notifications;   // 039
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Application.Validation;            // 095
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Domain.Enums;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -88,6 +104,29 @@ using Microsoft.Extensions.Logging;
 
 namespace MerkaiTrial.Application.Commands.Leads
 {
+    // ==================== 095: THE CHECKS ====================
+
+    internal static class LeadInput
+    {
+        /// <summary>
+        /// Lengths, a name and the value. NOT the email and phone formats —
+        /// see note 10 in the header: the website enquiry form comes through
+        /// here too, and an enquiry is not refused for its phone.
+        /// </summary>
+        public static void Check(string? fullName, string? email, string? phone, string? companyName,
+            string? address, decimal? estimatedValue)
+        {
+            var errors = new List<string>();
+            errors.AddIf(InputRules.Text(fullName, "a name", 200, required: true));
+            errors.AddIf(InputRules.Text(email, "the email address", InputRules.EmailMax));
+            errors.AddIf(InputRules.Text(phone, "the phone number", InputRules.PhoneMax));
+            errors.AddIf(InputRules.Text(companyName, "the company name", 200));
+            errors.AddIf(InputRules.Text(address, "the address", 500));
+            errors.AddIf(InputRules.Money(estimatedValue, "the estimated value"));
+            InputRules.ThrowIfAny(errors);
+        }
+    }
+
     // ==================== CREATE LEAD ====================
     public record CreateLeadCommand(
         Guid TenantId,
@@ -137,6 +176,9 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             try
             {
+                // 095 — before the quota check and before anything is staged.
+                LeadInput.Check(dto.FullName, dto.Email, dto.Phone, dto.CompanyName, dto.Address, dto.EstimatedValue);
+
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
                 // FIX 1: Currency from tenant if not provided in DTO
@@ -352,6 +394,9 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+
+                // 095 — before anything is assigned.
+                LeadInput.Check(dto.FullName, dto.Email, dto.Phone, dto.CompanyName, dto.Address, dto.EstimatedValue);
 
                 var currentUserId = _currentUserService.GetCurrentUserId();
 

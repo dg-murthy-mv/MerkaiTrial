@@ -98,6 +98,11 @@
 //   An edit that leaves those four fields alone is not checked, so a lead
 //   that already had a twin can still have its value or owner changed
 //   without being warned every time. A failed check never blocks a save.
+//
+// 095 — INPUT CHECKS, the same as Add lead: [EmailRule], [PhoneNumber],
+//   [Money], and the phone against the lead's own country. A lead saved
+//   before this round with a number the rules refuse has to have it
+//   corrected (or cleared) on its next edit.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;
@@ -207,11 +212,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             [StringLength(200)]
             public string FullName { get; set; } = string.Empty;
 
-            [EmailAddress]
-            [StringLength(320)]
+            [EmailRule]                                          // 095
+            [StringLength(320, ErrorMessage = "Keep it to {1} characters.")]
             public string? Email { get; set; }
 
-            [StringLength(32)]
+            [PhoneNumber]                                        // 095 — and CheckPhoneForCountryAsync
+            [StringLength(32, ErrorMessage = "Keep it to {1} characters.")]
             public string? Phone { get; set; }
 
             [StringLength(200)]
@@ -234,7 +240,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             [Range(0, 100)]
             public int Score { get; set; }
 
-            [Range(0, double.MaxValue)]
+            [Money("the estimated value")]                       // 095 — 0 is fine; negative or absurd is not
             public decimal? EstimatedValue { get; set; }
 
             /// <summary>
@@ -345,6 +351,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
             // 079 — each custom field's message under its own input.
             CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+            await CheckPhoneForCountryAsync();   // 095
 
             if (!ModelState.IsValid)
                 return Page();
@@ -603,6 +610,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             });
 
             return team;
+        }
+
+        // ── 095: the phone against the lead's own country ─────────────
+
+        /// <summary>
+        /// [PhoneNumber] has checked the characters, the length and any +
+        /// code. A number typed WITHOUT a code can only be checked against
+        /// the lead's country, which this model holds as an id — so it is
+        /// looked up here. Skipped when the phone already has a message, and
+        /// when the countries cannot be loaded (the general rule stands).
+        /// </summary>
+        private async Task CheckPhoneForCountryAsync()
+        {
+            const string key = "Input.Phone";
+            if (string.IsNullOrWhiteSpace(Input.Phone) || !Input.CountryId.HasValue) return;
+            if (ModelState.TryGetValue(key, out var entry) && entry.Errors.Count > 0) return;
+
+            string? code = null;
+            try
+            {
+                var countries = await _leadService.GetCountriesAsync();
+                code = countries.FirstOrDefault(c => c.Id == Input.CountryId.Value)?.Code;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Countries could not be loaded to check the lead's phone number");
+            }
+
+            var error = MerkaiTrial.Application.Validation.InputRules.Phone(Input.Phone, code);
+            if (error is not null) ModelState.AddModelError(key, error);
         }
     }
 }

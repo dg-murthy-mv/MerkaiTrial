@@ -88,6 +88,15 @@
    page (not just this one), as an Excel file whose columns the importer
    recognises. Shown to anyone who can see leads; the file only ever holds
    the leads that person can see.
+
+   094 — PHONES
+   • Below 768px the table becomes a list of cards: name, owner, status,
+     value, and Call / Email / Open (Edit and Delete as before, by
+     permission). The table needed a sideways scroll to reach anything past
+     the name; on a phone the useful part of a lead is calling it.
+   • The search box takes the whole first line on a phone (575px and
+     narrower), the owner filter and Filter button the next.
+   • The desktop table is unchanged.
    ===================================================================== *@
 
 <style>
@@ -198,7 +207,27 @@
         .lx-title { font-size: 1.25rem; }
         .lx-head > div:last-child { width: 100%; }
         .lx-head .btn { flex: 1 1 auto; }
+
+        /* 094 — search on its own line, owner + Filter beneath. */
+        .lx-bar .lx-search { width: 100% !important; }
+        .lx-bar select[name=AssignedToFilter] { flex: 1 1 auto; width: auto !important; min-width: 0; }
+        .lx-count { width: 100%; margin-left: 0 !important; }
     }
+
+    /* ── 094: phone cards ───────────────────────────────────────── */
+    .lx-cards { padding: .25rem 0; }
+    .lx-card { padding: .75rem .85rem; border-bottom: 1px solid #f1f3f5; }
+    .lx-card:last-child { border-bottom: 0; }
+    .lx-card-top { display: flex; align-items: flex-start; gap: .6rem; }
+    .lx-card-who { flex: 1 1 auto; min-width: 0; }
+    .lx-card-nm { font-weight: 650; color: #0f172a; text-decoration: none; display: block;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lx-card .lx-own { max-width: none; display: block; }
+    .lx-card-meta { display: flex; flex-wrap: wrap; gap: .25rem .75rem; font-size: .8rem;
+                    color: #64748b; margin: .45rem 0 0 calc(30px + .6rem); }
+    .lx-card-meta .lx-val { color: #0f172a; }
+    .lx-card-acts { display: flex; flex-wrap: wrap; gap: .4rem; margin: .6rem 0 0 calc(30px + .6rem); }
+    .lx-card-acts .btn { flex: 1 1 auto; }
 </style>
 
 <div class="lx">
@@ -298,7 +327,7 @@
             <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
             <input type="hidden" name="PageSize" value="@Model.PageSize" />
 
-            <div class="input-group input-group-sm" style="width:280px;">
+            <div class="input-group input-group-sm lx-search" style="width:280px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="search" name="SearchTerm" value="@Model.SearchTerm" class="form-control"
                        placeholder="Name, email, phone or company" autocomplete="off"
@@ -370,7 +399,8 @@
         @* ── rows ───────────────────────────────────────────────── *@
         @if (p.Items.Any())
         {
-            <div class="table-responsive">
+            @* 094 — the table from 768px up; the cards below it on a phone. *@
+            <div class="table-responsive d-none d-md-block">
                 <table class="lx-table">
                     <thead>
                         <tr>
@@ -556,6 +586,87 @@
                         }
                     </tbody>
                 </table>
+            </div>
+
+            @* ── 094: phone cards ───────────────────────────────────── *@
+            @* The same leads, the same permissions, the same delete button
+               (.lead-del, handled by the one listener at the bottom). Only
+               filled-in custom fields are shown, so a card never grows a
+               list of dashes. *@
+            <div class="lx-cards d-md-none">
+                @foreach (var lead in p.Items)
+                {
+                    var converted = Model.IsConvertedStatus(lead.Status);
+
+                    <div class="lx-card" data-lead-id="@lead.Id">
+                        <div class="lx-card-top">
+                            <span class="lx-av">@Initials(lead.FullName)</span>
+                            <div class="lx-card-who">
+                                <a asp-page="./Detail" asp-route-id="@lead.Id" class="lx-card-nm">@lead.FullName</a>
+                                @if (!string.IsNullOrEmpty(lead.OwnerName))
+                                {
+                                    <span class="lx-own">@lead.OwnerName</span>
+                                }
+                                else
+                                {
+                                    <span class="lx-own fst-italic">Unassigned</span>
+                                }
+                            </div>
+                            <span class="badge @Model.GetStatusBadgeClass(lead.Status) flex-shrink-0">
+                                @Model.StatusName(lead.Status)
+                            </span>
+                        </div>
+
+                        <div class="lx-card-meta">
+                            @if (lead.EstimatedValue > 0)
+                            {
+                                <span class="lx-val">@Model.FormatCurrency(lead.EstimatedValue, 0)</span>
+                            }
+                            <span>@lead.Channel</span>
+                            <span>@Model.FormatDate(lead.CreatedAtUtc)</span>
+                            @foreach (var col in Model.ListColumns)
+                            {
+                                var shown = Model.ColumnValue(lead, col);
+                                if (string.IsNullOrEmpty(shown)) { continue; }
+                                <span><span class="text-muted">@col.Label:</span> @shown</span>
+                            }
+                        </div>
+
+                        <div class="lx-card-acts">
+                            @if (!string.IsNullOrEmpty(lead.Phone))
+                            {
+                                <a href="tel:@lead.Phone" class="btn btn-sm btn-outline-success" aria-label="Call @lead.FullName">
+                                    <i class="bi bi-telephone-fill me-1"></i>Call
+                                </a>
+                            }
+                            @if (!string.IsNullOrEmpty(lead.Email))
+                            {
+                                <a href="mailto:@lead.Email" class="btn btn-sm btn-outline-secondary" aria-label="Email @lead.FullName">
+                                    <i class="bi bi-envelope-fill me-1"></i>Email
+                                </a>
+                            }
+                            <a asp-page="./Detail" asp-route-id="@lead.Id" class="btn btn-sm btn-primary">
+                                Open
+                            </a>
+                            @if (!converted && Model.CanUpdate)
+                            {
+                                <a asp-page="./Edit" asp-route-id="@lead.Id"
+                                   class="btn btn-sm btn-outline-secondary flex-grow-0"
+                                   title="Edit @lead.FullName" aria-label="Edit @lead.FullName">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            }
+                            @if (!converted && Model.CanDelete)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-danger flex-grow-0 lead-del"
+                                        data-id="@lead.Id" data-name="@lead.FullName"
+                                        title="Delete @lead.FullName" aria-label="Delete @lead.FullName">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
             </div>
 
             @* ── pager (079: the shared one) ───────────────────────── *@

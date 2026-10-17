@@ -8,6 +8,11 @@
 //   table, instead of its own hardcoded switch (which showed AED as د.إ
 //   while the quote PDF shows "AED", and was case-sensitive).
 //
+// CHANGES (095 — input checks)
+//   The value takes the shared cap ([Money], InputRules.MaxMoney — it was
+//   999,999,999, under a hundred crore), and a close date outside 2000 –
+//   twenty years ahead is refused with a sentence.
+//
 // CHANGES (077 — custom fields on deals)
 //
 //   1. Active Deal custom fields render through the shared
@@ -255,7 +260,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             public string? Description { get; set; }
 
             [Required(ErrorMessage = "Expected value is required")]
-            [Range(0.01, 999999999, ErrorMessage = "Expected value must be greater than 0")]
+            [Money("the expected value", AllowZero = false)]     // 095 — was Range(0.01, 999999999)
             [Display(Name = "Expected Value")]
             public decimal ExpectedValue { get; set; }
 
@@ -452,6 +457,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             // with its custom inputs and what was typed into them.
             await LoadCustomFieldsAsync();
             CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
+            // 095 — a year that cannot be meant.
+            var closeError = MerkaiTrial.Application.Validation.InputRules.DateInRange(Input.ExpectedCloseDate, "the expected close date");
+            if (closeError is not null) ModelState.AddModelError("Input.ExpectedCloseDate", closeError);
 
             if (!ModelState.IsValid)
             {

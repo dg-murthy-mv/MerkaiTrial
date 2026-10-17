@@ -1,4 +1,37 @@
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@* =====================================================================
+   _Layout.cshtml
+
+   094 — PHONES. Every page goes through this file, so most of the
+   mobile round is here rather than repeated on forty pages:
+
+   1. PINCH-ZOOM IS BACK. The viewport said maximum-scale=1.0, which stops
+      anyone zooming in to read small print or tap a small link. It was
+      there to stop iPhones zooming in whenever a box is tapped, which
+      Safari does for any box whose text is under 16px. The proper cure
+      is the next point, so the cap is gone.
+   2. FORM BOXES ARE 16px ON A PHONE (575px and narrower), so tapping one
+      no longer zooms the page. Desktop keeps its 13.5px.
+   3. TAB STRIPS SCROLL SIDEWAYS instead of wrapping (991px and
+      narrower). A lead has seven tabs; on a phone they wrapped onto two or
+      three ragged rows, or pushed the page wider than the screen. The tab
+      you open slides into view.
+   4. ROWS THAT PAIR TWO THINGS WRAP. Any .d-flex.justify-content-between
+      inside the page may break onto a second line on a phone, instead of
+      squeezing — a page title beside its buttons, an activity beside its
+      date and Edit/Delete. On a wide screen nothing changes.
+   5. BIGGER TAP TARGETS on touch screens: small buttons and page numbers
+      are at least 36–40px high when the pointer is a finger.
+   6. THE MENU: Escape closes it, the page behind it no longer scrolls
+      while it is open, and the button says whether it is open.
+   7. [data-open-tab="activities"] — a button anywhere opens that tab on
+      the page, scrolls to it and puts the cursor in its first box. The
+      lead and deal pages use it for their "Log activity / Add task / Note"
+      bar on a phone.
+   8. The search box in the top bar is hidden below 992px. It is not wired
+      to anything yet (typing in it does nothing on any screen), and on a
+      tablet it took the room the buttons needed.
+   ===================================================================== *@
 @using System.Linq
 @using MerkaiTrial.Admin.Web.Services
 @inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService Ui
@@ -89,7 +122,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>@ViewData["Title"] — Merkai CRM</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -793,9 +826,32 @@
                 display: block;
             }
 
+            /* 094: not wired to anything yet, and it took the room the
+               buttons need. Hidden until it searches. */
             .lf-search {
-                max-width: 200px;
+                display: none;
             }
+
+            /* 094 (3): tab strips scroll sideways rather than wrap. */
+            .lf-main .nav-tabs {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overflow-y: hidden;
+                scrollbar-width: none;
+                -webkit-overflow-scrolling: touch;
+            }
+
+                .lf-main .nav-tabs::-webkit-scrollbar {
+                    display: none;
+                }
+
+                .lf-main .nav-tabs .nav-item {
+                    flex: 0 0 auto;
+                }
+
+                .lf-main .nav-tabs .nav-link {
+                    white-space: nowrap;
+                }
         }
 
         @@media (max-width: 575.98px) {
@@ -810,6 +866,54 @@
             .lf-main {
                 padding: 12px;
             }
+
+            /* 094 (2): 16px boxes, so tapping one does not zoom the page.
+               !important because pages set smaller sizes on their own
+               toolbars, and those must give way on a phone. */
+            .form-control,
+            .form-select,
+            .form-control-sm,
+            .form-select-sm,
+            .input-group-sm > .form-control,
+            .input-group-sm > .form-select {
+                font-size: 16px !important;
+            }
+
+            /* 094 (4): a title beside its buttons, an entry beside its date —
+               on a phone they take a line each when they do not fit. */
+            .lf-main .d-flex.justify-content-between {
+                flex-wrap: wrap;
+                row-gap: .5rem;
+            }
+        }
+
+        /* 094 (5): finger-sized targets on touch screens. */
+        @@media (pointer: coarse) {
+            .lf-main .btn-sm,
+            .lf-main .btn-group-sm > .btn {
+                min-height: 36px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .lf-main .page-link {
+                min-width: 40px;
+                min-height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+
+        /* 094 (6): the page behind an open menu stays put. */
+        body.lf-menu-open {
+            overflow: hidden;
+        }
+
+        /* 094 (7): a tab scrolled to clears the fixed top bar. */
+        .lf-main .tab-pane {
+            scroll-margin-top: calc(var(--topbar-h) + 12px);
         }
 
         /* Utility */
@@ -1346,7 +1450,8 @@
         <!-- ── TOPBAR ──────────────────────────────────────────────────── -->
         <header class="lf-topbar">
 
-            <button class="lf-hamburger" id="lfHamburger" onclick="openSidebar()" aria-label="Open menu">
+            <button class="lf-hamburger" id="lfHamburger" onclick="openSidebar()" aria-label="Open menu"
+                    aria-controls="lfSidebar" aria-expanded="false">
                 <i class="bi bi-list"></i>
             </button>
 
@@ -1594,14 +1699,56 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // 094 (6): the open state is on the button for screen readers, and
+        // the page behind the menu stops scrolling while it is open.
         function openSidebar() {
             document.getElementById('lfSidebar').classList.add('open');
             document.getElementById('lfOverlay').classList.add('open');
+            document.body.classList.add('lf-menu-open');
+            var b = document.getElementById('lfHamburger');
+            if (b) b.setAttribute('aria-expanded', 'true');
         }
         function closeSidebar() {
             document.getElementById('lfSidebar').classList.remove('open');
             document.getElementById('lfOverlay').classList.remove('open');
+            document.body.classList.remove('lf-menu-open');
+            var b = document.getElementById('lfHamburger');
+            if (b) b.setAttribute('aria-expanded', 'false');
         }
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && document.getElementById('lfSidebar').classList.contains('open')) closeSidebar();
+        });
+
+        // 094 (3): the tab just opened slides into view in a strip that
+        // scrolls sideways. 'nearest' does nothing when it is already in view.
+        document.addEventListener('shown.bs.tab', function (e) {
+            var t = e.target;
+            if (t && t.closest && t.closest('.nav-tabs') && t.scrollIntoView) {
+                t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+        });
+
+        // 094 (7): <button data-open-tab="activities"> opens #activities-tab,
+        // scrolls to #activities and puts the cursor in its first box. One
+        // delegated listener, so a page needs no script of its own. The
+        // short wait lets the tab's fade finish before the box is focused.
+        document.addEventListener('click', function (e) {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-open-tab]') : null;
+            if (!btn) return;
+            var name = btn.getAttribute('data-open-tab');
+            var tab = document.getElementById(name + '-tab');
+            var pane = document.getElementById(name);
+            if (!tab || !pane || typeof bootstrap === 'undefined') return;
+            e.preventDefault();
+            bootstrap.Tab.getOrCreateInstance(tab).show();
+            setTimeout(function () {
+                pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                var first = pane.querySelector('form input:not([type=hidden]):not([disabled]), form select:not([disabled]), form textarea:not([disabled])');
+                if (first) {
+                    try { first.focus({ preventScroll: true }); } catch (err) { first.focus(); }
+                }
+            }, 200);
+        });
         document.querySelectorAll('.lf-nav-item').forEach(el => {
             el.addEventListener('click', () => {
                 if (window.innerWidth < 992) closeSidebar();

@@ -52,6 +52,22 @@
 //     audit row could not be written (Delete included).
 //
 //   • The stray "using DocumentFormat.OpenXml.Presentation;" is gone.
+//
+// ── 095 ─────────────────────────────────────────────────────────────
+//
+//   The list price (0 or more, and not absurd — InputRules.MaxMoney) and
+//   the tax rate (0 to 100) are checked on Create and Update, beside the
+//   name, as ProductValidationException sentences — a 400 the page shows,
+//   like the category and price-grid checks. A price of 0 is allowed: a
+//   free site visit or a complimentary item is a real line on a quote.
+//
+//   The SKU is REQUIRED (RequireSku). The database column never allowed
+//   NULL, but the form didn't say so: a product saved without one failed
+//   inside SaveChanges as a 500. Now it is a sentence, trimmed, on both
+//   Create and Update. The SKU (50) and the description (4000) are held
+//   to their column sizes too, for the same reason: too long was a 500.
+//   SKUs are NOT checked for duplicates — the database index on
+//   (Sku, TenantId) is not unique, so two products may share one.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;   // 080
@@ -60,6 +76,7 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Application.Validation;              // 095
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -469,6 +486,8 @@ public class CreateProductHandler : ICommandHandler
         // 080 — the person-fixable checks first, as sentences (see
         // ProductValidation). Nothing has been staged yet.
         var name = ProductValidation.RequireName(dto.Name);
+        var sku  = ProductValidation.RequireSku(dto.Sku);             // 095
+        ProductValidation.CheckFigures(dto.ListPrice, dto.TaxRate, dto.Description);   // 095
 
         // 068: checked against this workspace's own category list,
         // not stored as posted. See ProductCategoryGuard.
@@ -481,7 +500,7 @@ public class CreateProductHandler : ICommandHandler
             TenantId    = dto.TenantId,
             Name        = name,
             Description = dto.Description,
-            Sku         = dto.Sku,
+            Sku         = sku,
             Category    = category,
             // 051: normalised, never taken as typed. A posted form can
             // carry anything; an unrecognised kind or unit would render as
@@ -662,6 +681,8 @@ public class UpdateProductHandler : ICommandHandler
 
         // 080 — the person-fixable checks first, as sentences.
         var name = ProductValidation.RequireName(dto.Name);
+        var sku  = ProductValidation.RequireSku(dto.Sku);             // 095
+        ProductValidation.CheckFigures(dto.ListPrice, dto.TaxRate, dto.Description);   // 095
 
         // 068 — see ProductCategoryGuard. Same check as Create, so a
         // product cannot be EDITED into a category that does not exist
@@ -680,7 +701,7 @@ public class UpdateProductHandler : ICommandHandler
         var changed = new List<string>();
         AuditChanges.Track(changed, "name",          product.Name,          name);
         AuditChanges.Track(changed, "description",   product.Description,   dto.Description);
-        AuditChanges.Track(changed, "sku",           product.Sku,           dto.Sku);
+        AuditChanges.Track(changed, "sku",           product.Sku,           sku);
         AuditChanges.Track(changed, "category",      product.Category,      category);
         AuditChanges.Track(changed, "type",          product.Type,          newType);
         AuditChanges.Track(changed, "unitOfMeasure", product.UnitOfMeasure, newUnit);
@@ -691,7 +712,7 @@ public class UpdateProductHandler : ICommandHandler
 
         product.Name        = name;
         product.Description = dto.Description;
-        product.Sku         = dto.Sku;
+        product.Sku         = sku;
         product.Category    = category;
         product.Type          = newType;
         product.UnitOfMeasure = newUnit;
@@ -990,7 +1011,40 @@ internal static class ProductValidation
         var trimmed = name?.Trim();
         if (string.IsNullOrEmpty(trimmed))
             throw new ProductValidationException("Give the product a name.");
+        if (trimmed.Length > 200)                                         // 095
+            throw new ProductValidationException("A product name can be up to 200 characters.");
         return trimmed;
+    }
+
+    /// <summary>
+    /// 095. The trimmed SKU, or a sentence when there is none. The Sku
+    /// column does not allow NULL, so an empty SKU used to reach the
+    /// database and come back as a 500 ("The product could not be
+    /// created") with no hint of what was wrong. Up to 50 characters,
+    /// the column's size (ProductConfiguration).
+    /// </summary>
+    public static string RequireSku(string? sku)
+    {
+        var trimmed = sku?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            throw new ProductValidationException("Give the product a SKU, a short code such as PROD-001.");
+        if (trimmed.Length > SkuMax)
+            throw new ProductValidationException($"A SKU can be up to {SkuMax} characters.");
+        return trimmed;
+    }
+
+    /// <summary>The column sizes in ProductConfiguration.</summary>
+    public const int SkuMax = 50;
+    public const int DescriptionMax = 4000;
+
+    /// <summary>095. The list price, the tax rate and the description's length, all at once.</summary>
+    public static void CheckFigures(decimal listPrice, decimal? taxRate, string? description)
+    {
+        var errors = new List<string>();
+        errors.AddIf(InputRules.Text(description, "the description", DescriptionMax));
+        errors.AddIf(InputRules.Money(listPrice, "the list price"));
+        errors.AddIf(InputRules.Percent(taxRate, "the tax rate"));
+        if (errors.Count > 0) throw new ProductValidationException(string.Join(" ", errors));
     }
 
     public static async Task<T> Run<T>(Func<Task<T>> step)

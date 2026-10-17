@@ -31,6 +31,20 @@
 //   CustomFieldValidationException is an InvalidOperationException with
 //   a sentence for the person in it. Both handlers re-throw it without
 //   logging an error — a required field left empty is not a fault.
+//
+// 095 — WHAT IS TYPED IS CHECKED HERE TOO
+//   Create and Update check the contact's own fields with the shared
+//   InputRules before anything is staged: a first name, the lengths of
+//   the columns, an email that looks like one, and the phone and mobile
+//   numbers — against the contact's own country when they have no +. The
+//   Admin.Web form checks the same rules first, so a person sees these
+//   sentences under each box; this is the guard for anything that does
+//   not come through that form.
+//
+//   Every problem is listed at once, as an InputValidationException (a
+//   CustomFieldValidationException, so the existing catch below re-throws
+//   it without an error log and the controller answers 400 with the
+//   sentences).
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
@@ -42,10 +56,34 @@ using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Validation;            // 095
 
 
 namespace MerkaiTrial.Application.Commands.Contacts
 {
+    // ==================== 095: THE CHECKS ====================
+
+    internal static class ContactInput
+    {
+        /// <summary>Every problem with a contact's own fields, at once. Throws InputValidationException.</summary>
+        public static void Check(string? firstName, string? lastName, string? jobTitle, string? email,
+            string? phone, string? mobile, string? address, string? city, string? country, string? postalCode)
+        {
+            var errors = new List<string>();
+            errors.AddIf(InputRules.Text(firstName, "a first name", 100, required: true));
+            errors.AddIf(InputRules.Text(lastName, "the last name", 100));
+            errors.AddIf(InputRules.Text(jobTitle, "the job title", 100));
+            errors.AddIf(InputRules.For("Email", InputRules.Email(email)));
+            errors.AddIf(InputRules.For("Phone", InputRules.Phone(phone, country)));
+            errors.AddIf(InputRules.For("Mobile", InputRules.Phone(mobile, country)));
+            errors.AddIf(InputRules.Text(address, "the address", 500));
+            errors.AddIf(InputRules.Text(city, "the city", 100));
+            errors.AddIf(InputRules.Text(country, "the country", 100));
+            errors.AddIf(InputRules.Text(postalCode, "the postal code", 20));
+            InputRules.ThrowIfAny(errors);
+        }
+    }
+
     // ==================== CREATE CONTACT ====================
 
     public class CreateContactCommand : ICommandHandler
@@ -90,6 +128,11 @@ namespace MerkaiTrial.Application.Commands.Contacts
         {
             try
             {
+                // 095 — before the quota, so a mistyped form is told about
+                // the mistake rather than counted against the plan.
+                ContactInput.Check(request.FirstName, request.LastName, request.JobTitle, request.Email,
+                    request.Phone, request.Mobile, request.Address, request.City, request.Country, request.PostalCode);
+
                 // ── ✅ Plan quota check — MaxContacts from Plans table ────────
                 // Contact.TenantId = Guid, request.TenantId = Guid → direct comparison
                 // MaxContacts is NOT in TenantSettings — must read from Plans via Tenants.Plan
@@ -268,6 +311,10 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
                 if (contact == null)
                     throw new KeyNotFoundException($"Contact {request.Id} not found");
+
+                // 095 — before anything is assigned.
+                ContactInput.Check(request.FirstName, request.LastName, request.JobTitle, request.Email,
+                    request.Phone, request.Mobile, request.Address, request.City, request.Country, request.PostalCode);
 
                 // 078b — what changed, by NAME, for the audit row.
                 var changed = new List<string>();

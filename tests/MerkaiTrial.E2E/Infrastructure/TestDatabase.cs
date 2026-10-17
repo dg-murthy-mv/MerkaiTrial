@@ -27,6 +27,9 @@
 //   7. (093) READ-ONLY merge checks: whether a lead is deleted, its
 //      estimated value, and how many activities on a record have a subject
 //      containing some text. Nothing in 7 writes.
+//   8. (094) READ-ONLY: a deal's current stage key, so the phone test
+//      can tell that Move on the board really moved it. Nothing in 8
+//      writes.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -381,6 +384,17 @@ public sealed class TestDatabase
         cmd.Parameters.AddWithValue("@e", entityId);
         cmd.Parameters.AddWithValue("@s", "%" + subjectContains.Replace("[", "[[]").Replace("%", "[%]") + "%");
         return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    // ── 094: the board on a phone (read-only) ─────────────────────────
+
+    /// <summary>A deal's current stage key; null when there is no such deal.</summary>
+    public async Task<string?> DealStageAsync(Guid dealId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Stage FROM Deals WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", dealId);
+        return await cmd.ExecuteScalarAsync() as string;
     }
 
     private async Task<int> CountAsync(string sql, Guid tenantId, string value)

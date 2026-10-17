@@ -24,6 +24,7 @@
     <Folder Include="Commands\Plans\" />
     <Folder Include="Commands\Roles\" />
     <Folder Include="Common\" />
+    <Folder Include="Validation\" />
     <Folder Include="Queries\" />
     <Folder Include="Services\Fiscal\" />
     <Folder Include="Services\Inbound\" />

@@ -45,6 +45,17 @@
 //    at all. ErrorMessage is now shown on this response.
 //
 // 3. After saving, the product's own page opens (it went to the list).
+//
+// ── 095 ─────────────────────────────────────────────────────────────
+//
+// The name (required, up to 200), the SKU (required, up to 50: the column
+// never allowed an empty one, so a product without it failed as a 500), the
+// description (up to 4000), the list price (0 or more, not absurd),
+// the tax rate (0 to 100) and the tax code (up to 20) are checked here
+// with the shared InputRules — each message under its own box — and in
+// the browser before the form is sent (the view carries the same rules).
+// Input is the API's DTO, which has no attributes, hence ModelState.AddIf.
+// The API checks the price and rate again (ProductValidation).
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
@@ -56,6 +67,7 @@ using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Tenants;
+using MerkaiTrial.Application.Validation;              // 095
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
@@ -400,6 +412,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             // 080 — each custom field's message under its own input.
             await LoadCustomFieldsAsync();
             CustomFieldForm.Validate(ActiveCustomFields, CustomFields, ModelState);
+
+            // 095 — the product's own figures, each under its own box.
+            ModelState.AddIf("Input.Name",      InputRules.Text(Input.Name, "a product name", 200, required: true));
+            ModelState.AddIf("Input.Sku",       string.IsNullOrWhiteSpace(Input.Sku)
+                                                    ? "Enter a SKU, a short code such as PROD-001."
+                                                    : InputRules.Text(Input.Sku, "the SKU", 50));
+            ModelState.AddIf("Input.Description", InputRules.Text(Input.Description, "the description", 4000));
+            ModelState.AddIf("Input.ListPrice", InputRules.Money(Input.ListPrice, "the list price"));
+            ModelState.AddIf("Input.TaxRate",   InputRules.Percent(Input.TaxRate, "the tax rate"));
+            ModelState.AddIf("Input.TaxCode",   InputRules.Text(Input.TaxCode, "the code", 20));
 
             if (!ModelState.IsValid)
                 return Page();

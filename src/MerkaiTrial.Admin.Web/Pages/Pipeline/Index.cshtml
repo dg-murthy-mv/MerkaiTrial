@@ -101,6 +101,26 @@
       whole workspace. Both are still shown — they are both useful — but
       they are now labelled so nobody has to work out why 4 and 12 are
       both right.
+
+   094 — PHONES
+
+   8. ★ A DEAL COULD NOT BE MOVED FROM A PHONE. The board moves deals by
+      drag and drop, and phone browsers do not drag with a finger at all —
+      the card just scrolls the page. Each card now has a Move button
+      (shown below 768px, and on any touch screen). It opens a short list
+      of the moves this workspace's process allows from the card's stage —
+      the same matrix the drag uses, in the process's own words ("Send
+      Quote", "Mark as Lost") — and goes through the SAME path as a drop:
+      a move that asks for a note asks for it, the server checks it, a
+      refusal shows in the same banner, and success reloads the board.
+      With no process loaded it offers every other stage, as the drag
+      does, and lets the server decide.
+   095: in the Move list, the stage name at the right of a move is left
+      out when the move's own label already names it.
+
+   9. On a phone the columns snap into place as you swipe, the search box
+      takes the toolbar's whole first line, and the "steps in this process"
+      / "Show empty columns" pair wraps instead of sticking out.
    ===================================================================== *@
 
 <style>
@@ -226,7 +246,27 @@
         .pb-col { flex-basis: 86vw; width: 86vw; max-height: none; }
         .pb-stat { flex-basis: 50%; }
         .pb-title { font-size: 1.25rem; }
+
+        /* 094 — a swipe settles on a column instead of half of two. */
+        .pb-board { scroll-snap-type: x proximity; }
+        .pb-col { scroll-snap-align: start; }
     }
+
+    /* 094 — the toolbar on a phone: search alone on the first line. */
+    @@media (max-width: 575.98px) {
+        #pbFilter { width: 100%; }
+        #pbFilter .pb-search { width: 100% !important; }
+        #pbFilter .form-select { flex: 1 1 40%; width: auto !important; min-width: 0; }
+    }
+
+    /* 094 — Move, for a finger. Hidden where a mouse can drag. */
+    .pb-card-foot { display: none; margin-top: .55rem; }
+    .pb-move { width: 100%; }
+    @@media (max-width: 767.98px), (pointer: coarse) {
+        .pb-card-foot { display: block; }
+    }
+    #pbMoveOptions .btn { text-align: left; display: flex; align-items: center; gap: .5rem; }
+    #pbMoveOptions .btn .to { margin-left: auto; font-size: .76rem; opacity: .75; white-space: nowrap; }
 </style>
 
 <script>
@@ -368,7 +408,7 @@
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="pbFilter">
             <input type="hidden" name="View" value="board" class="pb-view-field" />
 
-            <div class="input-group input-group-sm" style="width:260px;">
+            <div class="input-group input-group-sm pb-search" style="width:260px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="search" name="SearchTerm" value="@Model.SearchTerm" class="form-control"
                        placeholder="Deal, company or any text detail" aria-label="Search deals" autocomplete="off" />
@@ -404,7 +444,9 @@
             }
         </form>
 
-        <div class="ms-auto d-flex align-items-center gap-3">
+        @* 094: flex-wrap — "6 steps in this process" beside "Show 3 empty
+           columns" is wider than a phone. *@
+        <div class="ms-auto d-flex align-items-center gap-3 flex-wrap">
             @if (Model.Rules is not null && Model.LiveMoves.Count > 0)
             {
                 <span class="pb-count">
@@ -469,6 +511,7 @@
                     <div class="pb-col @(dealsHere.Count == 0 ? "pb-hidden" : "")"
                          data-empty="@(dealsHere.Count == 0 ? "1" : "0")"
                          data-stage="@stage.Key"
+                         data-category="@(isWon ? "won" : isLost ? "lost" : "open")"
                          data-stage-name="@stage.Name"
                          style="--tone:@tone;">
                         <div class="pb-col-head">
@@ -568,6 +611,17 @@
                                             }
                                         </span>
                                     </div>
+
+                                    @* 094 — the finger's way to move it. See note 8. *@
+                                    @if (canDrag)
+                                    {
+                                        <div class="pb-card-foot">
+                                            <button type="button" class="btn btn-sm btn-outline-secondary pb-move"
+                                                    data-move-deal="@deal.Id" aria-label="Move @deal.Title">
+                                                <i class="bi bi-arrow-left-right me-1"></i>Move
+                                            </button>
+                                        </div>
+                                    }
                                 </div>
                             }
 
@@ -698,6 +752,34 @@
                 <button type="button" class="btn btn-primary" id="pbNoteConfirm">
                     <i class="bi bi-check-lg me-1"></i>Save &amp; move
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ── 094: Move, for a finger ───────────────────────────────────────
+   The options are built by the script from the process matrix, with
+   textContent — stage names and move labels are the tenant's own words. *@
+<div class="modal fade" id="pbMoveModal" tabindex="-1" aria-labelledby="pbMoveTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="min-width-0">
+                    <h5 class="modal-title text-truncate" id="pbMoveTitle">Move this deal</h5>
+                    <div class="small text-muted" id="pbMoveFrom"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-grid gap-2" id="pbMoveOptions"></div>
+                <p class="small text-muted mb-0 pb-hidden" id="pbMoveNone">
+                    This workspace's sales process has no move out of this stage.
+                    Open the deal to see what it needs.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <a class="btn btn-link me-auto px-0" id="pbMoveOpen" href="#">Open the deal</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
@@ -996,6 +1078,147 @@
             }).catch(function () {
                 revert(card, backTo);
                 showRefused('Something went wrong moving that deal. Please try again.');
+            });
+        }
+
+        // ── 7. 094: Move, for a finger ───────────────────────────────
+        // Phones do not drag. The Move button on a card lists the moves the
+        // process allows from that card's stage and sends the chosen one
+        // down exactly the road a drop takes: askForNote when the move wants
+        // a note, then post(), which the server checks and which reloads
+        // the board on success or shows the refusal banner.
+        var moveEl = document.getElementById('pbMoveModal');
+        var moveModal = null;
+        var moveNext = null;     // what to do once the sheet has finished closing
+
+        // The board's own columns, in board order: key → name and category.
+        var STAGES = {}, ORDER = [];
+        (function () {
+            var cols = document.querySelectorAll('.pb-col[data-stage]');
+            for (var i = 0; i < cols.length; i++) {
+                var k = cols[i].getAttribute('data-stage');
+                STAGES[k] = {
+                    name: cols[i].getAttribute('data-stage-name') || k,
+                    category: cols[i].getAttribute('data-category') || 'open'
+                };
+                ORDER.push(k);
+            }
+        })();
+
+        function stageInfo(key) { return STAGES[key] || { name: key, category: 'open' }; }
+
+        // The same rule the drag follows: with a process loaded, only its
+        // moves; without one, any other stage, and the server decides.
+        function movesFrom(from) {
+            var list = [];
+            var keys = Object.keys(MOVES);
+            if (keys.length > 0) {
+                keys.forEach(function (k) {
+                    if (k.indexOf(from + '|') !== 0) return;
+                    var to = k.substring(from.length + 1);
+                    if (!to || to === from) return;
+                    list.push({ to: to, move: MOVES[k], label: MOVES[k].label || ('Move to ' + stageInfo(to).name) });
+                });
+                list.sort(function (a, b) {
+                    var ia = ORDER.indexOf(a.to), ib = ORDER.indexOf(b.to);
+                    return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+                });
+            } else {
+                ORDER.forEach(function (to) {
+                    if (to !== from) list.push({ to: to, move: null, label: 'Move to ' + stageInfo(to).name });
+                });
+            }
+            return list;
+        }
+
+        function openMoveSheet(card, from, dealId) {
+            var fromStage = from.getAttribute('data-drop');
+            var options = document.getElementById('pbMoveOptions');
+            var none = document.getElementById('pbMoveNone');
+            var link = card.querySelector('a.t');
+
+            document.getElementById('pbMoveTitle').textContent = card.getAttribute('data-deal-title') || 'Move this deal';
+            document.getElementById('pbMoveFrom').textContent = 'In ' + stageInfo(fromStage).name;
+            document.getElementById('pbMoveOpen').setAttribute('href', link ? link.getAttribute('href') : '#');
+
+            options.textContent = '';
+            var list = movesFrom(fromStage);
+            none.classList.toggle('pb-hidden', list.length > 0);
+
+            list.forEach(function (opt) {
+                var cat = stageInfo(opt.to).category;
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'btn ' + (cat === 'won' ? 'btn-outline-success' : cat === 'lost' ? 'btn-outline-danger' : 'btn-outline-primary');
+                b.setAttribute('data-to', opt.to);
+                b.setAttribute('data-category', cat);
+                b.setAttribute('data-needs-note', opt.move && opt.move.needsNote ? 'true' : 'false');
+
+                var icon = document.createElement('i');
+                icon.className = 'bi ' + (cat === 'won' ? 'bi-trophy' : cat === 'lost' ? 'bi-x-circle' : 'bi-arrow-right-circle');
+                b.appendChild(icon);
+
+                var label = document.createElement('span');
+                label.textContent = opt.label;
+                b.appendChild(label);
+
+                // 095: the stage name on the right only when the label does
+                // not already say it ("Move to Qualification  Qualification").
+                var toName = stageInfo(opt.to).name;
+                if (opt.label.toLowerCase().indexOf(toName.toLowerCase()) < 0) {
+                    var to = document.createElement('span');
+                    to.className = 'to';
+                    to.textContent = toName;
+                    b.appendChild(to);
+                }
+
+                b.addEventListener('click', function () {
+                    // Open the next dialog only once this one is gone, or the
+                    // two backdrops trip over each other.
+                    moveNext = function () {
+                        hideRefused();
+                        if (opt.move && opt.move.needsNote) {
+                            askForNote(opt.move, function (note) {
+                                post(card, from, dealId, opt.to, note);
+                            }, function () { /* cancelled: nothing moved */ });
+                        } else {
+                            post(card, from, dealId, opt.to, null);
+                        }
+                    };
+                    moveModal.hide();
+                });
+
+                options.appendChild(b);
+            });
+
+            moveModal.show();
+        }
+
+        if (CAN_DRAG && moveEl) {
+            moveEl.addEventListener('hidden.bs.modal', function () {
+                var next = moveNext;
+                moveNext = null;
+                if (next) next();
+            });
+
+            document.addEventListener('click', function (e) {
+                var btn = e.target && e.target.closest ? e.target.closest('[data-move-deal]') : null;
+                if (!btn) return;
+                e.preventDefault();
+
+                var card = btn.closest('.pb-card');
+                var from = card ? card.closest('.pb-drop') : null;
+                if (!card || !from) return;
+
+                // No dialog library: the deal's own page has the same moves.
+                if (typeof bootstrap === 'undefined') {
+                    var a = card.querySelector('a.t');
+                    if (a) window.location.href = a.getAttribute('href');
+                    return;
+                }
+
+                moveModal = moveModal || bootstrap.Modal.getOrCreateInstance(moveEl);
+                openMoveSheet(card, from, card.getAttribute('data-deal-id'));
             });
         }
     })();

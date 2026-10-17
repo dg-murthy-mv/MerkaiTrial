@@ -39,6 +39,12 @@
 //   auto-import nothing used. It dragged an Open XML type namespace into
 //   scope; one of its names colliding with ours would have been a
 //   baffling compile error.
+//
+// 095 — Create and Update check a name, a vertical and a country, and the
+//   column lengths (name 200, tax ID 64, country 5), with the shared
+//   InputRules, before anything is staged. Every problem at once, as an
+//   InputValidationException — re-thrown below without an error log, and
+//   a 400 with the sentences from the controller.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
@@ -50,9 +56,25 @@ using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MerkaiTrial.Application.Security;
+using MerkaiTrial.Application.Validation;            // 095
 
 namespace MerkaiTrial.Application.Commands.Companies
 {
+    // ==================== 095: THE CHECKS ====================
+
+    internal static class CompanyInput
+    {
+        public static void Check(string? name, string? vertical, string? country, string? taxId)
+        {
+            var errors = new List<string>();
+            errors.AddIf(InputRules.Text(name, "a company name", 200, required: true));
+            errors.AddIf(InputRules.Text(vertical, "a vertical", 100, required: true));
+            errors.AddIf(InputRules.Text(country, "a country", 5, required: true));
+            errors.AddIf(InputRules.Text(taxId, "the tax ID", 64));
+            InputRules.ThrowIfAny(errors);
+        }
+    }
+
     // ==================== CREATE COMPANY ====================
 
     public class CreateCompanyCommand : ICommandHandler
@@ -88,6 +110,9 @@ namespace MerkaiTrial.Application.Commands.Companies
         {
             try
             {
+                // 095 — before the quota check.
+                CompanyInput.Check(request.Name, request.Vertical, request.Country, request.TaxId);
+
                 // ── ✅ Plan quota check — MaxCompanies from Plans table ───────
                 // Company.TenantId = Guid, request.TenantId = Guid → direct comparison
                 // MaxCompanies is NOT in TenantSettings — must read from Plans via Tenants.Plan
@@ -232,6 +257,9 @@ namespace MerkaiTrial.Application.Commands.Companies
 
                 if (company == null)
                     throw new KeyNotFoundException($"Company {request.Id} not found");
+
+                // 095 — before anything is assigned.
+                CompanyInput.Check(request.Name, request.Vertical, request.Country, request.TaxId);
 
                 // 078b — what changed, by NAME, for the audit row.
                 var changed = new List<string>();

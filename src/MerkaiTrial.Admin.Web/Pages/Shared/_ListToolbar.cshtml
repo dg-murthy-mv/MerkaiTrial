@@ -26,6 +26,13 @@
    outside it (the custom field filter panel) can submit with it through
    form="…". A null id renders no attribute at all.
 
+   ── 094: ON A PHONE ─────────────────────────────────────────────────
+
+   575px and narrower: the search box takes the whole first line (the
+   page asks for a fixed width — 320px on Contacts — which left a few
+   pixels to spare at best), the filters share the next line, and the
+   count drops under them instead of squeezing beside the form.
+
    ── NO NESTED FORMS ─────────────────────────────────────────────────
 
    The count on the right is a span, not a control, and the Clear link is
@@ -39,6 +46,14 @@
               background: #fff; margin-bottom: 1rem; }
     .lt-count { font-size: .78rem; color: #64748b; white-space: nowrap; }
     .lt-bar .form-select, .lt-bar .form-control { font-size: .84rem; }
+
+    /* 094 — the widths come from the page as inline styles, so they are
+       overridden here with !important, on a phone only. */
+    @@media (max-width: 575.98px) {
+        .lt-bar .lt-search { width: 100% !important; }
+        .lt-bar .lt-filter { flex: 1 1 40%; width: auto !important; min-width: 0; }
+        .lt-bar .lt-count { margin-left: 0 !important; width: 100%; }
+    }
 </style>
 
 <div class="lt-bar">
@@ -52,7 +67,7 @@
             <input type="hidden" name="@keep.Key" value="@keep.Value" />
         }
 
-        <div class="input-group input-group-sm" style="width:@Model.SearchWidth;">
+        <div class="input-group input-group-sm lt-search" style="width:@Model.SearchWidth;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="search"
                    name="@Model.SearchName"
@@ -66,7 +81,7 @@
         @foreach (var filter in Model.Filters)
         {
             <select name="@filter.Name"
-                    class="form-select form-select-sm"
+                    class="form-select form-select-sm lt-filter"
                     style="width:@filter.Width;"
                     aria-label="@filter.Label">
                 @foreach (var option in filter.Options)

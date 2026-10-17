@@ -24,6 +24,16 @@
 
    (083) An "Emails" tab — the shared _RecordEmails partial — between
    Tasks and Attachments.
+
+   (094) Phones:
+     • Under the moves, a bar of Log activity / Add task / Note on screens
+       narrower than 992px, where the sidebar's Quick Actions card has
+       dropped below every tab. Each opens its tab and puts the cursor in
+       the form (data-open-tab, handled in _Layout). Shown when the forms
+       are — to someone who can update deals; notes and tasks still work
+       on a closed deal, as they do on the tabs.
+     • On a phone the move buttons fill the width, one or two to a row, so
+       "Mark as Closed Won" is a thumb-sized target rather than a word.
 *@
 
 <div class="container-fluid py-4">
@@ -122,6 +132,22 @@
         </div>
     </div>
 
+    @* ── 094: on the road ─────────────────────────────────────────────── *@
+    @if (Model.CanUpdate)
+    {
+        <div class="dd-quick d-lg-none mb-3" role="group" aria-label="Quick actions">
+            <button type="button" class="btn btn-outline-primary" id="qaLog" data-open-tab="activities">
+                <i class="bi bi-activity"></i><span>Log activity</span>
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="qaTask" data-open-tab="tasks">
+                <i class="bi bi-calendar-plus"></i><span>Add task</span>
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="qaNote" data-open-tab="notes">
+                <i class="bi bi-chat-left-text"></i><span>Note</span>
+            </button>
+        </div>
+    }
+
     <!-- Main Content -->
     <div class="row">
         <div class="col-lg-8">
@@ -219,6 +245,21 @@
         </div>
     </div>
 </div>
+
+<style>
+    /* 094 — the quick bar: equal buttons, icon over label. */
+    .dd-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; }
+    .dd-quick .btn { display: flex; flex-direction: column; align-items: center; gap: .15rem;
+                     font-size: .78rem; font-weight: 600; padding: .5rem .25rem; }
+    .dd-quick .btn i { font-size: 1.1rem; }
+
+    /* 094 — moves as wide, thumb-sized buttons on a phone. */
+    @@media (max-width: 575.98px) {
+        .transition-bar .move-btn,
+        .transition-bar .blocked-move { flex: 1 1 calc(50% - .5rem); max-width: none; }
+        .transition-bar .blocked-move .btn { width: 100%; }
+    }
+</style>
 
 @section Scripts {
     <script>

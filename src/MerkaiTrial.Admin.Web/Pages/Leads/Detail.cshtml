@@ -23,6 +23,18 @@
    Shown only for a lead that is still a lead (not converted) and to
    someone who can both update and delete leads, because a merge changes
    this lead and removes the other.
+
+   094 — PHONES:
+   • The header wraps. Edit, Merge, Delete and Back sat on one line that
+     could not wrap, about 420px wide, so on a phone the whole page
+     scrolled sideways. They wrap now, and below 576px they show their
+     icons only (each keeps its name for screen readers and as a tooltip).
+   • A bar of the four things a rep does on the road, under the header,
+     on screens narrower than 992px (where the sidebar's Quick Actions
+     card has dropped to the very bottom): Call, Log activity, Add task,
+     Note. The last three open their tab and put the cursor in the form
+     (data-open-tab, handled in _Layout). Each only appears when the form
+     it opens is there for this person on this lead.
    ===================================================================== *@
 @page "{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Leads.DetailModel
@@ -38,10 +50,10 @@
     <!-- Header Section -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <h2 class="mb-2">@Model.Lead.FullName</h2>
-                    <div class="d-flex align-items-center gap-3">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                <div class="min-width-0">
+                    <h2 class="mb-2 text-break">@Model.Lead.FullName</h2>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
 
                         @* ✅ Status dropdown — disabled if locked (Converted) OR no update permission *@
                         <form method="post" asp-page-handler="ChangeStatus"
@@ -100,14 +112,14 @@
                     </div>
                 </div>
 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap ld-actions">
 
                     @* ✅ Edit — requires record not locked AND role has update permission *@
                     @if (Model.IsEditableState && Model.CanUpdate)
                     {
                         <a asp-page="./Edit" asp-route-id="@Model.Lead.Id"
-                           class="btn btn-primary">
-                            <i class="bi bi-pencil me-2"></i>Edit
+                           class="btn btn-primary" title="Edit" aria-label="Edit">
+                            <i class="bi bi-pencil me-2"></i><span class="ld-label">Edit</span>
                         </a>
                     }
                     else if (!Model.IsEditableState)
@@ -125,8 +137,8 @@
                     @if (Model.IsEditableState && Model.CanUpdate && Model.CanDelete)
                     {
                         <a asp-page="./Merge" asp-route-keepId="@Model.Lead.Id"
-                           class="btn btn-outline-secondary" id="leadMerge">
-                            <i class="bi bi-intersect me-2"></i>Merge
+                           class="btn btn-outline-secondary" id="leadMerge" title="Merge" aria-label="Merge">
+                            <i class="bi bi-intersect me-2"></i><span class="ld-label">Merge</span>
                         </a>
                     }
 
@@ -138,19 +150,55 @@
                               asp-route-id="@Model.Lead.Id"
                               onsubmit="return confirm('Are you sure you want to delete this lead?');"
                               class="d-inline">
-                            <button type="submit" class="btn btn-outline-danger">
-                                <i class="bi bi-trash me-2"></i>Delete
+                            <button type="submit" class="btn btn-outline-danger" title="Delete" aria-label="Delete">
+                                <i class="bi bi-trash me-2"></i><span class="ld-label">Delete</span>
                             </button>
                         </form>
                     }
 
-                    <a asp-page="./Index" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-left me-2"></i>Back
+                    <a asp-page="./Index" class="btn btn-outline-secondary" title="Back to leads" aria-label="Back to leads">
+                        <i class="bi bi-arrow-left me-2"></i><span class="ld-label">Back</span>
                     </a>
                 </div>
             </div>
         </div>
     </div>
+
+    @* ── 094: on the road ─────────────────────────────────────────────
+       Narrower than 992px only: from there down the sidebar (and its Quick
+       Actions) sits below every tab. Each button appears only when what it
+       opens is there — the forms are drawn for CanUpdate, and Log / Task
+       only while the lead is still a lead. *@
+    @{
+        var canWork = Model.CanUpdate && Model.IsEditableState;
+        var hasPhone = !string.IsNullOrWhiteSpace(Model.Lead.Phone);
+    }
+    @if (hasPhone || Model.CanUpdate)
+    {
+        <div class="ld-quick d-lg-none mb-3" role="group" aria-label="Quick actions">
+            @if (hasPhone)
+            {
+                <a href="tel:@Model.Lead.Phone" class="btn btn-outline-success" id="qaCall">
+                    <i class="bi bi-telephone-fill"></i><span>Call</span>
+                </a>
+            }
+            @if (canWork)
+            {
+                <button type="button" class="btn btn-outline-primary" id="qaLog" data-open-tab="activities">
+                    <i class="bi bi-activity"></i><span>Log activity</span>
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="qaTask" data-open-tab="tasks">
+                    <i class="bi bi-calendar-plus"></i><span>Add task</span>
+                </button>
+            }
+            @if (Model.CanUpdate)
+            {
+                <button type="button" class="btn btn-outline-primary" id="qaNote" data-open-tab="notes">
+                    <i class="bi bi-chat-left-text"></i><span>Note</span>
+                </button>
+            }
+        </div>
+    }
 
     <!-- Main Content with Tabs -->
     <div class="row">
@@ -254,6 +302,20 @@
         </div>
     </div>
 </div>
+
+<style>
+    /* 094 — the quick bar: four equal buttons, icon over label. */
+    .ld-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: .5rem; }
+    .ld-quick .btn { display: flex; flex-direction: column; align-items: center; gap: .15rem;
+                     font-size: .78rem; font-weight: 600; padding: .5rem .25rem; }
+    .ld-quick .btn i { font-size: 1.1rem; }
+
+    /* 094 — header buttons show icons only on a phone. */
+    @@media (max-width: 575.98px) {
+        .ld-actions .ld-label { display: none; }
+        .ld-actions .btn i { margin-right: 0 !important; }
+    }
+</style>
 
 @section Scripts {
     <script>
