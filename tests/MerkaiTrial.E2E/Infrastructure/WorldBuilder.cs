@@ -130,6 +130,17 @@ public sealed class WorldBuilder
     private static readonly SemaphoreSlim WorkspaceDGate = new(1, 1);
     private static readonly SemaphoreSlim WorkspaceCGate = new(1, 1);
 
+    // 095: a failed build is REMEMBERED and reported again, not retried.
+    // A retry used the same names as the half-built first attempt, so the
+    // Create page refused it, and every later fixture reported "did not
+    // reach the Result page" instead of what really went wrong first.
+    private static Exception? _workspaceCFailure;
+    private static Exception? _workspaceDFailure;
+
+    private static InvalidOperationException Earlier(string key, Exception first) =>
+        new($"Workspace {key} could not be built earlier in this run, so this fixture was skipped. " +
+            $"The first failure: {first.Message}", first);
+
     /// <summary>
     /// 092. Workspace C, built the first time a fixture asks for it — the
     /// same rule as D. WorkspaceSettingsTests still builds it its own way
@@ -140,8 +151,18 @@ public sealed class WorldBuilder
         await WorkspaceCGate.WaitAsync();
         try
         {
-            if (World.C is null)
+            if (World.C is not null) return World.C;
+            if (_workspaceCFailure is not null) throw Earlier("C", _workspaceCFailure);
+
+            try
+            {
                 await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db).BuildSettingsWorkspaceAsync();
+            }
+            catch (Exception ex)
+            {
+                _workspaceCFailure = ex;
+                throw;
+            }
             return World.C ?? throw new InvalidOperationException("Workspace C was not built.");
         }
         finally
@@ -153,16 +174,26 @@ public sealed class WorldBuilder
     /// <summary>
     /// 089. Workspace D, built the first time a test fixture asks for it.
     /// CustomFieldTests and NotificationTests both use it; whichever runs
-    /// first builds it, the other reuses it. A failed build is retried by
-    /// the next fixture rather than remembered.
+    /// first builds it, the other reuses it. 095: a failed build is
+    /// remembered — later fixtures report the FIRST failure, see above.
     /// </summary>
     public static async Task<TestTenant> EnsureWorkspaceDAsync()
     {
         await WorkspaceDGate.WaitAsync();
         try
         {
-            if (World.D is null)
+            if (World.D is not null) return World.D;
+            if (_workspaceDFailure is not null) throw Earlier("D", _workspaceDFailure);
+
+            try
+            {
                 await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db).BuildFieldsWorkspaceAsync();
+            }
+            catch (Exception ex)
+            {
+                _workspaceDFailure = ex;
+                throw;
+            }
             return World.D ?? throw new InvalidOperationException("Workspace D was not built.");
         }
         finally
@@ -271,11 +302,34 @@ public sealed class WorldBuilder
             await page.WaitForTimeoutAsync(250);
         }
 
-        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        // 095: wait for what is needed — the invite link on the page — not
+        // for a load event. A run on 18 Oct stopped here: the Result page
+        // had loaded in 51 ms (the trace shows it, and Playwright's own
+        // "NetworkIdle" fired half a second later), yet waiting for
+        // "DOMContentLoaded" after the fact never returned, and setup
+        // failed all 61 tests at the 60-second timeout. Reading the page
+        // until the link is there cannot miss an event that already
+        // happened. 20 seconds, checked every quarter second.
+        string? link = null;
+        var linkDeadline = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            try
+            {
+                link = TestDatabase.FindSetPasswordLink(await page.ContentAsync());
+            }
+            catch (PlaywrightException)
+            {
+                // The page was between documents at that instant; look again.
+            }
 
-        var link = TestDatabase.FindSetPasswordLink(await page.ContentAsync())
-                   ?? throw new AssertionException(
-                       $"Workspace {key} was created but its Result page shows no invite link.");
+            if (link is not null || DateTime.UtcNow > linkDeadline) break;
+            await page.WaitForTimeoutAsync(250);
+        }
+
+        if (link is null)
+            throw new AssertionException(
+                $"Workspace {key} was created but its Result page shows no invite link.");
 
         Log($"Provisioned {name}");
         return (new TestTenant

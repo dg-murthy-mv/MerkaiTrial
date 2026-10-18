@@ -30,6 +30,10 @@
 //   8. (094) READ-ONLY: a deal's current stage key, so the phone test
 //      can tell that Move on the board really moved it. Nothing in 8
 //      writes.
+//   9. (095) PrepareOutboxAsync, once before the run, in the _E2E
+//      database only: clears out queued messages more than a day old and
+//      makes sure the outbox has an index on the address the tests look
+//      up. See the method for why.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -64,6 +68,106 @@ public sealed class TestDatabase
                 "name ends in _E2E (for example MerkaiTrial_E2E). Check E2E_DB / run-e2e.ps1.");
 
         return name;
+    }
+
+    /// <summary>
+    /// 095. Keeps the outbox quick to search during a run. _E2E ONLY.
+    ///
+    /// WHY. The tests find an email by its address (ToAddress), and the
+    /// outbox has no index on that column, so each lookup reads the WHOLE
+    /// table. In the test database nothing is ever sent (no email key), so
+    /// the worker's 90-day clean-up, which only removes SENT messages,
+    /// never removes anything. Every run adds its emails, with their full
+    /// HTML bodies, to every run before it. The database-wait watcher
+    /// caught the result: a count of one address's emails waiting 10–13
+    /// seconds reading pages from disk (PAGEIOLATCH), and on a busier
+    /// moment 30, which fails the test.
+    ///
+    /// So, before the tests start:
+    ///   1. queued messages older than a day are deleted, in batches (their
+    ///      attachments go with them; the database cascades the delete);
+    ///   2. an index on (ToAddress, EventType, CreatedAtUtc) is created if
+    ///      it is missing, so a lookup reads a few rows instead of all.
+    ///
+    /// The index is named IX_E2E_… so it can never be mistaken for one of
+    /// the app's own; it exists in the test database only, and only while
+    /// the tests run — DropOutboxIndexAsync removes it at the end, so a
+    /// later migration that changes the outbox never trips over it.
+    /// Neither step can fail the run: a problem is reported and the tests
+    /// go ahead.
+    /// </summary>
+    public async Task PrepareOutboxAsync()
+    {
+        await EnsureIsE2EDatabaseAsync();
+
+        // 1. Old rows out. Separate from 2 so a refusal here (another table
+        //    pointing at an old message, say) still leaves the index made.
+        try
+        {
+            var removed = 0;
+            await using var conn = await OpenAsync();
+            while (true)
+            {
+                await using var del = new SqlCommand(
+                    @"DELETE TOP (2000) FROM OutboundMessages
+                      WHERE CreatedAtUtc < DATEADD(day, -1, SYSUTCDATETIME())", conn)
+                { CommandTimeout = 180 };
+                var n = await del.ExecuteNonQueryAsync();
+                removed += n;
+                if (n < 2000) break;
+            }
+
+            TestContext.Progress.WriteLine(removed == 0
+                ? "[e2e setup] Outbox: nothing older than a day to clear."
+                : $"[e2e setup] Outbox: cleared {removed} queued message(s) from earlier runs.");
+        }
+        catch (Exception ex)
+        {
+            TestContext.Progress.WriteLine(
+                $"[e2e setup] Could not clear old outbox rows ({ex.Message.Split('\n')[0]}) — the tests run anyway.");
+        }
+
+        // 2. The index on the address the tests look up.
+        try
+        {
+            await using var conn = await OpenAsync();
+            await using var idx = new SqlCommand(
+                @"IF NOT EXISTS (SELECT 1 FROM sys.indexes
+                                 WHERE name = 'IX_E2E_OutboundMessages_To'
+                                   AND object_id = OBJECT_ID('dbo.OutboundMessages'))
+                      CREATE INDEX IX_E2E_OutboundMessages_To
+                          ON dbo.OutboundMessages (ToAddress, EventType, CreatedAtUtc);", conn)
+            { CommandTimeout = 180 };
+            await idx.ExecuteNonQueryAsync();
+            TestContext.Progress.WriteLine("[e2e setup] Outbox: address index in place.");
+        }
+        catch (Exception ex)
+        {
+            TestContext.Progress.WriteLine(
+                $"[e2e setup] Could not add the outbox address index ({ex.Message.Split('\n')[0]}) — the tests run anyway.");
+        }
+    }
+
+    /// <summary>095. Removes the run-time index again — see PrepareOutboxAsync. Never throws.</summary>
+    public async Task DropOutboxIndexAsync()
+    {
+        try
+        {
+            await EnsureIsE2EDatabaseAsync();
+            await using var conn = await OpenAsync();
+            await using var cmd = new SqlCommand(
+                @"IF EXISTS (SELECT 1 FROM sys.indexes
+                             WHERE name = 'IX_E2E_OutboundMessages_To'
+                               AND object_id = OBJECT_ID('dbo.OutboundMessages'))
+                      DROP INDEX IX_E2E_OutboundMessages_To ON dbo.OutboundMessages;", conn)
+            { CommandTimeout = 60 };
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            TestContext.Progress.WriteLine(
+                $"[e2e] Could not remove the outbox address index ({ex.Message.Split('\n')[0]}).");
+        }
     }
 
     /// <summary>

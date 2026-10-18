@@ -28,6 +28,12 @@
 //        • the readable row's values are stored exactly (13 April 2027,
 //          Silver, ticked) and the other lead has none.
 //
+// 095: every custom field box is found by the label that STARTS WITH its
+// name (CustomFieldsUi.LabelStarting). "Tier …" also matched "Licence
+// tier …", a field another test adds to the same workspace earlier in the
+// run. (Exact matching was tried first and failed: a required field's
+// label ends in " *".)
+//
 // 092b: a custom field's row on the mapping screen is found by the
 // field's NAME CELL. The first run looked for a row containing the name
 // anywhere — and every row does, because each row's drop-down lists
@@ -81,9 +87,9 @@ public class LeadImportExportTests : E2ETest
             await Step("Add lead shows both, the required one marked required", async () =>
             {
                 await admin.GotoAsync("/Leads/Create");
-                await Assertions.Expect(admin.GetByLabel(code)).ToBeVisibleAsync();
-                await Assertions.Expect(admin.GetByLabel(segment)).ToBeVisibleAsync();
-                Assert.That(await admin.GetByLabel(code).EvaluateAsync<bool>("el => el.required"), Is.True,
+                await Assertions.Expect(admin.GetByLabel(LabelStarting(code))).ToBeVisibleAsync();
+                await Assertions.Expect(admin.GetByLabel(LabelStarting(segment))).ToBeVisibleAsync();
+                Assert.That(await admin.GetByLabel(LabelStarting(code)).EvaluateAsync<bool>("el => el.required"), Is.True,
                     $"\"{code}\" is required but its input on Add lead is not marked required.");
             });
 
@@ -95,7 +101,7 @@ public class LeadImportExportTests : E2ETest
                 {
                     await Flows.CreateLeadAsync(admin, refusedName, World.EmailFor("D", "nocode" + Random.Shared.Next(1000, 9999)),
                         150000m, D, beforeSave: p =>
-                            p.GetByLabel(code).EvaluateAsync<bool>("el => { el.removeAttribute('required'); return true; }"));
+                            p.GetByLabel(LabelStarting(code)).EvaluateAsync<bool>("el => { el.removeAttribute('required'); return true; }"));
                 }
                 catch (AssertionException ex)
                 {
@@ -116,8 +122,8 @@ public class LeadImportExportTests : E2ETest
                 Flows.CreateLeadAsync(admin, leadName, World.EmailFor("D", "fields" + Random.Shared.Next(1000, 9999)),
                     150000m, D, beforeSave: async p =>
                     {
-                        await p.GetByLabel(code).FillAsync("SC-0921");
-                        await Ui.SelectByTextAsync(p.GetByLabel(segment), "Wholesale");
+                        await p.GetByLabel(LabelStarting(code)).FillAsync("SC-0921");
+                        await Ui.SelectByTextAsync(p.GetByLabel(LabelStarting(segment)), "Wholesale");
                     }));
 
             await Step("Its page shows both values", async () =>
@@ -170,9 +176,9 @@ public class LeadImportExportTests : E2ETest
                 Flows.CreateLeadAsync(admin, original, World.EmailFor("D", "meera" + Random.Shared.Next(1000, 9999)),
                     800000m, D, beforeSave: async p =>
                     {
-                        await p.GetByLabel(renewal).FillAsync("2027-03-01");
-                        await Ui.SelectByTextAsync(p.GetByLabel(tier), "Gold");
-                        await p.GetByLabel(gst).CheckAsync();
+                        await p.GetByLabel(LabelStarting(renewal)).FillAsync("2027-03-01");
+                        await Ui.SelectByTextAsync(p.GetByLabel(LabelStarting(tier)), "Gold");
+                        await p.GetByLabel(LabelStarting(gst)).CheckAsync();
                     }));
 
             var rows = await Step("Export the searched list", async () =>

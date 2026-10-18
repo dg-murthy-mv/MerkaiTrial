@@ -31,6 +31,14 @@
    8. The search box in the top bar is hidden below 992px. It is not wired
       to anything yet (typing in it does nothing on any screen), and on a
       tablet it took the room the buttons needed.
+
+   095 — LONG FIGURES WRAP IN THEIR CARD. A big pipeline (₹1,50,00,00,000.00)
+   has no space to break at, so on a phone the Dashboard's half-width
+   cards were pushed wider than the screen and the whole page scrolled
+   sideways. Card figures and captions (.kpi-value, .kpi-sub, .kpi-label)
+   may now break inside the number when they must, the text beside a card
+   icon may shrink, and the icon itself never does. Nothing changes when
+   the figure fits.
    ===================================================================== *@
 @using System.Linq
 @using MerkaiTrial.Admin.Web.Services
@@ -909,6 +917,21 @@
         /* 094 (6): the page behind an open menu stays put. */
         body.lf-menu-open {
             overflow: hidden;
+        }
+
+        /* 095: long figures wrap inside their card — see the header. */
+        .kpi-value,
+        .kpi-sub,
+        .kpi-label {
+            overflow-wrap: anywhere;
+        }
+
+        .kpi-card .d-flex > :not(.kpi-icon) {
+            min-width: 0;
+        }
+
+        .kpi-icon {
+            flex-shrink: 0;
         }
 
         /* 094 (7): a tab scrolled to clears the fixed top bar. */

@@ -7,7 +7,15 @@
 // CustomFieldTests has used since 089 (it keeps its own copy and is left
 // alone), shared here so the import / export tests do not copy them a
 // third time.
+//
+// 095: a field is found by the label that STARTS WITH its name. "has-text"
+// matches anywhere and ignores case, so "Tier …" also found "Licence
+// tier …", a field another test adds to the same workspace, and read the
+// wrong one's value. LabelStarting is the one rule, used here and by the
+// import / export tests' form boxes.
 // =====================================================================
+
+using System.Text.RegularExpressions;
 
 namespace MerkaiTrial.E2E.Infrastructure;
 
@@ -83,14 +91,14 @@ public static class CustomFieldsUi
     /// </summary>
     public static async Task ExpectDetailValueAsync(IPage page, string label, string expected)
     {
-        var value = page.Locator($"label:has-text('{label}') + div.fw-semibold").First;
+        var value = DetailValues(page, label).First;
         try
         {
             await Assertions.Expect(value).ToContainTextAsync(expected);
         }
         catch (Exception ex) when (ex is not AssertionException)
         {
-            var shown = await page.Locator($"label:has-text('{label}') + div.fw-semibold").AllInnerTextsAsync();
+            var shown = await DetailValues(page, label).AllInnerTextsAsync();
             throw new AssertionException(
                 $"On {Ui.PathOf(page.Url)}, \"{label}\" should show \"{expected}\" but " +
                 (shown.Count == 0
@@ -98,4 +106,16 @@ public static class CustomFieldsUi
                     : $"it shows \"{string.Join(" | ", shown.Select(s => s.Trim()))}\"."));
         }
     }
+
+    /// <summary>
+    /// 095. Text that begins with <paramref name="name"/> (after any
+    /// spaces), case and all — so "Tier 1018" never matches "Licence tier
+    /// 1018", and a required field's trailing * still matches.
+    /// </summary>
+    public static Regex LabelStarting(string name) => new("^\\s*" + Regex.Escape(name));
+
+    /// <summary>095. The value printed under each label starting with the name.</summary>
+    private static ILocator DetailValues(IPage page, string label) =>
+        page.Locator("label", new() { HasTextRegex = LabelStarting(label) })
+            .Locator("xpath=following-sibling::*[1][self::div and contains(concat(' ', normalize-space(@class), ' '), ' fw-semibold ')]");
 }
