@@ -1,6 +1,7 @@
 @page "/Products"
 @model MerkaiTrial.Admin.Web.Pages.Products.IndexModel
 @using MerkaiTrial.Application.Configuration
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @{
     ViewData["Title"] = "Products";
     var p = Model.PaginatedProducts;
@@ -9,6 +10,7 @@
     // by every POST form on this page so the redirect lands where the
     // person was. Built once, not once per row.
     var state = Model.StateRoute();
+    var sorter = Model.Sorter;   // 096 — the headers and the phone Sort menu
 }
 @* =====================================================================
    Pages/Products/Index.cshtml — COMPLETE FILE (080).
@@ -29,6 +31,15 @@
      resets after the redirect.
    • No nested forms: the toggle forms sit inside table cells, the delete
      form is the modal's own, and the toolbar/pager are siblings.
+   096:
+   • Product, SKU, Category, Price and Status sort the list
+     (_SortHeader); click again to flip. Phones get a Sort menu above the
+     cards (_SortMenu). 10 per page by default, remembered per browser.
+   • ONE pager, under both the table and the cards. It was drawn twice —
+     inside the desktop card and again under the phone cards — so the
+     "Per page" select (id="lpPageSize") was on the page twice, and its
+     label pointed at whichever came first. Contacts and Companies
+     already work this way.
    ===================================================================== *@
 
 <style>
@@ -139,6 +150,12 @@
     @* 080 — custom field filters; their inputs post with the toolbar's form. *@
     <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
+    @if (p.TotalCount > 1)
+    {
+        @* 096 — phones sort here; the table's headers do it from 768px. *@
+        <div class="mb-2 d-md-none"><partial name="_SortMenu" model="sorter" /></div>
+    }
+
     @if (p.Items.Any())
     {
         <!-- Desktop Table -->
@@ -147,10 +164,11 @@
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th class="ps-3">Product</th>
-                            <th>Category</th>
-                            <th>SKU</th>
-                            <th>Price</th>
+                            @* 096 — sortable columns. *@
+                            <th class="ps-3" aria-sort="@sorter.AriaSort("name")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "name", "Product"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("category")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "category", "Category"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("sku")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "sku", "SKU"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("price")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "price", "Price"))" /></th>
                             <th>Type</th>
                             @foreach (var col in Model.ListColumns)
                             {
@@ -158,7 +176,7 @@
                                     <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1 text-muted" aria-hidden="true"></i>@col.Label
                                 </th>
                             }
-                            <th>Status</th>
+                            <th aria-sort="@sorter.AriaSort("status")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "status", "Status"))" /></th>
                             <th class="text-end pe-3">Actions</th>
                         </tr>
                     </thead>
@@ -319,9 +337,6 @@
                     </tbody>
                 </table>
             </div>
-            <div class="card-body border-top">
-                <partial name="_Pager" model="Model.Pager" />
-            </div>
         </div>
 
         <!-- Mobile Cards -->
@@ -429,6 +444,11 @@
                     </div>
                 </div>
             }
+        </div>
+
+        @* 096 — ONE pager for both layouts. See the header: drawing it in
+           each layout put two "Per page" selects with one id on the page. *@
+        <div class="card border-0 shadow-sm mt-2">
             <partial name="_Pager" model="Model.Pager" />
         </div>
     }
@@ -449,7 +469,7 @@
                     <i class="bi bi-search big"></i>
                     <div class="fw-semibold text-body mb-1">No product matches these filters</div>
                     <div class="small">
-                        <a asp-page="./Index" asp-route-PageSize="@Model.PageSize">Clear the search and filters</a>
+                        <a asp-page="./Index" asp-all-route-data="Model.ClearAllRoute()">Clear the search and filters</a>
                     </div>
                 }
                 else

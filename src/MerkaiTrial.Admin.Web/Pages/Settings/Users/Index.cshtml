@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Users";
     var atLimit = AuthorizedPageModel.IsAtLimit(Model.Stats.TotalUsers, Model.MaxUsers);
+    var state = Model.StateRoute();   // 096 — every action form carries it, so you land back here
 }
 
 @*
@@ -13,6 +14,19 @@
     086: "Reset password" emails a colleague a new reset link (the link is
     never shown here — see the page model). "Invite" now emails the invite
     as well as showing the link once.
+
+    096: the shared _ListToolbar and _Pager (the old _Pagination partial is
+    no longer used here). Every action form carries the search, page and
+    size. Confirm texts are data-confirm attributes read by one listener —
+    a name with an apostrophe used to break the inline confirm('…') and
+    post without asking. "Last signed in" is in the workspace's own date
+    format. A failed load is shown here, now.
+
+    096b — the user id (and isActive) are hidden fields, NOT asp-route-…:
+    on a form that also has asp-all-route-data, ASP.NET sets the asp-route
+    value first and then REPLACES the whole route list with the state, so
+    the id was silently dropped and Invite / Reset / Deactivate acted on an
+    empty id. Caught by the first full test run (on Tasks → Reassign).
 *@
 
 <div class="d-flex justify-content-between align-items-start mb-4">
@@ -115,25 +129,16 @@
     </div>
 </div>
 
-<!-- Search -->
-<div class="card mb-3">
-    <div class="card-body py-3">
-        <form method="get" class="row g-2 align-items-end">
-            <input type="hidden" name="PageSize" value="@Model.PageSize" />
-            <div class="col-md-9">
-                <label class="form-label mb-1">Search</label>
-                <input type="text" name="SearchTerm" value="@Model.SearchTerm"
-                       class="form-control" placeholder="Name or email" />
-            </div>
-            <div class="col-md-3 d-flex gap-2">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-1"></i> Search
-                </button>
-                <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary">Clear</a>
-            </div>
-        </form>
+@if (!string.IsNullOrEmpty(Model.PageError))
+{
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.PageError</span>
     </div>
-</div>
+}
+
+@* 096 — the shared search strip and count. *@
+<partial name="_ListToolbar" model="Model.Toolbar" />
 
 <!-- List -->
 <div class="card">
@@ -144,15 +149,30 @@
         </span>
         @if (Model.Users.TotalPages > 1)
         {
-            <span class="text-muted" style="font-size:12px;">Page @Model.Page of @Model.Users.TotalPages</span>
+            <span class="text-muted" style="font-size:12px;">Page @Model.PageNumber of @Model.Users.TotalPages</span>
         }
     </div>
 
     @if (!Model.Users.Items.Any())
     {
         <div class="card-body text-center py-5 text-muted">
-            <i class="bi bi-people" style="font-size:2rem;opacity:.4;"></i>
-            <p class="mt-3 mb-0">No one matches that search.</p>
+            @if (!string.IsNullOrEmpty(Model.PageError))
+            {
+                <i class="bi bi-cloud-slash" style="font-size:2rem;opacity:.4;"></i>
+                <p class="mt-3 mb-2">The list could not be loaded.</p>
+                <a asp-page="./Index" asp-all-route-data="state" class="btn btn-sm btn-outline-secondary">Try again</a>
+            }
+            else if (Model.IsFiltered)
+            {
+                <i class="bi bi-people" style="font-size:2rem;opacity:.4;"></i>
+                <p class="mt-3 mb-2">No one matches that search.</p>
+                <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-sm btn-outline-secondary">Clear the search</a>
+            }
+            else
+            {
+                <i class="bi bi-people" style="font-size:2rem;opacity:.4;"></i>
+                <p class="mt-3 mb-0">No one here yet.</p>
+            }
         </div>
     }
     else
@@ -203,7 +223,8 @@
                             <td>
                                 @if (user.LastLoginUtc.HasValue)
                                 {
-                                    <small class="text-muted">@user.LastLoginUtc.Value.ToString("d MMM yyyy")</small>
+                                    @* 096 — the workspace's date format and timezone, not the UTC date. *@
+                                    <small class="text-muted">@Model.FormatDate(user.LastLoginUtc.Value)</small>
                                 }
                                 else
                                 {
@@ -227,8 +248,8 @@
                                 {
                                     @if (!user.LastLoginUtc.HasValue && user.IsActive)
                                     {
-                                        <form method="post" asp-page-handler="ResendInvite"
-                                              asp-route-userId="@user.Id" class="d-inline">
+                                        <form method="post" asp-page-handler="ResendInvite" asp-all-route-data="state" class="d-inline">
+                                            <input type="hidden" name="userId" value="@user.Id" />
                                             <button type="submit" class="btn btn-sm btn-outline-primary"
                                                     title="Email them a new invite link">
                                                 <i class="bi bi-envelope"></i> Invite
@@ -239,9 +260,9 @@
                                     @* 086 — email a reset link. Not on yourself. *@
                                     @if (user.LastLoginUtc.HasValue && user.IsActive && !isSelf)
                                     {
-                                        <form method="post" asp-page-handler="SendReset"
-                                              asp-route-userId="@user.Id" class="d-inline"
-                                              onsubmit="return confirm('Email this person a link to choose a new password? Their current password keeps working until they use it.');">
+                                        <form method="post" asp-page-handler="SendReset" asp-all-route-data="state" class="d-inline"
+                                              data-confirm="Email @user.FullName a link to choose a new password? Their current password keeps working until they use it.">
+                                            <input type="hidden" name="userId" value="@user.Id" />
                                             <button type="submit" class="btn btn-sm btn-outline-secondary"
                                                     title="Email them a link to choose a new password">
                                                 <i class="bi bi-key"></i> Reset password
@@ -254,11 +275,15 @@
                                        the only administrator of. *@
                                     @if (!isSelf)
                                     {
+                                        @* 096 — data-confirm, not confirm('…') inside onsubmit:
+                                           an apostrophe in the name broke the script, and the
+                                           form then posted without asking. *@
                                         <form method="post" asp-page-handler="ToggleStatus"
-                                              asp-route-userId="@user.Id"
-                                              asp-route-isActive="@(!user.IsActive)"
+                                              asp-all-route-data="state"
                                               class="d-inline"
-                                              onsubmit="return confirm('@(user.IsActive ? $"Deactivate {user.FullName}? They will not be able to sign in. Their leads and deals are kept." : $"Reactivate {user.FullName}?")');">
+                                              data-confirm="@(user.IsActive ? $"Deactivate {user.FullName}? They will not be able to sign in. Their leads and deals are kept." : $"Reactivate {user.FullName}?")">
+                                            <input type="hidden" name="userId" value="@user.Id" />
+                                            <input type="hidden" name="isActive" value="@(!user.IsActive)" />
                                             <button type="submit"
                                                     class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")"
                                                     title="@(user.IsActive ? "Deactivate" : "Reactivate")">
@@ -330,8 +355,8 @@
                         <div class="d-flex gap-2">
                             @if (!user.LastLoginUtc.HasValue && user.IsActive)
                             {
-                                <form method="post" asp-page-handler="ResendInvite"
-                                      asp-route-userId="@user.Id" class="flex-fill">
+                                <form method="post" asp-page-handler="ResendInvite" asp-all-route-data="state" class="flex-fill">
+                                    <input type="hidden" name="userId" value="@user.Id" />
                                     <button type="submit" class="btn btn-sm btn-outline-primary w-100">
                                         <i class="bi bi-envelope me-1"></i>Invite
                                     </button>
@@ -339,19 +364,20 @@
                             }
                             @if (user.LastLoginUtc.HasValue && user.IsActive)
                             {
-                                <form method="post" asp-page-handler="SendReset"
-                                      asp-route-userId="@user.Id" class="flex-fill"
-                                      onsubmit="return confirm('Email this person a link to choose a new password?');">
+                                <form method="post" asp-page-handler="SendReset" asp-all-route-data="state" class="flex-fill"
+                                      data-confirm="Email @user.FullName a link to choose a new password?">
+                                    <input type="hidden" name="userId" value="@user.Id" />
                                     <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
                                         <i class="bi bi-key me-1"></i>Reset
                                     </button>
                                 </form>
                             }
                             <form method="post" asp-page-handler="ToggleStatus"
-                                  asp-route-userId="@user.Id"
-                                  asp-route-isActive="@(!user.IsActive)"
+                                  asp-all-route-data="state"
                                   class="flex-fill"
-                                  onsubmit="return confirm('@(user.IsActive ? "Deactivate this person?" : "Reactivate this person?")');">
+                                  data-confirm="@(user.IsActive ? $"Deactivate {user.FullName}?" : $"Reactivate {user.FullName}?")">
+                                <input type="hidden" name="userId" value="@user.Id" />
+                                <input type="hidden" name="isActive" value="@(!user.IsActive)" />
                                 <button type="submit"
                                         class="btn btn-sm w-100 @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")">
                                     @(user.IsActive ? "Deactivate" : "Reactivate")
@@ -362,13 +388,25 @@
                 </div>
             }
         </div>
-
-        <partial name="_Pagination" model="Model.Users" />
     }
+
+    @* 096 — the shared pager (was the old _Pagination partial). *@
+    <partial name="_Pager" model="Model.Pager" />
 </div>
 
 @section Scripts {
     <script>
+        // 096 — one listener for every confirm on the page. The text lives in
+        // data-confirm, encoded by Razor and read back as plain text, so a
+        // name like O'Brien is just a name. The old inline confirm('…') broke
+        // on it — and a throwing onsubmit lets the form post without asking.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.getAttribute) return;
+            var text = form.getAttribute('data-confirm');
+            if (text && !window.confirm(text)) e.preventDefault();
+        });
+
         function copyInvite() {
             const el = document.getElementById('inviteUrl');
             el.select();

@@ -44,10 +44,19 @@
 //
 //   An unknown, deleted, draft or malformed token is a plain 404 with no
 //   hint which of those it was.
+//
+// CHANGES (096 — the Invoices page)
+//   GET  api/invoices/paged   Invoices.Read   one page: search, filters, sort
+//     ?pageNumber=&pageSize=&search=&status=&fromDate=&toDate=&sort=&dir=&cf=…
+//   Returns PaginatedResult<InvoiceListItem>. GET api/invoices (every
+//   matching invoice, as a list) is unchanged — the quote and deal pages
+//   use it. Record visibility applies to both, in the same handler.
+//   "paged" is a literal segment, so routing prefers it to {id}.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Invoices;
 using MerkaiTrial.Application.Common;
+using MerkaiTrial.Application.Configuration;   // 096 — CustomFieldFilterCodec, CustomFieldLimits
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Queries.Invoices;
 using MerkaiTrial.Application.Services;
@@ -183,6 +192,58 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting invoices");
+                return StatusCode(500, new { error = "Failed to retrieve invoices" });
+            }
+        }
+
+        /// <summary>
+        /// 096. One page of the Invoices list — searched, filtered and sorted
+        /// on the server. See the header.
+        /// </summary>
+        [HttpGet("paged")]
+        [Authorize(Policy = "Invoices.Read")]
+        [ProducesResponseType(typeof(PaginatedResult<InvoiceListItem>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPaged(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? search = null,
+            [FromQuery] string? status = null,
+            [FromQuery] DateTime? fromDate = null,
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] string? sort = null,
+            [FromQuery] string? dir = null,
+            [FromQuery(Name = "cf")] string[]? cf = null,
+            CancellationToken cancellationToken = default)
+        {
+            var tenantId = _currentUserService.GetCurrentTenantId();
+            try
+            {
+                // Custom field filters, capped before decoding, exactly as
+                // the other lists do it.
+                var customFilters = new List<CustomFieldFilter>();
+                foreach (var raw in (cf ?? Array.Empty<string>()).Take(CustomFieldLimits.MaxFiltersPerQuery))
+                    if (CustomFieldFilterCodec.TryDecode(raw, out var filter))
+                        customFilters.Add(filter);
+
+                var query = new GetInvoicesQuery
+                {
+                    TenantId      = tenantId,
+                    Status        = status,
+                    FromDate      = fromDate,
+                    ToDate        = toDate,
+                    SearchTerm    = search,
+                    Sort          = sort,
+                    Dir           = dir,
+                    PageNumber    = pageNumber,     // clamped in the handler
+                    PageSize      = pageSize,
+                    CustomFilters = customFilters
+                };
+
+                return Ok(await _getInvoices.HandlePagedAsync(query, cancellationToken));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting the invoices page");
                 return StatusCode(500, new { error = "Failed to retrieve invoices" });
             }
         }

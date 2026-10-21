@@ -4,6 +4,12 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (096 — lists)
+//   ✅ GetDealsHandler sorts by GetDealsRequest.Sort / Dir (title,
+//      company, stage, value, probability, close, created), always ending
+//      with Id so the paged deal table never repeats or skips a row.
+//      No sort = newest first, as before.
+//
 // CHANGES (077 — custom fields on deals)
 //   ✅ CreateDealHandler / UpdateDealHandler stage the deal's custom field
 //      values through CustomFieldValueWriter BEFORE their SaveChangesAsync,
@@ -332,6 +338,10 @@ namespace MerkaiTrial.Application.Commands.Deals
 
     public class GetDealsHandler : ICommandHandler
     {
+        /// <summary>096. The column keys the deal table can be sorted by.</summary>
+        public static readonly string[] SortKeys =
+            { "title", "company", "stage", "value", "probability", "close", "created" };
+
         private readonly FlowDbContext _db;
         private readonly IRecordScopeService _scope;
 
@@ -403,10 +413,39 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var total = await query.CountAsync();
 
-            var rows = await query
-                .OrderByDescending(x => x.Deal.CreatedAtUtc)
-                .Skip((request.Page - 1) * request.PageSize)
-                .Take(request.PageSize)
+            // 096 — a page past the end becomes the last page, as on every
+            // other list (the deal table pages now). The controller has
+            // already clamped Page ≥ 1 and PageSize to 1–500.
+            var page = Math.Max(request.Page, 1);
+            var pageSize = Math.Max(request.PageSize, 1);
+            var totalPages = total == 0 ? 1 : (int)Math.Ceiling(total / (double)pageSize);
+            if (page > totalPages) page = totalPages;
+
+            // 096 — the requested order, always ending with Id. Unchanged
+            // default: newest first (the board ignores the order anyway —
+            // it groups by stage).
+            var sortKey = ListSort.Key(request.Sort, SortKeys);
+            var desc    = ListSort.IsDescending(request.Dir, fallback: sortKey is not ("title" or "company" or "stage"));
+
+            var ordered = sortKey switch
+            {
+                "title"       => query.OrderByDir(x => x.Deal.Title, desc),
+                "company"     => query.OrderByDir(x => x.Company != null ? x.Company.Name : "", desc),
+                "stage"       => query.OrderByDir(x => x.Deal.Stage, desc),
+                "value"       => query.OrderByDir(x => x.Deal.ExpectedValue, desc),
+                "probability" => query.OrderByDir(x => x.Deal.Probability, desc),
+                "close"       => query.OrderByDir(x => x.Deal.ExpectedCloseDateUtc, desc),
+                "created"     => query.OrderByDir(x => x.Deal.CreatedAtUtc, desc),
+                _             => query.OrderByDescending(x => x.Deal.CreatedAtUtc)
+            };
+
+            if (sortKey is not (null or "created"))
+                ordered = ordered.ThenByDescending(x => x.Deal.CreatedAtUtc);
+
+            var rows = await ordered
+                .ThenBy(x => x.Deal.Id)       // 096 — stable: paging never repeats or skips a deal
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             var ownerIds = rows
@@ -459,7 +498,7 @@ namespace MerkaiTrial.Application.Commands.Deals
                 };
             }).ToList();
 
-            return new GetDealsResponse(items, total, request.Page, request.PageSize, quotaUsed);
+            return new GetDealsResponse(items, total, page, pageSize, quotaUsed);
         }
     }
 

@@ -1,0 +1,47 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.SortHeaderVm
+@* =====================================================================
+   Pages/Shared/_SortHeader.cshtml — NEW (096).
+
+   One clickable column title. Inside the page's own <th>:
+
+       <th aria-sort="@Model.Sorter.AriaSort("value")">
+           <partial name="_SortHeader" model="@(new SortHeaderVm(Model.Sorter, "value", "Value"))" />
+       </th>
+
+   Clicking the column the list is sorted by flips the direction; any
+   other column starts in its natural direction — A→Z for text, biggest
+   or newest first for numbers and dates. The link carries every filter
+   and the page size (ListSortVm.Route) and lands on page 1, the same
+   rule as a new search.
+
+   A plain link, so it works without JavaScript, opens in a new tab, and
+   puts the order in the URL like everything else about the list.
+
+   The styles are written once per page (HttpContext.Items), not once per
+   column.
+   ===================================================================== *@
+@{
+    var on   = Model.List.IsActive(Model.Key);
+    var desc = on && Model.List.ActiveDescending;
+    var next = on ? (desc ? "ascending" : "descending") : "";
+    var icon = !on ? "bi-chevron-expand" : desc ? "bi-caret-down-fill" : "bi-caret-up-fill";
+
+    var cssWritten = Context.Items.ContainsKey("merkai.sortheader.css");
+    Context.Items["merkai.sortheader.css"] = true;
+}
+@if (!cssWritten)
+{
+    <style>
+        .ls-sort { color: inherit; text-decoration: none; display: inline-flex; align-items: center;
+                   gap: .25rem; white-space: nowrap; }
+        .ls-sort:hover, .ls-sort:focus-visible { color: #0f172a; text-decoration: none; }
+        .ls-sort i { font-size: .62rem; opacity: .35; }
+        .ls-sort.on { color: #4f46e5; }
+        .ls-sort.on i { opacity: 1; }
+    </style>
+}
+<a class="ls-sort @(on ? "on" : "") @Model.CssClass"
+   asp-page="@Model.List.PageRoute"
+   asp-all-route-data="@Model.List.RouteFor(Model.Key)"
+   data-sort-key="@Model.Key"
+   title="@(on ? $"Sorted by {Model.Label} — click for {next}" : $"Sort by {Model.Label}")">@Model.Label<i class="bi @icon" aria-hidden="true"></i></a>

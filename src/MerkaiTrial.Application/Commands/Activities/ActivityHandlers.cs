@@ -50,6 +50,11 @@
 //   source lead's — the same set as the deal's Emails tab. Dismissed and
 //   deleted emails are left out.
 //
+// 096 — THE TASKS PAGE CAN SEARCH
+//   GetUpcomingTasksHandler takes a search (the task's subject and notes,
+//   or the lead / deal it is on) and a record type. MaxRows is public so
+//   the page can say when the 500-task ceiling has cut the list short.
+//
 // 091 — "A TASK IS ASSIGNED TO ME" NOTIFICATIONS
 //   Giving a colleague a task now tells them: in the bell, and by email or
 //   WhatsApp if they chose that (Settings → Notifications). Three paths:
@@ -613,7 +618,12 @@ namespace MerkaiTrial.Application.Commands.Activities
 
     public class GetUpcomingTasksHandler : ICommandHandler
     {
-        private const int MaxRows = 500;
+        /// <summary>
+        /// The most tasks one read returns. Public (096) so the Tasks page
+        /// can say "showing the first 500" when it gets exactly this many,
+        /// rather than presenting a cut-off list as the whole of it.
+        /// </summary>
+        public const int MaxRows = 500;
 
         private readonly FlowDbContext _db;
 
@@ -636,8 +646,39 @@ namespace MerkaiTrial.Application.Commands.Activities
             if (!string.IsNullOrWhiteSpace(query.AssignedToUserId))
                 q = q.Where(a => a.AssignedToUserId == query.AssignedToUserId);
 
+            // 096 — one record type (Lead / Deal / …). An unknown value is
+            // ignored rather than returning nothing for a typo'd link.
+            if (ActivityEntityType.IsValid(query.EntityType))
+            {
+                var type = query.EntityType!;
+                q = q.Where(a => a.EntityType == type);
+            }
+
+            // 096 — search the task itself and the NAME of what it is on:
+            // "Somchai" finds every task on Somchai's lead. Lead and deal
+            // names live in their own tables, so they are id subqueries.
+            if (!string.IsNullOrWhiteSpace(query.Search))
+            {
+                var s = query.Search.Trim().ToLower();
+                var t = query.TenantId;
+
+                var leadIds = _db.Leads
+                    .Where(l => l.TenantId == t && !l.IsDeleted && l.FullName.ToLower().Contains(s))
+                    .Select(l => l.Id);
+                var dealIds = _db.Deals
+                    .Where(d => d.TenantId == t && !d.IsDeleted && d.Title.ToLower().Contains(s))
+                    .Select(d => d.Id);
+
+                q = q.Where(a =>
+                    a.Subject.ToLower().Contains(s) ||
+                    (a.Description != null && a.Description.ToLower().Contains(s)) ||
+                    (a.EntityType == ActivityEntityType.Lead && leadIds.Contains(a.EntityId)) ||
+                    (a.EntityType == ActivityEntityType.Deal && dealIds.Contains(a.EntityId)));
+            }
+
             var rows = await q
                 .OrderBy(a => a.DueDate)
+                .ThenBy(a => a.Id)            // 096 — the same order on every load
                 .Take(MaxRows)
                 .ToListAsync(ct);
 

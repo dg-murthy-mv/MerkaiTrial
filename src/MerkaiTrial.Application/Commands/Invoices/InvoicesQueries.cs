@@ -45,6 +45,9 @@
 //   ✅ Statistics count ISSUED invoices: TotalInvoices / TotalAmount /
 //      Unpaid no longer include drafts (not owed yet) or void invoices
 //      (never owed). Drafts are still counted in DraftInvoices.
+//
+// 096 — the Invoices page gets a paged, searched, sorted read
+//   (GetInvoicesHandler.HandlePagedAsync). Notes above the handler.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;   // 081: CustomFieldListQuery
@@ -66,6 +69,34 @@ using System.Threading.Tasks;
 namespace MerkaiTrial.Application.Queries.Invoices
 {
     // ==================== GET INVOICES ====================
+    //
+    // 096 — THE INVOICES LIST PAGE, SEARCHED, SORTED AND PAGED ON THE SERVER
+    //
+    //   Handle (unchanged in meaning) still returns EVERY matching invoice
+    //   as a List. The quote and deal pages call it with a quoteId / dealId
+    //   and expect the whole set, so it keeps that shape. One change: its
+    //   order ends with Id, so two invoices created in the same instant can
+    //   no longer swap places between loads.
+    //
+    //   HandlePagedAsync is new, for the Invoices page, behind
+    //   GET api/invoices/paged:
+    //     • SearchTerm   number, quote number, deal title, customer (deal
+    //                    company, contact's company, contact's name) and
+    //                    the invoice's custom text / dropdown values
+    //     • CustomFilters  the ?cf= filters the other lists have
+    //     • Sort / Dir   number, customer, issued, due, total, balance,
+    //                    status, created — always ending with Id. No sort:
+    //                    newest issue date first.
+    //     • PageNumber / PageSize  clamped 1–100; a page past the end is
+    //                    pulled back to the last page
+    //   Status / FromDate / ToDate mean exactly what they mean in Handle —
+    //   both go through the same Filtered() so they cannot drift apart.
+    //
+    //   The CUSTOMER sort orders by the same three names CustomerNaming
+    //   chooses between (deal company, then contact's company, then the
+    //   person) in SQL. The rule itself still lives in CustomerNaming and
+    //   decides what is DISPLAYED.
+
     public class GetInvoicesQuery : ICommandHandler
     {
         public Guid TenantId { get; set; }
@@ -74,10 +105,25 @@ namespace MerkaiTrial.Application.Queries.Invoices
         public string? Status { get; set; }
         public DateTime? FromDate { get; set; }
         public DateTime? ToDate { get; set; }
+
+        // ── 096: the paged read only (HandlePagedAsync) ──────────────
+        public string? SearchTerm { get; set; }
+        public string? Sort { get; set; }
+        public string? Dir { get; set; }
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+        public List<CustomFieldFilter> CustomFilters { get; set; } = new();
     }
 
     public class GetInvoicesHandler : ICommandHandler
     {
+        /// <summary>096. The most rows one page of the paged read can ask for.</summary>
+        public const int MaxPageSize = 100;
+
+        /// <summary>096. The column keys the paged read can be sorted by.</summary>
+        public static readonly string[] SortKeys =
+            { "number", "customer", "issued", "due", "total", "balance", "status", "created" };
+
         private readonly FlowDbContext _context;
         private readonly ILogger<GetInvoicesHandler> _logger;
         private readonly IRecordScopeService _scope;
@@ -92,6 +138,7 @@ namespace MerkaiTrial.Application.Queries.Invoices
             _logger = logger;
         }
 
+        /// <summary>Every matching invoice, newest first. See the note above.</summary>
         public async Task<List<InvoiceListItem>> Handle(
             GetInvoicesQuery request,
             CancellationToken cancellationToken)
@@ -100,148 +147,12 @@ namespace MerkaiTrial.Application.Queries.Invoices
             {
                 _logger.LogInformation("Getting invoices for tenant {TenantId}", request.TenantId);
 
-                var dealAccess = await _scope.GetAsync(RecordModules.Deals, cancellationToken);
+                var query = await FilteredAsync(request, cancellationToken);
 
-                var query = _context.Invoices
-                    .AsNoTracking()
-                    .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
-                    .WithVisibleDeal(_context, dealAccess);
-
-                // Apply filters
-                if (request.QuoteId.HasValue)
-                    query = query.Where(i => i.QuoteId == request.QuoteId.Value);
-
-                if (request.DealId.HasValue)
-                    query = query.Where(i => i.DealId == request.DealId.Value);
-
-                if (!string.IsNullOrEmpty(request.Status))
-                {
-                    var draftStatus = Domain.Enums.InvoiceStatus.Draft;
-                    var voidStatus  = Domain.Enums.InvoiceStatus.Cancelled;
-
-                    if (string.Equals(request.Status, "Overdue", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Computed, like everywhere else — not the stored status.
-                        var now = DateTime.UtcNow;
-                        query = query.Where(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 &&
-                                                 i.Status != draftStatus && i.Status != voidStatus);
-                    }
-                    else
-                    {
-                        var wanted = string.Equals(request.Status, "Void", StringComparison.OrdinalIgnoreCase)
-                            ? "Cancelled"
-                            : request.Status;
-
-                        if (Enum.TryParse<Domain.Enums.InvoiceStatus>(wanted, ignoreCase: true, out var st))
-                            query = query.Where(i => i.Status == st);
-                    }
-                }
-
-                if (request.FromDate.HasValue)
-                    query = query.Where(i => i.IssueDateUtc >= request.FromDate.Value);
-
-                if (request.ToDate.HasValue)
-                    query = query.Where(i => i.IssueDateUtc <= request.ToDate.Value);
-
-                // 053: the Includes below do nothing for a projection this
-                // shape — EF builds the SQL from the Select, not from them —
-                // but they are left as they were rather than removed in a
-                // round about naming.
-                var rows = await query
-                    .Include(i => i.Quote)
-                    .Include(i => i.Deal)
-                        .ThenInclude(d => d.Contact)
-                    .Include(i => i.Deal)
-                        .ThenInclude(d => d.Vertical)  // ✅ For VerticalName
-                    .Include(i => i.Lines)
-                    .OrderByDescending(i => i.CreatedAtUtc)
-                    .Select(i => new
-                    {
-                        Item = new InvoiceListItem
-                        {
-                            Id = i.Id,
-                            Number = i.Number,
-                            IssueDateUtc = i.IssueDateUtc,
-                            DueDateUtc = i.DueDateUtc,
-                            Currency = i.Currency,
-                            Status = i.Status.ToString(),
-                            GrandTotal = i.Subtotal + i.TaxTotal - i.DiscountTotal,
-                            Balance = i.Balance,
-
-                            // CompanyName is NOT set here. It is resolved in
-                            // memory a few lines below, because SQL cannot call
-                            // CustomerNaming and writing the rule out again
-                            // here is exactly how six copies of it drifted.
-
-                            DealTitle = i.Deal != null ? i.Deal.Title :
-                                        i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Title : null,
-                            QuoteNumber = i.Quote != null ? i.Quote.Number : null,
-                            ItemCount = i.Lines.Count(l => !l.IsDeleted),
-                            IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
-                                        i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
-                            CreatedAtUtc = i.CreatedAtUtc,
-
-                            // 071. The SNAPSHOT columns on the invoice row,
-                            // not a join to the schedule — which is the
-                            // point of them being columns. The list shows
-                            // "2 of 3 — On delivery" as a badge; an invoice
-                            // for a whole quote carries NULL here and the
-                            // badge does not render.
-                            MilestoneId = i.MilestoneId,
-                            MilestoneName = i.MilestoneName,
-                            MilestoneSequence = i.MilestoneSequence,
-                            MilestoneCount = i.MilestoneCount
-                        },
-
-                        // 053. The invoice reaches its customer either
-                        // directly (DealId) or through the quote it was
-                        // raised from — the same either/or the DealTitle
-                        // above already does. Four strings, resolved in
-                        // memory by the one rule.
-                        DealCompany = i.Deal != null
-                            ? (i.Deal.Company != null ? i.Deal.Company.Name : null)
-                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Company != null
-                                ? i.Quote.Deal.Company.Name : null),
-
-                        ContactCompany = i.Deal != null
-                            ? (i.Deal.Contact != null && i.Deal.Contact.Company != null
-                                ? i.Deal.Contact.Company.Name : null)
-                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
-                               && i.Quote.Deal.Contact.Company != null
-                                ? i.Quote.Deal.Contact.Company.Name : null),
-
-                        FirstName = i.Deal != null
-                            ? (i.Deal.Contact != null ? i.Deal.Contact.FirstName : null)
-                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
-                                ? i.Quote.Deal.Contact.FirstName : null),
-
-                        LastName = i.Deal != null
-                            ? (i.Deal.Contact != null ? i.Deal.Contact.LastName : null)
-                            : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
-                                ? i.Quote.Deal.Contact.LastName : null)
-                    })
-                    .ToListAsync(cancellationToken);
-
-                var invoices = rows.Select(r =>
-                {
-                    // Display, not Company: the list has ONE column for this,
-                    // so a person-to-person sale with no company should show
-                    // the person rather than an empty cell.
-                    r.Item.CompanyName = CustomerNaming.Display(
-                        r.DealCompany, r.ContactCompany, r.FirstName, r.LastName);
-                    return r.Item;
-                }).ToList();
-
-                // 081 — the "Show on the list" custom values, these rows only.
-                var cfDefs = await CustomFieldListQuery.ActiveDefinitionsAsync(
-                    _context, request.TenantId, CustomFieldEntityTypes.Invoice, cancellationToken);
-                if (cfDefs.Any(d => d.ShowInList) && invoices.Count > 0)
-                {
-                    var cfValues = await CustomFieldListQuery.ListValuesAsync(
-                        _context, request.TenantId, cfDefs, invoices.Select(i => i.Id).ToList(), cancellationToken);
-                    foreach (var item in invoices)
-                        if (cfValues.TryGetValue(item.Id, out var map)) item.CustomFieldValues = map;
-                }
+                var invoices = await ProjectAsync(
+                    request.TenantId,
+                    query.OrderByDescending(i => i.CreatedAtUtc).ThenBy(i => i.Id),   // 096 — stable
+                    cancellationToken);
 
                 _logger.LogInformation("Found {Count} invoices", invoices.Count);
                 return invoices;
@@ -251,6 +162,295 @@ namespace MerkaiTrial.Application.Queries.Invoices
                 _logger.LogError(ex, "Error getting invoices for tenant {TenantId}", request.TenantId);
                 throw;
             }
+        }
+
+        /// <summary>096. One page of the Invoices list — searched, filtered and sorted on the server.</summary>
+        public async Task<PaginatedResult<InvoiceListItem>> HandlePagedAsync(
+            GetInvoicesQuery request,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var pageSize = Math.Clamp(request.PageSize, 1, MaxPageSize);
+                var page     = Math.Max(request.PageNumber, 1);
+                var tenantId = request.TenantId;
+
+                var query = await FilteredAsync(request, cancellationToken);
+
+                var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                    _context, tenantId, CustomFieldEntityTypes.Invoice, cancellationToken);
+
+                // ── search ───────────────────────────────────────────────
+                if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+                {
+                    var s = request.SearchTerm.Trim().ToLower();
+
+                    // Null = no custom field could match; keep the plain search.
+                    var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, s);
+
+                    // Written out twice rather than OR-ing in a constant
+                    // false, which EF would still have to translate.
+                    query = cfMatches is null
+                        ? query.Where(i =>
+                            i.Number.ToLower().Contains(s) ||
+                            (i.Quote != null && i.Quote.Number.ToLower().Contains(s)) ||
+                            (i.Deal != null && (
+                                i.Deal.Title.ToLower().Contains(s) ||
+                                (i.Deal.Company != null && i.Deal.Company.Name.ToLower().Contains(s)) ||
+                                (i.Deal.Contact != null && (
+                                    i.Deal.Contact.FirstName.ToLower().Contains(s) ||
+                                    (i.Deal.Contact.LastName != null && i.Deal.Contact.LastName.ToLower().Contains(s)) ||
+                                    (i.Deal.Contact.Company != null && i.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
+                            (i.Deal == null && i.Quote != null && i.Quote.Deal != null && (
+                                i.Quote.Deal.Title.ToLower().Contains(s) ||
+                                (i.Quote.Deal.Company != null && i.Quote.Deal.Company.Name.ToLower().Contains(s)) ||
+                                (i.Quote.Deal.Contact != null && (
+                                    i.Quote.Deal.Contact.FirstName.ToLower().Contains(s) ||
+                                    (i.Quote.Deal.Contact.LastName != null && i.Quote.Deal.Contact.LastName.ToLower().Contains(s)) ||
+                                    (i.Quote.Deal.Contact.Company != null && i.Quote.Deal.Contact.Company.Name.ToLower().Contains(s)))))))
+                        : query.Where(i =>
+                            i.Number.ToLower().Contains(s) ||
+                            (i.Quote != null && i.Quote.Number.ToLower().Contains(s)) ||
+                            (i.Deal != null && (
+                                i.Deal.Title.ToLower().Contains(s) ||
+                                (i.Deal.Company != null && i.Deal.Company.Name.ToLower().Contains(s)) ||
+                                (i.Deal.Contact != null && (
+                                    i.Deal.Contact.FirstName.ToLower().Contains(s) ||
+                                    (i.Deal.Contact.LastName != null && i.Deal.Contact.LastName.ToLower().Contains(s)) ||
+                                    (i.Deal.Contact.Company != null && i.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
+                            (i.Deal == null && i.Quote != null && i.Quote.Deal != null && (
+                                i.Quote.Deal.Title.ToLower().Contains(s) ||
+                                (i.Quote.Deal.Company != null && i.Quote.Deal.Company.Name.ToLower().Contains(s)) ||
+                                (i.Quote.Deal.Contact != null && (
+                                    i.Quote.Deal.Contact.FirstName.ToLower().Contains(s) ||
+                                    (i.Quote.Deal.Contact.LastName != null && i.Quote.Deal.Contact.LastName.ToLower().Contains(s)) ||
+                                    (i.Quote.Deal.Contact.Company != null && i.Quote.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
+                            cfMatches.Contains(i.Id));
+                }
+
+                // ── custom field filters, ANDed ──────────────────────────
+                foreach (var clause in CustomFieldListQuery.FilterClauses(_context, tenantId, defs, request.CustomFilters))
+                {
+                    var ids = clause.EntityIds;   // a local, so EF inlines the subquery
+                    query = clause.Exclude
+                        ? query.Where(i => !ids.Contains(i.Id))
+                        : query.Where(i => ids.Contains(i.Id));
+                }
+
+                var totalCount = await query.CountAsync(cancellationToken);
+
+                // A page past the end becomes the last page.
+                var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
+                if (page > totalPages) page = totalPages;
+
+                var items = await ProjectAsync(
+                    tenantId,
+                    Ordered(query, request.Sort, request.Dir).Skip((page - 1) * pageSize).Take(pageSize),
+                    cancellationToken);
+
+                return new PaginatedResult<InvoiceListItem>
+                {
+                    Items      = items,
+                    TotalCount = totalCount,
+                    Page       = page,
+                    PageSize   = pageSize
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting the invoices page for tenant {TenantId}", request.TenantId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// The visibility rule and the Quote / Deal / Status / date filters —
+        /// shared by both reads so they mean the same thing.
+        /// </summary>
+        private async Task<IQueryable<Invoice>> FilteredAsync(GetInvoicesQuery request, CancellationToken ct)
+        {
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals, ct);
+
+            var query = _context.Invoices
+                .AsNoTracking()
+                .Where(i => i.TenantId == request.TenantId && !i.IsDeleted)
+                .WithVisibleDeal(_context, dealAccess);
+
+            if (request.QuoteId.HasValue)
+                query = query.Where(i => i.QuoteId == request.QuoteId.Value);
+
+            if (request.DealId.HasValue)
+                query = query.Where(i => i.DealId == request.DealId.Value);
+
+            if (!string.IsNullOrEmpty(request.Status))
+            {
+                var draftStatus = Domain.Enums.InvoiceStatus.Draft;
+                var voidStatus  = Domain.Enums.InvoiceStatus.Cancelled;
+
+                if (string.Equals(request.Status, "Overdue", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Computed, like everywhere else — not the stored status.
+                    var now = DateTime.UtcNow;
+                    query = query.Where(i => i.DueDateUtc.HasValue && i.DueDateUtc.Value < now && i.Balance > 0 &&
+                                             i.Status != draftStatus && i.Status != voidStatus);
+                }
+                else
+                {
+                    var wanted = string.Equals(request.Status, "Void", StringComparison.OrdinalIgnoreCase)
+                        ? "Cancelled"
+                        : request.Status;
+
+                    if (Enum.TryParse<Domain.Enums.InvoiceStatus>(wanted, ignoreCase: true, out var st))
+                        query = query.Where(i => i.Status == st);
+                }
+            }
+
+            if (request.FromDate.HasValue)
+                query = query.Where(i => i.IssueDateUtc >= request.FromDate.Value);
+
+            if (request.ToDate.HasValue)
+                query = query.Where(i => i.IssueDateUtc <= request.ToDate.Value);
+
+            return query;
+        }
+
+        /// <summary>
+        /// 096. The paged read's order, always ending with Id. Default: the
+        /// newest ISSUE date first (what an invoice list is read by), newest
+        /// created first within a day.
+        /// </summary>
+        private static IOrderedQueryable<Invoice> Ordered(IQueryable<Invoice> invoices, string? sort, string? dir)
+        {
+            var key  = ListSort.Key(sort, SortKeys);
+            var desc = ListSort.IsDescending(dir, fallback: key is not ("number" or "customer" or "status"));
+
+            IOrderedQueryable<Invoice> ordered = key switch
+            {
+                "number"   => invoices.OrderByDir(i => i.Number, desc),
+                "customer" => invoices.OrderByDir(i =>
+                                  i.Deal != null
+                                      ? (i.Deal.Company != null ? i.Deal.Company.Name
+                                         : i.Deal.Contact != null && i.Deal.Contact.Company != null ? i.Deal.Contact.Company.Name
+                                         : i.Deal.Contact != null ? i.Deal.Contact.FirstName : "")
+                                      : i.Quote != null && i.Quote.Deal != null
+                                          ? (i.Quote.Deal.Company != null ? i.Quote.Deal.Company.Name
+                                             : i.Quote.Deal.Contact != null && i.Quote.Deal.Contact.Company != null ? i.Quote.Deal.Contact.Company.Name
+                                             : i.Quote.Deal.Contact != null ? i.Quote.Deal.Contact.FirstName : "")
+                                          : "", desc),
+                "issued"   => invoices.OrderByDir(i => i.IssueDateUtc, desc),
+                // An invoice with no due date goes last in either direction.
+                "due"      => invoices.OrderBy(i => i.DueDateUtc == null).ThenByDir(i => i.DueDateUtc, desc),
+                "total"    => invoices.OrderByDir(i => i.Subtotal + i.TaxTotal - i.DiscountTotal, desc),
+                "balance"  => invoices.OrderByDir(i => i.Balance, desc),
+                "status"   => invoices.OrderByDir(i => i.Status, desc),
+                "created"  => invoices.OrderByDir(i => i.CreatedAtUtc, desc),
+                _          => invoices.OrderByDescending(i => i.IssueDateUtc)
+            };
+
+            if (key is not "created")
+                ordered = ordered.ThenByDescending(i => i.CreatedAtUtc);
+
+            return ordered.ThenBy(i => i.Id);
+        }
+
+        /// <summary>
+        /// The list projection: the row, the customer named by the one rule
+        /// (CustomerNaming), and the "Show on the list" custom values.
+        /// The ORDER is the caller's — this keeps whatever it is given.
+        /// </summary>
+        private async Task<List<InvoiceListItem>> ProjectAsync(
+            Guid tenantId, IQueryable<Invoice> ordered, CancellationToken cancellationToken)
+        {
+            var rows = await ordered
+                .Select(i => new
+                {
+                    Item = new InvoiceListItem
+                    {
+                        Id = i.Id,
+                        Number = i.Number,
+                        IssueDateUtc = i.IssueDateUtc,
+                        DueDateUtc = i.DueDateUtc,
+                        Currency = i.Currency,
+                        Status = i.Status.ToString(),
+                        GrandTotal = i.Subtotal + i.TaxTotal - i.DiscountTotal,
+                        Balance = i.Balance,
+
+                        // CompanyName is NOT set here. It is resolved in
+                        // memory a few lines below, because SQL cannot call
+                        // CustomerNaming and writing the rule out again
+                        // here is exactly how six copies of it drifted.
+
+                        DealTitle = i.Deal != null ? i.Deal.Title :
+                                    i.Quote != null && i.Quote.Deal != null ? i.Quote.Deal.Title : null,
+                        QuoteNumber = i.Quote != null ? i.Quote.Number : null,
+                        ItemCount = i.Lines.Count(l => !l.IsDeleted),
+                        IsOverdue = i.DueDateUtc.HasValue && i.DueDateUtc.Value < DateTime.UtcNow && i.Balance > 0 &&
+                                    i.Status != Domain.Enums.InvoiceStatus.Cancelled && i.Status != Domain.Enums.InvoiceStatus.Draft,
+                        CreatedAtUtc = i.CreatedAtUtc,
+
+                        // 071. The SNAPSHOT columns on the invoice row,
+                        // not a join to the schedule — which is the
+                        // point of them being columns. The list shows
+                        // "2 of 3 — On delivery" as a badge; an invoice
+                        // for a whole quote carries NULL here and the
+                        // badge does not render.
+                        MilestoneId = i.MilestoneId,
+                        MilestoneName = i.MilestoneName,
+                        MilestoneSequence = i.MilestoneSequence,
+                        MilestoneCount = i.MilestoneCount
+                    },
+
+                    // 053. The invoice reaches its customer either
+                    // directly (DealId) or through the quote it was
+                    // raised from — the same either/or the DealTitle
+                    // above already does. Four strings, resolved in
+                    // memory by the one rule.
+                    DealCompany = i.Deal != null
+                        ? (i.Deal.Company != null ? i.Deal.Company.Name : null)
+                        : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Company != null
+                            ? i.Quote.Deal.Company.Name : null),
+
+                    ContactCompany = i.Deal != null
+                        ? (i.Deal.Contact != null && i.Deal.Contact.Company != null
+                            ? i.Deal.Contact.Company.Name : null)
+                        : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                           && i.Quote.Deal.Contact.Company != null
+                            ? i.Quote.Deal.Contact.Company.Name : null),
+
+                    FirstName = i.Deal != null
+                        ? (i.Deal.Contact != null ? i.Deal.Contact.FirstName : null)
+                        : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                            ? i.Quote.Deal.Contact.FirstName : null),
+
+                    LastName = i.Deal != null
+                        ? (i.Deal.Contact != null ? i.Deal.Contact.LastName : null)
+                        : (i.Quote != null && i.Quote.Deal != null && i.Quote.Deal.Contact != null
+                            ? i.Quote.Deal.Contact.LastName : null)
+                })
+                .ToListAsync(cancellationToken);
+
+            var invoices = rows.Select(r =>
+            {
+                // Display, not Company: the list has ONE column for this,
+                // so a person-to-person sale with no company should show
+                // the person rather than an empty cell.
+                r.Item.CompanyName = CustomerNaming.Display(
+                    r.DealCompany, r.ContactCompany, r.FirstName, r.LastName);
+                return r.Item;
+            }).ToList();
+
+            // 081 — the "Show on the list" custom values, these rows only.
+            var cfDefs = await CustomFieldListQuery.ActiveDefinitionsAsync(
+                _context, tenantId, CustomFieldEntityTypes.Invoice, cancellationToken);
+            if (cfDefs.Any(d => d.ShowInList) && invoices.Count > 0)
+            {
+                var cfValues = await CustomFieldListQuery.ListValuesAsync(
+                    _context, tenantId, cfDefs, invoices.Select(i => i.Id).ToList(), cancellationToken);
+                foreach (var item in invoices)
+                    if (cfValues.TryGetValue(item.Id, out var map)) item.CustomFieldValues = map;
+            }
+
+            return invoices;
         }
     }
 

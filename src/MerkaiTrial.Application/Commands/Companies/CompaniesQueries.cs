@@ -52,6 +52,21 @@
 //      every live company, sorted, without the per-row counts — for
 //      dropdowns. ICompanyService.GetLookupAsync used to borrow the paged
 //      list with pageSize=1000, and the list is capped at 100 from now on.
+//
+// 096 — THE DEAL COUNT, AND SORTING
+//
+//  10. A COMPANY'S DEALS INCLUDE THE ONES LINKED TO IT DIRECTLY. A deal
+//      was counted only when its CONTACT worked at the company, so a deal
+//      whose own Company was set — while its contact sat elsewhere, or
+//      had no company — counted under no company at all: not on the list,
+//      not on the company page, not in the Deals tile. The invoice code
+//      already treats the deal's own company as the customer. All three
+//      counts now use one rule (DealsOf): the deal's company is this one,
+//      OR its contact works here. A deal matching both counts once.
+//
+//  11. SORTING: GetCompaniesQuery.Sort / Dir — name, country, vertical,
+//      contacts, deals or created, either way, always ending with Id.
+//      Anything else is the original order (name). See ListSort.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
@@ -76,6 +91,25 @@ namespace MerkaiTrial.Application.Commands.Companies
 
         /// <summary>078. ANDed custom field conditions. Empty = none.</summary>
         public List<CustomFieldFilter> CustomFilters { get; set; } = new();
+
+        /// <summary>096. A key from GetCompaniesHandler.SortKeys; anything else = by name.</summary>
+        public string? Sort { get; set; }
+
+        /// <summary>096. "asc" or "desc".</summary>
+        public string? Dir { get; set; }
+    }
+
+    /// <summary>
+    /// 096 — note 10. The one rule for "this company's deals", used by the
+    /// list, the stats tile and the company page so the three always agree.
+    /// </summary>
+    internal static class CompanyDeals
+    {
+        /// <summary>Live deals whose own company is <paramref name="companyId"/>, or whose contact works there.</summary>
+        public static IQueryable<MerkaiTrial.Domain.Entities.Deal> Of(FlowDbContext db, Guid companyId)
+            => db.Deals.Where(d => !d.IsDeleted &&
+                   (d.CompanyId == companyId ||
+                    db.Contacts.Any(ct => ct.Id == d.ContactId && ct.CompanyId == companyId && !ct.IsDeleted)));
     }
 
     public class GetCompanyByIdQuery : ICommandHandler
@@ -87,6 +121,9 @@ namespace MerkaiTrial.Application.Commands.Companies
     public class GetCompaniesHandler : ICommandHandler
     {
         public const int MaxPageSize = 100;
+
+        /// <summary>096. The column keys the list can be sorted by.</summary>
+        public static readonly string[] SortKeys = { "name", "country", "vertical", "contacts", "deals", "created" };
 
         private readonly FlowDbContext _context;
         private readonly ILogger<GetCompaniesHandler> _logger;
@@ -168,9 +205,7 @@ namespace MerkaiTrial.Application.Commands.Companies
                 if (page > totalPages) page = totalPages;
 
                 // ✅ FIX: real ContactCount and DealCount via subqueries
-                var companies = await query
-                    .OrderBy(c => c.Name)
-                    .ThenBy(c => c.Id)                  // note 5 — a stable order
+                var companies = await Ordered(query, request.Sort, request.Dir)   // 096 — note 11
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .Select(c => new CompanyListItem
@@ -184,12 +219,13 @@ namespace MerkaiTrial.Application.Commands.Companies
                         // ✅ Real contact count for this company
                         ContactCount = _context.Contacts
                             .Count(ct => ct.CompanyId == c.Id && !ct.IsDeleted),
-                        // ✅ Real deal count via contacts linked to this company
+                        // 096 — note 10: the deal's own company, or its contact's.
+                        // Written out (not CompanyDeals.Of) because EF cannot
+                        // translate a method call inside a projection.
                         DealCount    = _context.Deals
-                            .Count(d => _context.Contacts
-                                .Where(ct => ct.CompanyId == c.Id && !ct.IsDeleted)
-                                .Select(ct => ct.Id)
-                                .Contains(d.ContactId) && !d.IsDeleted),
+                            .Count(d => !d.IsDeleted &&
+                                (d.CompanyId == c.Id ||
+                                 _context.Contacts.Any(ct => ct.Id == d.ContactId && ct.CompanyId == c.Id && !ct.IsDeleted))),
                         CreatedAtUtc = c.CreatedAtUtc
                     })
                     .ToListAsync(cancellationToken);
@@ -218,6 +254,34 @@ namespace MerkaiTrial.Application.Commands.Companies
                 _logger.LogError(ex, "Error getting companies");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 096 — note 11. The requested order, always ending with Id (note 5).
+        /// No sort, or one this list does not offer, is by name as before.
+        /// </summary>
+        private IOrderedQueryable<MerkaiTrial.Domain.Entities.Company> Ordered(
+            IQueryable<MerkaiTrial.Domain.Entities.Company> companies, string? sort, string? dir)
+        {
+            var key  = ListSort.Key(sort, SortKeys);
+            var desc = ListSort.IsDescending(dir, fallback: key is "contacts" or "deals" or "created");
+
+            IOrderedQueryable<MerkaiTrial.Domain.Entities.Company> ordered = key switch
+            {
+                "country"  => companies.OrderByDir(c => c.Country, desc).ThenBy(c => c.Name),
+                "vertical" => companies.OrderByDir(c => c.Vertical, desc).ThenBy(c => c.Name),
+                "contacts" => companies.OrderByDir(c => _context.Contacts.Count(ct => ct.CompanyId == c.Id && !ct.IsDeleted), desc)
+                                       .ThenBy(c => c.Name),
+                "deals"    => companies.OrderByDir(c => _context.Deals.Count(d => !d.IsDeleted &&
+                                            (d.CompanyId == c.Id ||
+                                             _context.Contacts.Any(ct => ct.Id == d.ContactId && ct.CompanyId == c.Id && !ct.IsDeleted))), desc)
+                                       .ThenBy(c => c.Name),
+                "created"  => companies.OrderByDir(c => c.CreatedAtUtc, desc),
+                "name"     => companies.OrderByDir(c => c.Name, desc),
+                _          => companies.OrderBy(c => c.Name)
+            };
+
+            return ordered.ThenBy(c => c.Id);
         }
     }
 
@@ -293,8 +357,12 @@ namespace MerkaiTrial.Application.Commands.Companies
 
             var companyContactIds = companyContacts.Select(c => c.Id);
 
+            // 096 — note 10: a deal linked to a live company directly
+            // counts too. Each deal at most once.
             var totalDeals = await _context.Deals
-                .CountAsync(d => !d.IsDeleted && companyContactIds.Contains(d.ContactId),
+                .CountAsync(d => !d.IsDeleted &&
+                                 ((d.CompanyId != null && liveCompanyIds.Contains(d.CompanyId.Value)) ||
+                                  companyContactIds.Contains(d.ContactId)),
                     cancellationToken);
 
             var activeVerticals = await liveCompanies
@@ -347,12 +415,9 @@ namespace MerkaiTrial.Application.Commands.Companies
                 var primaryContactCount = await companyContacts
                     .CountAsync(c => c.IsPrimary, cancellationToken);
 
-                // A subquery, not a list in memory — note 8.
-                var contactIds = companyContacts.Select(c => c.Id);
-
-                var dealCount = await _context.Deals
-                    .CountAsync(d => contactIds.Contains(d.ContactId) && !d.IsDeleted,
-                        cancellationToken);
+                // 096 — note 10: the same rule as the list and the tile.
+                var dealCount = await CompanyDeals.Of(_context, company.Id)
+                    .CountAsync(cancellationToken);
 
                 // 078 — every stored custom value, retired fields included.
                 var customFieldValues = await CustomFieldValueWriter.ReadAsync(

@@ -1,7 +1,9 @@
 @page "/Companies"
 @using MerkaiTrial.Application.Configuration
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @model MerkaiTrial.Admin.Web.Pages.Companies.IndexModel
 @{
+    var sorter = Model.Sorter;   // 096
     ViewData["Title"] = "Companies";
 }
 @* =====================================================================
@@ -38,6 +40,9 @@
 
    Kept: no TempData banners here (_Layout renders SuccessMessage and
    ErrorMessage once for every page), no auto-dismiss timer of its own.
+   096: Company, Vertical, Country, Contacts, Deals and Added sort the
+   list (_SortHeader); click again to flip. Phones get a Sort menu above
+   the cards (_SortMenu). 10 per page by default, remembered per browser.
    ===================================================================== *@
 
 <style>
@@ -207,6 +212,12 @@
     <partial name="_ListToolbar" model="Model.Toolbar" />
     <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
+    @if (Model.PaginatedCompanies.TotalCount > 1)
+    {
+        @* 096 — phones sort here; the table's headers do it from 768px. *@
+        <div class="mb-2 d-md-none"><partial name="_SortMenu" model="sorter" /></div>
+    }
+
     @if (!Model.PaginatedCompanies.Items.Any())
     {
         <div class="card border-0 shadow-sm">
@@ -215,7 +226,7 @@
                 {
                     <i class="bi bi-search fs-1 text-muted d-block mb-3"></i>
                     <p class="text-muted mb-2">No company matches these filters.</p>
-                    <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-outline-secondary btn-sm">
+                    <a asp-page="./Index" asp-all-route-data="Model.ClearAllRoute()" class="btn btn-outline-secondary btn-sm">
                         Clear the search and filters
                     </a>
                 }
@@ -249,19 +260,20 @@
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th class="ps-3">Company</th>
-                            <th>Vertical</th>
-                            <th>Country</th>
+                            @* 096 — sortable columns. *@
+                            <th class="ps-3" aria-sort="@sorter.AriaSort("name")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "name", "Company"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("vertical")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "vertical", "Vertical"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("country")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "country", "Country"))" /></th>
                             <th>Tax ID</th>
-                            <th class="text-center">Contacts</th>
-                            <th class="text-center">Deals</th>
+                            <th class="text-center" aria-sort="@sorter.AriaSort("contacts")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "contacts", "Contacts"))" /></th>
+                            <th class="text-center" aria-sort="@sorter.AriaSort("deals")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "deals", "Deals"))" /></th>
                             @foreach (var col in Model.ListColumns)
                             {
                                 <th class="co-cf-head">
                                     <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1" aria-hidden="true"></i>@col.Label
                                 </th>
                             }
-                            <th>Added</th>
+                            <th aria-sort="@sorter.AriaSort("created")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "created", "Added"))" /></th>
                             <th class="text-end pe-3">Actions</th>
                         </tr>
                     </thead>

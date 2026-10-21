@@ -23,6 +23,11 @@
 //   ✅ GetDealsRequest.CustomFilters — trailing and defaulted, so every
 //      positional construction elsewhere still compiles.
 //
+// CHANGES (096 — sorting the deal table)
+//   ✅ GetDealsRequest.Sort / Dir — trailing and defaulted, like
+//      CustomFilters, so every existing construction still compiles and
+//      keeps the newest-first order.
+//
 // CHANGES (083 — inbound email)
 //   ✅ TimelineItemDto.Url — trailing and defaulted, so every existing
 //      construction still compiles. Set for an "Email" item, which links
@@ -79,7 +84,9 @@ namespace MerkaiTrial.Application.DTOs
         string? OwnerUserId = null,
         int Page = 1,
         int PageSize = 20,
-        List<CustomFieldFilter>? CustomFilters = null      // 077 — ANDed; null = none
+        List<CustomFieldFilter>? CustomFilters = null,     // 077 — ANDed; null = none
+        string? Sort = null,                               // 096 — GetDealsHandler.SortKeys; null = newest first
+        string? Dir = null                                 // 096 — "asc" | "desc"
     );
 
     public record GetDealsResponse(

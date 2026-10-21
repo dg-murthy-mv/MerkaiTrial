@@ -30,6 +30,10 @@
 //    are skipped. Page and size are clamped by the handler (1–1000; the
 //    catalogue callers need the large pages — see GetProductsHandler).
 //
+// 096 — GET api/products takes ?sort= and ?dir= (name, sku, category,
+//   price, status, created), checked against a fixed list in the handler.
+//   Without them the order is the catalogue order, as before.
+//
 // Policies unchanged: products.read / create / update / delete.
 // =====================================================================
 
@@ -102,6 +106,8 @@ namespace MerkaiTrial.WebApi.Controllers
             // WHOSE.
             [FromQuery] string? currency = null,
             [FromQuery(Name = "cf")] string[]? cf = null,          // 080
+            [FromQuery] string? sort = null,                       // 096
+            [FromQuery] string? dir = null,                        // 096
             CancellationToken cancellationToken = default)
         {
             var tenantId = TenantId;
@@ -115,7 +121,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 var result = await _getProductsHandler.Handle(
                     tenantId, pageNumber, pageSize, category, isActive, search,
-                    currency, customFilters, cancellationToken);
+                    currency, customFilters, sort, dir, cancellationToken);   // 096
                 return Ok(result);
             }
             catch (Exception ex)

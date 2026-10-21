@@ -26,6 +26,10 @@
 //     field filters (CustomFieldFilterCodec). Unreadable ones are skipped
 //     here; the handler drops any that do not fit the field. The page
 //     size is clamped in the handler.
+//
+// 096:
+//   • GET /api/contacts takes ?sort= and ?dir= (name, company, email,
+//     deals, created), checked against a fixed list in the handler.
 // =====================================================================
 
 using MerkaiTrial.Application.Authorization;
@@ -93,6 +97,8 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] string? searchTerm = null,
             [FromQuery] bool? isPrimary = null,
             [FromQuery(Name = "cf")] string[]? cf = null,           // 076
+            [FromQuery] string? sort = null,                        // 096
+            [FromQuery] string? dir = null,                         // 096
             CancellationToken cancellationToken = default)
         {
             try
@@ -114,7 +120,9 @@ namespace MerkaiTrial.WebApi.Controllers
                     CompanyId  = companyId,
                     SearchTerm = searchTerm,
                     IsPrimary  = isPrimary,
-                    CustomFilters = customFilters
+                    CustomFilters = customFilters,
+                    Sort       = sort,                              // 096
+                    Dir        = dir
                 };
 
                 var result = await _getContacts.Handle(query, cancellationToken);

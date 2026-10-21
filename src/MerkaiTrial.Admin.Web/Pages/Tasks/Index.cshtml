@@ -14,6 +14,17 @@
      column; the filters wrap under the title.
    • "My tasks / Whole team" and the days filter wrap instead of pushing
      the header wider than the screen.
+
+   096 — a search box (the task, or the lead / deal it is on) and a
+   Leads / Deals filter, both done by the API. Every link and form carries
+   them (Model.StateRoute). "Showing the first 500" when the list hit the
+   API's ceiling. An empty FILTERED list says so and offers Clear.
+
+   096b — the record id (activityId / userId / id) is a hidden field, NOT
+   asp-route-…: on a form that also has asp-all-route-data, ASP.NET sets
+   the asp-route value first and then REPLACES the whole route list with
+   the state, so the id was silently dropped and the handler got an empty
+   one (the first full test run caught it on Tasks → Reassign).
    ===================================================================== *@
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
@@ -31,24 +42,47 @@
         </p>
     </div>
 
-    <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
+    <form method="get" class="d-flex align-items-center gap-2 flex-wrap tk-filter" id="tasksFilter">
         @if (Model.IsTenantAdmin)
         {
             <div class="btn-group" role="group">
                 <a class="btn btn-sm @(Model.Scope == "mine" ? "btn-primary" : "btn-outline-primary")"
-                   asp-route-scope="mine" asp-route-days="@Model.Days">My tasks</a>
+                   asp-all-route-data="@Model.StateRoute(scope: "mine")">My tasks</a>
                 <a class="btn btn-sm @(Model.Scope == "all" ? "btn-primary" : "btn-outline-primary")"
-                   asp-route-scope="all" asp-route-days="@Model.Days">Whole team</a>
+                   asp-all-route-data="@Model.StateRoute(scope: "all")">Whole team</a>
             </div>
         }
 
+        @* 096 — search the task, or the lead / deal it is on. *@
+        <div class="input-group input-group-sm tk-search" style="width: 240px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" name="search" value="@Model.Search" class="form-control"
+                   placeholder="Task, lead or deal" autocomplete="off" maxlength="200"
+                   aria-label="Search tasks" />
+        </div>
+
+        <select name="type" class="form-select form-select-sm" style="width: auto;"
+                aria-label="Filter by record type" onchange="this.form.submit()">
+            <option value="" selected="@(Model.TypeFilter is null)">Leads and deals</option>
+            <option value="Lead" selected="@(Model.TypeFilter == "Lead")">Leads only</option>
+            <option value="Deal" selected="@(Model.TypeFilter == "Deal")">Deals only</option>
+        </select>
+
         <select name="days" class="form-select form-select-sm" style="width: auto;"
-                onchange="this.form.submit()">
+                aria-label="Period" onchange="this.form.submit()">
             <option value="7"  selected="@(Model.Days == 7)">Next 7 days</option>
             <option value="30" selected="@(Model.Days == 30)">Next 30 days</option>
             <option value="90" selected="@(Model.Days == 90)">Next 90 days</option>
         </select>
         <input type="hidden" name="scope" value="@Model.Scope" />
+
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        @if (Model.IsFiltered)
+        {
+            <a class="btn btn-sm btn-link px-1" asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">Clear</a>
+        }
     </form>
 </div>
 
@@ -63,7 +97,29 @@
     </div>
 }
 
-@if (!Model.Groups.Any())
+@if (Model.HitCeiling)
+{
+    @* 096 — the API stops at this many; say so rather than imply it is everything. *@
+    <div class="alert alert-info py-2 px-3 small d-flex gap-2 align-items-center" role="status" id="tasksCeiling">
+        <i class="bi bi-info-circle"></i>
+        <span>Showing the first @Model.Ceiling tasks, soonest due first. Search, filter or choose a shorter period to see the rest.</span>
+    </div>
+}
+
+@if (!Model.Groups.Any() && Model.IsFiltered && string.IsNullOrEmpty(Model.LoadError))
+{
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-search text-muted" style="font-size: 3rem; opacity: 0.4;"></i>
+            <h5 class="mt-3 mb-1">No task matches</h5>
+            <p class="text-muted mb-2">Nothing in the next @Model.Days days matches that search or filter.</p>
+            <a class="btn btn-sm btn-outline-secondary" asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">
+                Clear the search and filter
+            </a>
+        </div>
+    </div>
+}
+else if (!Model.Groups.Any())
 {
     <div class="card shadow-sm">
         <div class="card-body text-center py-5">
@@ -141,10 +197,9 @@ else
                                 @if (Model.IsReassigning(task))
                                 {
                                     <form method="post" asp-page-handler="Reassign"
-                                          asp-route-activityId="@task.Id"
-                                          asp-route-scope="@Model.Scope"
-                                          asp-route-days="@Model.Days"
+                                          asp-all-route-data="@Model.StateRoute()"
                                           class="mt-2">
+                                        <input type="hidden" name="activityId" value="@task.Id" />
                                         <div class="input-group input-group-sm" style="max-width: 420px;">
                                             <span class="input-group-text">Give to</span>
                                             <select name="NewAssigneeId" class="form-select" required>
@@ -158,7 +213,7 @@ else
                                             </select>
                                             <button type="submit" class="btn btn-primary">Save</button>
                                             <a class="btn btn-outline-secondary"
-                                               asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">Cancel</a>
+                                               asp-all-route-data="@Model.StateRoute()">Cancel</a>
                                         </div>
                                     </form>
                                 }
@@ -168,15 +223,13 @@ else
                                 @if (Model.CanReassign(task) && !Model.IsReassigning(task))
                                 {
                                     <a class="btn btn-sm btn-outline-secondary"
-                                       asp-route-reassignId="@task.Id"
-                                       asp-route-scope="@Model.Scope"
-                                       asp-route-days="@Model.Days"
+                                       asp-all-route-data="@Model.StateRoute(reassignId: task.Id)"
                                        title="Reassign">
                                         <i class="bi bi-person-gear"></i>
                                     </a>
                                 }
                                 <form method="post" asp-page-handler="Complete"
-                                      asp-route-scope="@Model.Scope" asp-route-days="@Model.Days">
+                                      asp-all-route-data="@Model.StateRoute()">
                                     <input type="hidden" name="activityId" value="@task.Id" />
                                     <button type="submit" class="btn btn-sm btn-outline-success"
                                             title="Mark as done">
@@ -203,6 +256,9 @@ else
 
     /* 094 — on a phone the buttons go under the task, full width. */
     @@media (max-width: 575.98px) {
+        /* 096 — the search takes the filter's first line. */
+        .tk-filter .tk-search { width: 100% !important; }
+        .tk-filter .form-select { flex: 1 1 40%; width: auto !important; min-width: 0; }
         .tk-row { flex-wrap: wrap; }
         .tk-row > .flex-grow-1 { flex-basis: calc(100% - 2.25rem - 1rem); }
         /* The icon column is about 1.25rem plus the 1rem gap; the buttons

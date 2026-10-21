@@ -26,6 +26,11 @@
 //
 // Tenant and user always come from the signed-in principal, never from
 // the request body or query string.
+//
+// 096 — GET upcoming-tasks takes ?search= (the task, or the lead / deal
+//   it is on) and ?entityType= (Lead, Deal, …). Who may see whose tasks
+//   is unchanged: a non-admin still gets only their own, whatever the
+//   query string says.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Activities;
@@ -145,6 +150,8 @@ public class ActivitiesController : ControllerBase
     public Task<IActionResult> GetUpcomingTasks(
         [FromQuery] int     daysAhead        = 7,
         [FromQuery] string? assignedToUserId = null,
+        [FromQuery] string? search           = null,   // 096
+        [FromQuery] string? entityType       = null,   // 096
         CancellationToken   ct               = default)
         => Run(async () =>
         {
@@ -154,8 +161,13 @@ public class ActivitiesController : ControllerBase
             // Silent rather than an error, same as ResolveTenant().
             var assignee = me.IsTenantAdmin ? assignedToUserId : me.UserId.ToString();
 
+            // 096 — a search longer than any subject is only noise; cap it.
+            var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+            if (term is { Length: > 200 }) term = term[..200];
+
             var result = await _getUpcoming.Handle(
-                new GetUpcomingTasksQuery(me.TenantId, assignee, Math.Clamp(daysAhead, 0, 90)), ct);
+                new GetUpcomingTasksQuery(me.TenantId, assignee, Math.Clamp(daysAhead, 0, 90),
+                                          Search: term, EntityType: entityType), ct);
             return Ok(result);
         }, "getting tasks");
 

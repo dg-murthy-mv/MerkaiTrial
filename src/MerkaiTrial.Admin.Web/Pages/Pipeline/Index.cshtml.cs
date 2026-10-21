@@ -4,6 +4,26 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (096 — lists):
+//   ✅ THE TABLE VIEW PAGES AND SORTS ON THE SERVER. It drew the same 500
+//      deals the board loads, unsorted, on one long page. It now has its
+//      own read (page, size, sort) through the shared _Pager, with Deal,
+//      Company, Stage, Value, Prob. and Closes as sortable headers. Its
+//      links carry View=table, so a page or sort click lands back on the
+//      table. 10 rows by default; the size is remembered per browser.
+//      The board is unchanged: it still loads up to 500 deals and ignores
+//      the table's page and sort.
+//   ✅ THE BOARD SAYS WHEN IT IS CUT SHORT. Past 500 deals it showed the
+//      newest 500 and every total on the page silently covered only
+//      those. BoardTotal is the real count; the view warns "Showing 500 of
+//      640" and points at search and the filters.
+//   ✅ AN OWNER FILTER FOR SOMEBODY NO LONGER ON THE SALES TEAM (a
+//      deactivated user, an old bookmark) stays visible and selected in
+//      the dropdown. It read "All owners" while the board was filtered by
+//      that person.
+//   ✅ The filter form carries the table's page size and sort, so Apply
+//      keeps them (and starts the table at page 1).
+//
 // CHANGES (077 — custom fields on deals):
 //   ✅ Deal custom fields marked "Show on the list" (up to four) are
 //      columns in the TABLE view and short lines on each BOARD card, in the
@@ -134,8 +154,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             _customFields = customFields;
         }
 
+        /// <summary>096. The most deals the board loads in one go (the API's cap).</summary>
+        public const int BoardLimit = 500;
+
         // ── View Properties ────────────────────────────────────────────
         public List<DealListItem> Deals { get; set; } = new();
+
+        /// <summary>096. Every deal the filters match — more than Deals.Count when the board is capped.</summary>
+        public int BoardTotal { get; private set; }
+
+        /// <summary>096. True when the board shows fewer deals than match.</summary>
+        public bool BoardCapped => BoardTotal > Deals.Count;
+
+        /// <summary>096. The table view's own page, sorted and paged by the API.</summary>
+        public List<DealListItem> TableDeals { get; private set; } = new();
+        public int TableTotal { get; private set; }
         public List<SalesTeamMemberDto> SalesTeam { get; set; } = new();
         public Dictionary<Guid, QuoteStatusInfo> DealQuoteStatus { get; set; } = new();
 
@@ -191,6 +224,100 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         [BindProperty(SupportsGet = true)] public string? StageFilter { get; set; }
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
 
+        // 096 — the TABLE view's page and order. The board ignores them.
+        [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
+        [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = PagerVm.DefaultSize;
+        [BindProperty(SupportsGet = true)] public string? Sort { get; set; }
+        [BindProperty(SupportsGet = true)] public string? Dir { get; set; }
+
+        // ── 096: the table's sort, routes and pager ───────────────────
+
+        public static readonly SortOption[] SortOptions =
+        {
+            new("title",       "Deal"),
+            new("company",     "Company"),
+            new("stage",       "Stage"),
+            new("value",       "Value", DefaultDescending: true),
+            new("probability", "Prob.", DefaultDescending: true),
+            new("close",       "Closes", AscLabel: "soonest first", DescLabel: "latest first")
+        };
+
+        // No DefaultKey: the API's own order (newest first) is not a column.
+        private ListSortVm SortState(Dictionary<string, string>? route = null) => new()
+        {
+            Options = SortOptions,
+            Sort    = Sort,
+            Dir     = Dir,
+            Route   = route ?? new Dictionary<string, string>()
+        };
+
+        /// <summary>
+        /// The board's filters, the custom ones, the sort — and View=table,
+        /// because every link that uses this (pager, headers) belongs to the
+        /// table and should land back on it.
+        /// </summary>
+        public Dictionary<string, string> FilterRoute()
+        {
+            var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(SearchTerm))  route[nameof(SearchTerm)]  = SearchTerm.Trim();
+            if (!string.IsNullOrWhiteSpace(StageFilter)) route[nameof(StageFilter)] = StageFilter.Trim();
+            if (!string.IsNullOrWhiteSpace(OwnerFilter)) route[nameof(OwnerFilter)] = OwnerFilter.Trim();
+            foreach (var (k, v) in CustomFilters.Route) route[k] = v;
+            foreach (var (k, v) in SortState().Current()) route[k] = v;
+            route["View"] = "table";
+            return route;
+        }
+
+        /// <summary>The table headers' links: every filter and the size, never the page or the sort.</summary>
+        public ListSortVm Sorter
+        {
+            get
+            {
+                var route = FilterRoute();
+                route.Remove(nameof(Sort));
+                route.Remove(nameof(Dir));
+                route[nameof(PageSize)] = PageSize.ToString();
+                return SortState(route);
+            }
+        }
+
+        /// <summary>What the filter form carries as hidden fields: the table's size and sort (never its page).</summary>
+        public Dictionary<string, string> FormCarry()
+        {
+            var route = SortState().Current();
+            route[nameof(PageSize)] = PageSize.ToString();
+            return route;
+        }
+
+        public PagerVm Pager => new()
+        {
+            Page       = PageNumber,
+            PageSize   = PageSize,
+            TotalCount = TableTotal,
+            TotalPages = TableTotal == 0 ? 1 : (int)Math.Ceiling(TableTotal / (double)PageSize),
+            PageField  = nameof(PageNumber),
+            Route      = FilterRoute()
+        };
+
+        /// <summary>
+        /// 096. The owner dropdown. An owner filter that names nobody on the
+        /// sales team is kept, marked and selected — the board IS filtered
+        /// by it, so the box must not say "All owners".
+        /// </summary>
+        public List<(string Value, string Text, bool Selected)> OwnerOptions()
+        {
+            var current = string.IsNullOrWhiteSpace(OwnerFilter) ? null : OwnerFilter.Trim();
+            var items = SalesTeam
+                .Select(u => (u.Id.ToString(), u.FullName,
+                              string.Equals(current, u.Id.ToString(), StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            if (current is not null && !items.Any(i => i.Item3))
+                items.Insert(0, (current, "(no longer on the sales team)", true));
+
+            return items;
+        }
+
         /// <summary>
         /// For the stage-move JSON handler only, whose response is followed
         /// by a reload — the next request, which is exactly where TempData
@@ -244,6 +371,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 TenantCurrencyCode = _tenantService.GetCurrencyCode();
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
 
+                // 096 — the table's size: the URL's, else this browser's last
+                // choice, else 10. Before the custom fields, whose Clear link keeps it.
+                PageSize   = ListPreferences.PageSize(HttpContext, "pipeline");
+                PageNumber = Math.Max(PageNumber, 1);
+
                 // 077 — custom fields first: the filters go into the deals call.
                 await LoadCustomFieldsAsync();
 
@@ -253,17 +385,32 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
 
                 var dealsTask = _dealService.GetAllAsync(tenantId, stage: StageFilter,
                                         search: SearchTerm, ownerUserId: OwnerFilter,
-                                        pageSize: 500,
+                                        pageSize: BoardLimit,
                                         customFilters: CustomFilters.Filters);   // 077
+
+                // 096 — the table's own page, sorted on the server.
+                var sort = SortState();
+                var tableTask = _dealService.GetAllAsync(tenantId, stage: StageFilter,
+                                        search: SearchTerm, ownerUserId: OwnerFilter,
+                                        page: PageNumber, pageSize: PageSize,
+                                        customFilters: CustomFilters.Filters,
+                                        sort: sort.ApiSort, dir: sort.ApiDir);
+
                 var salesTeamTask = _userService.GetSalesTeamAsync(tenantId);
                 var stagesTask = _stageService.GetAsync(activeOnly: true);
                 var rulesTask = _ruleService.GetAsync();
 
-                await Task.WhenAll(dealsTask, salesTeamTask, stagesTask, rulesTask);
+                await Task.WhenAll(dealsTask, tableTask, salesTeamTask, stagesTask, rulesTask);
 
                 var dealsResponse = await dealsTask;
                 Deals = dealsResponse.Items;
+                BoardTotal = dealsResponse.TotalCount;                   // 096
                 DealQuotaUsed = dealsResponse.QuotaUsed;
+
+                var tableResponse = await tableTask;                     // 096
+                TableDeals = tableResponse.Items;
+                TableTotal = tableResponse.TotalCount;
+                PageNumber = Math.Max(tableResponse.Page, 1);            // the API pulls a past-the-end page back
                 SalesTeam = await salesTeamTask;
                 Stages = await stagesTask;
                 Rules = await rulesTask;
@@ -284,6 +431,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 _logger.LogError(ex, "Failed to load pipeline");
                 PageError = "Failed to load pipeline. Please try again.";      // 077 — not TempData
                 Deals = new();
+                TableDeals = new();
                 SalesTeam = new();
                 DealQuoteStatus = new();
                 return Page();
@@ -473,12 +621,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             CustomFilters.DateFormat = _tenantService.GetDateFormat();
 
             // "Clear these" keeps the board's own filters and the view.
+            // 096: and the table's size and sort.
             var clear = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(SearchTerm))  clear[nameof(SearchTerm)]  = SearchTerm.Trim();
             if (!string.IsNullOrWhiteSpace(StageFilter)) clear[nameof(StageFilter)] = StageFilter;
             if (!string.IsNullOrWhiteSpace(OwnerFilter)) clear[nameof(OwnerFilter)] = OwnerFilter;
             var view = Request.Query["View"].ToString();
             if (string.Equals(view, "table", StringComparison.OrdinalIgnoreCase)) clear["View"] = "table";
+            foreach (var (k, v) in FormCarry()) clear[k] = v;
             CustomFilters.ClearRoute = clear;
         }
 

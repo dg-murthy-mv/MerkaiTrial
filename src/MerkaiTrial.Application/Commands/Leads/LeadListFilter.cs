@@ -17,6 +17,12 @@
 //   on a filtered list could hand back rows that were not on the screen —
 //   the one thing an export must never do. One copy cannot drift.
 //
+// 096 — PHONE SEARCH IGNORES FORMATTING. "9876543210" did not find a
+//   lead stored as "98765 43210", because the phone was compared exactly
+//   as typed. A search with four or more digits now also matches the
+//   stored phone with spaces, dashes, dots, brackets and "+" removed.
+//   Everything else the search matched, it still matches.
+//
 // RECORD VISIBILITY is NOT applied here. Each caller applies
 // .VisibleTo(access) to its own base query first, where it is plainly
 // visible in the handler — a filter helper that quietly also decided who
@@ -24,6 +30,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
+using MerkaiTrial.Application.Configuration;   // 096 — ListSort.PhoneDigits
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -58,6 +65,12 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 var s = search.Trim().ToLower();
 
+                // 096 — the search's digits, matched against the phone with
+                // its separators stripped. "" (never null inside the query)
+                // when the search has fewer than four digits, and then the
+                // `digits != ""` guard switches the comparison off.
+                var digits = ListSort.PhoneDigits(s) ?? string.Empty;
+
                 // Null = no custom field could match; keep the plain search.
                 var cfMatches = CustomFieldListQuery.SearchMatches(db, tenantId, defs, s);
 
@@ -67,6 +80,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                         l.FullName.ToLower().Contains(s) ||
                         (l.Email != null && l.Email.ToLower().Contains(s)) ||
                         (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
+                        (digits != "" && l.Phone != null &&
+                         l.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
                         (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
                 }
                 else
@@ -75,6 +91,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                         l.FullName.ToLower().Contains(s) ||
                         (l.Email != null && l.Email.ToLower().Contains(s)) ||
                         (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
+                        (digits != "" && l.Phone != null &&
+                         l.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
                         (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)) ||
                         cfMatches.Contains(l.Id));
                 }

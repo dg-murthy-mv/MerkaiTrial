@@ -17,6 +17,9 @@
 // 076 — GetAllAsync takes optional custom field filters, sent as
 //   repeated ?cf= values. Optional and last, so every existing caller is
 //   unchanged.
+//
+// 096 — GetAllAsync takes the sort column and direction (optional, last),
+//   sent as ?sort=&dir=.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -34,7 +37,9 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
             Guid? companyId = null,
             string? searchTerm = null,
             bool? isPrimary = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 076
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,   // 076
+            string? sort = null,                                      // 096
+            string? dir = null);
 
         Task<ContactStatsDto> GetStatsAsync(Guid tenantId);
 
@@ -73,7 +78,9 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
             Guid? companyId = null,
             string? searchTerm = null,
             bool? isPrimary = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null)
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,
+            string? sort = null,
+            string? dir = null)
         {
             try
             {
@@ -82,6 +89,10 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
                     $"pageNumber={pageNumber}",
                     $"pageSize={pageSize}"
                 };
+
+                // 096
+                if (!string.IsNullOrWhiteSpace(sort)) queryParams.Add($"sort={Uri.EscapeDataString(sort)}");
+                if (!string.IsNullOrWhiteSpace(dir))  queryParams.Add($"dir={Uri.EscapeDataString(dir)}");
 
                 if (companyId.HasValue)
                     queryParams.Add($"companyId={companyId}");

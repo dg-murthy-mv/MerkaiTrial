@@ -43,6 +43,10 @@
 //   InvalidOperationException carrying the API's sentence, and is NOT
 //   logged as an error — the page shows it.
 //
+// 096 — GetPaginatedAsync takes the list's sort column and direction
+//   (optional, last), sent as ?sort=&dir=. The API checks them against a
+//   fixed list; anything else is the default order.
+//
 // 093 — DUPLICATES AND MERGE
 //   • FindDuplicatesAsync: leads that look like the same person (email,
 //     phone, or name + company), only among those the user can see.
@@ -86,7 +90,9 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             string? searchTerm = null,
             string? status = null,
             string? assignedTo = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 079
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,   // 079
+            string? sort = null,                                      // 096
+            string? dir = null);
         /// <summary>
         /// 047: the two dates are optional and TRAILING, so every existing
         /// GetStatsAsync(tenantId) call still compiles and still means all
@@ -298,7 +304,9 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
             string? searchTerm = null,
             string? status = null,
             string? assignedTo = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null)
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,
+            string? sort = null,
+            string? dir = null)
         {
             try
             {
@@ -307,6 +315,10 @@ namespace MerkaiTrial.Admin.Web.Services.Leads
                     $"pageNumber={pageNumber}",
                     $"pageSize={pageSize}"
                 };
+
+                // 096 — escaped like every other value; the API ignores a key it does not know.
+                if (!string.IsNullOrWhiteSpace(sort)) queryParams.Add($"sort={Uri.EscapeDataString(sort)}");
+                if (!string.IsNullOrWhiteSpace(dir))  queryParams.Add($"dir={Uri.EscapeDataString(dir)}");
 
                 if (!string.IsNullOrWhiteSpace(searchTerm))
                     queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm.Trim())}");

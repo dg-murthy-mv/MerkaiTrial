@@ -1,7 +1,8 @@
-﻿@page "/Settings/Roles"
+@page "/Settings/Roles"
 @model MerkaiTrial.Admin.Web.Pages.Settings.Roles.IndexModel
 @{
     ViewData["Title"] = "Roles & Permissions";
+    var state = Model.StateRoute();   // 096 — the delete form carries it
 }
 
 @*
@@ -14,6 +15,16 @@
     System roles render read-only. tenant_admin is a shared row owned by
     MadeeVision; a tenant editing it would be editing every tenant's copy,
     which is exactly what the role split removed.
+
+    096: the shared _ListToolbar and _Pager (no more _Pagination here).
+    Delete returns to the same page and search, and its confirm text is a
+    data-confirm attribute — a role name with an apostrophe broke the old
+    inline confirm('…') and posted without asking.
+    096b — the record id (activityId / userId / id) is a hidden field, NOT
+    asp-route-…: on a form that also has asp-all-route-data, ASP.NET sets
+    the asp-route value first and then REPLACES the whole route list with
+    the state, so the id was silently dropped and the handler got an empty
+    one (the first full test run caught it on Tasks → Reassign).
 *@
 
 <div class="d-flex justify-content-between align-items-start mb-4">
@@ -70,50 +81,41 @@
     </div>
 </div>
 
-<div class="card mb-3">
-    <div class="card-body py-3">
-        <form method="get" class="row g-2 align-items-end">
-            <input type="hidden" name="PageSize" value="@Model.PageSize" />
-
-            <div class="col-md-6">
-                <label class="form-label mb-1">Search</label>
-                <input type="text" name="Search" value="@Model.Search"
-                       class="form-control" placeholder="Role name or description" />
-            </div>
-
-            <div class="col-md-3">
-                <label class="form-label mb-1">Type</label>
-                <select name="IsSystemRole" class="form-select">
-                    <option value="">All roles</option>
-                    <option value="true" selected="@(Model.IsSystemRole == true)">Built-in</option>
-                    <option value="false" selected="@(Model.IsSystemRole == false)">Your roles</option>
-                </select>
-            </div>
-
-            <div class="col-md-3 d-flex gap-2">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-1"></i> Search
-                </button>
-                <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary">Clear</a>
-            </div>
-        </form>
+@if (!string.IsNullOrEmpty(Model.PageError))
+{
+    <div class="alert alert-danger d-flex align-items-start gap-2" role="alert">
+        <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+        <span>@Model.PageError</span>
     </div>
-</div>
+}
+
+@* 096 — the shared search strip, filter and count. *@
+<partial name="_ListToolbar" model="Model.Toolbar" />
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-shield me-2"></i>Roles <span class="badge bg-primary ms-1">@Model.Roles.TotalCount</span></span>
         @if (Model.Roles.TotalPages > 1)
         {
-            <span class="text-muted" style="font-size:12px;">Page @Model.Page of @Model.Roles.TotalPages</span>
+            <span class="text-muted" style="font-size:12px;">Page @Model.PageNumber of @Model.Roles.TotalPages</span>
         }
     </div>
 
     @if (!Model.Roles.Items.Any())
     {
         <div class="card-body text-center py-5 text-muted">
-            <i class="bi bi-shield" style="font-size:2rem;opacity:.4;"></i>
-            <p class="mt-3 mb-0">No roles match that search.</p>
+            @if (!string.IsNullOrEmpty(Model.PageError))
+            {
+                <i class="bi bi-cloud-slash" style="font-size:2rem;opacity:.4;"></i>
+                <p class="mt-3 mb-2">The list could not be loaded.</p>
+                <a asp-page="./Index" asp-all-route-data="state" class="btn btn-sm btn-outline-secondary">Try again</a>
+            }
+            else
+            {
+                <i class="bi bi-shield" style="font-size:2rem;opacity:.4;"></i>
+                <p class="mt-3 mb-2">No roles match that search.</p>
+                <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-sm btn-outline-secondary">Clear the search</a>
+            }
         </div>
     }
     else
@@ -167,10 +169,12 @@
 
                                 @if (!role.IsSystemRole && Model.CanDelete)
                                 {
-                                    <form method="post" asp-page-handler="Delete" asp-route-id="@role.Id"
+                                    @* 096 — data-confirm, read by one listener below. *@
+                                    <form method="post" asp-page-handler="Delete"
+                                          asp-all-route-data="state"
                                           class="d-inline"
-                                          onsubmit="return confirm('Delete the @role.DisplayName role? People assigned to it will lose those permissions.');">
-                                        <input type="hidden" name="PageSize" value="@Model.PageSize" />
+                                          data-confirm="Delete the @role.DisplayName role? People assigned to it will lose those permissions.">
+                                        <input type="hidden" name="id" value="@role.Id" />
                                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -227,7 +231,22 @@
                 </div>
             }
         </div>
-
-        <partial name="_Pagination" model="Model.Roles" />
     }
+
+    @* 096 — the shared pager (was the old _Pagination partial). *@
+    <partial name="_Pager" model="Model.Pager" />
 </div>
+
+@section Scripts {
+    <script>
+        // 096 — one listener for the confirms. The text is in data-confirm,
+        // encoded by Razor and read back as plain text, so a role called
+        // "Owner's team" is just a name.
+        document.addEventListener('submit', function (e) {
+            var form = e.target;
+            if (!form || !form.getAttribute) return;
+            var text = form.getAttribute('data-confirm');
+            if (text && !window.confirm(text)) e.preventDefault();
+        });
+    </script>
+}

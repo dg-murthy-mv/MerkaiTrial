@@ -18,6 +18,18 @@
 // 077 — the custom field search, filter and column code moved into the
 //   shared CustomFieldListQuery, so the Deals list uses the SAME code.
 //   Behaviour is unchanged from 076.
+//
+// 096 — THE CONTACTS LIST
+//   • SEARCH also finds the company name and the job title — both are on
+//     the list, and typing a company you can see in the Company column
+//     found nothing. A phone search ignores formatting: four or more
+//     digits match the phone and mobile with spaces, dashes, dots,
+//     brackets and "+" removed ("9876543210" finds "98765 43210").
+//   • SORTING: GetContactsQuery.Sort / Dir — name, company, email, deals
+//     or created, either way, always ending with Id. Anything else is the
+//     original order (first name, last name). See ListSort.
+//   • GetCompaniesLookupHandler is capped at 5000 rows, like the
+//     Companies lookup, as a safety net for a very large workspace.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
@@ -71,11 +83,20 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
         /// <summary>076. ANDed custom field conditions. Empty = none.</summary>
         public List<CustomFieldFilter> CustomFilters { get; set; } = new();
+
+        /// <summary>096. A key from GetContactsHandler.SortKeys; anything else = the default order.</summary>
+        public string? Sort { get; set; }
+
+        /// <summary>096. "asc" or "desc".</summary>
+        public string? Dir { get; set; }
     }
 
     public class GetContactsHandler : ICommandHandler
     {
         public const int MaxPageSize = 100;
+
+        /// <summary>096. The column keys the list can be sorted by.</summary>
+        public static readonly string[] SortKeys = { "name", "company", "email", "deals", "created" };
 
         private readonly FlowDbContext _context;
         private readonly ILogger<GetContactsHandler> _logger;
@@ -116,6 +137,11 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 {
                     var search = request.SearchTerm.Trim().ToLower();
 
+                    // 096 — the search's digits for a formatting-blind phone
+                    // match. "" (never null in the query) when there are
+                    // fewer than four, which switches that comparison off.
+                    var digits = ListSort.PhoneDigits(search) ?? string.Empty;
+
                     // Custom text values and dropdown choice labels (077:
                     // CustomFieldListQuery). Null = no field could match.
                     var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, search);
@@ -127,7 +153,15 @@ namespace MerkaiTrial.Application.Commands.Contacts
                             (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
                             (c.Email     != null && c.Email.ToLower().Contains(search)) ||
                             (c.Phone     != null && c.Phone.Contains(search)) ||
-                            (c.Mobile    != null && c.Mobile.Contains(search)));
+                            (c.Mobile    != null && c.Mobile.Contains(search)) ||
+                            (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
+                            (c.Company   != null && c.Company.Name.ToLower().Contains(search)) ||
+                            (digits != "" && c.Phone != null &&
+                             c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                    .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
+                            (digits != "" && c.Mobile != null &&
+                             c.Mobile.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)));
                     }
                     else
                     {
@@ -137,6 +171,14 @@ namespace MerkaiTrial.Application.Commands.Contacts
                             (c.Email     != null && c.Email.ToLower().Contains(search)) ||
                             (c.Phone     != null && c.Phone.Contains(search)) ||
                             (c.Mobile    != null && c.Mobile.Contains(search)) ||
+                            (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
+                            (c.Company   != null && c.Company.Name.ToLower().Contains(search)) ||
+                            (digits != "" && c.Phone != null &&
+                             c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                    .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
+                            (digits != "" && c.Mobile != null &&
+                             c.Mobile.Replace(" ", "").Replace("-", "").Replace(".", "")
+                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
                             cfMatches.Contains(c.Id));
                     }
                 }
@@ -158,10 +200,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 if (page > totalPages) page = totalPages;
 
                 // ✅ BUG 3 FIX: subquery for real DealCount per contact
-                var contacts = await query
-                    .OrderBy(c => c.FirstName)
-                    .ThenBy(c => c.LastName)
-                    .ThenBy(c => c.Id)                 // 076 — a stable order, so paging never repeats or skips a row
+                var contacts = await Ordered(query, request.Sort, request.Dir)   // 096
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .Select(c => new ContactListItem
@@ -208,6 +247,32 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 _logger.LogError(ex, "Error getting contacts");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 096. The requested order, always ending with Id (076 — paging
+        /// never repeats or skips a row). No sort, or one this list does not
+        /// offer, is the original order: first name, then last name.
+        /// </summary>
+        private IOrderedQueryable<Contact> Ordered(IQueryable<Contact> contacts, string? sort, string? dir)
+        {
+            var key  = ListSort.Key(sort, SortKeys);
+            var desc = ListSort.IsDescending(dir, fallback: key is "deals" or "created");
+
+            IOrderedQueryable<Contact> ordered = key switch
+            {
+                // A contact with no company sorts with "" — first going up, last going down.
+                "company" => contacts.OrderByDir(c => c.Company != null ? c.Company.Name : "", desc)
+                                     .ThenBy(c => c.FirstName).ThenBy(c => c.LastName),
+                "email"   => contacts.OrderByDir(c => c.Email ?? "", desc),
+                "deals"   => contacts.OrderByDir(c => _context.Deals.Count(d => d.ContactId == c.Id && !d.IsDeleted), desc)
+                                     .ThenBy(c => c.FirstName).ThenBy(c => c.LastName),
+                "created" => contacts.OrderByDir(c => c.CreatedAtUtc, desc),
+                "name"    => contacts.OrderByDir(c => c.FirstName, desc).ThenByDir(c => c.LastName, desc),
+                _         => contacts.OrderBy(c => c.FirstName).ThenBy(c => c.LastName)
+            };
+
+            return ordered.ThenBy(c => c.Id);
         }
     }
 
@@ -461,6 +526,9 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
     public class GetCompaniesLookupHandler : ICommandHandler
     {
+        /// <summary>096. The same ceiling as GetCompanyLookupHandler.</summary>
+        public const int MaxRows = 5000;
+
         private readonly FlowDbContext _context;
         private readonly ILogger<GetCompaniesLookupHandler> _logger;
 
@@ -480,6 +548,8 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     .AsNoTracking()
                     .Where(c => c.TenantId == request.TenantId && !c.IsDeleted)
                     .OrderBy(c => c.Name)
+                    .ThenBy(c => c.Id)
+                    .Take(MaxRows)                      // 096 — a safety net, like /api/companies/lookup
                     .Select(c => new CompanyListItem
                     {
                         Id           = c.Id,

@@ -1,8 +1,10 @@
 @page "/Contacts"
 @using MerkaiTrial.Application.Configuration
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @model MerkaiTrial.Admin.Web.Pages.Contacts.IndexModel
 @{
     ViewData["Title"] = "Contacts";
+    var sorter = Model.Sorter;   // 096
 }
 @* =====================================================================
    Contacts/Index.cshtml
@@ -24,6 +26,12 @@
      the empty state getting it backwards.
    • The delete dialog carries the list state, so a delete returns to
      the same page of the same filtered list.
+
+   096:
+   • Contact, Company and Email sort the list (_SortHeader); click again
+     to flip. Phones get a Sort menu above the cards (_SortMenu).
+   • A list that failed to load says so in the empty state, with Try
+     again — it used to say "No contacts yet" under the red banner.
 
    Kept from 075a: no TempData banners here (_Layout renders them), no
    auto-dismiss timer, and the contact's name never goes inside script —
@@ -189,15 +197,30 @@
     <partial name="_ListToolbar" model="Model.Toolbar" />
     <partial name="_CustomFieldFilterPanel" model="Model.CustomFilters" />
 
+    @if (Model.PaginatedContacts.TotalCount > 1)
+    {
+        @* 096 — phones sort here; the table's headers do it from 768px. *@
+        <div class="mb-2 d-md-none"><partial name="_SortMenu" model="sorter" /></div>
+    }
+
     @if (!Model.PaginatedContacts.Items.Any())
     {
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center py-5">
-                @if (Model.IsFiltered)
+                @if (!string.IsNullOrEmpty(Model.PageError))
+                {
+                    @* 096 — not "No contacts yet": nothing was loaded. *@
+                    <i class="bi bi-cloud-slash fs-1 text-muted d-block mb-3"></i>
+                    <p class="text-muted mb-2">The list could not be loaded.</p>
+                    <a asp-page="./Index" asp-all-route-data="Model.StateRoute()" class="btn btn-outline-secondary btn-sm">
+                        Try again
+                    </a>
+                }
+                else if (Model.IsFiltered)
                 {
                     <i class="bi bi-search fs-1 text-muted d-block mb-3"></i>
                     <p class="text-muted mb-2">No contact matches these filters.</p>
-                    <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-outline-secondary btn-sm">
+                    <a asp-page="./Index" asp-all-route-data="Model.ClearAllRoute()" class="btn btn-outline-secondary btn-sm">
                         Clear the search and filters
                     </a>
                 }
@@ -224,9 +247,10 @@
                 <table class="table table-hover mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th class="ps-3">Contact</th>
-                            <th>Company</th>
-                            <th>Email</th>
+                            @* 096 — sortable columns. *@
+                            <th class="ps-3" aria-sort="@sorter.AriaSort("name")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "name", "Contact"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("company")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "company", "Company"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("email")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "email", "Email"))" /></th>
                             <th>Phone</th>
                             @foreach (var col in Model.ListColumns)
                             {

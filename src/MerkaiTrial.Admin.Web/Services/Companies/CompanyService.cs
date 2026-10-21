@@ -31,6 +31,9 @@
 //      rows a page from 078, which would have quietly cut any dropdown
 //      built from it at 100 companies. The lookup endpoint returns every
 //      live company (id, name, country, vertical — no counts), sorted.
+//
+//   7. (096) GetAllAsync takes the sort column and direction (optional,
+//      last), sent as ?sort=&dir=.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -48,7 +51,9 @@ namespace MerkaiTrial.Admin.Web.Services.Companies
             string? searchTerm = null,
             string? verticalFilter = null,
             string? countryFilter = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 078
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,   // 078
+            string? sort = null,                                      // 096
+            string? dir = null);
 
         Task<CompanyDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<CompanyStatsDto> GetStatsAsync(Guid tenantId);
@@ -79,7 +84,9 @@ namespace MerkaiTrial.Admin.Web.Services.Companies
             string? searchTerm = null,
             string? verticalFilter = null,
             string? countryFilter = null,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null)
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,
+            string? sort = null,
+            string? dir = null)
         {
             try
             {
@@ -88,6 +95,10 @@ namespace MerkaiTrial.Admin.Web.Services.Companies
                     $"pageNumber={pageNumber}",
                     $"pageSize={pageSize}"
                 };
+
+                // 096 — note 7
+                if (!string.IsNullOrWhiteSpace(sort)) queryParams.Add($"sort={Uri.EscapeDataString(sort)}");
+                if (!string.IsNullOrWhiteSpace(dir))  queryParams.Add($"dir={Uri.EscapeDataString(dir)}");
 
                 if (!string.IsNullOrWhiteSpace(searchTerm))
                     queryParams.Add($"searchTerm={Uri.EscapeDataString(searchTerm.Trim())}");

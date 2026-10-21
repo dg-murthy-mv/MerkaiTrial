@@ -1,6 +1,7 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages
 @using MerkaiTrial.Admin.Web.Pages.Leads
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @using MerkaiTrial.Application.Configuration
 @model MerkaiTrial.Admin.Web.Pages.Leads.IndexModel
 @{
@@ -14,6 +15,7 @@
     var quotaTight = quotaPct >= 75;
 
     var p = Model.PaginatedLeads;
+    var sorter = Model.Sorter;   // 096 — the headers and the phone Sort menu
 
     // Initials for the row avatar, from whatever the name gives us.
     static string Initials(string? name)
@@ -97,6 +99,13 @@
    • The search box takes the whole first line on a phone (575px and
      narrower), the owner filter and Filter button the next.
    • The desktop table is unchanged.
+
+   096 — SORTING
+   • Lead, Status, Score, Value and Created are links that sort the whole
+     list on the server (_SortHeader); click again to flip. The order is
+     in the URL and every tab, page, search and delete keeps it.
+   • On a phone, a Sort menu beside the search (_SortMenu) does the same.
+   • The page size you pick is remembered on this browser.
    ===================================================================== *@
 
 <style>
@@ -326,6 +335,11 @@
                NUMBER is never carried: a new search starts at page 1. *@
             <input type="hidden" name="StatusFilter" value="@Model.StatusFilter" />
             <input type="hidden" name="PageSize" value="@Model.PageSize" />
+            @* 096 — a search keeps the order you chose. *@
+            @foreach (var keep in sorter.Current())
+            {
+                <input type="hidden" name="@keep.Key" value="@keep.Value" />
+            }
 
             <div class="input-group input-group-sm lx-search" style="width:280px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -353,6 +367,12 @@
                    class="btn btn-sm btn-link px-1">Clear</a>
             }
         </form>
+
+        @* 096 — phones have cards, not headers, so they sort from here. *@
+        @if (p.TotalCount > 1)
+        {
+            <partial name="_SortMenu" model="sorter" />
+        }
 
         <span class="lx-count ms-auto">
             @if (p.TotalCount > 0)
@@ -404,27 +424,28 @@
                 <table class="lx-table">
                     <thead>
                         <tr>
-                            <th>Lead</th>
+                            @* 096 — sortable columns. aria-sort says which, and which way. *@
+                            <th aria-sort="@sorter.AriaSort("name")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "name", "Lead"))" /></th>
                             <th>Contact</th>
                             <th>Channel</th>
                             <th>Source</th>
-                            <th>Status</th>
+                            <th aria-sort="@sorter.AriaSort("status")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "status", "Status"))" /></th>
                             @foreach (var col in Model.ListColumns)
                             {
                                 <th class="lx-cf-head">
                                     <i class="bi @CustomFieldTypes.Icon(col.FieldType) me-1" aria-hidden="true"></i>@col.Label
                                 </th>
                             }
-                            <th>
-                                Score
+                            <th aria-sort="@sorter.AriaSort("score")">
+                                <partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "score", "Score"))" />
                                 @if (!Model.HasFeature("lead_scoring"))
                                 {
                                     <i class="bi bi-lock-fill ms-1" style="font-size:10px;"
                                        title="@Model.UpgradePrompt to unlock lead scoring"></i>
                                 }
                             </th>
-                            <th class="n">Value</th>
-                            <th>Created</th>
+                            <th class="n" aria-sort="@sorter.AriaSort("value")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "value", "Value"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("created")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "created", "Created"))" /></th>
                             <th class="stick text-end">Actions</th>
                         </tr>
                     </thead>

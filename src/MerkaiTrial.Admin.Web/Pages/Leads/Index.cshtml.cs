@@ -58,6 +58,17 @@
 //   could already see. Needs leads.read, like the list itself.
 //   A refusal (more rows than one export holds) comes back to the list,
 //   filters intact, with the API's sentence.
+//
+// 096 — SORTING, AND A REMEMBERED PAGE SIZE
+//   • Click Lead, Status, Score, Value or Created to sort; again to flip.
+//     ?Sort=&Dir= ride along with every tab, page link, search, the
+//     custom filter panel and the delete form, like the filters do. No
+//     sort = newest first, as before. On a phone the cards get a Sort
+//     menu instead (no headers there).
+//   • The page size you choose is remembered on your browser
+//     (ListPreferences) — Leads opens at it next time. Default still 10.
+//   • The Owner line under each name now shows the owner: the API used
+//     to send no name, so every lead read "Unassigned".
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages.Shared;
@@ -140,6 +151,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
         [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }   // "", "all" or a status KEY
         [BindProperty(SupportsGet = true)] public string? AssignedToFilter { get; set; }
+        [BindProperty(SupportsGet = true)] public string? Sort { get; set; }    // 096
+        [BindProperty(SupportsGet = true)] public string? Dir { get; set; }     // 096
 
         public int TotalLeads => PaginatedLeads.TotalCount;
 
@@ -178,14 +191,53 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             IsAllTab    ? "All"    :
             StatusName(StatusFilter);
 
+        // ── Sorting (096) ─────────────────────────────────────────────
+
+        public static readonly SortOption[] SortOptions =
+        {
+            new("name",    "Name"),
+            new("status",  "Status"),
+            new("score",   "Score", DefaultDescending: true),
+            new("value",   "Value", DefaultDescending: true),
+            new("created", "Created", DefaultDescending: true, AscLabel: "oldest first", DescLabel: "newest first")
+        };
+
+        private ListSortVm SortState(Dictionary<string, string>? route = null) => new()
+        {
+            Options           = SortOptions,
+            Sort              = Sort,
+            Dir               = Dir,
+            DefaultKey        = "created",       // the API's order when none is asked for
+            DefaultDescending = true,
+            Route             = route ?? new Dictionary<string, string>()
+        };
+
+        /// <summary>The headers' and the phone menu's links: every filter and the size, never the page or the sort.</summary>
+        public ListSortVm Sorter
+        {
+            get
+            {
+                var route = FilterRoute();
+                route.Remove(nameof(Sort));
+                route.Remove(nameof(Dir));
+                route[nameof(PageSize)] = PageSize.ToString();
+                return SortState(route);
+            }
+        }
+
         // ── Routes (079, note 3) ──────────────────────────────────────
 
-        /// <summary>Search and owner — the toolbar's filters, without the tab.</summary>
+        /// <summary>
+        /// Search and owner — the toolbar's filters, without the tab.
+        /// 096: and the sort, checked against SortOptions, so every route
+        /// built from this one (tabs, pager, delete, Clear these) keeps it.
+        /// </summary>
         private Dictionary<string, string> SearchRoute()
         {
             var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(SearchTerm))       route[nameof(SearchTerm)]       = SearchTerm.Trim();
             if (!string.IsNullOrWhiteSpace(AssignedToFilter)) route[nameof(AssignedToFilter)] = AssignedToFilter.Trim();
+            foreach (var (k, v) in SortState().Current()) route[k] = v;
             return route;
         }
 
@@ -208,11 +260,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             return route;
         }
 
-        /// <summary>"Clear" beside the search: drops search and owner, keeps the tab and custom filters.</summary>
+        /// <summary>"Clear" beside the search: drops search and owner, keeps the tab, custom filters and sort.</summary>
         public Dictionary<string, string> ClearSearchRoute()
         {
             var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(StatusFilter)) route[nameof(StatusFilter)] = StatusFilter;
+            foreach (var (k, v) in SortState().Current()) route[k] = v;                 // 096
             foreach (var (k, v) in CustomFilters.Route) route[k] = v;
             route[nameof(PageSize)] = PageSize.ToString();
             return route;
@@ -251,7 +304,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
 
             await InitializePermissionsAsync();
 
-            PageSize   = ClampPageSize(PageSize);
+            // 096 — the URL's size, else this browser's last choice, else 10.
+            PageSize   = ListPreferences.PageSize(HttpContext, "leads");
             PageNumber = Math.Max(PageNumber, 1);
 
             // Statuses first: the tab decides which keys the list asks for.
@@ -269,7 +323,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     searchTerm: SearchTerm,
                     status: ResolveStatusQuery(),
                     assignedTo: AssignedToFilter,
-                    customFilters: CustomFilters.Filters);
+                    customFilters: CustomFilters.Filters,
+                    sort: SortState().ApiSort,                 // 096
+                    dir: SortState().ApiDir);
 
                 // The API pulls a page past the end back to the last one;
                 // follow it so the pager and the count agree with the rows.

@@ -41,6 +41,31 @@
 //   FormatDate / FormatDateTime and GetCompanyName are gone: the first two
 //   were copies of the base class's, the third looked up a name the list
 //   item already carries (ContactListItem.CompanyName).
+//
+// 096 — SORTING, A REMEMBERED PAGE SIZE, AND A STEADIER PAGE
+//
+//   7. SORTING. Contact, Company and Email sort the whole list on the
+//      server; click again to flip. ?Sort=&Dir= ride along on
+//      every page link, search, filter, Clear and the delete dialog. No
+//      sort = by name, as before. Phones get a Sort menu above the cards.
+//
+//   8. THE PAGE SIZE IS REMEMBERED on this browser (ListPreferences), and
+//      10 stays the default.
+//
+//   9. THE STATS AND THE COMPANY DROPDOWN NO LONGER TAKE THE LIST DOWN.
+//      All three were loaded in one try block, so a failed stats call (a
+//      side panel) replaced the whole list with "Failed to load contacts".
+//      Each is loaded on its own now; only the list itself can fail the
+//      list.
+//
+//  10. A COMPANY FILTER THAT IS NOT IN THE DROPDOWN STAYS VISIBLE. A
+//      bookmark naming a company that has since been deleted filtered the
+//      list by it while the dropdown read "All companies". It now shows
+//      "(company no longer listed)", selected — the rule Companies and
+//      Products already follow.
+//
+//  11. Search also finds the company name and job title, and a phone
+//      number however it was typed (done by the API).
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
@@ -110,6 +135,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
 
         [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
         [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = DefaultPageSize;
+        [BindProperty(SupportsGet = true)] public string? Sort { get; set; }    // 096
+        [BindProperty(SupportsGet = true)] public string? Dir { get; set; }     // 096
 
         private Guid? CompanyId =>
             Guid.TryParse(CompanyFilter, out var id) && id != Guid.Empty ? id : null;
@@ -161,8 +188,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             },
 
             // The page SIZE is carried; the page NUMBER never is (072).
-            Carry      = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
-            ClearRoute = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+            // 096: the sort too — a search or a Clear keeps your order.
+            Carry      = SizeAndSort(),
+            ClearRoute = SizeAndSort(),
 
             IsFiltered   = IsFiltered,
             TotalCount   = TotalCount,
@@ -182,9 +210,50 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             Route      = FilterRoute()
         };
 
+        // ── Sorting (096, note 7) ─────────────────────────────────────
+
+        public static readonly SortOption[] SortOptions =
+        {
+            // The columns the table shows. (The API can also sort by deals
+            // and created; the page offers what a person can see.)
+            new("name",    "Name"),
+            new("company", "Company"),
+            new("email",   "Email")
+        };
+
+        private ListSortVm SortState(Dictionary<string, string>? route = null) => new()
+        {
+            Options    = SortOptions,
+            Sort       = Sort,
+            Dir        = Dir,
+            DefaultKey = "name",          // the API's order when none is asked for
+            Route      = route ?? new Dictionary<string, string>()
+        };
+
+        /// <summary>The headers' and the phone menu's links: every filter and the size, never the page or the sort.</summary>
+        public ListSortVm Sorter
+        {
+            get
+            {
+                var route = FilterRoute();
+                route.Remove(nameof(Sort));
+                route.Remove(nameof(Dir));
+                route[nameof(PageSize)] = PageSize.ToString();
+                return SortState(route);
+            }
+        }
+
+        /// <summary>The page size and the current sort — what a search or a Clear keeps.</summary>
+        private Dictionary<string, string> SizeAndSort()
+        {
+            var route = SortState().Current();
+            route[nameof(PageSize)] = PageSize.ToString();
+            return route;
+        }
+
         /// <summary>
         /// The toolbar's filters as route values, WITHOUT the custom ones —
-        /// what the panel's "Clear these" keeps.
+        /// what the panel's "Clear these" keeps. 096: and the sort.
         /// </summary>
         private Dictionary<string, string> ToolbarRoute()
         {
@@ -192,6 +261,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             if (!string.IsNullOrWhiteSpace(SearchTerm)) route[nameof(SearchTerm)]      = SearchTerm.Trim();
             if (CompanyId is { } c)                     route[nameof(CompanyFilter)]   = c.ToString();
             if (IsPrimary is { } p)                     route[nameof(IsPrimaryFilter)] = p ? "true" : "false";
+            foreach (var (k, v) in SortState().Current()) route[k] = v;
             return route;
         }
 
@@ -202,6 +272,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             foreach (var (k, v) in CustomFilters.Route) route[k] = v;
             return route;
         }
+
+        /// <summary>096. "Clear the search and filters": the page size and the sort, nothing else.</summary>
+        public Dictionary<string, string> ClearAllRoute() => SizeAndSort();
 
         /// <summary>FilterRoute plus the page and size — the hidden fields of the delete dialog.</summary>
         public Dictionary<string, string> StateRoute()
@@ -227,6 +300,12 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                     Text     = c.Name,
                     Selected = c.Id.ToString() == selected
                 }));
+
+            // 096 — note 10: the list IS filtered by this company, so the
+            // dropdown must say so even when the company is not in it.
+            if (selected is not null && !Companies.Any(c => c.Id.ToString() == selected))
+                items.Add(new SelectListItem { Value = selected, Text = "(company no longer listed)", Selected = true });
+
             return items;
         }
 
@@ -333,7 +412,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
 
         private async Task LoadAsync(IEnumerable<KeyValuePair<string, StringValues>> query)
         {
-            PageSize   = ClampPageSize(PageSize);
+            // 096 — the URL's size, else this browser's last choice, else 10.
+            PageSize   = ListPreferences.PageSize(HttpContext, "contacts");
             PageNumber = Math.Max(PageNumber, 1);
 
             var tenantId = CurrentUserService.GetCurrentTenantId();
@@ -370,18 +450,34 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             clear[nameof(PageSize)] = PageSize.ToString();
             CustomFilters.ClearRoute = clear;
 
-            // ── The list ──────────────────────────────────────────────
+            // ── Side panels: never the reason the list fails (note 9) ─
             try
             {
                 Stats = await _contactService.GetStatsAsync(tenantId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Contact stats could not be loaded");
+            }
 
-                // Open item 8 — every company on every view. Kept for the
-                // filter dropdown; a type-ahead replaces it when Companies
-                // gets its own list round.
+            try
+            {
+                // Every company, for the filter dropdown (capped at 5000 by
+                // the API). A failure leaves just "All companies".
                 Companies = await _contactService.GetCompaniesLookupAsync(tenantId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "The company list for the contacts filter could not be loaded");
+            }
 
+            // ── The list ──────────────────────────────────────────────
+            try
+            {
+                var sort = SortState();
                 PaginatedContacts = await _contactService.GetAllAsync(
-                    tenantId, PageNumber, PageSize, CompanyId, SearchTerm, IsPrimary, CustomFilters.Filters);
+                    tenantId, PageNumber, PageSize, CompanyId, SearchTerm, IsPrimary, CustomFilters.Filters,
+                    sort.ApiSort, sort.ApiDir);                                   // 096
 
                 // The API pulls a page past the end back to the last one;
                 // follow it so the pager and the count agree with the rows.

@@ -52,6 +52,21 @@
 //    redirect, instead of dropping the person on page 1 unfiltered.
 //    A refused delete (the product is part of a bundle) shows the API's
 //    own sentence.
+//
+// ── 096 ─────────────────────────────────────────────────────────────
+//
+// 7. SORTING. Product, SKU, Category, Price and Status sort the whole
+//    list on the server; click again to flip. ?Sort=&Dir= ride along on
+//    every page link, search, filter, Clear and form. No sort = the
+//    catalogue order (category, then name), as before. Phones get a
+//    Sort menu above the cards.
+//
+// 8. 10 PER PAGE, like every other list (it was 25 here), and the size a
+//    person picks is remembered on their browser (ListPreferences).
+//
+// 9. ONE PAGER. The view drew _Pager twice — inside the desktop card and
+//    again under the phone cards — so the "Per page" select appeared
+//    twice with the same id. It is drawn once now, under both.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
@@ -76,8 +91,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         /// <summary>The toolbar form's id; the custom filter inputs post with it.</summary>
         public const string FilterFormId = "productsFilter";
 
-        /// <summary>Default rows per page; also what an unknown size falls back to.</summary>
-        public const int DefaultPageSize = 25;
+        /// <summary>Default rows per page; also what an unknown size falls back to. 096: 10, was 25.</summary>
+        public const int DefaultPageSize = PagerVm.DefaultSize;
 
         private readonly IProductService _productService;
         private readonly ICurrentTenantService _tenantService;
@@ -138,6 +153,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
         /// <summary>080. "", "true" or "false" — a string, parsed below (note 3).</summary>
         [BindProperty(SupportsGet = true)] public string? StatusFilter { get; set; }
 
+        [BindProperty(SupportsGet = true)] public string? Sort { get; set; }    // 096
+        [BindProperty(SupportsGet = true)] public string? Dir { get; set; }     // 096
+
         private string? Category => string.IsNullOrWhiteSpace(CategoryFilter) ? null : CategoryFilter.Trim();
 
         /// <summary>080. The parsed status: null = all, true = active, false = inactive.</summary>
@@ -185,8 +203,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                 }
             },
 
-            Carry      = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
-            ClearRoute = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+            // 096 — the size and the sort; never the page number (072).
+            Carry      = SizeAndSort(),
+            ClearRoute = SizeAndSort(),
 
             IsFiltered   = IsFiltered,
             TotalCount   = TotalCount,
@@ -206,13 +225,60 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
             Route      = FilterRoute()
         };
 
-        /// <summary>Search, category and status — what the toolbar holds.</summary>
+        // ── sorting (096, note 7) ─────────────────────────────────────
+
+        public static readonly SortOption[] SortOptions =
+        {
+            new("name",     "Product"),
+            new("sku",      "SKU"),
+            new("category", "Category"),
+            new("price",    "Price",  DefaultDescending: true),
+            new("status",   "Status", AscLabel: "active first", DescLabel: "inactive first")
+        };
+
+        private ListSortVm SortState(Dictionary<string, string>? route = null) => new()
+        {
+            Options = SortOptions,
+            Sort    = Sort,
+            Dir     = Dir,
+            // The default is the catalogue order (category, then name), so
+            // the Category header shows as the active one.
+            DefaultKey = "category",
+            Route   = route ?? new Dictionary<string, string>()
+        };
+
+        /// <summary>The headers' and the phone menu's links: every filter and the size, never the page or the sort.</summary>
+        public ListSortVm Sorter
+        {
+            get
+            {
+                var route = FilterRoute();
+                route.Remove(nameof(Sort));
+                route.Remove(nameof(Dir));
+                route[nameof(PageSize)] = PageSize.ToString();
+                return SortState(route);
+            }
+        }
+
+        /// <summary>The page size and the current sort — what a search or a Clear keeps.</summary>
+        private Dictionary<string, string> SizeAndSort()
+        {
+            var route = SortState().Current();
+            route[nameof(PageSize)] = PageSize.ToString();
+            return route;
+        }
+
+        /// <summary>096. "Clear the search and filters": the page size and the sort, nothing else.</summary>
+        public Dictionary<string, string> ClearAllRoute() => SizeAndSort();
+
+        /// <summary>Search, category and status — what the toolbar holds. 096: and the sort.</summary>
         private Dictionary<string, string> ToolbarRoute()
         {
             var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(SearchTerm)) route[nameof(SearchTerm)]     = SearchTerm.Trim();
             if (Category is { } c)                      route[nameof(CategoryFilter)] = c;
             if (IsActive is { } a)                      route[nameof(StatusFilter)]   = a ? "true" : "false";
+            foreach (var (k, v) in SortState().Current()) route[k] = v;
             return route;
         }
 
@@ -284,7 +350,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
 
             await InitializePermissionsAsync();
 
-            PageSize   = ClampPageSize(PageSize);
+            // 096 — the URL's size, else this browser's last choice, else 10.
+            PageSize   = ListPreferences.PageSize(HttpContext, "products");
             PageNumber = Math.Max(PageNumber, 1);
 
             TenantCurrencyCode   = _tenantService.GetCurrencyCode();
@@ -323,7 +390,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Products
                     Category,
                     IsActive,
                     SearchTerm,
-                    CustomFilters.Filters);
+                    CustomFilters.Filters,
+                    SortState().ApiSort,          // 096
+                    SortState().ApiDir);
 
                 // The API moves a page past the end back to the last page.
                 PageNumber = Math.Max(PaginatedProducts.Page, 1);

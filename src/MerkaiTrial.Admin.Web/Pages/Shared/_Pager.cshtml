@@ -27,6 +27,10 @@
    Not only when there is more than one page: the page-size selector is
    useful on a single page of 10 when there are 11 rows. The numbered
    nav is what's conditional.
+
+   096: the "Per page" select's id comes from the model (SizeSelectId,
+   "lpPageSize" by default), so a page drawing a second pager can give it
+   another id instead of two elements sharing one.
    ===================================================================== *@
 
 <style>
@@ -55,8 +59,8 @@
                 @* Pinned to 1 — see the header. *@
                 <input type="hidden" name="@Model.PageField" value="1" />
 
-                <label class="lp-note mb-0" for="lpPageSize">Per page</label>
-                <select id="lpPageSize"
+                <label class="lp-note mb-0" for="@Model.SizeSelectId">Per page</label>
+                <select id="@Model.SizeSelectId"
                         name="@Model.PageSizeField"
                         class="form-select form-select-sm"
                         style="width:auto;"

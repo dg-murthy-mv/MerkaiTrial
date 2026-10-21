@@ -68,6 +68,13 @@
 //   to their column sizes too, for the same reason: too long was a 500.
 //   SKUs are NOT checked for duplicates — the database index on
 //   (Sku, TenantId) is not unique, so two products may share one.
+//
+// ── 096 ─────────────────────────────────────────────────────────────
+//
+//   GetProductsHandler can SORT the Products list: a third Handle
+//   overload takes sort / dir (name, sku, category, price, status,
+//   created), always ending with Id. The two existing overloads pass
+//   neither and keep the catalogue order the quote editor relies on.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;   // 080
@@ -164,6 +171,34 @@ public class GetProductsHandler : ICommandHandler
     /// all nine arguments can only mean this one — so the two never
     /// become ambiguous.
     /// </summary>
+    public Task<PaginatedResult<ProductListItem>> Handle(
+        Guid tenantId,
+        int pageNumber,
+        int pageSize,
+        string? category,
+        bool? isActive,
+        string? searchTerm,
+        string? currency,
+        IReadOnlyList<CustomFieldFilter>? customFilters,
+        CancellationToken cancellationToken)
+        => Handle(tenantId, pageNumber, pageSize, category, isActive, searchTerm,
+                  currency, customFilters, sort: null, dir: null, cancellationToken);
+
+    /// <summary>096. The column keys the Products list can be sorted by.</summary>
+    public static readonly string[] SortKeys = { "name", "sku", "category", "price", "status", "created" };
+
+    /// <summary>
+    /// 096. The same read, sorted. A third overload for the same reason the
+    /// second exists: every existing call keeps compiling against the
+    /// signature it was written for, and an eleven-argument call can only
+    /// mean this one.
+    ///
+    /// <paramref name="sort"/>: a key from <see cref="SortKeys"/>; anything
+    /// else keeps the catalogue order (category, then name) that the bundle
+    /// picker and the quote line editor are built around. Every order ends
+    /// with Id. "price" orders by the WORKSPACE price (Product.ListPrice) —
+    /// what the Products list shows.
+    /// </summary>
     public async Task<PaginatedResult<ProductListItem>> Handle(
         Guid tenantId,
         int pageNumber,
@@ -173,6 +208,8 @@ public class GetProductsHandler : ICommandHandler
         string? searchTerm,
         string? currency,
         IReadOnlyList<CustomFieldFilter>? customFilters,
+        string? sort,
+        string? dir,
         CancellationToken cancellationToken)
     {
         // 080 — clamped HERE. See the header for why the cap is 1000.
@@ -255,10 +292,7 @@ public class GetProductsHandler : ICommandHandler
         // writing it inline here would be a second copy of the rule —
         // which is exactly how the quote editor and the products list
         // came to disagree about what a price meant in the first place.
-        var rows = await query
-            .OrderBy(p => p.Category)
-            .ThenBy(p => p.Name)
-            .ThenBy(p => p.Id)              // 080 — stable: paging never repeats or skips a row
+        var rows = await Ordered(query, sort, dir)   // 096 — ends with Id (080: stable paging)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .Select(p => new
@@ -358,7 +392,32 @@ public class GetProductsHandler : ICommandHandler
             TotalCount = totalCount
         };
     }
+
+    /// <summary>
+    /// 096. The requested order, always ending with Id. No sort, or one this
+    /// list does not offer, is the catalogue order: category, then name.
+    /// </summary>
+    private static IOrderedQueryable<Product> Ordered(IQueryable<Product> products, string? sort, string? dir)
+    {
+        var key  = ListSort.Key(sort, SortKeys);
+        var desc = ListSort.IsDescending(dir, fallback: key is "price" or "created");
+
+        IOrderedQueryable<Product> ordered = key switch
+        {
+            "name"     => products.OrderByDir(p => p.Name, desc),
+            "sku"      => products.OrderByDir(p => p.Sku ?? "", desc).ThenBy(p => p.Name),
+            "category" => products.OrderByDir(p => p.Category ?? "", desc).ThenBy(p => p.Name),
+            "price"    => products.OrderByDir(p => p.ListPrice, desc).ThenBy(p => p.Name),
+            // Active first going up ("on" before "off" reads naturally).
+            "status"   => products.OrderByDir(p => !p.IsActive, desc).ThenBy(p => p.Name),
+            "created"  => products.OrderByDir(p => p.CreatedAtUtc, desc),
+            _          => products.OrderBy(p => p.Category).ThenBy(p => p.Name)
+        };
+
+        return ordered.ThenBy(p => p.Id);
+    }
 }
+
 public class ToggleProductActiveHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;

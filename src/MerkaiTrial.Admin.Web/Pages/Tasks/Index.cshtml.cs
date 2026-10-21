@@ -22,6 +22,19 @@
 //   next. It is LoadError now, an ordinary property the view shows on
 //   this response only. Found by the 090 task test.
 //
+// 096 — SEARCH, A RECORD-TYPE FILTER, AND AN HONEST CEILING
+//   • Search finds a task by its subject or notes, or by the lead or deal
+//     it is on ("Somchai" finds every task on Somchai's lead). The record
+//     filter narrows to tasks on leads, or on deals. Both are done by the
+//     API, so they search every open task in the period, not just the
+//     ones on screen.
+//   • Every link and form on the page (My tasks / Whole team, the period,
+//     Reassign, Cancel, Done) carries the search and the filter, so they
+//     survive every click. StateRoute() is the one place they are listed.
+//   • The API returns at most 500 tasks. When it returns exactly that many
+//     the page says so ("Showing the first 500…") instead of presenting a
+//     cut-off list as the whole of it.
+//
 // PERMISSIONS — deliberately NOT a new module in ModuleCatalog.
 //   Gated on leads.read OR deals.read, so every existing role gets it
 //   with no permission-JSON migration. Per-record enforcement still
@@ -69,6 +82,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
         [BindProperty(SupportsGet = true)]
         public int Days { get; set; } = 30;
 
+        /// <summary>096. Subject, notes, or the lead / deal name.</summary>
+        [BindProperty(SupportsGet = true)]
+        public string? Search { get; set; }
+
+        /// <summary>096. "" (everything), "Lead" or "Deal".</summary>
+        [BindProperty(SupportsGet = true)]
+        public string? Type { get; set; }
+
         /// <summary>Which task's reassign dropdown is open.</summary>
         [BindProperty(SupportsGet = true)]
         public Guid? ReassignId { get; set; }
@@ -86,6 +107,42 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
         public int TotalCount   => Groups.Sum(g => g.Tasks.Count);
         public int OverdueCount => Groups.FirstOrDefault(g => g.Key == "overdue")?.Tasks.Count ?? 0;
         public int TodayCount   => Groups.FirstOrDefault(g => g.Key == "today")?.Tasks.Count ?? 0;
+
+        /// <summary>096. The API's ceiling was reached, so there may be more tasks than shown.</summary>
+        public bool HitCeiling { get; private set; }
+        public int Ceiling => GetUpcomingTasksHandler.MaxRows;
+
+        /// <summary>096. The record type actually applied: "Lead", "Deal", or null for all.</summary>
+        public string? TypeFilter =>
+            string.Equals(Type, ActivityEntityType.Lead, StringComparison.OrdinalIgnoreCase) ? ActivityEntityType.Lead :
+            string.Equals(Type, ActivityEntityType.Deal, StringComparison.OrdinalIgnoreCase) ? ActivityEntityType.Deal : null;
+
+        public bool IsFiltered => !string.IsNullOrWhiteSpace(Search) || TypeFilter is not null;
+
+        /// <summary>
+        /// 096. Scope, period, search and type — every link and form carries
+        /// this, so nothing is dropped by a click. Optionally a reassign id.
+        /// </summary>
+        public Dictionary<string, string> StateRoute(Guid? reassignId = null, string? scope = null)
+        {
+            var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["scope"] = scope ?? Scope,
+                ["days"]  = Days.ToString()
+            };
+            if (!string.IsNullOrWhiteSpace(Search)) route["search"] = Search.Trim();
+            if (TypeFilter is { } t)                route["type"]   = t;
+            if (reassignId is { } id)               route["reassignId"] = id.ToString();
+            return route;
+        }
+
+        /// <summary>096. The same, as route values a redirect accepts (RedirectToPage reflects over plain objects).</summary>
+        private Microsoft.AspNetCore.Routing.RouteValueDictionary ReturnRoute()
+        {
+            var values = new Microsoft.AspNetCore.Routing.RouteValueDictionary();
+            foreach (var (k, v) in StateRoute()) values[k] = v;
+            return values;
+        }
 
         /// <summary>After a redirect — rendered once, by _Layout. Never by this view (090).</summary>
         [TempData] public string? SuccessMessage { get; set; }
@@ -114,12 +171,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
                     : me.UserId.ToString();
 
                 var tasksTask     = _activityService.GetUpcomingTasksAsync(
-                    new GetUpcomingTasksQuery(me.TenantId, assignee, Math.Clamp(Days, 1, 90)));
+                    new GetUpcomingTasksQuery(me.TenantId, assignee, Math.Clamp(Days, 1, 90),
+                                              Search: string.IsNullOrWhiteSpace(Search) ? null : Search.Trim(),   // 096
+                                              EntityType: TypeFilter));
                 var assigneesTask = LoadAssigneesAsync();
 
                 await Task.WhenAll(tasksTask, assigneesTask);
 
-                Groups = BuildGroups(await tasksTask);
+                var tasks = await tasksTask;
+                HitCeiling = tasks.Count >= Ceiling;                       // 096
+                Groups = BuildGroups(tasks);
                 return Page();
             }
             catch (Exception ex)
@@ -155,7 +216,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
                 ErrorMessage = Explain(ex, "Couldn't complete that task.");
             }
 
-            return RedirectToPage(new { Scope, Days });
+            return RedirectToPage(ReturnRoute());   // 096 — search and type too
         }
 
         public async Task<IActionResult> OnPostReassignAsync(Guid activityId)
@@ -165,7 +226,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
             if (string.IsNullOrWhiteSpace(NewAssigneeId))
             {
                 ErrorMessage = "Choose who this should go to.";
-                return RedirectToPage(new { Scope, Days });
+                return RedirectToPage(ReturnRoute());   // 096 — search and type too
             }
 
             try
@@ -188,7 +249,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Tasks
                 ErrorMessage = Explain(ex, "Couldn't reassign that task.");
             }
 
-            return RedirectToPage(new { Scope, Days });
+            return RedirectToPage(ReturnRoute());   // 096 — search and type too
         }
 
         // =================================================================

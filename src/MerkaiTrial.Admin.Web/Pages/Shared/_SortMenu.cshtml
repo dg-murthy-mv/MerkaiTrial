@@ -1,0 +1,51 @@
+@model MerkaiTrial.Admin.Web.Pages.Shared.ListSortVm
+@* =====================================================================
+   Pages/Shared/_SortMenu.cshtml — NEW (096).
+
+   The sort control for a PHONE, where the list is cards and there are no
+   column headers to click:
+
+       <partial name="_SortMenu" model="Model.Sorter" />
+
+   Hidden from 768px up (the table's headers do the job there). Each
+   choice is a plain link with every filter and the page size, exactly
+   like a header.
+   ===================================================================== *@
+@{
+    var active = Model.Active;
+    var desc   = Model.ActiveDescending;
+}
+@if (Model.Options.Count > 0)
+{
+    <div class="dropdown d-md-none ls-menu">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false" id="lsSortMenu">
+            <i class="bi bi-sort-down me-1" aria-hidden="true"></i>Sort:
+            @(active?.Label ?? "Default")
+            @if (active is not null)
+            {
+                <i class="bi @(desc ? "bi-caret-down-fill" : "bi-caret-up-fill")" style="font-size:.6rem;"
+                   aria-label="@(desc ? "descending" : "ascending")"></i>
+            }
+        </button>
+        <ul class="dropdown-menu" aria-labelledby="lsSortMenu">
+            @foreach (var o in Model.Options)
+            {
+                // The natural direction first: A→Z for text, biggest first for numbers.
+                foreach (var d in o.DefaultDescending ? new[] { true, false } : new[] { false, true })
+                {
+                    var current = Model.IsActive(o.Key) && desc == d;
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2 @(current ? "active" : "")"
+                           asp-page="@Model.PageRoute"
+                           asp-all-route-data="@Model.RouteFor(o.Key, d)"
+                           aria-current="@(current ? "true" : null)">
+                            <i class="bi @(d ? "bi-sort-down" : "bi-sort-up")" aria-hidden="true"></i>
+                            @o.Label <span class="small @(current ? "" : "text-muted")">@(d ? o.DescText : o.AscText)</span>
+                        </a>
+                    </li>
+                }
+            }
+        </ul>
+    </div>
+}

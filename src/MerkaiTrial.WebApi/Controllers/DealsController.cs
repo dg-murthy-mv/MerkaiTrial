@@ -4,6 +4,11 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (096 — sorting the deal table)
+//  21. GET /api/deals takes ?sort= and ?dir= (title, company, stage,
+//      value, probability, close, created), checked against a fixed list
+//      in GetDealsHandler. Without them: newest first, as before.
+//
 // CHANGES (077 — custom fields on deals)
 //  18. GET /api/deals takes repeated ?cf=<fieldId>~<op>~<value> custom
 //      field filters (CustomFieldFilterCodec), the same wire shape as
@@ -174,6 +179,8 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery(Name = "cf")] string[]? cf = null,          // 077
+            [FromQuery] string? sort = null,                       // 096
+            [FromQuery] string? dir = null,                        // 096
             CancellationToken cancellationToken = default)   // ✅ ADDED
         {
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
@@ -193,7 +200,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (pageSize > 500) pageSize = 500;
 
                 var result = await _getDealsHandler.HandleAsync(
-                    new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize, customFilters));
+                    new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize, customFilters,
+                                        Sort: sort, Dir: dir));   // 096
 
                 return Ok(result);
             }

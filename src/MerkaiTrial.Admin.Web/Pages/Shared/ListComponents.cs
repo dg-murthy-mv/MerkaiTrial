@@ -8,6 +8,25 @@
 //   toolbar would throw away the panel's filters. Null on every page that
 //   does not set it, and the form renders exactly as before.
 //
+// 096 — SORTING, DATES AND A REMEMBERED PAGE SIZE
+//
+//   ListSortVm: the column a list is sorted by and which way, plus every
+//     filter, so a header link (_SortHeader) or the phone sort menu
+//     (_SortMenu) can change the order without dropping anything. Sort
+//     and Dir travel in the URL like every other part of the list's
+//     state, so a sorted list can be bookmarked and survives Back. A new
+//     sort starts at page 1 — the same rule as a new search.
+//
+//   ListToolbarVm.Dates: date inputs on the toolbar (the Invoices page's
+//     issued-from / issued-to). They post yyyy-MM-dd, which an
+//     <input type="date"> always does whatever the browser's language.
+//
+//   ListPreferences.PageSize: each person's last "Per page" choice is
+//     remembered per list in a small cookie on their own browser —
+//     choose 50 on Contacts and Contacts opens at 50 next time, from the
+//     menu as well. The URL still wins when it says something; the
+//     cookie only fills in when it says nothing. Default: 10 everywhere.
+//
 // NEW FILE (072). The view models behind _ListToolbar.cshtml and
 // _Pager.cshtml — the search/filter strip and the pager that every list
 // page in the app now shares.
@@ -40,6 +59,7 @@
 // ─────────────────────────────────────────────────────────────────────
 // =====================================================================
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using System.Globalization;
 
@@ -65,6 +85,23 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
         public string Width { get; init; } = "auto";
     }
 
+    /// <summary>096. One date input in the toolbar.</summary>
+    public sealed class ListDateFilterVm
+    {
+        /// <summary>The query-string / page-model property name, e.g. "FromDate".</summary>
+        public string Name { get; init; } = string.Empty;
+
+        /// <summary>For screen readers, and the small word drawn before the box ("From").</summary>
+        public string Label { get; init; } = string.Empty;
+
+        /// <summary>The current value as yyyy-MM-dd (invariant), or empty.</summary>
+        public string Value { get; init; } = string.Empty;
+
+        /// <summary>The ISO form an &lt;input type="date"&gt; accepts, whatever the server's culture.</summary>
+        public static string Iso(DateTime? d)
+            => d?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
     public sealed class ListToolbarVm
     {
         /// <summary>
@@ -84,6 +121,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
 
         // ── Filters ──────────────────────────────────────────────────
         public List<ListFilterVm> Filters { get; init; } = new();
+
+        /// <summary>096. Date inputs, drawn after the dropdowns.</summary>
+        public List<ListDateFilterVm> Dates { get; init; } = new();
 
         /// <summary>
         /// Values the search form must carry through as hidden fields so a
@@ -158,6 +198,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
         /// </summary>
         public static readonly int[] Sizes = { 10, 25, 50, 100 };
 
+        /// <summary>096. The one default page size, on every list.</summary>
+        public const int DefaultSize = 10;
+
+        /// <summary>
+        /// 096. The id of the "Per page" select. A page that draws two
+        /// pagers would otherwise put two elements with one id on the page
+        /// (and a label pointing at the wrong one) — set a second id there.
+        /// </summary>
+        public string SizeSelectId { get; init; } = "lpPageSize";
+
         /// <summary>Route values for a given page — the filters plus the page and size.</summary>
         public Dictionary<string, string> RouteFor(int page)
         {
@@ -191,6 +241,188 @@ namespace MerkaiTrial.Admin.Web.Pages.Shared
                 yield return i;
                 last = i;
             }
+        }
+    }
+
+    // =================================================================
+    // 096 — SORTING
+    // =================================================================
+
+    /// <summary>
+    /// One column a list can be sorted by. DefaultDescending: numbers and
+    /// dates start biggest / newest first, text starts A→Z. The two
+    /// phrases are what the phone menu says for each direction.
+    /// </summary>
+    public sealed record SortOption(
+        string Key, string Label, bool DefaultDescending = false,
+        string? AscLabel = null, string? DescLabel = null)
+    {
+        public string AscText  => AscLabel  ?? (DefaultDescending ? "low → high" : "A → Z");
+        public string DescText => DescLabel ?? (DefaultDescending ? "high → low" : "Z → A");
+    }
+
+    /// <summary>
+    /// A list's current order and the links that change it. Built by the
+    /// page; drawn by _SortHeader (one per column header) and _SortMenu
+    /// (the phone menu, where there are no headers).
+    /// </summary>
+    public sealed class ListSortVm
+    {
+        public string SortField { get; init; } = "Sort";
+        public string DirField  { get; init; } = "Dir";
+
+        /// <summary>The columns this list offers, in menu order.</summary>
+        public IReadOnlyList<SortOption> Options { get; init; } = Array.Empty<SortOption>();
+
+        /// <summary>The bound ?Sort= value. Anything not in Options counts as "no sort".</summary>
+        public string? Sort { get; init; }
+
+        /// <summary>The bound ?Dir= value.</summary>
+        public string? Dir { get; init; }
+
+        /// <summary>The key the list is in when no sort is asked for, and its direction — so its header can show it.</summary>
+        public string? DefaultKey { get; init; }
+        public bool DefaultDescending { get; init; }
+
+        /// <summary>
+        /// Every filter and the page size — NOT the page number, NOT the sort.
+        /// A sort link adds its own Sort/Dir and lands on page 1.
+        /// </summary>
+        public Dictionary<string, string> Route { get; init; } = new();
+
+        public string PageRoute { get; init; } = "./Index";
+
+        /// <summary>The option the list is sorted by right now (the default when none is asked for).</summary>
+        public SortOption? Active
+            => Options.FirstOrDefault(o => string.Equals(o.Key, Sort, StringComparison.OrdinalIgnoreCase))
+               ?? Options.FirstOrDefault(o => string.Equals(o.Key, DefaultKey, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>True when the URL asked for a sort this list offers.</summary>
+        public bool IsExplicit
+            => Options.Any(o => string.Equals(o.Key, Sort, StringComparison.OrdinalIgnoreCase));
+
+        public bool ActiveDescending
+        {
+            get
+            {
+                var active = Active;
+                if (active is null) return false;
+                if (!IsExplicit) return DefaultDescending;
+                if (string.Equals(Dir, "desc", StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(Dir, "asc", StringComparison.OrdinalIgnoreCase)) return false;
+                return active.DefaultDescending;
+            }
+        }
+
+        public bool IsActive(string key) => string.Equals(Active?.Key, key, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The link for a header: the active column flips direction; any
+        /// other column starts in its natural direction (A→Z for text,
+        /// biggest / newest first for numbers and dates).
+        /// </summary>
+        public Dictionary<string, string> RouteFor(string key)
+        {
+            var option = Options.FirstOrDefault(o => string.Equals(o.Key, key, StringComparison.OrdinalIgnoreCase));
+            var desc = IsActive(key) ? !ActiveDescending : option?.DefaultDescending ?? false;
+            return RouteFor(key, desc);
+        }
+
+        /// <summary>The link for an explicit column and direction (the phone menu).</summary>
+        public Dictionary<string, string> RouteFor(string key, bool descending)
+        {
+            var values = new Dictionary<string, string>(Route, StringComparer.OrdinalIgnoreCase)
+            {
+                [SortField] = key,
+                [DirField]  = descending ? "desc" : "asc"
+            };
+            return values;
+        }
+
+        /// <summary>The current Sort/Dir as route values, for links and forms that must keep them. Empty when unsorted.</summary>
+        public Dictionary<string, string> Current()
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (IsExplicit && Active is { } a)
+            {
+                values[SortField] = a.Key;
+                values[DirField]  = ActiveDescending ? "desc" : "asc";
+            }
+            return values;
+        }
+
+        /// <summary>What to send the API: the checked key and direction, or null for "the list's own order".</summary>
+        public string? ApiSort => IsExplicit ? Active!.Key : null;
+        public string? ApiDir  => IsExplicit ? (ActiveDescending ? "desc" : "asc") : null;
+
+        /// <summary>For aria-sort on a header cell.</summary>
+        public string AriaSort(string key)
+            => !IsActive(key) ? "none" : ActiveDescending ? "descending" : "ascending";
+    }
+
+    /// <summary>Model for _SortHeader: one clickable column title.</summary>
+    public sealed record SortHeaderVm(ListSortVm List, string Key, string Label, string? CssClass = null);
+
+    // =================================================================
+    // 096 — THE REMEMBERED PAGE SIZE
+    // =================================================================
+
+    public static class ListPreferences
+    {
+        private const string CookiePrefix = "merkai.ps.";
+
+        /// <summary>
+        /// The page size to use for one list.
+        ///
+        ///   • The URL says a valid size → use it, and remember it.
+        ///   • The URL says nothing      → the remembered size, if valid.
+        ///   • Otherwise                 → PagerVm.DefaultSize (10).
+        ///
+        /// An invalid size in the URL (?PageSize=7) is treated as "said
+        /// nothing", exactly as the pages' ClampPageSize did before.
+        ///
+        /// For GET handlers. A POST (delete, issue…) carries the size it
+        /// came from as a form field and passes it straight back to the
+        /// redirect; the GET that follows reads it from the URL.
+        /// </summary>
+        /// <param name="list">A short fixed name: "leads", "contacts"… never user input.</param>
+        public static int PageSize(HttpContext http, string list, string queryKey = "PageSize")
+        {
+            var cookieName = CookiePrefix + list;
+
+            if (http.Request.Query.TryGetValue(queryKey, out var raw) &&
+                int.TryParse(raw.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var asked) &&
+                PagerVm.Sizes.Contains(asked))
+            {
+                Remember(http, cookieName, asked);
+                return asked;
+            }
+
+            if (http.Request.Cookies.TryGetValue(cookieName, out var saved) &&
+                int.TryParse(saved, NumberStyles.Integer, CultureInfo.InvariantCulture, out var remembered) &&
+                PagerVm.Sizes.Contains(remembered))
+                return remembered;
+
+            return PagerVm.DefaultSize;
+        }
+
+        private static void Remember(HttpContext http, string cookieName, int size)
+        {
+            // Only written when it changes, so an ordinary page load does
+            // not send a Set-Cookie header every time.
+            if (http.Request.Cookies.TryGetValue(cookieName, out var current) &&
+                current == size.ToString(CultureInfo.InvariantCulture))
+                return;
+
+            http.Response.Cookies.Append(cookieName, size.ToString(CultureInfo.InvariantCulture), new CookieOptions
+            {
+                Path        = "/",
+                HttpOnly    = true,                 // nothing on the page needs to read it
+                Secure      = http.Request.IsHttps,
+                SameSite    = SameSiteMode.Lax,
+                IsEssential = true,                 // a display preference, holds nothing about the person
+                MaxAge      = TimeSpan.FromDays(365)
+            });
         }
     }
 }

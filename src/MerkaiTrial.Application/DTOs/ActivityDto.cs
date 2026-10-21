@@ -8,6 +8,9 @@
 //   • AssigneeDto           — the "assign to" dropdown
 //   • SetActivityOutcomeDto — "how did it go?", added after completing
 //   • ReassignActivityDto   — reassign from the Tasks page
+//
+// 096: GetUpcomingTasksQuery.Search / EntityType — trailing and
+//   defaulted, so the dashboard's call is unchanged.
 // =====================================================================
 
 namespace MerkaiTrial.Application.DTOs
@@ -108,6 +111,8 @@ namespace MerkaiTrial.Application.DTOs
     public record GetUpcomingTasksQuery(
         Guid    TenantId,
         string? AssignedToUserId = null,  // null = all users (tenant admins only)
-        int     DaysAhead        = 7
+        int     DaysAhead        = 7,
+        string? Search           = null,  // 096 — subject, description, or the lead / deal name
+        string? EntityType       = null   // 096 — "Lead" | "Deal" | … ; null = every record type
     );
 }

@@ -1,6 +1,7 @@
 @page
 @using MerkaiTrial.Admin.Web.Pages
 @using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Admin.Web.Pages.Shared
 @model MerkaiTrial.Admin.Web.Pages.Pipeline.IndexModel
 @{
     ViewData["Title"] = "Pipeline";
@@ -16,6 +17,7 @@
                  || !string.IsNullOrWhiteSpace(Model.OwnerFilter)
                  || Model.CustomFilters.HasAny;                       // 077
     var cfCols = Model.ListColumns;                                   // 077
+    var sorter = Model.Sorter;                                        // 096 — the table's headers
 }
 @* =====================================================================
    PIPELINE BOARD (030)
@@ -121,6 +123,17 @@
    9. On a phone the columns snap into place as you swipe, the search box
       takes the toolbar's whole first line, and the "steps in this process"
       / "Show empty columns" pair wraps instead of sticking out.
+
+   096 — LISTS
+  10. THE TABLE VIEW PAGES AND SORTS. Deal, Company, Stage, Value, Prob.
+      and Closes are sortable headers (_SortHeader), and the shared _Pager
+      sits under the table — 10 rows by default, remembered per browser.
+      The table has its own page of deals from the API; the board still
+      loads up to 500 and is untouched by the table's page or order.
+  11. "Showing 500 of 640 deals" appears above the board when the board
+      is cut short, instead of quietly totalling only the first 500.
+  12. An owner filter for somebody no longer on the sales team shows as
+      "(no longer on the sales team)", selected, instead of "All owners".
    ===================================================================== *@
 
 <style>
@@ -407,6 +420,11 @@
            set them — the only way to filter was to type a URL by hand. *@
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="pbFilter">
             <input type="hidden" name="View" value="board" class="pb-view-field" />
+            @* 096 — the table's page size and sort survive Apply; its page does not. *@
+            @foreach (var keep in Model.FormCarry())
+            {
+                <input type="hidden" name="@keep.Key" value="@keep.Value" />
+            }
 
             <div class="input-group input-group-sm pb-search" style="width:260px;">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -428,11 +446,10 @@
             <select name="OwnerFilter" class="form-select form-select-sm" style="width:auto;"
                     aria-label="Filter by owner">
                 <option value="">All owners</option>
-                @foreach (var u in Model.SalesTeam)
+                @* 096 — OwnerOptions keeps an owner who is no longer on the team. *@
+                @foreach (var o in Model.OwnerOptions())
                 {
-                    <option value="@u.Id" selected="@(string.Equals(Model.OwnerFilter, u.Id.ToString(), StringComparison.OrdinalIgnoreCase))">
-                        @u.FullName
-                    </option>
+                    <option value="@o.Value" selected="@o.Selected">@o.Text</option>
                 }
             </select>
 
@@ -491,6 +508,18 @@
     {
         @* ── BOARD ──────────────────────────────────────────────── *@
         <div id="pbBoard">
+            @if (Model.BoardCapped)
+            {
+                @* 096 — the board, and the totals above, cover these deals only. *@
+                <div class="alert alert-info py-2 px-3 small d-flex gap-2 align-items-center" role="status" id="pbCapped">
+                    <i class="bi bi-info-circle"></i>
+                    <span>
+                        Showing the newest @Model.Deals.Count of @Model.BoardTotal deals, and the totals above cover
+                        those @Model.Deals.Count. Search or filter to narrow it down, or use the
+                        <strong>Table</strong> view to page through all of them.
+                    </span>
+                </div>
+            }
             <div class="pb-board">
                 @foreach (var stage in stages)
                 {
@@ -641,13 +670,14 @@
                 <table class="pb-table">
                     <thead>
                         <tr>
-                            <th>Deal</th>
-                            <th>Company</th>
-                            <th>Stage</th>
-                            <th class="n">Value</th>
-                            <th class="n">Prob.</th>
+                            @* 096 — sortable on the server; the links carry View=table. *@
+                            <th aria-sort="@sorter.AriaSort("title")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "title", "Deal"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("company")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "company", "Company"))" /></th>
+                            <th aria-sort="@sorter.AriaSort("stage")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "stage", "Stage"))" /></th>
+                            <th class="n" aria-sort="@sorter.AriaSort("value")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "value", "Value"))" /></th>
+                            <th class="n" aria-sort="@sorter.AriaSort("probability")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "probability", "Prob."))" /></th>
                             <th>Owner</th>
-                            <th>Closes</th>
+                            <th aria-sort="@sorter.AriaSort("close")"><partial name="_SortHeader" model="@(new SortHeaderVm(sorter, "close", "Closes"))" /></th>
                             @foreach (var col in cfCols)
                             {
                                 <th>@col.Label</th>
@@ -656,7 +686,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @if (!Model.Deals.Any())
+                        @if (!Model.TableDeals.Any())
                         {
                             <tr>
                                 <td colspan="@(8 + cfCols.Count)" class="pb-empty">
@@ -672,7 +702,7 @@
                                 </td>
                             </tr>
                         }
-                        @foreach (var deal in Model.Deals)
+                        @foreach (var deal in Model.TableDeals)
                         {
                             <tr>
                                 <td>
@@ -725,6 +755,10 @@
                     </tbody>
                 </table>
             </div>
+
+            @* 096 — the shared pager. Every link carries the filters, the
+               sort and View=table, so the next page is still the table. *@
+            <partial name="_Pager" model="Model.Pager" />
         </div>
     }
 </div>

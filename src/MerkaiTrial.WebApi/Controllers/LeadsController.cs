@@ -38,6 +38,10 @@
 //   8. Policies.* constants instead of "Leads.Read"-style literals, as for
 //      Contacts (075), Deals (077) and Companies (078). The literals only
 //      worked because policy names compare case-insensitively.
+//
+// 096 — GET /api/leads takes ?sort= and ?dir= (name, status, score, value,
+//   created). Checked against a fixed list in the handler; anything else
+//   is the default order.
 // =====================================================================
 
 using MerkaiTrial.Application.Authorization;            // 079
@@ -134,6 +138,8 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] string? status = null,
             [FromQuery] string? assignedTo = null,
             [FromQuery(Name = "cf")] string[]? cf = null,            // 079
+            [FromQuery] string? sort = null,                         // 096
+            [FromQuery] string? dir = null,                          // 096
             CancellationToken cancellationToken = default)
         {
             try
@@ -154,7 +160,9 @@ namespace MerkaiTrial.WebApi.Controllers
                     SearchTerm: searchTerm,
                     Status: status,
                     AssignedTo: assignedTo,
-                    CustomFilters: customFilters
+                    CustomFilters: customFilters,
+                    Sort: sort,                                          // 096
+                    Dir: dir
                 );
 
                 var result = await _getPaginatedHandler.Handle(query, cancellationToken);

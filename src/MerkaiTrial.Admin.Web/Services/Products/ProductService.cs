@@ -29,6 +29,10 @@
 //
 // 5. The ?tenantId= on every URL is kept for older API builds; the API
 //    now takes the workspace from the token and ignores it.
+//
+// 6. (096) GetListAsync takes the sort column and direction (optional,
+//    last), sent as ?sort=&dir=. GetAllAsync never sends them, so the
+//    catalogue callers keep the catalogue order.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
@@ -73,7 +77,9 @@ namespace MerkaiTrial.Admin.Web.Services.Products
              string? category,
              bool? isActive,
              string? searchTerm,
-             IReadOnlyList<CustomFieldFilter>? customFilters);
+             IReadOnlyList<CustomFieldFilter>? customFilters,
+             string? sort = null,      // 096
+             string? dir = null);
 
         Task<ProductStatsDto> GetStatsAsync(Guid tenantId);
         Task<ProductDto> GetByIdAsync(Guid tenantId, Guid productId);
@@ -103,7 +109,8 @@ namespace MerkaiTrial.Admin.Web.Services.Products
         /// <summary>080. The one place the list URL is built.</summary>
         private static string BuildListUrl(
             Guid tenantId, int pageNumber, int pageSize, string? category, bool? isActive,
-            string? searchTerm, string? currency, IReadOnlyList<CustomFieldFilter>? customFilters)
+            string? searchTerm, string? currency, IReadOnlyList<CustomFieldFilter>? customFilters,
+            string? sort = null, string? dir = null)
         {
             var url = $"api/products?tenantId={tenantId}&pageNumber={pageNumber}&pageSize={pageSize}";
 
@@ -126,6 +133,10 @@ namespace MerkaiTrial.Admin.Web.Services.Products
             // free text and may contain anything.
             foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
                 url += $"&cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}";
+
+            // 096 — note 6.
+            if (!string.IsNullOrWhiteSpace(sort)) url += $"&sort={Uri.EscapeDataString(sort)}";
+            if (!string.IsNullOrWhiteSpace(dir))  url += $"&dir={Uri.EscapeDataString(dir)}";
 
             return url;
         }
@@ -159,12 +170,14 @@ namespace MerkaiTrial.Admin.Web.Services.Products
             string? category,
             bool? isActive,
             string? searchTerm,
-            IReadOnlyList<CustomFieldFilter>? customFilters)
+            IReadOnlyList<CustomFieldFilter>? customFilters,
+            string? sort = null,
+            string? dir = null)
         {
             try
             {
                 var url = BuildListUrl(tenantId, pageNumber, pageSize, category, isActive,
-                                       searchTerm, null, customFilters);
+                                       searchTerm, null, customFilters, sort, dir);
                 return await _apiService.GetAsync<PaginatedResult<ProductListItem>>(url)
                        ?? new PaginatedResult<ProductListItem>();
             }

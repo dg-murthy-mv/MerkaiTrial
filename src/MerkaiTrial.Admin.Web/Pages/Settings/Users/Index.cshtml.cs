@@ -31,10 +31,31 @@
 //        • at most 5 per person per hour, so a stuck button can't flood
 //          someone's inbox
 //   ✅ "Invite" now EMAILS the invite as well as showing the link once.
+//
+// CHANGES (096 — the shared list pieces, and three small bugs)
+//   ✅ The shared _ListToolbar (search + "1–10 of 14 people") and _Pager
+//      replace the hand-built search card and the old _Pagination partial.
+//      `public int Page` is PageNumber now — like every other list, and no
+//      longer a property hiding PageModel.Page(). 10 per page by default;
+//      the size a person picks is remembered on their browser.
+//   ✅ EVERY ACTION KEEPS YOUR PLACE. Deactivate, Reactivate, Reset
+//      password and Invite redirected to page 1 with no search; they come
+//      back to the same page of the same search now.
+//   ✅ A NAME WITH AN APOSTROPHE BROKE DEACTIVATE. The confirm text was
+//      built inside onsubmit="return confirm('… {FullName} …')", so
+//      "Deactivate O'Brien?" was a JavaScript syntax error — and a throwing
+//      onsubmit does not return false, so the form posted WITHOUT asking.
+//      The text is a data-confirm attribute now, read by one listener.
+//      (Leads had the same bug, fixed in 031.)
+//   ✅ A FAILED LOAD USED TempData on a response that renders, so the
+//      error appeared one page late. It is PageError now, shown here.
+//   ✅ "Last signed in" is in the workspace's date format and timezone
+//      (FormatDate) — it printed the UTC date in "d MMM yyyy".
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
 using MerkaiTrial.Admin.Web.Pages.Account;            // 086
+using MerkaiTrial.Admin.Web.Pages.Shared;             // 096 — the shared list pieces
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Users;
@@ -45,6 +66,7 @@ using MerkaiTrial.Application.Services.Notifications; // 086
 using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.Users;
 
@@ -81,8 +103,73 @@ public class IndexModel : AuthorizedPageModel
        ?? "TenantAdmin";
 
     [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
-    [BindProperty(SupportsGet = true)] public int Page { get; set; } = 1;
-    [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = 10;
+    [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;            // 096 — was Page
+    [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = PagerVm.DefaultSize;
+
+    /// <summary>096. A failed load, for THIS response (not TempData — it would show one page late).</summary>
+    public string? PageError { get; private set; }
+
+    // ── 096: the shared toolbar and pager ─────────────────────────────
+
+    private int TotalCount => Users?.TotalCount ?? 0;
+    private int FirstRow   => TotalCount == 0 ? 0 : (PageNumber - 1) * PageSize + 1;
+    private int LastRow    => Math.Min(PageNumber * PageSize, TotalCount);
+
+    public bool IsFiltered => !string.IsNullOrWhiteSpace(SearchTerm);
+
+    /// <summary>The search — what the pager and every form carry.</summary>
+    public Dictionary<string, string> FilterRoute()
+    {
+        var route = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(SearchTerm)) route[nameof(SearchTerm)] = SearchTerm.Trim();
+        return route;
+    }
+
+    /// <summary>The search, the page and the size — the hidden fields of every action form.</summary>
+    public Dictionary<string, string> StateRoute()
+    {
+        var route = FilterRoute();
+        route[nameof(PageNumber)] = PageNumber.ToString();
+        route[nameof(PageSize)]   = PageSize.ToString();
+        return route;
+    }
+
+    public ListToolbarVm Toolbar => new()
+    {
+        SearchName        = nameof(SearchTerm),
+        SearchValue       = SearchTerm,
+        SearchPlaceholder = "Name or email",
+        SearchLabel       = "Search people",
+        SearchWidth       = "300px",
+        Carry             = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+        ClearRoute        = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+        IsFiltered        = IsFiltered,
+        TotalCount        = TotalCount,
+        FirstRow          = FirstRow,
+        LastRow           = LastRow,
+        NounSingular      = "person",
+        NounPlural        = "people"
+    };
+
+    public PagerVm Pager => new()
+    {
+        Page       = PageNumber,
+        PageSize   = PageSize,
+        TotalCount = TotalCount,
+        TotalPages = TotalCount == 0 ? 1 : (int)Math.Ceiling(TotalCount / (double)PageSize),
+        PageField  = nameof(PageNumber),
+        Route      = FilterRoute()
+    };
+
+    /// <summary>Back to the same page of the same search after an action. A RouteValueDictionary — RedirectToPage reflects over plain objects.</summary>
+    private RouteValueDictionary ReturnRoute()
+    {
+        var values = new RouteValueDictionary();
+        foreach (var (k, v) in FilterRoute()) values[k] = v;
+        values[nameof(PageNumber)] = Math.Max(PageNumber, 1);
+        values[nameof(PageSize)]   = PagerVm.Sizes.Contains(PageSize) ? PageSize : PagerVm.DefaultSize;
+        return values;
+    }
 
     /// <summary>Set after a resend. Shown once, same as on create.</summary>
     public string? InviteUrl { get; set; }
@@ -99,8 +186,9 @@ public class IndexModel : AuthorizedPageModel
         var permissionCheck = await ValidatePermissionAsync(Actions.Read);
         if (permissionCheck != null) return permissionCheck;
 
-        if (PageSize < 5) PageSize = 5;
-        if (PageSize > 100) PageSize = 100;
+        // 096 — the URL's size, else this browser's last choice, else 10.
+        PageSize   = ListPreferences.PageSize(HttpContext, "users");
+        PageNumber = Math.Max(PageNumber, 1);
 
         await InitializePermissionsAsync();
         await LoadDataAsync();
@@ -124,7 +212,7 @@ public class IndexModel : AuthorizedPageModel
         if (userId == me)
         {
             TempData["ErrorMessage"] = "You cannot deactivate your own account.";
-            return RedirectToPage(new { PageSize });
+            return RedirectToPage(ReturnRoute());   // 096
         }
 
         try
@@ -135,7 +223,7 @@ public class IndexModel : AuthorizedPageModel
             {
                 TempData["ErrorMessage"] =
                     "This is the only administrator. Make someone else an administrator first.";
-                return RedirectToPage(new { PageSize });
+                return RedirectToPage(ReturnRoute());   // 096
             }
 
             await _userService.UpdateStatusAsync(
@@ -155,7 +243,7 @@ public class IndexModel : AuthorizedPageModel
             TempData["ErrorMessage"] = "Could not update that user. Please try again.";
         }
 
-        return RedirectToPage(new { PageSize });
+        return RedirectToPage(ReturnRoute());   // 096
     }
 
     // =================================================================
@@ -185,6 +273,10 @@ public class IndexModel : AuthorizedPageModel
             InviteForEmail = user.Email;
             InviteEmailed  = invite.EmailQueued;
 
+            // 096 — this response RENDERS the list, on the page the form came from.
+            PageSize   = PagerVm.Sizes.Contains(PageSize) ? PageSize : PagerVm.DefaultSize;
+            PageNumber = Math.Max(PageNumber, 1);
+
             await InitializePermissionsAsync();
             await LoadDataAsync();
 
@@ -194,13 +286,13 @@ public class IndexModel : AuthorizedPageModel
         catch (InvalidOperationException ex)
         {
             TempData["ErrorMessage"] = ex.Message;
-            return RedirectToPage(new { PageSize });
+            return RedirectToPage(ReturnRoute());   // 096
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to reissue invite for user {UserId}", userId);
             TempData["ErrorMessage"] = "Could not generate a new invite link. Please try again.";
-            return RedirectToPage(new { PageSize });
+            return RedirectToPage(ReturnRoute());   // 096
         }
     }
 
@@ -217,7 +309,7 @@ public class IndexModel : AuthorizedPageModel
         if (userId == CurrentUserService.GetCurrentUserId())
         {
             TempData["ErrorMessage"] = "To change your own password, sign out and use \"Forgot your password?\" on the sign-in page.";
-            return RedirectToPage(new { PageSize });
+            return RedirectToPage(ReturnRoute());   // 096
         }
 
         try
@@ -230,7 +322,7 @@ public class IndexModel : AuthorizedPageModel
             {
                 TempData["ErrorMessage"] =
                     $"{user.FirstName} has had several reset emails in the last hour. Ask them to check their spam folder, or try again later.";
-                return RedirectToPage(new { PageSize });
+                return RedirectToPage(ReturnRoute());   // 096
             }
 
             var result = await _accountEmails.IssuePasswordResetAsync(
@@ -254,7 +346,7 @@ public class IndexModel : AuthorizedPageModel
             TempData["ErrorMessage"] = "The reset email could not be sent. Please try again.";
         }
 
-        return RedirectToPage(new { PageSize });
+        return RedirectToPage(ReturnRoute());   // 096
     }
 
     // =================================================================
@@ -276,16 +368,35 @@ public class IndexModel : AuthorizedPageModel
         CurrentUserId = CurrentUserService.GetCurrentUserId();
         var tenantId  = CurrentUserService.GetCurrentTenantId();
 
+        // 096 — the stats tiles and the list load separately, so a failed
+        // stats call never empties the list.
         try
         {
             Stats = await _userService.GetStatsAsync(tenantId);
-            Users = await _userService.GetPaginatedAsync(tenantId, Page, PageSize, SearchTerm);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "User stats could not be loaded for tenant {TenantId}", tenantId);
+            Stats = new UserStatsDto(0, 0, 0, 0, 0);
+        }
+
+        try
+        {
+            Users = await _userService.GetPaginatedAsync(tenantId, PageNumber, PageSize, SearchTerm);
+
+            // A page past the end (the last person on it deactivated by a
+            // filter change, an old bookmark) → the last real page.
+            var lastPage = Users.TotalCount == 0 ? 1 : (int)Math.Ceiling(Users.TotalCount / (double)PageSize);
+            if (PageNumber > lastPage)
+            {
+                PageNumber = lastPage;
+                Users = await _userService.GetPaginatedAsync(tenantId, PageNumber, PageSize, SearchTerm);
+            }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load users for tenant {TenantId}", tenantId);
-            TempData["ErrorMessage"] = "Failed to load users. Please try again.";
-            Stats = new UserStatsDto(0, 0, 0, 0, 0);
+            PageError = "Failed to load users. Please try again.";        // 096 — not TempData
             Users = new PaginatedUsersResponse(new List<UserListItem>(), 0, 1, PageSize, 0);
         }
     }

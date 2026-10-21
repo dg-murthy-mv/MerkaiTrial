@@ -6,6 +6,8 @@
 // together here; split them back into two files if you prefer).
 //
 // NEW: GetAssigneesAsync, SetOutcomeAsync, ReassignAsync.
+// 096: GetUpcomingTasksAsync sends the query's Search and EntityType, each
+//   escaped (the assignee id is escaped too now).
 // tenantId is still sent on the query string for compatibility; the API
 // ignores it and uses the signed-in user.
 // =====================================================================
@@ -62,7 +64,10 @@ public class ActivityService : IActivityService
     {
         var url = $"api/activities/upcoming-tasks?tenantId={query.TenantId}" +
                   $"&daysAhead={query.DaysAhead}" +
-                  (query.AssignedToUserId != null ? $"&assignedToUserId={query.AssignedToUserId}" : "");
+                  (query.AssignedToUserId != null ? $"&assignedToUserId={Uri.EscapeDataString(query.AssignedToUserId)}" : "") +
+                  // 096
+                  (!string.IsNullOrWhiteSpace(query.Search) ? $"&search={Uri.EscapeDataString(query.Search.Trim())}" : "") +
+                  (!string.IsNullOrWhiteSpace(query.EntityType) ? $"&entityType={Uri.EscapeDataString(query.EntityType)}" : "");
 
         return await _api.GetAsync<List<ActivityDto>>(url);
     }

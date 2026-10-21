@@ -35,6 +35,14 @@
 //        is emptied.
 //   8. (092) The list's filters moved to LeadListFilter.Apply, unchanged
 //        in meaning, so the Export button applies the very same ones.
+//   9. (096) SORTING AND THE OWNER COLUMN
+//        • GetLeadsPaginatedQuery.Sort / Dir (trailing, defaulted): name,
+//          status, score, value or created, either way, always ending with
+//          Id so paging stays stable. Anything else is the default order
+//          (newest first), as before. See ListSort.
+//        • OwnerName is FILLED IN. The list passed null for it, so every row
+//          on the Leads page read "Unassigned" whoever owned the lead. One
+//          query for the page's owners, the way the deal list does it.
 // NOTE: Date formatting is NOT done in handlers — UTC always returned.
 //       Call _tenantService.FormatDate(utc) in your Razor Page models.
 // =====================================================================
@@ -59,6 +67,7 @@ namespace MerkaiTrial.Application.Commands.Leads
     /// <summary>
     /// 079: CustomFilters is optional and TRAILING, so every existing
     /// `new GetLeadsPaginatedQuery(...)` still compiles and means the same.
+    /// 096: Sort and Dir likewise — see note 9.
     /// </summary>
     public record GetLeadsPaginatedQuery(
         Guid TenantId,
@@ -67,13 +76,18 @@ namespace MerkaiTrial.Application.Commands.Leads
         string? SearchTerm = null,
         string? Status = null,
         string? AssignedTo = null,
-        IReadOnlyList<CustomFieldFilter>? CustomFilters = null
+        IReadOnlyList<CustomFieldFilter>? CustomFilters = null,
+        string? Sort = null,
+        string? Dir = null
     );
 
     public class GetLeadsPaginatedHandler : ICommandHandler
     {
         /// <summary>079. The most rows one page can ask for.</summary>
         public const int MaxPageSize = 100;
+
+        /// <summary>096. The column keys the list can be sorted by.</summary>
+        public static readonly string[] SortKeys = { "name", "status", "score", "value", "created" };
 
         private readonly FlowDbContext _context;
         private readonly ICurrentTenantService _tenantService; // FIX 1
@@ -133,9 +147,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
                 if (page > totalPages) page = totalPages;
 
-                var items = await leadsQuery
-                    .OrderByDescending(l => l.CreatedAtUtc)
-                    .ThenBy(l => l.Id)              // 079 — stable: paging never repeats or skips a row
+                var items = await Ordered(leadsQuery, query.Sort, query.Dir)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .Select(l => new LeadListItem(
@@ -158,6 +170,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ))
                     .ToListAsync(cancellationToken);
 
+                // 096 — the owners' names, one query for the page (note 9).
+                items = await WithOwnerNamesAsync(tenantId, items, cancellationToken);
+
                 // 079 — the "On list" custom values, this page only, one query.
                 var listValues = await CustomFieldListQuery.ListValuesAsync(
                     _context, tenantId, defs, items.Select(i => i.Id).ToList(), cancellationToken);
@@ -179,6 +194,70 @@ namespace MerkaiTrial.Application.Commands.Leads
                 _logger.LogError(ex, "Error getting paginated leads for tenant {TenantId}", query.TenantId);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// 096. The requested order, ending with Id. No sort (or one this
+        /// list does not offer) is the original default: newest first.
+        /// </summary>
+        private static IOrderedQueryable<Lead> Ordered(IQueryable<Lead> leads, string? sort, string? dir)
+        {
+            var key = ListSort.Key(sort, SortKeys);
+
+            // Text columns read A→Z first; numbers and dates biggest/newest first.
+            var desc = ListSort.IsDescending(dir, fallback: key is not ("name" or "status"));
+
+            IOrderedQueryable<Lead> ordered = key switch
+            {
+                "name"   => leads.OrderByDir(l => l.FullName, desc),
+                "status" => leads.OrderByDir(l => l.Status, desc),
+                "score"  => leads.OrderByDir(l => l.Score, desc),
+                "value"  => leads.OrderByDir(l => l.EstimatedValue ?? 0m, desc),
+                "created"=> leads.OrderByDir(l => l.CreatedAtUtc, desc),
+                _        => leads.OrderByDescending(l => l.CreatedAtUtc)
+            };
+
+            // A secondary order for the ties, then Id (079 — stable paging).
+            if (key is not (null or "created"))
+                ordered = ordered.ThenByDescending(l => l.CreatedAtUtc);
+
+            return ordered.ThenBy(l => l.Id);
+        }
+
+        /// <summary>
+        /// 096. Fills OwnerName for the page's rows. OwnerUserId is a string
+        /// that may differ in case from the user's Guid, so ids are parsed
+        /// and matched as Guids. An owner who no longer exists stays null,
+        /// and the page shows "Unassigned" as before.
+        /// </summary>
+        private async Task<List<LeadListItem>> WithOwnerNamesAsync(
+            Guid tenantId, List<LeadListItem> items, CancellationToken ct)
+        {
+            var ownerIds = items
+                .Select(i => Guid.TryParse(i.OwnerUserId, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct()
+                .ToList();
+
+            if (ownerIds.Count == 0) return items;
+
+            // Users has no global filter (sign-in needs it unfiltered), so
+            // the tenant condition here is what scopes it.
+            var owners = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.TenantId == tenantId && ownerIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FirstName, u.LastName })
+                .ToListAsync(ct);
+
+            // Joined in memory: SQL concatenation with a NULL LastName
+            // would return NULL for the whole name.
+            var names = owners.ToDictionary(u => u.Id, u => $"{u.FirstName} {u.LastName}".Trim());
+
+            return items
+                .Select(i => Guid.TryParse(i.OwnerUserId, out var g) && names.TryGetValue(g, out var name)
+                    ? i with { OwnerName = name }
+                    : i)
+                .ToList();
         }
     }
 

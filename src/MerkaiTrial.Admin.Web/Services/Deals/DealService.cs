@@ -17,6 +17,9 @@
 //   8.  GetAllAsync takes optional custom field filters, sent as repeated
 //       ?cf= values. Optional and last, so every existing caller (the
 //       dashboard, reports, the quote pages) is unchanged.
+//  10.  (096) GetAllAsync takes the sort column and direction (optional,
+//       last), sent as ?sort=&dir= — for the Pipeline's table view.
+//
 //   9.  CreateAsync / UpdateAsync let an InvalidOperationException through
 //       WITHOUT an ERROR log. That is how the API's 400 { error } arrives
 //       ("Contract term is required."), and a person leaving a required
@@ -35,7 +38,8 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
         // Core CRUD
         Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
             string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null);   // 077
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,   // 077
+            string? sort = null, string? dir = null);                 // 096
         Task<DealDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<DealDetailDto> GetDetailAsync(Guid tenantId, Guid id);
         Task<DealDto> CreateAsync(CreateDealDto dto);
@@ -86,7 +90,8 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
 
         public async Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
             string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
-            IReadOnlyList<CustomFieldFilter>? customFilters = null)
+            IReadOnlyList<CustomFieldFilter>? customFilters = null,
+            string? sort = null, string? dir = null)
         {
             try
             {
@@ -98,6 +103,10 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
                 // 077 — escaped as a whole: the value part is free text.
                 foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
                     query += $"&cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}";
+
+                // 096 — note 10.
+                if (!string.IsNullOrWhiteSpace(sort)) query += $"&sort={Uri.EscapeDataString(sort)}";
+                if (!string.IsNullOrWhiteSpace(dir))  query += $"&dir={Uri.EscapeDataString(dir)}";
 
                 return await _api.GetAsync<GetDealsResponse>(query);
             }

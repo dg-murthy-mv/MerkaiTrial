@@ -18,9 +18,21 @@
 //   The two token calls NEVER log the token whole: it is the customer
 //   link's entire security. Failures there come back as null, so the
 //   public page shows its "link not valid" state instead of an error.
+//
+// CHANGES (096 — the Invoices page)
+//   + GetPagedAsync — one page of the list from GET api/invoices/paged:
+//     search, status, issue dates, sort, custom field filters. It THROWS
+//     when the list cannot be loaded, so the page says so instead of
+//     showing "No invoices yet" to a workspace that has hundreds.
+//     GetAllAsync is unchanged (quote and deal pages; empty on failure).
+//   Dates go out as yyyy-MM-dd: the filter is on the ISSUE DATE, a
+//   date-only column, so a time and a zone would only invite the API to
+//   shift it.
 // =====================================================================
 
+using System.Globalization;
 using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Application.Configuration;   // 096 — CustomFieldFilterCodec
 using MerkaiTrial.Application.DTOs;
 
 namespace MerkaiTrial.Admin.Web.Services.Invoices
@@ -34,6 +46,18 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
             string? status = null,
             DateTime? fromDate = null,
             DateTime? toDate = null);
+
+        /// <summary>096. One page of the Invoices list. Throws when it cannot be loaded.</summary>
+        Task<PaginatedResult<InvoiceListItem>> GetPagedAsync(
+            int pageNumber,
+            int pageSize,
+            string? search = null,
+            string? status = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            string? sort = null,
+            string? dir = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null);
 
         Task<InvoiceDto> GetByIdAsync(Guid tenantId, Guid id);
 
@@ -111,6 +135,46 @@ namespace MerkaiTrial.Admin.Web.Services.Invoices
             {
                 _logger.LogError(ex, "Failed to get invoices for tenant {TenantId}", tenantId);
                 return new List<InvoiceListItem>();
+            }
+        }
+
+        public async Task<PaginatedResult<InvoiceListItem>> GetPagedAsync(
+            int pageNumber,
+            int pageSize,
+            string? search = null,
+            string? status = null,
+            DateTime? fromDate = null,
+            DateTime? toDate = null,
+            string? sort = null,
+            string? dir = null,
+            IReadOnlyList<CustomFieldFilter>? customFilters = null)
+        {
+            var q = new List<string>
+            {
+                $"pageNumber={pageNumber}",
+                $"pageSize={pageSize}"
+            };
+
+            if (!string.IsNullOrWhiteSpace(search)) q.Add($"search={Uri.EscapeDataString(search.Trim())}");
+            if (!string.IsNullOrWhiteSpace(status)) q.Add($"status={Uri.EscapeDataString(status)}");
+            if (fromDate.HasValue) q.Add($"fromDate={fromDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+            if (toDate.HasValue)   q.Add($"toDate={toDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+            if (!string.IsNullOrWhiteSpace(sort)) q.Add($"sort={Uri.EscapeDataString(sort)}");
+            if (!string.IsNullOrWhiteSpace(dir))  q.Add($"dir={Uri.EscapeDataString(dir)}");
+
+            // Escaped as a whole: the value part is free text.
+            foreach (var f in customFilters ?? Array.Empty<CustomFieldFilter>())
+                q.Add($"cf={Uri.EscapeDataString(CustomFieldFilterCodec.Encode(f))}");
+
+            try
+            {
+                return await _apiService.GetAsync<PaginatedResult<InvoiceListItem>>($"api/invoices/paged?{string.Join("&", q)}")
+                       ?? new PaginatedResult<InvoiceListItem>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load the invoices page");
+                throw;
             }
         }
 

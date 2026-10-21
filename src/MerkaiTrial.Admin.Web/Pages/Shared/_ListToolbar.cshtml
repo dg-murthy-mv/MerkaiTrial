@@ -40,6 +40,12 @@
    and each filter to the form (max-width 100%); the browser shortens a
    long choice in the closed box and shows it whole when opened.
 
+   096: DATES. Model.Dates draws <input type="date"> boxes after the
+   dropdowns (the Invoices page's issued-from / issued-to), each with a
+   short word before it. They post yyyy-MM-dd whatever the browser's
+   language, which is what the page binds. Carry now also holds the
+   list's Sort/Dir, so a search keeps the order you chose.
+
    ── NO NESTED FORMS ─────────────────────────────────────────────────
 
    The count on the right is a span, not a control, and the Clear link is
@@ -64,6 +70,9 @@
         .lt-bar .lt-search { width: 100% !important; }
         .lt-bar .lt-filter { flex: 1 1 40%; width: auto !important; min-width: 0; }
         .lt-bar .lt-count { margin-left: 0 !important; width: 100%; }
+        .lt-bar .lt-date { flex: 1 1 45%; min-width: 0; }
+        .lt-bar .lt-date .lt-count { width: auto; }
+        .lt-bar .lt-date input { flex: 1 1 auto; min-width: 0; width: 100% !important; }
     }
 </style>
 
@@ -104,6 +113,19 @@
                     <option value="@option.Value" selected="@option.Selected">@option.Text</option>
                 }
             </select>
+        }
+
+        @foreach (var date in Model.Dates)
+        {
+            @* 096. ISO in and out — see the header. The word is visible
+               (a date box alone does not say which end of the range it
+               is) and doubles as the accessible name. *@
+            <label class="lt-date d-flex align-items-center gap-1 mb-0">
+                <span class="lt-count">@date.Label</span>
+                <input type="date" name="@date.Name" value="@date.Value"
+                       class="form-control form-control-sm" style="width:auto;"
+                       min="1900-01-01" max="2199-12-31" />
+            </label>
         }
 
         <button class="btn btn-sm btn-outline-secondary" type="submit">

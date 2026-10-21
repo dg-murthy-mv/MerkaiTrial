@@ -52,6 +52,23 @@
 //      since been switched off) is still offered in its dropdown, marked,
 //      and selected — otherwise the list is filtered while the dropdown
 //      claims "All countries".
+//
+// 096 — SORTING, 10 PER PAGE, AND A STEADIER PAGE
+//
+//   9. SORTING. Company, Vertical, Country, Contacts, Deals and Added sort
+//      the whole list on the server; click again to flip. ?Sort=&Dir= ride
+//      along on every page link, search, filter, Clear and the delete
+//      dialog. No sort = by name, as before. Phones get a Sort menu.
+//
+//  10. 10 PER PAGE, like every other list (it was 25 here), and the size a
+//      person picks is remembered on their browser (ListPreferences).
+//
+//  11. THE STATS NO LONGER TAKE THE LIST DOWN — they were loaded in the
+//      list's try block, so a failed stats call replaced the list with
+//      "Failed to load companies".
+//
+//  12. The Deals column (and tile) counts a deal linked to the company
+//      directly, not only through one of its contacts (done by the API).
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Pages;
@@ -85,7 +102,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
         /// <summary>The toolbar form's id — the filter panel's inputs submit with it.</summary>
         public const string FilterFormId = "companiesFilter";
 
-        public const int DefaultPageSize = 25;
+        public const int DefaultPageSize = PagerVm.DefaultSize;   // 096 — 10, was 25
 
         public IndexModel(
             ICompanyService         companyService,
@@ -130,6 +147,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
 
         [BindProperty(SupportsGet = true)] public int PageNumber { get; set; } = 1;
         [BindProperty(SupportsGet = true)] public int PageSize { get; set; } = DefaultPageSize;
+        [BindProperty(SupportsGet = true)] public string? Sort { get; set; }    // 096
+        [BindProperty(SupportsGet = true)] public string? Dir { get; set; }     // 096
 
         private string? Vertical => string.IsNullOrWhiteSpace(VerticalFilter) ? null : VerticalFilter.Trim();
         private string? Country  => string.IsNullOrWhiteSpace(CountryFilter)  ? null : CountryFilter.Trim();
@@ -172,8 +191,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
             },
 
             // The page SIZE is carried; the page NUMBER never is (072).
-            Carry      = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
-            ClearRoute = new Dictionary<string, string> { [nameof(PageSize)] = PageSize.ToString() },
+            // 096: the sort too — a search or a Clear keeps your order.
+            Carry      = SizeAndSort(),
+            ClearRoute = SizeAndSort(),
 
             IsFiltered   = IsFiltered,
             TotalCount   = TotalCount,
@@ -193,9 +213,54 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
             Route      = FilterRoute()
         };
 
+        // ── Sorting (096, note 9) ─────────────────────────────────────
+
+        public static readonly SortOption[] SortOptions =
+        {
+            new("name",     "Company"),
+            new("vertical", "Vertical"),
+            new("country",  "Country"),
+            new("contacts", "Contacts", DefaultDescending: true),
+            new("deals",    "Deals",    DefaultDescending: true),
+            new("created",  "Added",    DefaultDescending: true, AscLabel: "oldest first", DescLabel: "newest first")
+        };
+
+        private ListSortVm SortState(Dictionary<string, string>? route = null) => new()
+        {
+            Options    = SortOptions,
+            Sort       = Sort,
+            Dir        = Dir,
+            DefaultKey = "name",          // the API's order when none is asked for
+            Route      = route ?? new Dictionary<string, string>()
+        };
+
+        /// <summary>The headers' and the phone menu's links: every filter and the size, never the page or the sort.</summary>
+        public ListSortVm Sorter
+        {
+            get
+            {
+                var route = FilterRoute();
+                route.Remove(nameof(Sort));
+                route.Remove(nameof(Dir));
+                route[nameof(PageSize)] = PageSize.ToString();
+                return SortState(route);
+            }
+        }
+
+        /// <summary>The page size and the current sort — what a search or a Clear keeps.</summary>
+        private Dictionary<string, string> SizeAndSort()
+        {
+            var route = SortState().Current();
+            route[nameof(PageSize)] = PageSize.ToString();
+            return route;
+        }
+
+        /// <summary>096. "Clear the search and filters": the page size and the sort, nothing else.</summary>
+        public Dictionary<string, string> ClearAllRoute() => SizeAndSort();
+
         /// <summary>
         /// The toolbar's filters as route values, WITHOUT the custom ones —
-        /// what the panel's "Clear these" keeps.
+        /// what the panel's "Clear these" keeps. 096: and the sort.
         /// </summary>
         private Dictionary<string, string> ToolbarRoute()
         {
@@ -203,6 +268,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
             if (!string.IsNullOrWhiteSpace(SearchTerm)) route[nameof(SearchTerm)]     = SearchTerm.Trim();
             if (Vertical is { } v)                      route[nameof(VerticalFilter)] = v;
             if (Country  is { } c)                      route[nameof(CountryFilter)]  = c;
+            foreach (var (k, val) in SortState().Current()) route[k] = val;
             return route;
         }
 
@@ -391,7 +457,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
 
         private async Task LoadAsync(IEnumerable<KeyValuePair<string, StringValues>> query)
         {
-            PageSize   = ClampPageSize(PageSize);
+            // 096 — the URL's size, else this browser's last choice, else 10.
+            PageSize   = ListPreferences.PageSize(HttpContext, "companies");
             PageNumber = Math.Max(PageNumber, 1);
 
             var tenantId = CurrentUserService.GetCurrentTenantId();
@@ -459,11 +526,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
             clear[nameof(PageSize)] = PageSize.ToString();
             CustomFilters.ClearRoute = clear;
 
-            // ── The list ──────────────────────────────────────────────
+            // ── The tiles: never the reason the list fails (note 11) ──
             try
             {
                 Stats = await _companyService.GetStatsAsync(tenantId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Company stats could not be loaded");
+            }
 
+            // ── The list ──────────────────────────────────────────────
+            try
+            {
+                var sort = SortState();
                 PaginatedCompanies = await _companyService.GetAllAsync(
                     tenantId:       tenantId,
                     pageNumber:     PageNumber,
@@ -471,7 +547,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Companies
                     searchTerm:     SearchTerm,
                     verticalFilter: Vertical,
                     countryFilter:  Country,
-                    customFilters:  CustomFilters.Filters);
+                    customFilters:  CustomFilters.Filters,
+                    sort:           sort.ApiSort,                    // 096
+                    dir:            sort.ApiDir);
 
                 // The API pulls a page past the end back to the last one;
                 // follow it so the pager and the count agree with the rows.

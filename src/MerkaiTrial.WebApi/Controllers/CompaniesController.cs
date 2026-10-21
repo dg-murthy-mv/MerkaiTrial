@@ -34,6 +34,10 @@
 //
 //   • The plan-limit warning logged dto.TenantId — whatever the browser
 //     sent, usually Guid.Empty. It logs the server-resolved tenant now.
+//
+// 096 — GET /api/companies takes ?sort= and ?dir= (name, country,
+//   vertical, contacts, deals, created), checked against a fixed list in
+//   the handler.
 // =====================================================================
 
 using MerkaiTrial.Application.Authorization;
@@ -96,6 +100,8 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery] string? vertical = null,
             [FromQuery] string? country = null,
             [FromQuery(Name = "cf")] string[]? cf = null,           // 078
+            [FromQuery] string? sort = null,                        // 096
+            [FromQuery] string? dir = null,                         // 096
             CancellationToken cancellationToken = default)
         {
             try
@@ -116,7 +122,9 @@ namespace MerkaiTrial.WebApi.Controllers
                     SearchTerm    = searchTerm,
                     Vertical      = vertical,
                     Country       = country,
-                    CustomFilters = customFilters
+                    CustomFilters = customFilters,
+                    Sort          = sort,                           // 096
+                    Dir           = dir
                 };
 
                 var result = await _getCompanies.Handle(query, cancellationToken);
