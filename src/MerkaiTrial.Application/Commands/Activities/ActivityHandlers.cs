@@ -68,6 +68,17 @@
 //   ActivityReadModel.EntityNamesAsync is no longer private, so the
 //   notification can name the lead or deal.
 //
+// 099 — A MERGED LEAD'S HISTORY ON THE KEPT LEAD'S TIMELINE
+//   A merge (093) moves the other lead's activities, tasks, notes, files and
+//   emails onto the kept lead, so those were already here. What stayed
+//   behind, on purpose, is its AUDIT history — when it was added and its
+//   status changes — because rewriting an audit row would make it say
+//   something that never happened. The timeline now READS that history
+//   from the merged lead, labelled "from merged lead <name>", through the
+//   LeadMerged audit rows that link the two. Nothing is copied. A lead
+//   that was itself the result of earlier merges brings theirs too (up to
+//   five levels, fifty leads — far beyond anything real).
+//
 // GLOBAL QUERY FILTERS: nothing here uses IgnoreQueryFilters. Every query
 // also carries an explicit TenantId, which the filter agrees with, so the
 // two layers never contradict each other.
@@ -1160,6 +1171,33 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Select(l => new { l.Id, l.Data, l.CreatedAtUtc, l.By })
                         .ToListAsync(ct);
 
+                // ── 099: leads merged into this one, and their history ───
+                var merged = leadIdForStatus == Guid.Empty
+                    ? new List<(Guid Id, string Name)>()
+                    : await MergedLeadsAsync(query.TenantId, leadIdForStatus, ct);
+                var mergedIds = merged.Select(m => m.Id).ToList();
+                // AuditLog.EntityId is nullable; compared as Guid? either way.
+                var mergedIdsN = mergedIds.Select(id => (Guid?)id).ToList();
+                var mergedNames = merged.ToDictionary(m => m.Id, m => m.Name);
+
+                var mergedStatus = mergedIds.Count == 0
+                    ? new()
+                    : await _db.Set<AuditLog>().AsNoTracking()
+                        .Where(l => l.TenantId == query.TenantId &&
+                                    l.EntityType == AuditEntityType.Lead &&
+                                    mergedIdsN.Contains((Guid?)l.EntityId) &&
+                                    l.Action == AuditAction.LeadStatusChanged)
+                        .Select(l => new { l.Id, EntityId = (Guid?)l.EntityId, l.Data, l.CreatedAtUtc, l.By })
+                        .ToListAsync(ct);
+
+                // Deleted by the merge, still there to read: no IsDeleted condition.
+                var mergedCreated = mergedIds.Count == 0
+                    ? new()
+                    : await _db.Leads.AsNoTracking()
+                        .Where(l => l.TenantId == query.TenantId && mergedIds.Contains(l.Id))
+                        .Select(l => new { l.Id, l.FullName, l.CreatedAtUtc, l.CreatedBy })
+                        .ToListAsync(ct);
+
                 // ── 083: emails ──────────────────────────────────────────
                 var dealContactId = query.EntityType != ActivityEntityType.Deal
                     ? Guid.Empty
@@ -1195,6 +1233,8 @@ namespace MerkaiTrial.Application.Commands.Activities
                         .Concat(stageChanges.Select(h => h.ChangedBy))
                         .Concat(statusChanges.Select(s => s.By))
                         .Concat(emails.Select(e => e.ForwardedByUserId?.ToString()))    // 083
+                        .Concat(mergedStatus.Select(s => s.By))                          // 099
+                        .Concat(mergedCreated.Select(c => c.CreatedBy))                  // 099
                         .Append(creation.CreatedBy), ct);
 
                 string? Who(string? stored) => ActivityReadModel.Lookup(names, stored) ?? stored;
@@ -1250,22 +1290,26 @@ namespace MerkaiTrial.Application.Commands.Activities
 
                 foreach (var s in statusChanges)
                 {
-                    string? from = null, to = null;
-                    try
-                    {
-                        using var doc = System.Text.Json.JsonDocument.Parse(s.Data ?? "{}");
-                        from = doc.RootElement.TryGetProperty("from", out var f) ? f.GetString() : null;
-                        to = doc.RootElement.TryGetProperty("to", out var t) ? t.GetString() : null;
-                    }
-                    catch
-                    {
-                        // A malformed Data blob must not take the whole timeline
-                        // down — show the event without the detail.
-                    }
-
+                    var (from, to) = StatusFromTo(s.Data);
                     items.Add(new TimelineItemDto(s.Id, "StatusChange",
                         $"Status: {from ?? "—"} → {to ?? "—"}" + fromLeadStatus, null,
                         s.CreatedAtUtc, Who(s.By), "bi-flag", "bg-info"));
+                }
+
+                // 099 — the merged leads' own history, labelled as theirs.
+                string FromMerged(Guid id) => $" · from merged lead {mergedNames.GetValueOrDefault(id, "?")}";
+
+                foreach (var c in mergedCreated)
+                    items.Add(new TimelineItemDto(c.Id, "Created", "Lead created" + FromMerged(c.Id),
+                        "Lead '" + c.FullName + "' was created", c.CreatedAtUtc, Who(c.CreatedBy),
+                        "bi-plus-circle", "bg-secondary"));
+
+                foreach (var s in mergedStatus)
+                {
+                    var (from, to) = StatusFromTo(s.Data);
+                    items.Add(new TimelineItemDto(s.Id, "StatusChange",
+                        $"Status: {from ?? "—"} → {to ?? "—"}" + FromMerged(s.EntityId ?? Guid.Empty), null,
+                        s.CreatedAtUtc, Who(s.By), "bi-flag", "bg-secondary"));
                 }
 
                 // 083 — emails, each opening its own page.
@@ -1301,6 +1345,88 @@ namespace MerkaiTrial.Application.Commands.Activities
 
         private static string? Truncate(string? text) =>
             text is { Length: > 200 } ? text[..200] + "…" : text;
+
+        /// <summary>
+        /// The "from" / "to" status NAMES out of a LeadStatusChanged audit
+        /// row's Data. A malformed blob must not take the whole timeline down
+        /// — the event is shown without the detail.
+        /// </summary>
+        private static (string? From, string? To) StatusFromTo(string? data)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(data ?? "{}");
+                var from = doc.RootElement.TryGetProperty("from", out var f) && f.ValueKind == System.Text.Json.JsonValueKind.String ? f.GetString() : null;
+                var to = doc.RootElement.TryGetProperty("to", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.String ? t.GetString() : null;
+                return (from, to);
+            }
+            catch
+            {
+                return (null, null);
+            }
+        }
+
+        /// <summary>
+        /// 099. The leads merged into <paramref name="leadId"/> — and into
+        /// those, and so on — from the kept side's LeadMerged audit rows
+        /// ({ mergedFrom, mergedName }). Bounded: five levels, fifty leads.
+        /// </summary>
+        private async Task<List<(Guid Id, string Name)>> MergedLeadsAsync(Guid tenantId, Guid leadId, CancellationToken ct)
+        {
+            var found = new List<(Guid Id, string Name)>();
+            var seen = new HashSet<Guid> { leadId };
+            var frontier = new List<Guid?> { leadId };
+
+            for (var level = 0; level < 5 && frontier.Count > 0 && found.Count < 50; level++)
+            {
+                var rows = await _db.Set<AuditLog>().AsNoTracking()
+                    .Where(l => l.TenantId == tenantId &&
+                                l.EntityType == AuditEntityType.Lead &&
+                                l.Action == AuditAction.LeadMerged &&
+                                frontier.Contains((Guid?)l.EntityId))
+                    .Select(l => l.Data)
+                    .ToListAsync(ct);
+
+                var next = new List<Guid?>();
+                foreach (var data in rows)
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(data ?? "{}");
+                        if (!TryGet(doc.RootElement, "mergedFrom", out var fromEl) ||
+                            fromEl.ValueKind != System.Text.Json.JsonValueKind.String ||
+                            !Guid.TryParse(fromEl.GetString(), out var mergedId) ||
+                            !seen.Add(mergedId))
+                            continue;      // the removed lead's own row ({ mergedInto }), or seen already
+
+                        var name = TryGet(doc.RootElement, "mergedName", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String
+                            ? n.GetString() ?? "a merged lead"
+                            : "a merged lead";
+
+                        found.Add((mergedId, name));
+                        next.Add(mergedId);
+                        if (found.Count >= 50) break;
+                    }
+                    catch
+                    {
+                        // A malformed row is skipped, never fatal.
+                    }
+                }
+                frontier = next;
+            }
+
+            return found;
+        }
+
+        /// <summary>A property by name, ignoring case — however the audit writer cased it.</summary>
+        private static bool TryGet(System.Text.Json.JsonElement obj, string name, out System.Text.Json.JsonElement value)
+        {
+            if (obj.ValueKind == System.Text.Json.JsonValueKind.Object)
+                foreach (var p in obj.EnumerateObject())
+                    if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) { value = p.Value; return true; }
+            value = default;
+            return false;
+        }
 
         private async Task<TimelineItemDto?> CreationEventAsync(GetTimelineQuery query, CancellationToken ct)
         {

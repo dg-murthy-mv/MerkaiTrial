@@ -10,6 +10,12 @@
 //   approved templates already say "needs your approval" / "has been
 //   decided"; the Title repeated that. Nothing else in this file changed.
 //
+// CHANGES (097) — the decided headline is the short form Meta reviews in
+//   the samples: "Quote QUO-0042 approved" / "Quote QUO-0042 sent back for
+//   changes". "— ready to send" is gone: the detail already says who
+//   decided, and the bell's Title still says "you can send it now".
+//   Nothing else in this file changed.
+//
 // WHAT CHANGED (052a)
 //   One compile error, mine, from round 040 and carried into 052 because I
 //   rebuilt this file from the 040 copy. NotifyRequesterAsync asked for a
@@ -1414,8 +1420,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
                         // 086b: the template only says "has been decided" —
                         // so here the headline must carry WHICH way.
+                        // 097: the short form, as in the samples.
                         Headline: approve
-                            ? $"Quote {quoteNumber} approved — ready to send"
+                            ? $"Quote {quoteNumber} approved"
                             : $"Quote {quoteNumber} sent back for changes"),
                     new[] { request.RequestedByUserId }, ct);
 

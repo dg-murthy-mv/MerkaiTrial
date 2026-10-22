@@ -7,6 +7,7 @@
 
 @page "/Admin/Plans/Detail/{id:guid}"
 @model MerkaiTrial.Admin.Web.Pages.Admin.Plans.DetailModel
+@using MerkaiTrial.Application.Commands.Automation
 @{
     ViewData["Title"] = $"{Model.Plan.DisplayName} — Plan Details";
 
@@ -189,6 +190,40 @@
                                 <i class="bi bi-hdd display-6 text-info"></i>
                                 <div class="display-6 fw-bold mt-2">@((Model.Plan.StorageLimitBytes / 1_073_741_824m).ToString("N0", System.Globalization.CultureInfo.InvariantCulture))</div>
                                 <div class="text-muted small">Storage (GB)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 098: Automation rules — a separate card with its own form -->
+            <div class="card mb-4" id="automationLimitCard">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-lightning-charge"></i> Automation Rules</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-4">
+                            <div class="border rounded p-3 text-center h-100">
+                                <div class="display-6 fw-bold" id="automationLimitValue">@Model.MaxAutomationRules.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</div>
+                                <div class="text-muted small">@(Model.MaxAutomationRules == 0 ? "Not included" : "Switched-on rules allowed")</div>
+                            </div>
+                        </div>
+                        <div class="col-md-8">
+                            <form method="post" asp-page-handler="AutomationLimit" class="d-flex gap-2 align-items-end flex-wrap">
+                                <input type="hidden" name="id" value="@Model.Id" />
+                                <div>
+                                    <label class="form-label small mb-1" for="maxAutomationRules">Rules a workspace may have switched on</label>
+                                    <input type="number" class="form-control" id="maxAutomationRules" name="maxAutomationRules"
+                                           min="0" max="@SetPlanAutomationLimitHandler.Ceiling" step="1" value="@Model.MaxAutomationRules" style="max-width:160px" />
+                                </div>
+                                <button type="submit" class="btn btn-outline-primary" id="saveAutomationLimit">
+                                    <i class="bi bi-check-lg me-1"></i>Save
+                                </button>
+                            </form>
+                            <div class="small text-muted mt-2">
+                                0 = automation not included. Applies at once to every workspace on this plan.
+                                Lowering it never deletes or switches off anyone's rules — the newest ones over the limit simply stop running until there's room.
                             </div>
                         </div>
                     </div>

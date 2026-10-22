@@ -68,6 +68,7 @@
 // Importing 500 leads should not silently create 500 contacts.
 // =====================================================================
 
+using MerkaiTrial.Application.Commands.Automation;     // 098
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
@@ -770,7 +771,15 @@ public class CommitLeadImportHandler : ICommandHandler
     private readonly ILeadStatusResolver _statusResolver;
     private readonly IRecordScopeService _scope;
     private readonly IAuditService _audit;                 // 092
+    private readonly AutomationEngine _automation;         // 098
     private readonly ILogger<CommitLeadImportHandler> _logger;
+
+    /// <summary>
+    /// 098. "A lead is added" rules run for at most this many leads of one
+    /// import — a 20,000-row file must not hold the page for minutes. The
+    /// rest are imported as usual, without rules, and the log says so.
+    /// </summary>
+    public const int MaxLeadsForAutomation = 1000;
 
     public CommitLeadImportHandler(
         FlowDbContext db,
@@ -778,8 +787,10 @@ public class CommitLeadImportHandler : ICommandHandler
         ILeadStatusResolver statusResolver,
         IRecordScopeService scope,
         IAuditService audit,
-        ILogger<CommitLeadImportHandler> logger)
+        ILogger<CommitLeadImportHandler> logger,
+        AutomationEngine automation)                       // 098
     {
+        _automation = automation;
         _db = db;
         _audit = audit;
         _scope = scope;
@@ -822,6 +833,7 @@ public class CommitLeadImportHandler : ICommandHandler
 
         var now = DateTime.UtcNow;
         var imported = 0;
+        var createdIds = new List<Guid>();                 // 098 — for the automation rules
         var updated = 0;
 
         // Who ends up owning rows that name no owner, and which existing
@@ -953,6 +965,7 @@ public class CommitLeadImportHandler : ICommandHandler
                 // are written together or not at all.
                 StageCustom(leadId, r.CustomValues);
 
+                createdIds.Add(leadId);                    // 098
                 imported++;
             }
 
@@ -968,6 +981,19 @@ public class CommitLeadImportHandler : ICommandHandler
         }
 
         _sessions.Remove(request.SessionId);
+
+        // 098 — "a lead is added" rules, after the commit. Never throws.
+        if (createdIds.Count > 0)
+        {
+            if (createdIds.Count > MaxLeadsForAutomation)
+                _logger.LogWarning(
+                    "Import for tenant {TenantId} added {Count} leads; automation rules ran for the first {Max} only",
+                    request.TenantId, createdIds.Count, MaxLeadsForAutomation);
+
+            await _automation.RecordsCreatedAsync(
+                request.TenantId, AutomationEntity.Lead,
+                createdIds.Take(MaxLeadsForAutomation).ToList(), null, ct);
+        }
 
         var failed = rows.Where(r => r.Verdict == RowVerdict.Error).ToList();
         var skipped = rows.Count - imported - updated - failed.Count;

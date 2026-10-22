@@ -31,6 +31,9 @@
 // 093b: the required-field asterisks (span.text-danger, "*") are no longer
 // mistaken for an error. The first 093 run stopped at every warning with
 // "Add lead was refused: * | * | * | *".
+//
+// 099: ConvertLeadAsync waits for the pipeline page's DOMContentLoaded,
+// not its full "load" — a stalled CDN font failed one full run. See there.
 // =====================================================================
 
 using System.Globalization;
@@ -188,8 +191,13 @@ public static class Flows
 
         try
         {
+            // 099: DOMContentLoaded, not the full "load" event. One full run
+            // reached /Pipeline (the server answered 200 in 0.3s) and still
+            // failed here: "load" also waits for every font and stylesheet
+            // from the CDNs, and one of those stalled for 20 seconds. The
+            // page was there; the test was waiting for a font.
             await page.WaitForURLAsync(u => Ui.PathOf(u).StartsWith("/Pipeline", StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs, WaitUntil = WaitUntilState.DOMContentLoaded });
         }
         catch (Exception ex) when (Ui.IsTimeout(ex))
         {

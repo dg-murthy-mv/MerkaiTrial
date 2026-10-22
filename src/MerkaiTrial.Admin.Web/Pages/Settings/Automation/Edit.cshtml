@@ -1,0 +1,573 @@
+@page "{id:guid?}"
+@model MerkaiTrial.Admin.Web.Pages.Settings.Automation.EditModel
+@using System.Text.Json
+@using MerkaiTrial.Application.Commands.Automation
+@{
+    ViewData["Title"] = Model.IsNew ? "New automation rule" : "Edit automation rule";
+
+    // Operators per kind of field, with their words — the same lists the
+    // server accepts (AutomationOp.For), so the editor can't offer a
+    // comparison the server would refuse.
+    var kinds = new[] { AutomationFieldKind.Choice, AutomationFieldKind.User, AutomationFieldKind.Number,
+                        AutomationFieldKind.Text, AutomationFieldKind.Date, AutomationFieldKind.Checkbox };
+    var ops = kinds.ToDictionary(k => k, k => AutomationOp.For(k)
+        .Select(o => new { value = o, label = AutomationOp.Words(o, k), needsValue = AutomationOp.NeedsValue(o) }).ToList());
+    var opsJson = JsonSerializer.Serialize(ops);
+    var limits = JsonSerializer.Serialize(new
+    {
+        conditions = AutomationRuleCheck.MaxConditions,
+        actions = AutomationRuleCheck.MaxActions,
+        subject = AutomationRuleCheck.MaxSubjectLength,
+        message = AutomationRuleCheck.MaxMessageLength
+    });
+    var o = Model.Options;
+    var atLimit = o is not null && o.ActiveCount >= o.Limit;
+}
+@* (099) "time passes" joins the WHEN: no activity for N days, a deal's
+   close date coming up or passed, stuck in the same status / stage. Such a
+   rule has no "person who made the change", so that choice is not offered.
+   Custom fields can be watched for a change too.
+
+   (098) The rule editor: WHEN / IF / THEN, built in the browser from the
+   workspace's own lists and posted as one JSON field (see the page model).
+   Every check that matters is repeated on the server, which lists every
+   problem at once if a save is refused. *@
+
+<style>
+    .rules-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white; padding: 2rem 0; margin: -1rem -1rem 2rem -1rem; border-radius: 0 0 1rem 1rem;
+    }
+    .step-card { border-left: 4px solid #6366f1; }
+    .step-card.if   { border-left-color: #0ea5e9; }
+    .step-card.then { border-left-color: #22c55e; }
+    .step-word { font-weight: 800; letter-spacing: .06em; font-size: .78rem; color: #6366f1; }
+    .step-card.if .step-word   { color: #0284c7; }
+    .step-card.then .step-word { color: #15803d; }
+    .line-card {
+        border: 1px solid #e2e8f0; border-radius: 8px; padding: .7rem; margin-bottom: .6rem; background: #fafafa;
+    }
+    .line-card .form-label { font-size: .75rem; margin-bottom: .15rem; color: #475569; }
+    .line-card .form-control, .line-card .form-select { font-size: .85rem; }
+    .rr-list { max-height: 180px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px; padding: .4rem .6rem; background: #fff; }
+    .hint { font-size: .78rem; color: #64748b; }
+    .placeholder-chip { font-family: monospace; font-size: .75rem; background: #eef2ff; color: #4338ca; border-radius: 4px; padding: 0 .3rem; }
+    .save-bar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid #e2e8f0; padding: .85rem 0; margin-top: 1.5rem; z-index: 5; }
+</style>
+
+<div class="container-fluid">
+    <div class="rules-header">
+        <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h1 class="h3 mb-1"><i class="bi bi-lightning-charge me-2"></i>@(Model.IsNew ? "New rule" : "Edit rule")</h1>
+                <p class="mb-0 opacity-75">When something happens · if it matches · then do this</p>
+            </div>
+            <a asp-page="./Index" class="btn btn-light"><i class="bi bi-arrow-left me-1"></i>All rules</a>
+        </div>
+    </div>
+
+    @if (Model.SaveError is { } err)
+    {
+        <div class="alert alert-danger" role="alert" id="saveError">
+            <i class="bi bi-exclamation-octagon-fill me-1"></i>
+            @if (err.StartsWith("Please fix these: "))
+            {
+                <span>Please fix these:</span>
+                <ul class="mb-0 mt-1">
+                    @foreach (var line in err["Please fix these: ".Length..].Split(" · ", StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        <li>@line</li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <span>@err</span>
+            }
+        </div>
+    }
+
+    @if (!Model.IsNew && Model.RunCount > 0)
+    {
+        <div class="alert alert-light border small">
+            <i class="bi bi-info-circle me-1"></i>This rule has run @Model.RunCount time@(Model.RunCount == 1 ? "" : "s").
+            Changes apply from the next time it's set off; what it already did stays.
+        </div>
+    }
+
+    <form method="post" id="ruleForm">
+        <input type="hidden" asp-for="RuleJson" id="ruleJson" />
+
+        @* ── name ───────────────────────────────────────────────── *@
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold" for="ruleName">Name</label>
+                        <input type="text" class="form-control" id="ruleName" maxlength="@AutomationRuleCheck.MaxNameLength"
+                               placeholder="e.g. Big deals go to Arjun" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold" for="ruleDescription">Note <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" class="form-control" id="ruleDescription" maxlength="@AutomationRuleCheck.MaxDescriptionLength"
+                               placeholder="Why this rule exists, for whoever reads it next" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ── WHEN ───────────────────────────────────────────────── *@
+        <div class="card shadow-sm mb-3 step-card">
+            <div class="card-body">
+                <div class="step-word mb-2">WHEN</div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label" for="entityType">Records</label>
+                        <select class="form-select" id="entityType">
+                            <option value="Lead">Leads</option>
+                            <option value="Deal">Deals</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="trigger">Something happens</label>
+                        <select class="form-select" id="trigger">
+                            <option value="0">is added</option>
+                            <option value="1">a field changes</option>
+                            <option value="2">time passes</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5 d-none" id="triggerFieldWrap">
+                        <label class="form-label" for="triggerField">Which field</label>
+                        <select class="form-select" id="triggerField"></select>
+                    </div>
+                </div>
+                @* 099 — time-based *@
+                <div class="row g-3 mt-0 d-none align-items-end" id="timeWrap">
+                    <div class="col-md-8">
+                        <label class="form-label" for="timeKind">When the record…</label>
+                        <select class="form-select" id="timeKind"></select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="timeDays">Days</label>
+                        <input type="number" class="form-control" id="timeDays" min="0" max="365" step="1" />
+                    </div>
+                </div>
+                <div class="row g-3 mt-0 d-none" id="triggerValuesWrap">
+                    <div class="col-md-6">
+                        <label class="form-label" for="triggerFrom">From <span class="text-muted">(optional)</span></label>
+                        <span id="triggerFromHost"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="triggerTo">To <span class="text-muted">(optional)</span></label>
+                        <span id="triggerToHost"></span>
+                    </div>
+                </div>
+                <div class="hint mt-2" id="triggerHint"></div>
+            </div>
+        </div>
+
+        @* ── IF ─────────────────────────────────────────────────── *@
+        <div class="card shadow-sm mb-3 step-card if">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="step-word">IF <span class="text-muted fw-normal" style="letter-spacing:0">— all of these hold (optional)</span></div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="addCondition">
+                        <i class="bi bi-plus-lg me-1"></i>Add a condition
+                    </button>
+                </div>
+                <div id="conditions"></div>
+                <div class="hint" id="noConditions">No conditions — the rule runs every time.</div>
+            </div>
+        </div>
+
+        @* ── THEN ───────────────────────────────────────────────── *@
+        <div class="card shadow-sm mb-3 step-card then">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="step-word">THEN</div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="addAction">
+                        <i class="bi bi-plus-lg me-1"></i>Add an action
+                    </button>
+                </div>
+                <div id="actions"></div>
+                <div class="hint mt-1">
+                    In a task title, description or message you can use
+                    <span class="placeholder-chip">{name}</span> <span class="placeholder-chip">{owner}</span>
+                    <span class="placeholder-chip">{status}</span> <span class="placeholder-chip">{stage}</span>
+                    <span class="placeholder-chip">{value}</span> <span class="placeholder-chip">{rule}</span>.
+                    Actions run in order; if one can't be done, the others still run, and the change that set the rule off always stands.
+                </div>
+            </div>
+        </div>
+
+        <div class="save-bar">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" id="isActive" />
+                    <label class="form-check-label" for="isActive">Switched on</label>
+                    @if (o is not null)
+                    {
+                        <div class="hint" id="limitHint">
+                            @if (o.Limit <= 0)
+                            {
+                                <span>Your plan doesn't include automation — save it switched off for now.</span>
+                            }
+                            else
+                            {
+                                <span>@o.ActiveCount of @o.Limit switched-on rules in use on your plan.</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="d-flex gap-2">
+                    <a asp-page="./Index" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary" id="saveRule">
+                        <i class="bi bi-check-lg me-1"></i>Save rule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const OPTIONS = @Html.Raw(Model.OptionsJson);
+    const OPS     = @Html.Raw(opsJson);
+    const LIMITS  = @Html.Raw(limits);
+    const IS_NEW  = @(Model.IsNew ? "true" : "false");
+    const WAS_ACTIVE_AT_LIMIT = @(atLimit ? "true" : "false");
+
+    let rule;
+    try { rule = JSON.parse(document.getElementById('ruleJson').value || '{}'); } catch (e) { rule = {}; }
+    rule.conditions = rule.conditions || [];
+    rule.actions = rule.actions || [];
+    rule.entityType = rule.entityType || 'Lead';
+    rule.trigger = rule.trigger === 1 || rule.trigger === 'FieldChanged' ? 1
+                 : rule.trigger === 2 || rule.trigger === 'TimeBased' ? 2 : 0;
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fields = () => (OPTIONS.fields && OPTIONS.fields[rule.entityType]) || [];
+    const field  = key => fields().find(f => f.key === key);
+    const users  = OPTIONS.users || [];
+
+    // ── a value input that fits a field ─────────────────────────────
+    // choice / user → a list, number → number box, date → date box,
+    // checkbox → ticked / not ticked, text → text box.
+    function valueInput(f, value, cls, settable, allowBlank, blankLabel) {
+        const v = value ?? '';
+        if (!f) return `<input type="text" class="form-control ${cls}" value="${esc(v)}" disabled />`;
+        if (f.kind === 'choice' || f.kind === 'user') {
+            const list = (settable && f.settableOptions) ? f.settableOptions : (f.options || []);
+            let html = `<select class="form-select ${cls}">`;
+            if (allowBlank) html += `<option value="">${esc(blankLabel || 'Anything')}</option>`;
+            else if (!list.some(x => x.value === v)) html += `<option value="">Choose…</option>`;
+            for (const x of list) html += `<option value="${esc(x.value)}" ${x.value === v ? 'selected' : ''}>${esc(x.label)}</option>`;
+            return html + '</select>';
+        }
+        if (f.kind === 'checkbox') {
+            return `<select class="form-select ${cls}">
+                ${allowBlank ? `<option value="">${esc(blankLabel || 'Anything')}</option>` : ''}
+                <option value="true" ${v === 'true' ? 'selected' : ''}>Ticked</option>
+                <option value="false" ${v === 'false' ? 'selected' : ''}>Not ticked</option></select>`;
+        }
+        const type = f.kind === 'number' ? 'number' : f.kind === 'date' ? 'date' : 'text';
+        const step = f.kind === 'number' ? 'step="any"' : '';
+        return `<input type="${type}" ${step} class="form-control ${cls}" value="${esc(v)}" ${allowBlank ? `placeholder="${esc(blankLabel || 'Anything')}"` : ''} />`;
+    }
+
+    function personPicker(a, idx, what) {
+        // 099: nobody "made the change" when the clock set the rule off.
+        if (rule.trigger === 2 && a.assignTo === 'actor') a.assignTo = 'owner';
+        const who = a.assignTo || 'owner';
+        let html = `<label class="form-label">Who gets the ${what}</label>
+            <select class="form-select act-assign" data-i="${idx}">
+                <option value="owner" ${who === 'owner' ? 'selected' : ''}>The record's owner</option>
+                ${rule.trigger === 2 ? '' : `<option value="actor" ${who === 'actor' ? 'selected' : ''}>The person who made the change</option>`}
+                <option value="user" ${who === 'user' ? 'selected' : ''}>A particular person…</option>
+            </select>`;
+        if (who === 'user') {
+            html += `<select class="form-select mt-1 act-user" data-i="${idx}"><option value="">Choose a person…</option>`;
+            for (const u of users) html += `<option value="${esc(u.value)}" ${u.value === a.userId ? 'selected' : ''}>${esc(u.label)}</option>`;
+            html += '</select>';
+        }
+        return html;
+    }
+
+    // ── WHEN ────────────────────────────────────────────────────────
+    function renderWhen() {
+        $('entityType').value = rule.entityType;
+        $('trigger').value = String(rule.trigger);
+
+        const changed = rule.trigger === 1;
+        const timed = rule.trigger === 2;
+        $('triggerFieldWrap').classList.toggle('d-none', !changed);
+        $('triggerValuesWrap').classList.toggle('d-none', !changed);
+        $('timeWrap').classList.toggle('d-none', !timed);
+
+        const noun = rule.entityType === 'Deal' ? 'deal' : 'lead';
+
+        if (timed) {
+            const kinds = (OPTIONS.timeKinds && OPTIONS.timeKinds[rule.entityType]) || [];
+            if (!kinds.some(k => k.key === rule.timeKind)) {
+                rule.timeKind = kinds.length ? kinds[0].key : null;
+                rule.timeDays = kinds.length ? kinds[0].defaultDays : null;
+            }
+            const k = kinds.find(x => x.key === rule.timeKind);
+            $('timeKind').innerHTML = kinds.map(x =>
+                `<option value="${esc(x.key)}" ${x.key === rule.timeKind ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
+            if (k) {
+                $('timeDays').min = k.minDays; $('timeDays').max = k.maxDays;
+                if (rule.timeDays == null || rule.timeDays < k.minDays || rule.timeDays > k.maxDays) rule.timeDays = k.defaultDays;
+            }
+            $('timeDays').value = rule.timeDays ?? '';
+            $('triggerHint').textContent =
+                'Checked automatically every 15 minutes. Each ' + noun + ' gets this once per spell — if something happens on it ' +
+                'and later it comes round again, the rule runs again. ' +
+                (noun === 'deal' ? 'Won and lost deals are left alone.' : 'Leads already converted to deals are left alone.');
+            return;
+        }
+
+        if (!changed) {
+            $('triggerHint').textContent = rule.entityType === 'Deal'
+                ? 'Any new deal — from the form or from converting a lead.'
+                : 'Any new lead added on the Add lead form or by an import (rules run for the first 1,000 rows of a file).';
+            return;
+        }
+
+        const triggerable = fields().filter(f => f.canTrigger);
+        if (!triggerable.some(f => f.key === rule.triggerField)) rule.triggerField = triggerable.length ? triggerable[0].key : null;
+        $('triggerField').innerHTML = triggerable.map(f =>
+            `<option value="${esc(f.key)}" ${f.key === rule.triggerField ? 'selected' : ''}>${esc(f.label)}</option>`).join('');
+
+        const f = field(rule.triggerField);
+        $('triggerFromHost').innerHTML = valueInput(f, rule.triggerFromValue, 'trig-from', false, true, 'Anything').replace('class="form-', 'id="triggerFrom" class="form-');
+        $('triggerToHost').innerHTML   = valueInput(f, rule.triggerToValue,   'trig-to',   false, true, 'Anything').replace('class="form-', 'id="triggerTo" class="form-');
+        $('triggerHint').textContent = `Runs when a ${noun}'s ${f ? f.label.toLowerCase() : 'field'} changes — by a person, or by a quote or invoice moving a deal. A rule's own changes never set off other rules.`;
+    }
+
+    // ── IF ──────────────────────────────────────────────────────────
+    function renderConditions() {
+        const host = $('conditions');
+        const conditionable = fields().filter(f => f.canCondition);
+        host.innerHTML = rule.conditions.map((c, i) => {
+            const f = field(c.field) && field(c.field).canCondition ? field(c.field) : null;
+            const ops = f ? (OPS[f.kind] || []) : [];
+            if (f && !ops.some(o => o.value === c.op)) c.op = ops.length ? ops[0].value : '';
+            const op = ops.find(o => o.value === c.op);
+            return `<div class="line-card cond-line" data-i="${i}">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Field</label>
+                        <select class="form-select cond-field" data-i="${i}">
+                            <option value="">Choose…</option>
+                            ${conditionable.map(x => `<option value="${esc(x.key)}" ${f && x.key === f.key ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Is</label>
+                        <select class="form-select cond-op" data-i="${i}" ${f ? '' : 'disabled'}>
+                            ${ops.map(o => `<option value="${esc(o.value)}" ${o.value === c.op ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="col-md-4 cond-value-host" data-i="${i}">
+                        ${op && op.needsValue ? `<label class="form-label">Value</label>${valueInput(f, c.value, 'cond-value', false, false)}` : ''}
+                    </div>
+                    <div class="col-md-1 text-end">
+                        <button type="button" class="btn btn-sm btn-outline-danger cond-remove" data-i="${i}" title="Remove"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+        $('noConditions').classList.toggle('d-none', rule.conditions.length > 0);
+        $('addCondition').disabled = rule.conditions.length >= LIMITS.conditions;
+    }
+
+    // ── THEN ────────────────────────────────────────────────────────
+    function renderActions() {
+        const host = $('actions');
+        const updatable = fields().filter(f => f.canUpdate);
+        host.innerHTML = rule.actions.map((a, i) => {
+            let body = '';
+            if (a.kind === 'task') {
+                body = `<div class="row g-2">
+                    <div class="col-md-6"><label class="form-label">Task title</label>
+                        <input type="text" class="form-control act-subject" data-i="${i}" maxlength="${LIMITS.subject}" value="${esc(a.subject)}" placeholder="e.g. Call {name}" /></div>
+                    <div class="col-md-3"><label class="form-label">Kind</label>
+                        <select class="form-select act-type" data-i="${i}">
+                            ${(OPTIONS.taskTypes || []).map(t => `<option value="${esc(t)}" ${t === (a.activityType || 'Task') ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+                        </select></div>
+                    <div class="col-md-3"><label class="form-label">Due</label>
+                        <select class="form-select act-due" data-i="${i}">
+                            ${[[0, 'Today'], [1, 'Tomorrow'], [2, 'In 2 days'], [3, 'In 3 days'], [5, 'In 5 days'], [7, 'In a week'], [14, 'In 2 weeks'], [30, 'In a month']]
+                                .map(([d, l]) => `<option value="${d}" ${d === (a.dueInDays ?? 1) ? 'selected' : ''}>${l}</option>`).join('')}
+                        </select></div>
+                    <div class="col-md-6">${personPicker(a, i, 'task')}</div>
+                    <div class="col-md-6"><label class="form-label">Description <span class="text-muted">(optional)</span></label>
+                        <input type="text" class="form-control act-desc" data-i="${i}" maxlength="2000" value="${esc(a.description)}" /></div>
+                </div>`;
+            } else if (a.kind === 'notify') {
+                body = `<div class="row g-2">
+                    <div class="col-md-5">${personPicker(a, i, 'message')}</div>
+                    <div class="col-md-7"><label class="form-label">Message</label>
+                        <input type="text" class="form-control act-message" data-i="${i}" maxlength="${LIMITS.message}" value="${esc(a.message)}" placeholder="e.g. {name} just moved to {stage}" />
+                        <div class="hint">Arrives in the bell, and by email or WhatsApp if they've chosen that for automation messages.</div></div>
+                </div>`;
+            } else {
+                if (!updatable.some(f => f.key === a.field)) a.field = updatable.length ? updatable[0].key : null;
+                const f = field(a.field);
+                const rr = f && f.kind === 'user' && a.mode === 'roundRobin';
+                let valueHtml;
+                if (f && f.kind === 'user') {
+                    valueHtml = `<label class="form-label">How</label>
+                        <select class="form-select act-mode" data-i="${i}">
+                            <option value="set" ${rr ? '' : 'selected'}>Give it to one person</option>
+                            <option value="roundRobin" ${rr ? 'selected' : ''}>Take turns between people</option>
+                        </select>`;
+                    if (rr) {
+                        const chosen = new Set(a.userIds || []);
+                        valueHtml += `<div class="rr-list mt-1">${users.map(u =>
+                            `<div class="form-check"><input class="form-check-input act-rr" type="checkbox" data-i="${i}" value="${esc(u.value)}" id="rr${i}_${esc(u.value)}" ${chosen.has(u.value) ? 'checked' : ''}/>
+                             <label class="form-check-label small" for="rr${i}_${esc(u.value)}">${esc(u.label)}</label></div>`).join('')}</div>
+                             <div class="hint">Each new one goes to the next person on the list, in turn.</div>`;
+                    } else {
+                        valueHtml += `<div class="mt-1">${valueInput(f, a.value, 'act-value', true, false)}</div>`;
+                    }
+                } else {
+                    valueHtml = `<label class="form-label">Becomes</label>${valueInput(f, a.value, 'act-value', true, false)}`;
+                    if (f && f.key.startsWith('cf:')) valueHtml += `<div class="hint">Leave empty to clear it.</div>`;
+                }
+                body = `<div class="row g-2">
+                    <div class="col-md-5"><label class="form-label">Field</label>
+                        <select class="form-select act-field" data-i="${i}">
+                            ${updatable.map(x => `<option value="${esc(x.key)}" ${x.key === a.field ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}
+                        </select>
+                        ${rule.entityType === 'Deal' ? '<div class="hint">A deal\'s stage isn\'t here on purpose: stage moves go through your sales process.</div>' : ''}</div>
+                    <div class="col-md-7">${valueHtml}</div>
+                </div>`;
+            }
+            return `<div class="line-card act-line" data-i="${i}" data-kind="${esc(a.kind)}">
+                <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+                    <select class="form-select form-select-sm act-kind" data-i="${i}" style="max-width:240px">
+                        <option value="task" ${a.kind === 'task' ? 'selected' : ''}>Create a task</option>
+                        <option value="notify" ${a.kind === 'notify' ? 'selected' : ''}>Notify someone</option>
+                        <option value="update" ${a.kind === 'update' ? 'selected' : ''}>Set a field</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-danger act-remove" data-i="${i}" title="Remove"><i class="bi bi-x-lg"></i></button>
+                </div>
+                ${body}
+            </div>`;
+        }).join('');
+        $('addAction').disabled = rule.actions.length >= LIMITS.actions;
+        if (!rule.actions.length) host.innerHTML = '<div class="hint">Add at least one thing for the rule to do.</div>';
+    }
+
+    function renderAll() { renderWhen(); renderConditions(); renderActions(); }
+
+    // ── wiring ──────────────────────────────────────────────────────
+    $('ruleName').value = rule.name || '';
+    $('ruleDescription').value = rule.description || '';
+    $('isActive').checked = !!rule.isActive;
+
+    $('entityType').addEventListener('change', e => {
+        rule.entityType = e.target.value;
+        // Fields differ between leads and deals: keep only what still fits.
+        rule.triggerField = null; rule.triggerFromValue = null; rule.triggerToValue = null;
+        rule.conditions = rule.conditions.filter(c => field(c.field));
+        rule.actions.forEach(a => { if (a.kind === 'update' && !field(a.field)) { a.field = null; a.value = null; } });
+        renderAll();
+    });
+    $('trigger').addEventListener('change', e => { rule.trigger = Number(e.target.value); renderWhen(); renderActions(); });
+    $('timeKind').addEventListener('change', e => {
+        rule.timeKind = e.target.value;
+        const k = ((OPTIONS.timeKinds || {})[rule.entityType] || []).find(x => x.key === rule.timeKind);
+        if (k) rule.timeDays = k.defaultDays;
+        renderWhen();
+    });
+    $('timeDays').addEventListener('input', e => { rule.timeDays = e.target.value === '' ? null : Number(e.target.value); });
+    $('triggerField').addEventListener('change', e => {
+        rule.triggerField = e.target.value; rule.triggerFromValue = null; rule.triggerToValue = null; renderWhen();
+    });
+    document.addEventListener('change', e => {
+        const t = e.target;
+        if (t.classList.contains('trig-from')) rule.triggerFromValue = t.value || null;
+        if (t.classList.contains('trig-to')) rule.triggerToValue = t.value || null;
+    });
+
+    $('addCondition').addEventListener('click', () => {
+        rule.conditions.push({ field: '', op: '', value: null }); renderConditions();
+    });
+    $('conditions').addEventListener('change', e => {
+        const t = e.target, i = Number(t.dataset.i ?? t.closest('[data-i]')?.dataset.i), c = rule.conditions[i];
+        if (!c) return;
+        if (t.classList.contains('cond-field')) { c.field = t.value; c.op = ''; c.value = null; renderConditions(); }
+        else if (t.classList.contains('cond-op')) { c.op = t.value; renderConditions(); }
+        else if (t.classList.contains('cond-value')) c.value = t.value;
+    });
+    $('conditions').addEventListener('input', e => {
+        const t = e.target;
+        if (!t.classList.contains('cond-value')) return;
+        const i = Number(t.closest('[data-i]').dataset.i);
+        if (rule.conditions[i]) rule.conditions[i].value = t.value;
+    });
+    $('conditions').addEventListener('click', e => {
+        const b = e.target.closest('.cond-remove'); if (!b) return;
+        rule.conditions.splice(Number(b.dataset.i), 1); renderConditions();
+    });
+
+    $('addAction').addEventListener('click', () => {
+        rule.actions.push({ kind: 'task', assignTo: 'owner', activityType: (OPTIONS.taskTypes || ['Task'])[0], dueInDays: 1 }); renderActions();
+    });
+    $('actions').addEventListener('click', e => {
+        const b = e.target.closest('.act-remove'); if (!b) return;
+        rule.actions.splice(Number(b.dataset.i), 1); renderActions();
+    });
+    function onActionEdit(e) {
+        const t = e.target, host = t.closest('.act-line'); if (!host) return;
+        const i = Number(host.dataset.i), a = rule.actions[i]; if (!a) return;
+        const c = t.classList;
+        if (c.contains('act-kind')) {
+            if (e.type !== 'change') return;
+            rule.actions[i] = { kind: t.value, assignTo: 'owner', activityType: (OPTIONS.taskTypes || ['Task'])[0], dueInDays: 1 };
+            renderActions(); return;
+        }
+        if (c.contains('act-subject')) a.subject = t.value;
+        else if (c.contains('act-desc')) a.description = t.value;
+        else if (c.contains('act-message')) a.message = t.value;
+        else if (c.contains('act-type')) a.activityType = t.value;
+        else if (c.contains('act-due')) a.dueInDays = Number(t.value);
+        else if (c.contains('act-value')) a.value = t.value;
+        else if (c.contains('act-user')) a.userId = t.value;
+        else if (c.contains('act-rr')) {
+            const set = new Set(a.userIds || []);
+            t.checked ? set.add(t.value) : set.delete(t.value);
+            a.userIds = users.map(u => u.value).filter(v => set.has(v));
+        }
+        else if (e.type === 'change' && c.contains('act-assign')) { a.assignTo = t.value; if (t.value !== 'user') a.userId = null; renderActions(); }
+        else if (e.type === 'change' && c.contains('act-field')) { a.field = t.value; a.value = null; a.mode = null; a.userIds = null; renderActions(); }
+        else if (e.type === 'change' && c.contains('act-mode')) { a.mode = t.value === 'roundRobin' ? 'roundRobin' : null; a.value = null; renderActions(); }
+    }
+    $('actions').addEventListener('input', onActionEdit);
+    $('actions').addEventListener('change', onActionEdit);
+
+    $('ruleForm').addEventListener('submit', () => {
+        rule.name = $('ruleName').value;
+        rule.description = $('ruleDescription').value || null;
+        rule.isActive = $('isActive').checked;
+        rule.trigger = Number(rule.trigger);
+        if (rule.trigger !== 1) { rule.triggerField = null; rule.triggerFromValue = null; rule.triggerToValue = null; }
+        if (rule.trigger !== 2) { rule.timeKind = null; rule.timeDays = null; }
+        // Checkbox fields: "false" means not ticked — stored as empty.
+        rule.actions.forEach(a => {
+            const f = a.kind === 'update' ? field(a.field) : null;
+            if (f && f.kind === 'checkbox' && a.value === 'false') a.value = null;
+        });
+        $('ruleJson').value = JSON.stringify(rule);
+    });
+
+    renderAll();
+})();
+</script>
+}

@@ -42,6 +42,7 @@
 
 using MerkaiTrial.Application.Commands.CustomFields;     // 079
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Commands.Automation;     // 098
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
@@ -65,6 +66,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IStageResolver _stages;
         private readonly ILeadStatusResolver _statuses;
         private readonly IRecordScopeService _scope;
+        private readonly AutomationEngine _automation;               // 098
         public ConvertLeadToDealHandler(
             FlowDbContext db,
             ICurrentUserService currentUserService,
@@ -72,8 +74,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             ILogger<ConvertLeadToDealHandler> logger,
             IAuditService audit,
             IStageResolver stages, ILeadStatusResolver statuses,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            AutomationEngine automation)                             // 098
         {
+            _automation = automation;
             _scope = scope;
             _db = db;
             _currentUserService = currentUserService;
@@ -380,6 +384,17 @@ namespace MerkaiTrial.Application.Commands.Leads
                         _logger.LogError(auditEx, "Contact {Id} was created by conversion but its audit row could not be written", contactId);
                     }
                 }
+
+                // 098 — two things happened, so two kinds of rule may
+                // fire: the lead's status became Converted, and a deal was
+                // added. The engine never throws, and the transaction is
+                // already committed.
+                await _automation.FieldsChangedAsync(
+                    dto.TenantId, AutomationEntity.Lead, lead.Id,
+                    new[] { new AutomationFieldChange(AutomationFields.Status, oldStatus.ToString(), lead.Status) },
+                    currentUser.UserId.ToString());
+                await _automation.RecordCreatedAsync(
+                    dto.TenantId, AutomationEntity.Deal, deal.Id, currentUser.UserId.ToString());
 
                 _logger.LogInformation(
                     "Lead conversion complete: LeadId={LeadId} → DealId={DealId} ContactId={ContactId} CompanyId={CompanyId}",

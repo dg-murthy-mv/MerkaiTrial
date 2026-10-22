@@ -42,6 +42,13 @@
 // does NOT need it to read the emails on their own leads and deals — that
 // follows leads.read / deals.read and record visibility.
 //
+// ROUND 098: an "automation" module — Settings → Automation, the workflow
+// rules. Read = see the rules and their log; Create / Update / Delete =
+// build, change, switch on and off, remove. Held by nobody until a
+// workspace admin grants it (admins bypass). Separate from "settings" on
+// purpose: a rule can reassign leads and message people, which is a
+// different power from shaping the pipeline.
+//
 // ALSO ADDED: Modules.Audit. ModuleCatalog has enforced an "audit" module
 // since it was written, and this file never had the constant — so every
 // call site had to spell the string by hand, which is precisely how the
@@ -77,6 +84,9 @@ namespace MerkaiTrial.Application.Authorization
         /// Held by nobody until a tenant admin grants it.
         /// </summary>
         public const string Inbox = "inbox";
+
+        /// <summary>098. Workflow automation rules. Held by nobody until a tenant admin grants it.</summary>
+        public const string Automation = "automation";
     }
 
     public static class Actions
@@ -157,5 +167,11 @@ namespace MerkaiTrial.Application.Authorization
         public const string InboxRead   = "inbox.read";
         public const string InboxUpdate = "inbox.update";
         public const string InboxDelete = "inbox.delete";
+
+        // ── 098: workflow automation ──────────────────────────────────
+        public const string AutomationRead   = "automation.read";
+        public const string AutomationCreate = "automation.create";
+        public const string AutomationUpdate = "automation.update";
+        public const string AutomationDelete = "automation.delete";
     }
 }

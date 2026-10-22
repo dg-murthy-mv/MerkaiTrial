@@ -61,10 +61,26 @@
 // so a message no longer says the same thing twice, and a trailing full
 // stop is dropped so "…{{detail}}. Sign in" never prints "..". The sender
 // itself is unchanged.
+//
+// CHANGES (097)
+//   • {{detail}} is the request's Detail when a producer sets one (a deal's
+//     new stage), else its Body, as before.
+//   • Meta refuses a whole message when a variable holds a tab, a line
+//     break or more than four spaces in a row ("Param text cannot have
+//     new-line/tab characters or more than 4 consecutive spaces"). An
+//     approver's comment pasted from an email can hold all three. Every
+//     run of whitespace now becomes one space, in Tidy AND in Clip.
+//   • Meta also caps the whole BODY at 1024 characters, fixed text
+//     included. {{headline}} is kept to 200 and {{detail}} to 600, which
+//     leaves room for the longest approved sentence.
+//   • The send log rendered "{{1}}" and "{{2}}", but our approved bodies
+//     use NAMED placeholders since 048, so the log showed "{{headline}}"
+//     unfilled. Render fills the names now (and the numbers, for old rows).
 // =====================================================================
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -419,7 +435,9 @@ public sealed class CloudApiWhatsAppSender : IWhatsAppSender
     /// </summary>
     private static string Clip(string? value)
     {
-        var text = (value ?? string.Empty).Replace('\n', ' ').Replace('\r', ' ').Trim();
+        // 097: every run of whitespace — tabs and line breaks included — is
+        // one space. Meta refuses tabs, new lines and 5+ spaces outright.
+        var text = WhatsAppVariables.OneLine(value);
 
         // A variable may not be empty either — Meta rejects "" outright.
         if (text.Length == 0) return "—";
@@ -514,7 +532,13 @@ public static class WhatsAppPayload
         var text = bodyPreview;
 
         for (var i = 0; i < variables.Count; i++)
+        {
+            // 097: by NAME — "{{headline}}", "{{detail}}" — which is how every
+            // body approved since 048 is written; the log used to show them
+            // unfilled. By number too, for rows written before that.
+            text = text.Replace("{{" + WhatsAppVariables.NameAt(i) + "}}", variables[i], StringComparison.Ordinal);
             text = text.Replace("{{" + (i + 1) + "}}", variables[i], StringComparison.Ordinal);
+        }
 
         return text;
     }
@@ -595,22 +619,52 @@ public static class WhatsAppVariables
     {
         var headline = Tidy(request.Headline) ?? Tidy(request.Title) ?? "—";
 
-        var detail = Tidy(request.Body)
+        // 097: Detail first — set when {{detail}} must say more than the
+        // bell's Body (a deal's new stage, now that the headline is just
+        // the deal).
+        var detail = Tidy(request.Detail)
+                     ?? Tidy(request.Body)
                      ?? (string.IsNullOrWhiteSpace(request.ActorName) ? null : $"by {request.ActorName!.Trim()}")
                      ?? "—";
 
-        return new[] { headline, detail };
+        return new[] { Cap(headline, MaxHeadline), Cap(detail, MaxDetail) };
     }
+
+    /// <summary>097. {{headline}} and {{detail}} together stay well inside Meta's 1024-character body.</summary>
+    public const int MaxHeadline = 200;
+    public const int MaxDetail = 600;
+
+    /// <summary>
+    /// 097. One line: every run of whitespace — spaces, tabs, line breaks —
+    /// becomes a single space. Meta refuses a variable with a tab, a new line
+    /// or more than four spaces in a row, and refuses the WHOLE message.
+    /// </summary>
+    public static string OneLine(string? value)
+        => string.IsNullOrEmpty(value) ? string.Empty : Whitespace.Replace(value, " ").Trim();
+
+    private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
 
     /// <summary>Trimmed, one line, without a trailing full stop. Null when empty.</summary>
     private static string? Tidy(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
 
-        var text = value.Replace('\n', ' ').Replace('\r', ' ').Trim();
+        var text = OneLine(value);                    // 097: tabs and runs of spaces too
         while (text.EndsWith('.') && !text.EndsWith("..."))
             text = text[..^1].TrimEnd();
 
         return text.Length == 0 ? null : text;
+    }
+
+    /// <summary>097. Cut at a word where possible, with "…" so it reads as cut.</summary>
+    private static string Cap(string text, int max)
+    {
+        if (text.Length <= max) return text;
+
+        var cut = text[..(max - 1)];
+        var space = cut.LastIndexOf(' ');
+        if (space > max / 2) cut = cut[..space];
+
+        return cut.TrimEnd(' ', ',', '·', '—', '-') + "…";
     }
 }

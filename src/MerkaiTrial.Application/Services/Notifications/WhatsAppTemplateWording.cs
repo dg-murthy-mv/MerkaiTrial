@@ -31,6 +31,15 @@
 // only thing that has to match exactly is the template NAME in Merkai.
 //
 // Reference only. Nothing here is sent; Meta sends its own approved copy.
+//
+// CHANGES (097)
+//   • Task assigned (event 12, round 091) has its wording: task_assigned_v1.
+//     It was the one event with nothing to submit.
+//   • Optional is a field now, not a sentence in Note. The template page
+//     lists what is still to submit to Meta and leaves the optional two
+//     out of that list.
+//   • The stage-changed and approval-decided samples now match what Merkai
+//     really sends (097's shorter headlines).
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -43,7 +52,8 @@ public sealed record WhatsAppWording(
     string Body,
     string SampleHeadline,
     string SampleDetail,
-    string? Note = null)
+    string? Note = null,
+    bool Optional = false)                          // 097
 {
     /// <summary>The message as the person will read it, filled with the samples.</summary>
     public string Preview => Body
@@ -99,19 +109,27 @@ public static class WhatsAppTemplateWording
         NotificationEventType.QuoteApprovalDecided => new(
             "quote_approval_decided_v1",
             BodyFor("Your approval request has been decided"),
-            "Quote QUO-0042 approved", "by Nattaporn Srisai"),
+            "Quote QUO-0042 approved", "Nattaporn Srisai approved it"),
+
+        // 097 — round 091's event. Samples carry a date, not a price.
+        NotificationEventType.TaskAssigned => new(
+            "task_assigned_v1",
+            BodyFor("A task has been assigned to you"),
+            "Call the site engineer", "Due 22 Oct 2026, 11:00 · Lead: Priya Shah"),
 
         NotificationEventType.CustomerEmailReceived => new(
             "customer_email_received_v1",
             BodyFor("A customer email has been filed on one of your records"),
             "Email from priya@acme.com", "Re: Quote QUO-0042",
-            "Optional. Email already tells people about this; a WhatsApp for every customer email can get noisy."),
+            "Optional. Email already tells people about this; a WhatsApp for every customer email can get noisy.",
+            Optional: true),
 
         NotificationEventType.EmailBounced => new(
             "email_bounced_v1",
             BodyFor("An email you sent could not be delivered"),
             "Invoice INV-0003 to priya@acme.com", "the mailbox does not exist",
-            "Optional. Useful if reps rarely read email."),
+            "Optional. Useful if reps rarely read email.",
+            Optional: true),
 
         _ => null
     };

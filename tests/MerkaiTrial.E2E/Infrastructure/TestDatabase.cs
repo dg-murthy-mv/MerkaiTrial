@@ -34,6 +34,11 @@
 //      database only: clears out queued messages more than a day old and
 //      makes sure the outbox has an index on the address the tests look
 //      up. See the method for why.
+//  10. (098) Automation: the rule log, a plan's automation limit (read,
+//      and put back after a test changes it), and retiring a test's
+//      rules so they never fire on later tests' records.
+//  11. (099) BackdateLeadAsync — makes a lead look N days old, so a
+//      time-based rule ("no activity for 3 days") is due without waiting.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -499,6 +504,88 @@ public sealed class TestDatabase
         await using var cmd = new SqlCommand("SELECT Stage FROM Deals WHERE Id = @id", conn);
         cmd.Parameters.AddWithValue("@id", dealId);
         return await cmd.ExecuteScalarAsync() as string;
+    }
+
+    // ── 098: automation rules ─────────────────────────────────────────
+
+    /// <summary>AutomationRunStatus values as stored.</summary>
+    public const int RunDone = 0, RunSkipped = 1, RunFailed = 2, RunPartial = 3;
+
+    /// <summary>
+    /// Lines in the rule log for one record from rules whose name contains
+    /// <paramref name="ruleNameContains"/>, with this result.
+    /// </summary>
+    public async Task<int> CountAutomationRunsAsync(Guid entityId, string ruleNameContains, int status)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM AutomationRuns WHERE EntityId = @e AND Status = @s AND CHARINDEX(@n, RuleName) > 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@s", status);
+        cmd.Parameters.AddWithValue("@n", ruleNameContains);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>The workspace's plan and its live automation limit.</summary>
+    public async Task<(Guid PlanId, int Limit)> PlanAutomationLimitAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT TOP 1 p.Id, p.MaxAutomationRules FROM Tenants t JOIN Plans p ON p.Name = t.[Plan] WHERE t.Id = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync())
+            throw new InvalidOperationException("The workspace's plan was not found — has 098_Automation.sql been run on the test database?");
+        return (r.GetGuid(0), r.GetInt32(1));
+    }
+
+    /// <summary>Puts a plan's automation limit back after a test changed it. _E2E only, like everything here.</summary>
+    public async Task SetPlanAutomationLimitAsync(Guid planId, int limit)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("UPDATE Plans SET MaxAutomationRules = @m WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@m", limit);
+        cmd.Parameters.AddWithValue("@id", planId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Switched-on, live rules in a workspace.</summary>
+    public async Task<int> CountActiveAutomationRulesAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM AutomationRules WHERE TenantId = @t AND IsActive = 1 AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>
+    /// Switches off and removes a test's rules, so they never fire on the
+    /// leads and deals later tests create.
+    /// </summary>
+    public async Task RetireAutomationRulesAsync(Guid tenantId, string nameContains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE AutomationRules SET IsActive = 0, IsDeleted = 1 WHERE TenantId = @t AND CHARINDEX(@n, Name) > 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@n", nameContains);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// 099. Moves a lead's "added" time N days into the past. _E2E only.
+    /// The lead must have no activity or notes of its own, or those would
+    /// still count as recent.
+    /// </summary>
+    public async Task BackdateLeadAsync(Guid leadId, int days)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE Leads SET CreatedAtUtc = DATEADD(day, -@d, CreatedAtUtc) WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@d", days);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private async Task<int> CountAsync(string sql, Guid tenantId, string value)

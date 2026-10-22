@@ -67,7 +67,9 @@ public sealed class InboundEmailWorkerOptions
 /// </summary>
 public sealed class WorkerTenantProvider : ITenantProvider
 {
+    
     public WorkerTenantProvider(Guid tenantId) => TenantId = tenantId;
+
 
     public Guid TenantId { get; }
 

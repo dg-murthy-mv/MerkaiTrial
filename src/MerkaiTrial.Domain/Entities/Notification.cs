@@ -31,6 +31,8 @@
 //
 // 091 — TaskAssigned (12): someone gave me a task, or handed one on to
 //   me. Added at the END, as the rule below says.
+// 098 — AutomationNotice (13): an automation rule's "Notify someone"
+//   action. Also at the end.
 // =====================================================================
 
 using System.ComponentModel.DataAnnotations.Schema;
@@ -110,7 +112,13 @@ namespace MerkaiTrial.Domain.Entities
         /// company — or handed one of theirs on to me. Not sent when I give
         /// a task to myself.
         /// </summary>
-        TaskAssigned = 12
+        TaskAssigned = 12,
+
+        /// <summary>
+        /// 098. An automation rule's "Notify someone" action — the message
+        /// the workspace admin wrote into the rule, about one lead or deal.
+        /// </summary>
+        AutomationNotice = 13
     }
 
     public class Notification

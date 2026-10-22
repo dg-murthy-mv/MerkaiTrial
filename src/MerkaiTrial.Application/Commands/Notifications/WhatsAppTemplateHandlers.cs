@@ -15,6 +15,20 @@
 //
 // The DTOs live here rather than in DTOs/: they are read by one screen
 // and nothing else, and PipelineRuleHandlers.cs set that precedent.
+//
+// CHANGES (097) — SAVE CREATES THE ROW FOR AN EVENT THAT HAS NONE
+//   The page draws every event in NotificationDefaults, with Id = empty
+//   for an event the table has no row for — "Customer email received"
+//   (083), "Email bounced" (085) and "Task assigned" (091) were never
+//   seeded. Save then matched by Id, found nothing, and SKIPPED them
+//   silently: type task_assigned_v1, press Save, "Templates saved", and
+//   the name was gone on reload.
+//
+//   SaveWhatsAppTemplateDto now carries the EventType (optional, trailing),
+//   and a posted row with no Id becomes a new row for that event — unless
+//   one exists by then, in which case that one is updated. A row left
+//   completely empty (no name, off) is not created, so opening and saving
+//   the page does not fill the table with blanks.
 // =====================================================================
 
 using MerkaiTrial.Application.Services;
@@ -70,7 +84,8 @@ public record SaveWhatsAppTemplateDto(
     string Category,
     string? BodyPreview,
     int VariableCount,
-    bool IsActive);
+    bool IsActive,
+    NotificationEventType? EventType = null);       // 097 — for a row not in the table yet
 
 public record SaveWhatsAppTemplatesDto(List<SaveWhatsAppTemplateDto> Items);
 
@@ -157,10 +172,33 @@ public class SaveWhatsAppTemplatesHandler : ICommandHandler
 
         foreach (var item in dto.Items)
         {
-            var row = rows.FirstOrDefault(r => r.Id == item.Id);
-            if (row is null) continue;
-
             var name = (item.TemplateName ?? string.Empty).Trim().ToLowerInvariant();
+
+            var row = item.Id == Guid.Empty ? null : rows.FirstOrDefault(r => r.Id == item.Id);
+
+            // 097. An event the table has no row for yet (see the header).
+            if (row is null && item.Id == Guid.Empty && item.EventType is { } eventType)
+            {
+                row = rows.FirstOrDefault(r => r.EventType == eventType);
+
+                if (row is null)
+                {
+                    // Nothing typed and not switched on: nothing to keep.
+                    if (name.Length == 0 && !item.IsActive) continue;
+
+                    row = new WhatsAppTemplate
+                    {
+                        Id            = Guid.NewGuid(),
+                        EventType     = eventType,
+                        VariableCount = WhatsAppVariables.Count,
+                        UpdatedAtUtc  = now
+                    };
+                    _db.WhatsAppTemplates.Add(row);
+                    rows.Add(row);
+                }
+            }
+
+            if (row is null) continue;
 
             // Meta's own rule: lower case, digits and underscores. Enforced
             // here because the failure otherwise arrives as a rejected send
@@ -238,6 +276,10 @@ public class SendWhatsAppTestHandler : ICommandHandler
     /// </summary>
     public async Task<string> Handle(Guid templateId, CancellationToken ct = default)
     {
+        // 097: an event with no row yet (see the header) posts an empty id.
+        if (templateId == Guid.Empty)
+            throw new InvalidOperationException("Type the template name and press Save templates first.");
+
         var me = await _currentUser.GetCurrentUserAsync();
 
         var template = await _db.WhatsAppTemplates

@@ -2,6 +2,10 @@
 // LEAD COMMANDS - Write Operations
 // Location: MerkaiTrial.Application/Commands/Leads/LeadCommandHandlers.cs
 //
+// 099: UpdateLeadHandler also tells the automation engine which CUSTOM
+//      fields changed (read before the edit, again after the save), so
+//      "when Tier changes to Gold" rules work.
+//
 // FIXES APPLIED:
 //   1. CreateLeadHandler    — Currency falls back to ICurrentTenantService
 //   2. ConvertLeadHandler   — Country no longer hardcoded to "IN"
@@ -89,6 +93,7 @@
 using MerkaiTrial.Application.Commands.CustomFields;    // 079
 using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Commands.Automation;     // 098
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Security;   // IRecordScopeService, VisibleTo
@@ -151,6 +156,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
         private readonly INotificationDispatcher _notify;          // 039
+        private readonly AutomationEngine _automation;             // 098
 
         public CreateLeadHandler(
             FlowDbContext         context,
@@ -160,8 +166,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             ILogger<CreateLeadHandler> logger,
             IAuditService audit,
             ILeadStatusResolver statuses,
-            INotificationDispatcher notify)
+            INotificationDispatcher notify,
+            AutomationEngine automation)                           // 098
         {
+            _automation = automation;
             _context            = context;
             _currentUserService = currentUserService;
             _tenantService      = tenantService;
@@ -264,6 +272,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     new { name = lead.FullName, source = lead.Source, value = lead.EstimatedValue },
                     cancellationToken);
 
+                // 098 — the workspace's automation rules. Last, after
+                // everything of this save is written: a rule never undoes
+                // the lead, and the engine never throws.
+                await _automation.RecordCreatedAsync(
+                    dto.TenantId, AutomationEntity.Lead, lead.Id, currentUserId.ToString(), cancellationToken);
+
                 _logger.LogInformation("Created lead {LeadId} for tenant {TenantId}", lead.Id, dto.TenantId);
 
                 return new LeadDto(
@@ -358,6 +372,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ILeadStatusResolver _statusResolver;
         private readonly IRecordScopeService _scope;
         private readonly INotificationDispatcher _notify;            // 039
+        private readonly AutomationEngine _automation;               // 098
 
         public UpdateLeadHandler(
             FlowDbContext context,
@@ -368,8 +383,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             ILeadStatusResolver statusResolver,
             IRecordScopeService scope,
             INotificationDispatcher notify,                          // 039
-            ILogger<UpdateLeadHandler> logger)
+            ILogger<UpdateLeadHandler> logger,
+            AutomationEngine automation)                             // 098
         {
+            _automation = automation;
             _notify = notify;
             _scope = scope;
             _context = context;
@@ -447,6 +464,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.UpdatedAtUtc = DateTime.UtcNow;
                 lead.UpdatedBy = currentUserId.ToString();
 
+                // 099 — the values BEFORE this edit, for "when a custom
+                // field changes" rules. Only when the form sent any.
+                var customBefore = dto.CustomFields is null ? null
+                    : await CustomFieldValueWriter.ReadAsync(
+                        _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id, cancellationToken);
+
                 // 079 — same unit of work as the lead's own fields. Throws
                 // a CustomFieldValidationException before anything is saved.
                 await CustomFieldValueWriter.ApplyAsync(
@@ -516,6 +539,25 @@ namespace MerkaiTrial.Application.Commands.Leads
                             unassigned = ownerDecision.Change == OwnerChange.Unassigned
                         },
                         cancellationToken);
+
+                // 098 — rules watching the owner or the value. Unchanged
+                // pairs are dropped by the engine. A rule may change the
+                // lead again (say, its owner); the reply below reads the
+                // lead after that, so the page shows what is true now.
+                // 099 — and its custom fields, read again now they're saved.
+                var customAfter = customBefore is null ? null
+                    : await CustomFieldValueWriter.ReadAsync(
+                        _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id, cancellationToken);
+
+                await _automation.FieldsChangedAsync(
+                    dto.TenantId, AutomationEntity.Lead, lead.Id,
+                    new[]
+                    {
+                        new AutomationFieldChange(AutomationFields.Owner, oldOwner, lead.OwnerUserId),
+                        new AutomationFieldChange(AutomationFields.Value,
+                            AutomationEngine.Wire(oldValue), AutomationEngine.Wire(lead.EstimatedValue))
+                    }.Concat(AutomationEngine.CustomChanges(customBefore, customAfter)),
+                    currentUserId.ToString(), cancellationToken);
 
                 _logger.LogInformation("Updated lead {LeadId} by user {UserId}", dto.LeadId, currentUserId);
 
@@ -660,10 +702,13 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
         private readonly IRecordScopeService _scope;
+        private readonly AutomationEngine _automation;               // 098
 
         public UpdateLeadStatusHandler(FlowDbContext context, ILeadScoringService scoring, ILogger<UpdateLeadStatusHandler> logger, 
-            IAuditService audit, ILeadStatusResolver statuses, IRecordScopeService scope)
+            IAuditService audit, ILeadStatusResolver statuses, IRecordScopeService scope,
+            AutomationEngine automation)                             // 098
         {
+            _automation = automation;
             _scope = scope;
             _context = context;
             _scoring = scoring;
@@ -710,6 +755,13 @@ namespace MerkaiTrial.Application.Commands.Leads
                     AuditAction.LeadStatusChanged, AuditEntityType.Lead, lead.Id, dto.TenantId,
                     new { from = statuses.NameOf(oldStatus), to = target.Name },
                     cancellationToken);
+
+                // 098 — rules watching the status. The engine finds who
+                // made the change from the signed-in user.
+                await _automation.FieldsChangedAsync(
+                    dto.TenantId, AutomationEntity.Lead, lead.Id,
+                    new[] { new AutomationFieldChange(AutomationFields.Status, oldStatus, lead.Status) },
+                    null, cancellationToken);
 
 
                 _logger.LogInformation("Updated lead {LeadId} status {Old} → {New}", dto.LeadId, oldStatus, dto.StatusKey);
@@ -812,14 +864,17 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly IAuditService _audit;
         private readonly ILeadStatusResolver _statuses;
         private readonly IRecordScopeService _scope;
+        private readonly AutomationEngine _automation;               // 098
         public ConvertLeadHandler(
             FlowDbContext         context,
             ICurrentTenantService tenantService,
             ILogger<ConvertLeadHandler> logger,
             IAuditService audit,
             ILeadStatusResolver statuses,
-            IRecordScopeService scope)
+            IRecordScopeService scope,
+            AutomationEngine automation)                             // 098
         {
+            _automation   = automation;
             _scope         = scope;
             _context       = context;
             _tenantService = tenantService;
@@ -890,6 +945,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                     _context, cmd.TenantId, lead.Id, contact.Id, contactIsNew: true, dealId: null,
                     cmd.ConvertedBy, cancellationToken);
 
+                var statusBefore = lead.Status;                      // 098
+
                 // Mark lead converted
                 lead.IsConverted          = true;
                 lead.ConvertedToContactId = contact.Id;
@@ -927,6 +984,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                 }
 
                 
+                // 098 — "when a lead's status becomes Converted" rules.
+                await _automation.FieldsChangedAsync(
+                    cmd.TenantId, AutomationEntity.Lead, lead.Id,
+                    new[] { new AutomationFieldChange(AutomationFields.Status, statusBefore, lead.Status) },
+                    null, cancellationToken);
+
                 _logger.LogInformation("Converted lead {LeadId} → contact {ContactId}", cmd.LeadId, contact.Id);
 
                 return new ConversionResult

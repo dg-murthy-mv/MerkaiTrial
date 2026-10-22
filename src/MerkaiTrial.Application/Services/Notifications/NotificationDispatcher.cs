@@ -78,6 +78,16 @@
 //
 //   The template wording itself does NOT change, so templates Meta has
 //   already approved stay approved. See WhatsAppVariables.For.
+//
+// CHANGES (097 — the last of the WhatsApp wording)
+//   NotificationRequest gains a second optional, trailing field: Detail,
+//   WhatsApp's {{detail}} when it must differ from the bell's Body.
+//
+//   Why: the stage-changed headline is now just the deal ("Acme office
+//   fit-out"), like every other event, so WHERE it moved has to travel in
+//   {{detail}} ("now Negotiation, from Proposal"). The bell's Body stays
+//   "From Proposal", because the bell's Title already says "moved to
+//   Negotiation". Null falls back to Body, so nothing else changes.
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -122,7 +132,14 @@ public sealed record NotificationRequest(
     /// QUO-0042", not "Quote QUO-0042 was accepted": the approved template's
     /// fixed text already says what happened. Null falls back to Title.
     /// </summary>
-    string? Headline = null);
+    string? Headline = null,
+
+    /// <summary>
+    /// 097. WhatsApp's {{detail}}, when it must say more than the bell's
+    /// Body — because the headline no longer carries it (a deal's new stage).
+    /// Null falls back to Body.
+    /// </summary>
+    string? Detail = null);
 
 public interface INotificationDispatcher
 {

@@ -6,6 +6,11 @@
 // Tenant.Plan (string) references Plan.Name loosely — intentional,
 // allows grandfathering tenants on old plans and custom enterprise deals.
 // TenantSettings is the *applied snapshot* populated from this on creation.
+//
+// 098 — MaxAutomationRules. Read LIVE from the plan (not snapshotted into
+// TenantSettings): changing a workspace's plan, or the plan's own number,
+// changes the limit at once. Rules over the limit are kept; they simply
+// cannot be switched on. 0 = automation not included.
 // =====================================================================
 
 namespace MerkaiTrial.Domain.Entities;
@@ -34,6 +39,13 @@ public class Plan
 
     /// <summary>Storage limit in bytes</summary>
     public long StorageLimitBytes { get; set; }
+
+    /// <summary>
+    /// 098. How many automation rules a workspace on this plan may have
+    /// switched ON at once. 0 = automation not included. Read live — see
+    /// the header.
+    /// </summary>
+    public int MaxAutomationRules { get; set; }
 
     // ── Pricing (USD base — country pricing in PlanPricings) ─────────
     /// <summary>Base monthly price in USD</summary>

@@ -48,6 +48,7 @@ using MerkaiTrial.Admin.Web.Services.Leads;
 using MerkaiTrial.Admin.Web.Services.Meta;
 using MerkaiTrial.Admin.Web.Services.Notifications;
 using MerkaiTrial.Admin.Web.Services.Pipeline;
+using MerkaiTrial.Admin.Web.Services.Automation;          // 098
 using MerkaiTrial.Admin.Web.Services.Products;
 using MerkaiTrial.Admin.Web.Services.Quotes;
 using MerkaiTrial.Admin.Web.Services.Reports;
@@ -285,6 +286,9 @@ public static class AdminWebServiceRegistration
         services.AddScoped<ICompanyVerticalService, CompanyVerticalService>();
         services.AddScoped<ITaxRateService, TaxRateService>();
 
+
+        // 098 — Settings → Automation
+        services.AddScoped<IAutomationService, AutomationService>();   // 098 — Settings → Automation
         return services;
     }
 
@@ -308,6 +312,8 @@ public static class AdminWebServiceRegistration
         services.AddScoped<ChangeTenantPlanHandler>();
         services.AddScoped<DeactivatePlanHandler>();
         services.AddScoped<GetPlanTenantsHandler>();
+        services.AddScoped<MerkaiTrial.Application.Commands.Automation.GetPlanAutomationLimitHandler>();   // 098
+        services.AddScoped<MerkaiTrial.Application.Commands.Automation.SetPlanAutomationLimitHandler>();   // 098
 
         // WhatsApp templates (super admin, 045).
         //

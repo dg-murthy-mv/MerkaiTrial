@@ -21,6 +21,16 @@
 // (WhatsAppTemplateWording), sample values for Meta's form, and a preview
 // of the message as the person will read it, with Copy buttons and a
 // "Use as reference" button that fills the row's Approved body.
+//
+// CHANGES (097) — ToSubmit: the templates Meta has not approved yet (not
+// submitted, pending, or rejected), the optional two left out. Shown at
+// the top of the page, so "what is left to send to Meta" is one glance
+// rather than a scroll past every row. Only when Meta can be asked — an
+// unreachable directory is not evidence that anything is missing.
+//
+// 097 — EventTypes is posted beside Ids. An event the table has no row
+// for (task assigned, and the two email events) used to post an empty id
+// and be skipped by Save without a word; now Save creates its row.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Notifications;      // 046
@@ -120,6 +130,26 @@ public class IndexModel : PageModel
     public WhatsAppWording? WordingFor(WhatsAppTemplateRow row)
         => WhatsAppTemplateWording.For(row.EventType);
 
+    /// <summary>
+    /// 097. The templates still to get through Meta: a required event whose
+    /// name Meta doesn't know (never submitted, or a typo), or knows but has
+    /// not approved. Empty when Meta can't be asked — see the header.
+    /// </summary>
+    public IReadOnlyList<(WhatsAppTemplateRow Row, WhatsAppWording Wording, MetaTemplate? Meta)> ToSubmit
+    {
+        get
+        {
+            if (Data is null || Status is not { DirectoryReachable: true })
+                return Array.Empty<(WhatsAppTemplateRow, WhatsAppWording, MetaTemplate?)>();
+
+            return Data.Items
+                .Select(row => (Row: row, Wording: WordingFor(row), Meta: MetaFor(row)))
+                .Where(x => x.Wording is { Optional: false } && x.Meta is not { IsApproved: true })
+                .Select(x => (x.Row, x.Wording!, x.Meta))
+                .ToList();
+        }
+    }
+
     public IEnumerable<IGrouping<string, WhatsAppTemplateRow>> Groups
         => (Data?.Items ?? new List<WhatsAppTemplateRow>()).GroupBy(i => i.Group);
 
@@ -139,6 +169,7 @@ public class IndexModel : PageModel
     [BindProperty] public List<string> Previews { get; set; } = new();
     [BindProperty] public List<string> VariableCounts { get; set; } = new();
     [BindProperty] public List<string> ActiveIds { get; set; } = new();
+    [BindProperty] public List<string> EventTypes { get; set; } = new();    // 097
 
     public async Task OnGetAsync() => await LoadAsync();
 
@@ -148,7 +179,21 @@ public class IndexModel : PageModel
 
         for (var i = 0; i < Ids.Count; i++)
         {
-            if (!Guid.TryParse(Ids[i], out var id) || id == Guid.Empty) continue;
+            if (!Guid.TryParse(Ids[i], out var id)) continue;
+
+            // 097: a row not in the table yet posts an empty id and its event,
+            // and Save creates it. It used to be skipped here without a word.
+            MerkaiTrial.Domain.Entities.NotificationEventType? eventType =
+                int.TryParse(At(EventTypes, i), out var e)
+                && Enum.IsDefined(typeof(MerkaiTrial.Domain.Entities.NotificationEventType), e)
+                    ? (MerkaiTrial.Domain.Entities.NotificationEventType)e
+                    : null;
+
+            if (id == Guid.Empty && eventType is null) continue;
+
+            // An unchecked box posts nothing and every new row shares the
+            // empty id, so a new row's switch is matched by its event instead.
+            var activeKey = id == Guid.Empty ? "new-" + (int)eventType! : Ids[i];
 
             items.Add(new SaveWhatsAppTemplateDto(
                 Id: id,
@@ -159,7 +204,8 @@ public class IndexModel : PageModel
                 VariableCount: int.TryParse(At(VariableCounts, i), out var count) ? count : 2,
 
                 // Matched by value, not by position — see the note above.
-                IsActive: ActiveIds.Contains(Ids[i], StringComparer.OrdinalIgnoreCase)));
+                IsActive: ActiveIds.Contains(activeKey, StringComparer.OrdinalIgnoreCase),
+                EventType: eventType));
         }
 
         if (items.Count == 0)

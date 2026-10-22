@@ -43,9 +43,14 @@
 //   OwnerAssignment, so this route now agrees with the edit page and with
 //   deals: null leaves the owner alone, "" unassigns, an id is validated
 //   against this tenant's active users.
+//
+//   098 — AUTOMATION. Assigning from the list is a change of owner like
+//   any other, so "when a lead's owner changes" rules run here too — after
+//   the save and the audit row, never undoing the assignment.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Commands.Automation;          // 098
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;                  // 041a: OwnerAssignment
@@ -65,6 +70,7 @@ namespace MerkaiTrial.Application.Commands.Leads
         private readonly ICurrentUserService _currentUserService;   // 041a
         private readonly INotificationDispatcher _notify;           // 041a
         private readonly IAuditService _audit;                      // 041a
+        private readonly AutomationEngine _automation;              // 098
         private readonly ILogger<AssignLeadHandler> _logger;
 
         public AssignLeadHandler(
@@ -73,8 +79,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             ICurrentUserService currentUserService,                 // 041a
             INotificationDispatcher notify,                         // 041a
             IAuditService audit,                                    // 041a
-            ILogger<AssignLeadHandler> logger)
+            ILogger<AssignLeadHandler> logger,
+            AutomationEngine automation)                            // 098
         {
+            _automation = automation;
             _context = context;
             _scope = scope;
             _currentUserService = currentUserService;
@@ -143,6 +151,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                         via = "list"
                     },
                     cancellationToken);
+
+                // 098 — "when a lead's owner changes" rules. Never throws.
+                await _automation.FieldsChangedAsync(
+                    dto.TenantId, AutomationEntity.Lead, lead.Id,
+                    new[] { new AutomationFieldChange(AutomationFields.Owner, oldOwner, lead.OwnerUserId) },
+                    currentUserId.ToString(), cancellationToken);
 
                 _logger.LogInformation(
                     "Assigned lead {LeadId} to {OwnerUserId}",

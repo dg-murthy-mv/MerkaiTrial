@@ -94,6 +94,13 @@ public static class ModuleCatalog
         // one a sales manager is most likely to be granted.
         new("settings",  "Sales Configuration", "bi-sliders",  "Workspace Settings", 39, Crud),
 
+        // 098. Workflow automation — rules that act on leads and deals by
+        // themselves. Its own module, not "settings": a rule can reassign
+        // leads and message people, so a workspace admin should grant it
+        // on purpose. Sorted beside Sales Configuration, the other thing
+        // a sales manager is most likely to be given.
+        new("automation", "Automation", "bi-lightning-charge", "Workspace Settings", 38, Crud),
+
         new("users",     "Users",     "bi-person-badge",       "Workspace Settings", 40, Crud),
         new("roles",     "Roles",     "bi-shield-lock",        "Workspace Settings", 41, Crud),
         new("audit",     "Activity Log", "bi-clock-history",     "Workspace Settings", 42, ReadOnly),

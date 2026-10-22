@@ -17,6 +17,7 @@
     <Folder Include="Commands\InboundEmails\" />
     <Folder Include="Commands\Emails\" />
     <Folder Include="Commands\Attachments\" />
+    <Folder Include="Commands\Automation\" />
     <Folder Include="Commands\Notifications\" />
     <Folder Include="Commands\RecordVisibility\" />
     <Folder Include="Commands\PipelineStages\" />

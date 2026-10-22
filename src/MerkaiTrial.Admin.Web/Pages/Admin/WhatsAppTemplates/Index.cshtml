@@ -19,7 +19,9 @@
    086b: under each row, "Wording for Meta" — the exact body to submit,
    the sample values Meta's form asks for, and a preview of the real
    message. {{headline}} is now the event's SUBJECT ("Quote QUO-0042"),
-   so the message no longer repeats the template's own sentence. *@
+   so the message no longer repeats the template's own sentence.
+   097: "Still to submit to Meta" at the top, and the subtitle no longer
+   says "eight" — task assigned (091) made it nine, plus two optional. *@
 
 <div class="page-content">
 
@@ -30,8 +32,8 @@
                 <i class="bi bi-whatsapp me-2 text-success"></i>WhatsApp Templates
             </h1>
             <p class="page-subtitle">
-                Meta approves each template by name and language. These are the eight
-                notification events.
+                Meta approves each template by name and language. One per notification
+                event.
             </p>
         </div>
     </div>
@@ -144,6 +146,55 @@
         </div>
     }
 
+    @* 097 — what is left to get through Meta, at a glance. *@
+    @if (Model.Status is { DirectoryReachable: true })
+    {
+        var toSubmit = Model.ToSubmit;
+        if (toSubmit.Count == 0)
+        {
+            <div class="alert alert-success d-flex align-items-start gap-2" id="waAllApproved">
+                <i class="bi bi-check-circle mt-1"></i>
+                <div class="small">Every notification template Merkai needs is approved by Meta.</div>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-warning" id="waToSubmit">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="bi bi-exclamation-triangle mt-1"></i>
+                    <div class="small flex-grow-1">
+                        <strong>Still to get through Meta (@toSubmit.Count)</strong>
+                        <ul class="mb-1 mt-1">
+                            @foreach (var (row, wording, meta) in toSubmit)
+                            {
+                                var name = string.IsNullOrWhiteSpace(row.TemplateName) ? wording.SuggestedName : row.TemplateName;
+                                <li>
+                                    <strong>@row.EventLabel</strong> —
+                                    <code>@name</code>:
+                                    @if (meta is null)
+                                    {
+                                        <span>not in Meta yet. Create it in WhatsApp Manager with the body under <em>Wording for Meta</em> on its row.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Meta says <strong>@meta.Status</strong> — @meta.StatusHint</span>
+                                    }
+                                    @if (string.IsNullOrWhiteSpace(row.TemplateName))
+                                    {
+                                        <span class="text-muted">Then type <code>@wording.SuggestedName</code> as its template name here and Save.</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        Category <strong>Utility</strong>, language <strong>English</strong>, no header. Approved
+                        templates never need resubmitting when Merkai's headline wording changes — only the
+                        name has to match.
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
     <div class="alert alert-secondary d-flex align-items-start gap-2">
         <i class="bi bi-info-circle mt-1"></i>
         <div class="small">
@@ -204,8 +255,14 @@
                 <div class="card-body p-0">
                     @foreach (var item in group)
                     {
+                        @* 097 — a key per row. Events without a table row all have
+                           an empty Id, so ids built from it collided: Copy on
+                           the task row copied another row's body. *@
+                        var key = item.Id == Guid.Empty ? "e" + (int)item.EventType : item.Id.ToString();
                         <div class="tpl-row">
                             <input type="hidden" name="Ids" value="@item.Id" />
+                            @* 097 — lets Save create the row for an event the table doesn't have yet. *@
+                            <input type="hidden" name="EventTypes" value="@((int)item.EventType)" />
 
                             <div class="tpl-event">
                                 <div class="fw-semibold">@item.EventLabel</div>
@@ -289,7 +346,7 @@
                                             Approved body <span class="text-muted">(for reference — Meta sends its own copy)</span>
                                         </label>
                                         <input type="text" class="form-control form-control-sm"
-                                               name="Previews" value="@item.BodyPreview" id="preview-@item.Id"
+                                               name="Previews" value="@item.BodyPreview" id="preview-@key"
                                                placeholder="… {{headline}} ({{detail}}). Sign in to view the details." />
                                     </div>
                                 </div>
@@ -306,13 +363,13 @@
                                         <div class="tpl-wording-body">
                                             <div class="small text-muted mb-1">Body (paste into WhatsApp Manager, category Utility, language English)</div>
                                             <div class="d-flex gap-2 align-items-start mb-2">
-                                                <code class="tpl-code flex-grow-1" id="body-@item.Id">@wording.Body</code>
-                                                <button type="button" class="btn btn-sm btn-outline-info js-copy" data-copy-from="body-@item.Id"
+                                                <code class="tpl-code flex-grow-1" id="body-@key">@wording.Body</code>
+                                                <button type="button" class="btn btn-sm btn-outline-info js-copy" data-copy-from="body-@key"
                                                         title="Copy the body">
                                                     <i class="bi bi-clipboard"></i>
                                                 </button>
-                                                <button type="button" class="btn btn-sm btn-outline-secondary js-use" data-use-from="body-@item.Id"
-                                                        data-use-into="preview-@item.Id" title="Put this in Approved body (then Save)">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary js-use" data-use-from="body-@key"
+                                                        data-use-into="preview-@key" title="Put this in Approved body (then Save)">
                                                     Use as reference
                                                 </button>
                                             </div>
@@ -372,11 +429,11 @@
                                 <div class="form-check form-switch mb-2"
                                      title="@(locked ? "Meta hasn't approved this template, so it can't be switched on." : null)">
                                     <input class="form-check-input" type="checkbox"
-                                           name="ActiveIds" value="@item.Id"
-                                           id="active-@item.Id"
+                                           name="ActiveIds" value="@(item.Id == Guid.Empty ? "new-" + (int)item.EventType : item.Id.ToString())"
+                                           id="active-@key"
                                            checked="@item.IsActive"
                                            disabled="@locked" />
-                                    <label class="form-check-label small" for="active-@item.Id">On</label>
+                                    <label class="form-check-label small" for="active-@key">On</label>
                                 </div>
 
                                 @* A locked switch posts nothing, but a locked
@@ -399,7 +456,7 @@
                                    the inner one, so the button would post the
                                    whole grid instead of a test. *@
                                 <button type="submit" class="btn btn-sm btn-outline-success"
-                                        form="testForm-@item.Id"
+                                        form="testForm-@key"
                                         title="Queues a test to your own mobile">
                                     <i class="bi bi-send"></i> Test
                                 </button>
@@ -425,7 +482,8 @@
        above through their form= attribute. *@
     @foreach (var item in Model.Data.Items)
     {
-        <form method="post" asp-page-handler="Test" id="testForm-@item.Id" class="d-none">
+        var key = item.Id == Guid.Empty ? "e" + (int)item.EventType : item.Id.ToString();   // 097
+        <form method="post" asp-page-handler="Test" id="testForm-@key" class="d-none">
             <input type="hidden" name="templateId" value="@item.Id" />
         </form>
     }

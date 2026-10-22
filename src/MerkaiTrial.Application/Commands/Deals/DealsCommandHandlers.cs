@@ -4,6 +4,10 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (099 — automation)
+//   ✅ UpdateDealHandler tells the automation engine which CUSTOM fields
+//      changed, read before the edit and again after the save.
+//
 // CHANGES (096 — lists)
 //   ✅ GetDealsHandler sorts by GetDealsRequest.Sort / Dir (title,
 //      company, stage, value, probability, close, created), always ending
@@ -102,6 +106,8 @@
 //     plan quota bar — the list itself is scoped.
 // =====================================================================
 
+using System.Globalization;                              // 098
+using MerkaiTrial.Application.Commands.Automation;      // 098
 using MerkaiTrial.Application.Commands.CustomFields;     // 077
 using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Configuration;            // 077
@@ -205,6 +211,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly IRecordScopeService _scope;
         private readonly INotificationDispatcher _notify;      // 039
         private readonly ILogger<TransitionDealStageHandler> _logger;   // 039
+        private readonly AutomationEngine _automation;                  // 098
 
         public TransitionDealStageHandler(
             FlowDbContext db,
@@ -214,8 +221,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             IAuditService audit,
             IRecordScopeService scope,
             INotificationDispatcher notify,
-            ILogger<TransitionDealStageHandler> logger)
+            ILogger<TransitionDealStageHandler> logger,
+            AutomationEngine automation)                        // 098
         {
+            _automation = automation;
             _logger = logger;
             _db = db;
             _scope = scope;
@@ -266,6 +275,7 @@ namespace MerkaiTrial.Application.Commands.Deals
                 IsSystemMove: true));
 
             var fromStage = deal.Stage;
+            var fromProbability = deal.Probability;             // 098
 
             StageTransitionGuard.ApplyToDeal(
                 deal, decision, changedBy,
@@ -302,6 +312,20 @@ namespace MerkaiTrial.Application.Commands.Deals
             // move does resolve one, this path already behaves correctly
             // rather than being the one that silently does not.
             await _actions.RunAsync(tenantGuid, dealId, decision, movedByUserId: null);
+
+            // 098 — automation rules, after the step's own follow-ups.
+            // Nobody pressed anything, so there is no "person who made the
+            // change"; the engine finds none signed in on the worker path.
+            await _automation.FieldsChangedAsync(
+                tenantGuid, AutomationEntity.Deal, dealId,
+                new[]
+                {
+                    new AutomationFieldChange(AutomationFields.Stage, fromStage, deal.Stage),
+                    new AutomationFieldChange(AutomationFields.Probability,
+                        fromProbability.ToString(CultureInfo.InvariantCulture),
+                        deal.Probability.ToString(CultureInfo.InvariantCulture))
+                },
+                null);
         }
 
         private static DealStageSnapshot Snapshot(Deal d) => new(
@@ -654,6 +678,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly ILogger<CreateDealHandler> _logger;
         private readonly IAuditService _audit;
         private readonly INotificationDispatcher _notify;      // 039
+        private readonly AutomationEngine _automation;         // 098
 
         public CreateDealHandler(
             FlowDbContext db,
@@ -661,8 +686,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             IStageResolver stages,
             ILogger<CreateDealHandler> logger,
             IAuditService audit,
-            INotificationDispatcher notify)
+            INotificationDispatcher notify,
+            AutomationEngine automation)                       // 098
         {
+            _automation = automation;
             _db = db;
             _currentUserService = currentUserService;
             _stages = stages;
@@ -799,6 +826,11 @@ namespace MerkaiTrial.Application.Commands.Deals
                     currency = deal.Currency
                 });
 
+            // 098 — "a deal is added" rules. Before the re-query below, so
+            // the reply shows any owner or probability a rule set.
+            await _automation.RecordCreatedAsync(
+                deal.TenantId, AutomationEntity.Deal, deal.Id, currentUser.UserId.ToString());
+
             _logger.LogInformation(
                 "Deal '{Title}' created at stage {Stage} for tenant {TenantId}",
                 deal.Title, stage, dto.TenantId);
@@ -855,6 +887,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly IRecordScopeService _scope;
         private readonly INotificationDispatcher _notify;              // 039
         private readonly ILogger<UpdateDealHandler> _logger;           // 039
+        private readonly AutomationEngine _automation;                 // 098
 
         public UpdateDealHandler(
             FlowDbContext db,
@@ -864,8 +897,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             IAuditService audit,
             IRecordScopeService scope,
             INotificationDispatcher notify,
-            ILogger<UpdateDealHandler> logger)
+            ILogger<UpdateDealHandler> logger,
+            AutomationEngine automation)                       // 098
         {
+            _automation = automation;
             _db = db;
             _scope = scope;
             _currentUserService = currentUserService;
@@ -897,6 +932,11 @@ namespace MerkaiTrial.Application.Commands.Deals
             // 039: captured before anything is overwritten, so the owner
             // change can be detected the same way the stage change is.
             var previousOwnerUserId = deal.OwnerUserId;
+
+            // 098 — the rest of "before", for the automation rules.
+            var previousStageForRules = deal.Stage;
+            var previousValue = deal.ExpectedValue;
+            var previousProbability = deal.Probability;
 
             // ── 041: what does the incoming owner value MEAN? ─────────────
             // Asked up front, before a single field is written, and answered
@@ -933,6 +973,12 @@ namespace MerkaiTrial.Application.Commands.Deals
             // BEFORE the stage block on purpose: that block writes an audit
             // row as it goes, and a value refused after it would leave an
             // audit entry for a stage move that never saved.
+            // 099 — values before this edit, for "when a custom field
+            // changes" rules. Only when the form sent any.
+            var customBefore = dto.CustomFields is null ? null
+                : await CustomFieldValueWriter.ReadAsync(
+                    _db, tenantGuid, CustomFieldEntityTypes.Deal, deal.Id, CancellationToken.None);
+
             await CustomFieldValueWriter.ApplyAsync(
                 _db, tenantGuid, CustomFieldEntityTypes.Deal, deal.Id,
                 dto.CustomFields, currentUser.FullName, isNew: false, CancellationToken.None);
@@ -1057,6 +1103,26 @@ namespace MerkaiTrial.Application.Commands.Deals
                 await _audit.WriteAsync(
                     AuditAction.DealUpdated, AuditEntityType.Deal, dealId, deal.TenantId,
                     new { title = deal.Title });
+
+            // 098 — rules watching the stage, owner, value or probability.
+            // Unchanged pairs are dropped by the engine.
+            await _automation.FieldsChangedAsync(
+                tenantGuid, AutomationEntity.Deal, dealId,
+                new[]
+                {
+                    new AutomationFieldChange(AutomationFields.Stage, previousStageForRules, deal.Stage),
+                    new AutomationFieldChange(AutomationFields.Owner, previousOwnerUserId, deal.OwnerUserId),
+                    new AutomationFieldChange(AutomationFields.Value,
+                        AutomationEngine.Wire(previousValue), AutomationEngine.Wire(deal.ExpectedValue)),
+                    new AutomationFieldChange(AutomationFields.Probability,
+                        previousProbability.ToString(CultureInfo.InvariantCulture),
+                        deal.Probability.ToString(CultureInfo.InvariantCulture))
+                }.Concat(AutomationEngine.CustomChanges(
+                    customBefore,
+                    customBefore is null ? null
+                        : await CustomFieldValueWriter.ReadAsync(
+                            _db, tenantGuid, CustomFieldEntityTypes.Deal, dealId, CancellationToken.None))),
+                currentUser.UserId.ToString());
         }
 
         /// <summary>039. Adds rows; does not save. Never throws.</summary>
@@ -1087,6 +1153,7 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly IRecordScopeService _scope;
         private readonly INotificationDispatcher _notify;              // 039
         private readonly ILogger<UpdateDealStageHandler> _logger;      // 039
+        private readonly AutomationEngine _automation;                 // 098
 
         public UpdateDealStageHandler(
             FlowDbContext db,
@@ -1097,8 +1164,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             IAuditService audit,
             IRecordScopeService scope,
             INotificationDispatcher notify,
-            ILogger<UpdateDealStageHandler> logger)
+            ILogger<UpdateDealStageHandler> logger,
+            AutomationEngine automation)                       // 098
         {
+            _automation = automation;
             _db = db;
             _scope = scope;
             _currentUserService = currentUserService;
@@ -1153,6 +1222,7 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var previousStage = deal.Stage;
+            var previousProbability = deal.Probability;         // 098
 
             var decision = await _guard.CheckAsync(new StageMoveRequest(
                 TenantId: tenantGuid,
@@ -1213,8 +1283,23 @@ namespace MerkaiTrial.Application.Commands.Deals
             // take that back, which is the whole design — a broken task
             // template must never reverse a deal that was legitimately
             // closed.
-            return await _actions.RunAsync(
+            var actionResult = await _actions.RunAsync(
                 tenantGuid, dealId, decision, currentUser.UserId.ToString());
+
+            // 098 — the workspace's automation rules, after the step's own
+            // follow-ups. Never throws; the move is already a fact.
+            await _automation.FieldsChangedAsync(
+                tenantGuid, AutomationEntity.Deal, dealId,
+                new[]
+                {
+                    new AutomationFieldChange(AutomationFields.Stage, previousStage, deal.Stage),
+                    new AutomationFieldChange(AutomationFields.Probability,
+                        previousProbability.ToString(CultureInfo.InvariantCulture),
+                        deal.Probability.ToString(CultureInfo.InvariantCulture))
+                },
+                currentUser.UserId.ToString());
+
+            return actionResult;
         }
     }
 

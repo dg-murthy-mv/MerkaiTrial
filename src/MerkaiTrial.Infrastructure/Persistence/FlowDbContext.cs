@@ -34,6 +34,14 @@
 //      and put an explicit TenantId on every query they run after the
 //      workspace is known. That is the ONLY place those calls are allowed;
 //      every page-facing handler goes through the filter.
+//  19. (098) AutomationRule + AutomationRun — workflow automation. Both
+//      STRICTLY tenant-owned. Round 099's background check reads them
+//      with no tenant (IgnoreQueryFilters + an explicit TenantId on every
+//      query, the OutboundMessageWorker rule); nothing page-facing does.
+//  20. (099) AutomationTimeFire — which episode a time-based rule has
+//      already acted on, per record. Tenant-owned, filtered like the rest.
+//      The automation worker sets the workspace for its own scope
+//      (WorkerTenantProvider), so the filters see the right tenant there.
 //  18. (085) OutboundMessageAttachment + InvoiceSentCopy — the invoice
 //      PDF on its way out, and the copy the customer can download. Both
 //      STRICTLY tenant-owned.
@@ -249,6 +257,13 @@ public class FlowDbContext : DbContext
     /// </summary>
     public DbSet<WhatsAppTemplate> WhatsAppTemplates => Set<WhatsAppTemplate>();
 
+    /// <summary>098. Workflow automation rules. Strictly tenant-owned.</summary>
+    public DbSet<AutomationRule> AutomationRules => Set<AutomationRule>();
+
+    /// <summary>098. One row per rule run — the rule log. Strictly tenant-owned.</summary>
+    public DbSet<AutomationRun> AutomationRuns => Set<AutomationRun>();
+    public DbSet<AutomationTimeFire> AutomationTimeFires => Set<AutomationTimeFire>();   // 099
+
     // Quote approvals (017)
     public DbSet<QuoteApprovalSettings> QuoteApprovalSettings => Set<QuoteApprovalSettings>();
     public DbSet<QuoteApprovalRequest> QuoteApprovalRequests => Set<QuoteApprovalRequest>();
@@ -463,6 +478,12 @@ public class FlowDbContext : DbContext
                                     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantNotificationDefault>()
                                     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // Automation (098). Strict, both — one workspace's rules and the
+        // log of what they did to its records. See item 19 in the header.
+        b.Entity<AutomationRule>()  .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<AutomationRun>()   .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<AutomationTimeFire>().HasQueryFilter(e => e.TenantId == CurrentTenantId);   // 099
 
         // LeadSources and LeadChannels: strict. Both have ZERO null rows,
         // and LeadSourceConfiguration already declares TenantId required.

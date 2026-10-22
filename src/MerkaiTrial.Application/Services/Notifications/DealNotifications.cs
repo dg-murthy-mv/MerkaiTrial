@@ -29,6 +29,16 @@
 // CHANGES (086b) — each request now carries a Headline for WhatsApp: the
 // deal or lead itself, without "you were assigned", which the approved
 // template already says. The bell and the email keep the full Title.
+//
+// CHANGES (097) — stage changed follows the others: {{headline}} is just
+// the deal, and WHERE it went moves into {{detail}} (the new Detail field,
+// WhatsApp only), matching the samples Meta reviews:
+//
+//     A deal has moved to a new stage: Acme office fit-out
+//     (now Negotiation, from Proposal).
+//
+// The bell and email are unchanged: Title "Acme office fit-out moved to
+// Negotiation", Body "From Proposal" (or the lost reason).
 // =====================================================================
 
 using MerkaiTrial.Domain.Entities;
@@ -92,11 +102,27 @@ public static class DealNotifications
             // email reading "by".
             ActorName: actorName,
 
-            // 086b. The template says "has moved to a new stage"; the
-            // headline says which deal and where to.
-            Headline: isReopen
-                ? $"{dealTitle} reopened — now {toStageName}"
-                : $"{dealTitle} is now {toStageName}");
+            // 097. The template says "has moved to a new stage"; the
+            // headline is the deal, the detail where it went.
+            Headline: dealTitle,
+            Detail: StageDetail(fromStageName, toStageName, isReopen, note));
+    }
+
+    /// <summary>
+    /// 097. WhatsApp's {{detail}} for a stage change:
+    ///   "now Negotiation, from Proposal"
+    ///   "now Closed Lost, from Proposal: chose a cheaper supplier"   (the note)
+    ///   "reopened, now Proposal"
+    /// </summary>
+    public static string StageDetail(string? fromStageName, string toStageName, bool isReopen, string? note)
+    {
+        var text = isReopen
+            ? $"reopened, now {toStageName}"
+            : string.IsNullOrWhiteSpace(fromStageName)
+                ? $"now {toStageName}"
+                : $"now {toStageName}, from {fromStageName!.Trim()}";
+
+        return string.IsNullOrWhiteSpace(note) ? text : $"{text}: {note.Trim()}";
     }
 
     // ── Assigned ──────────────────────────────────────────────────────

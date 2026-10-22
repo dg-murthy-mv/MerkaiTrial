@@ -1,0 +1,301 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.Automation.IndexModel
+@using MerkaiTrial.Domain.Entities
+@using MerkaiTrial.Application.Commands.Automation
+@* 098-update: the page model's own namespace, so IndexModel.Templates etc. resolve
+   whatever @namespace the project's _ViewImports sets. *@
+@using MerkaiTrial.Admin.Web.Pages.Settings.Automation
+@{
+    ViewData["Title"] = "Automation";
+    var d = Model.Data;
+}
+@* (098) Workflow automation — the rules list and the rule log.
+
+   A rule is a sentence: WHEN something happens to a lead or deal, IF it
+   matches, THEN do one or more things. The list shows each rule as that
+   sentence, so nobody has to open a rule to know what it does.
+
+   The log answers "why didn't my rule fire?": a rule whose conditions
+   did not hold writes a "Skipped" line saying what it found. *@
+
+<style>
+    .rules-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin: -1rem -1rem 2rem -1rem;
+        border-radius: 0 0 1rem 1rem;
+    }
+    .plan-chip {
+        display: inline-flex; align-items: center; gap: .4rem;
+        background: rgba(255,255,255,.18); border-radius: 999px;
+        padding: .3rem .8rem; font-size: .85rem;
+    }
+    .tpl-card {
+        border: 1px solid #e2e8f0; border-radius: 10px; padding: .9rem 1rem;
+        height: 100%; background: #fff; display: block; color: inherit; text-decoration: none;
+        transition: border-color .15s, box-shadow .15s, transform .15s;
+    }
+    .tpl-card:hover { border-color: #6366f1; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.06); color: inherit; }
+    .tpl-name { font-weight: 600; font-size: .95rem; }
+    .tpl-tag  { font-size: .8rem; color: #475569; margin-top: .15rem; }
+    .rule-row.off td { color: #94a3b8; }
+    .rule-summary { font-size: .82rem; color: #475569; }
+    .rule-row.off .rule-summary { color: #94a3b8; }
+    .log-detail { font-size: .82rem; color: #475569; }
+    .log-time { font-size: .78rem; color: #64748b; white-space: nowrap; }
+</style>
+
+<div class="container-fluid">
+    <div class="rules-header">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h1 class="h3 mb-1"><i class="bi bi-lightning-charge me-2"></i>Automation</h1>
+                    <p class="mb-2 opacity-75">When something happens to a lead or deal, do the follow-up for you</p>
+                    <span class="plan-chip" id="planChip">
+                        <i class="bi bi-toggles"></i>
+                        @if (d.Limit <= 0)
+                        {
+                            <span>Not included in the @(d.PlanName ?? "current") plan</span>
+                        }
+                        else
+                        {
+                            <span><strong>@d.ActiveCount</strong> of @d.Limit rules switched on · @(d.PlanName ?? "current") plan</span>
+                        }
+                    </span>
+                </div>
+                @if (Model.CanCreate)
+                {
+                    <a asp-page="./Edit" class="btn btn-light" id="newRuleBtn">
+                        <i class="bi bi-plus-lg me-1"></i>New rule
+                    </a>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (Model.LoadFailed)
+    {
+        <div class="alert alert-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            The rules could not be loaded. Please refresh the page.
+        </div>
+    }
+
+    @if (d.Limit <= 0)
+    {
+        <div class="alert alert-info d-flex gap-2" role="alert" id="noAutomationNote">
+            <i class="bi bi-info-circle-fill mt-1"></i>
+            <div>
+                Your plan doesn't include automation rules. You can still build and save rules switched off —
+                they're ready to switch on the moment the plan is upgraded.
+            </div>
+        </div>
+    }
+    else if (Model.AtLimit && d.Rules.Count > d.ActiveCount)
+    {
+        <div class="alert alert-light border d-flex gap-2" role="alert">
+            <i class="bi bi-info-circle mt-1"></i>
+            <div>
+                All @d.Limit of your plan's switched-on rules are in use. To switch another on, switch one off first,
+                or ask about a bigger plan. Rules that are off are kept as they are.
+            </div>
+        </div>
+    }
+
+    @* ── starters — only while there is nothing yet, or few rules ── *@
+    @if (Model.CanCreate && d.Rules.Count < 3)
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-magic me-2"></i>Start from an example</h6>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Each opens in the editor filled in, ready to adjust. Nothing is saved until you press Save.
+                </p>
+                <div class="row g-3">
+                    @foreach (var t in IndexModel.Templates)
+                    {
+                        <div class="col-12 col-md-6 col-xl">
+                            <a class="tpl-card" asp-page="./Edit" asp-route-template="@t.Key" data-template="@t.Key">
+                                <div class="tpl-name"><i class="bi @t.Icon me-1 text-primary"></i>@t.Name</div>
+                                <div class="tpl-tag">@t.Line</div>
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* ── the rules ───────────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Rules</h6>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small">Run in the order they were added</span>
+                @if (Model.HasTimeRules && Model.CanUpdate)
+                {
+                    @* 099 — the worker checks every 15 minutes; this checks now. *@
+                    <form method="post" asp-page-handler="CheckTime" class="m-0">
+                        <button type="submit" class="btn btn-sm btn-outline-primary" id="checkTimeNow"
+                                title="Time-based rules are checked automatically every 15 minutes">
+                            <i class="bi bi-clock-history me-1"></i>Check time-based rules now
+                        </button>
+                    </form>
+                }
+            </div>
+        </div>
+
+        @if (d.Rules.Count == 0)
+        {
+            <div class="card-body text-center text-muted py-5" id="noRules">
+                <i class="bi bi-lightning-charge display-6 d-block mb-2 opacity-50"></i>
+                No rules yet. Start from an example above, or build one from scratch.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0" id="rulesTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:90px">On</th>
+                            <th>Rule</th>
+                            <th class="d-none d-md-table-cell" style="width:110px">Runs</th>
+                            <th class="d-none d-lg-table-cell" style="width:170px">Last ran</th>
+                            <th style="width:150px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in d.Rules)
+                        {
+                            <tr class="rule-row @(r.IsActive ? "" : "off")" data-rule-id="@r.Id" data-rule-name="@r.Name">
+                                <td>
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <form method="post" asp-page-handler="Toggle" class="m-0">
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <input type="hidden" name="isActive" value="@(r.IsActive ? "false" : "true")" />
+                                            <div class="form-check form-switch m-0">
+                                                <input class="form-check-input rule-toggle" type="checkbox" role="switch"
+                                                       title="@(r.IsActive ? "Switch off" : "Switch on")"
+                                                       @(r.IsActive ? "checked" : "")
+                                                       onchange="this.form.submit()" />
+                                            </div>
+                                        </form>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge @(r.IsActive ? "bg-success" : "bg-secondary")">@(r.IsActive ? "On" : "Off")</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="fw-semibold">
+                                        <i class="bi @(r.EntityType == AutomationEntity.Deal ? "bi-kanban" : "bi-person-plus") me-1 text-muted"
+                                           title="@(r.EntityType == AutomationEntity.Deal ? "Deals" : "Leads")"></i>@r.Name
+                                        @if (r.IsTimeBased)
+                                        {
+                                            <span class="badge bg-light text-secondary border ms-1" title="Checked every 15 minutes"><i class="bi bi-clock"></i> Time-based</span>
+                                        }
+                                    </div>
+                                    <div class="rule-summary">@r.Summary</div>
+                                </td>
+                                <td class="d-none d-md-table-cell">@r.RunCount</td>
+                                <td class="d-none d-lg-table-cell small text-muted">
+                                    @(r.LastRunAtUtc is { } lr ? Model.FormatDateTime(lr) : "Not yet")
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <a asp-page="./Index" asp-route-ruleId="@r.Id" class="btn btn-sm btn-outline-secondary" title="Show this rule's log">
+                                        <i class="bi bi-journal-text"></i>
+                                    </a>
+                                    @if (Model.CanUpdate)
+                                    {
+                                        <a asp-page="./Edit" asp-route-id="@r.Id" class="btn btn-sm btn-outline-primary rule-edit" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    }
+                                    @if (Model.CanDelete)
+                                    {
+                                        <form method="post" asp-page-handler="Delete" class="d-inline m-0"
+                                              onsubmit="return confirm('Delete the rule “' + this.dataset.name + '”? Its lines stay in the log.');"
+                                              data-name="@r.Name">
+                                            <input type="hidden" name="id" value="@r.Id" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rule-delete" title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+
+    @* ── the log ─────────────────────────────────────────────────── *@
+    <div class="card shadow-sm mb-4" id="runLog">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0">
+                <i class="bi bi-journal-text me-2"></i>Rule log
+                @if (Model.FilterRuleName is { } fname)
+                {
+                    <span class="text-muted fw-normal">— @fname</span>
+                }
+            </h6>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small">Newest @GetAutomationRunsHandler.Take</span>
+                @if (Model.RuleId is not null)
+                {
+                    <a asp-page="./Index" class="btn btn-sm btn-outline-secondary">Show all rules</a>
+                }
+            </div>
+        </div>
+
+        @if (Model.Runs.Count == 0)
+        {
+            <div class="card-body text-muted small" id="noRuns">
+                Nothing yet. Each time a rule runs — or is skipped because its conditions didn't match — it's written here.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0" id="runsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:150px">When</th>
+                            <th>Rule</th>
+                            <th>Record</th>
+                            <th style="width:110px">Result</th>
+                            <th class="d-none d-md-table-cell">What happened</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var run in Model.Runs)
+                        {
+                            <tr class="run-row" data-status="@run.Status" data-rule-id="@run.RuleId">
+                                <td class="log-time">@Model.FormatDateTime(run.CreatedAtUtc)</td>
+                                <td class="small">@run.RuleName</td>
+                                <td class="small">
+                                    <a asp-page="@IndexModel.RecordPage(run.EntityType)" asp-route-id="@run.EntityId">
+                                        @(string.IsNullOrWhiteSpace(run.EntityName) ? run.EntityType : run.EntityName)
+                                    </a>
+                                </td>
+                                <td><span class="badge @IndexModel.StatusBadge(run.Status)">@IndexModel.StatusWord(run.Status)</span></td>
+                                <td class="log-detail d-none d-md-table-cell">@run.Detail</td>
+                            </tr>
+                            <tr class="d-md-none">
+                                <td colspan="4" class="log-detail border-top-0 pt-0">@run.Detail</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

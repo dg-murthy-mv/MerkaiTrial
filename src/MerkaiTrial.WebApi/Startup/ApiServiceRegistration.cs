@@ -19,6 +19,15 @@
 // NOTHING ELSE CHANGED. Same services, same lifetimes, same order where
 // order matters (ITenantProvider before AddDbContext).
 //
+// 099 — AUTOMATION WORKER
+//   • ITenantProvider is now OverridableTenantProvider: identical to
+//     HttpTenantProvider in a request (it wraps one), and lets a
+//     background scope name its workspace. Registered as itself AND as
+//     ITenantProvider, so both resolve to the same object in a scope.
+//   • AddApiBackgroundServices adds AutomationWorker (time-based rules
+//     every 15 minutes, rule-log retention once a day), with its options
+//     from the "AutomationWorker" section — none are required.
+//
 // The using list is copied from the old Program.cs on purpose — it is the
 // set of namespaces these types are known to live in.
 // =====================================================================
@@ -160,7 +169,9 @@ public static class ApiServiceRegistration
                    ?? throw new InvalidOperationException("ConnectionStrings:Default missing.");
 
         // Feeds the global query filters. MUST be registered before AddDbContext.
-        services.AddScoped<ITenantProvider, HttpTenantProvider>();
+        // 099: OverridableTenantProvider — HttpTenantProvider underneath; see the header.
+        services.AddScoped<OverridableTenantProvider>();
+        services.AddScoped<ITenantProvider>(sp => sp.GetRequiredService<OverridableTenantProvider>());
         services.AddDbContext<FlowDbContext>(opt => opt.UseSqlServer(conn));
         return services;
     }
@@ -401,6 +412,10 @@ public static class ApiServiceRegistration
     {
         services.AddHostedService<OutboundMessageWorker>();
         services.AddHostedService<InboundEmailWorker>();     // 083 — files received email
+
+        // 099 — time-based automation rules + rule-log retention.
+        services.AddOptions<AutomationWorkerOptions>().BindConfiguration(AutomationWorkerOptions.SectionName);
+        services.AddHostedService<AutomationWorker>();
         return services;
     }
 }

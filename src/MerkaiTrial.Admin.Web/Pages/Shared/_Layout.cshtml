@@ -1322,7 +1322,8 @@
                    everyone else, which is what you would have expected
                    all along. *@
                 @if (CanNav("settings") || CanNav("roles")
-                                || CanNav("users") || CanNav("audit"))
+                                || CanNav("users") || CanNav("audit")
+                                || CanNav("automation"))
                 {
                     <div class="lf-nav-section">Workspace Settings</div>
 
@@ -1417,6 +1418,18 @@
                         <a class="lf-nav-item @(IsActive("/Settings/InboundEmail") ? "active" : "")"
                            asp-page="/Settings/InboundEmail/Index">
                             <i class="bi bi-envelope-arrow-down"></i> Inbound Email
+                        </a>
+                    }
+
+                    @* 098. Workflow automation — its own module, so a tenant
+                       admin can hand it to a sales manager with one tick in
+                       the role editor without also handing over the rest of
+                       Workspace Settings. Admins see it automatically. *@
+                    @if (CanNav("automation"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/Automation") ? "active" : "")"
+                           asp-page="/Settings/Automation/Index">
+                            <i class="bi bi-lightning-charge"></i> Automation
                         </a>
                     }
 

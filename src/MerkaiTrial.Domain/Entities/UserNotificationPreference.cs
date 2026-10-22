@@ -34,6 +34,12 @@
 // below. A rep can turn the email on for themselves, and an admin can
 // make it the workspace's default, like any other event.
 //
+// 098 — AutomationNotice: in the app, NOT by email, by default, like the
+// assignment events. An admin who builds a rule that matters can make
+// email the workspace default for it on the Notifications page. No
+// WhatsApp template: the text is whatever the rule's author wrote, and a
+// template's wording has to be fixed in advance.
+//
 // WHY EMAIL DEFAULTS ARE MOSTLY OFF
 //   The fastest way to make people ignore your product's email is to send
 //   them one for everything. Only the two approval events default to
@@ -139,7 +145,8 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.DealStageChanged,
             NotificationEventType.DealAssigned,
             NotificationEventType.LeadAssigned,
-            NotificationEventType.TaskAssigned               // 091
+            NotificationEventType.TaskAssigned,              // 091
+            NotificationEventType.AutomationNotice           // 098
         };
 
         /// <summary>The label on the settings page. Written for a salesperson.</summary>
@@ -157,6 +164,7 @@ namespace MerkaiTrial.Domain.Entities
             NotificationEventType.EmailBounced           => "An email I sent to a customer couldn't be delivered",
             NotificationEventType.InvoiceSent            => "An invoice is emailed to a customer",
             NotificationEventType.TaskAssigned           => "A task is assigned to me",   // 091
+            NotificationEventType.AutomationNotice       => "An automation rule sends me a message",   // 098
             _                                             => eventType.ToString()
         };
 
