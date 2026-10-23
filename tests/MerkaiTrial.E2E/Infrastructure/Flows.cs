@@ -203,8 +203,12 @@ public static class Flows
             // failed here: "load" also waits for every font and stylesheet
             // from the CDNs, and one of those stalled for 20 seconds. The
             // page was there; the test was waiting for a font.
-            await page.WaitForURLAsync(u => Ui.PathOf(u).StartsWith("/Pipeline", StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs, WaitUntil = WaitUntilState.DOMContentLoaded });
+            //
+            // 101c: and not page.WaitForURLAsync at all. When the click had
+            // already followed the redirect to the end, that waited for a
+            // DOMContentLoaded which had already happened — 20 s on a page
+            // that was finished. Ui.WaitForAddressAsync looks instead.
+            await Ui.WaitForAddressAsync(page, u => Ui.PathOf(u).StartsWith("/Pipeline", StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex) when (Ui.IsTimeout(ex))
         {
@@ -284,7 +288,8 @@ public static class Flows
             await page.WaitForTimeoutAsync(500);
         }
 
-        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        // 101d: looked at, not waited for as an event — see Ui.WaitForDocumentAsync.
+        await Ui.WaitForDocumentAsync(page);
         return await Ui.TextOrEmptyAsync(page.Locator(".alert-success"));
     }
 
@@ -364,15 +369,22 @@ public static class Flows
         if (!page.Url.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase))
         {
             await openDraft.First.ClickAsync();
-            await page.WaitForURLAsync(u => u.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase));
+            await Ui.WaitForAddressAsync(page, u => u.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase));
         }
 
+        // 101: the button MUST be there. A new invoice is a draft (number
+        // DRAFT-…, nothing sent) until it is issued. Before 101 this step
+        // said "if there is an Issue button", and that hid a bug for many
+        // rounds: invoices were being saved already Sent (see
+        // FlowDbContext.ApplyAlwaysSendValues), so there was no button,
+        // and the test carried on as if all was well.
         var issue = page.GetByRole(AriaRole.Button, new() { Name = "Issue invoice" });
-        if (await issue.CountAsync() > 0)
+        await Assertions.Expect(issue).ToHaveCountAsync(1, new()
         {
-            await issue.ClickAsync();   // the confirm() is accepted by the session
-            await Assertions.Expect(issue).ToHaveCountAsync(0, new() { Timeout = E2ESettings.ActionTimeoutMs });
-        }
+            Timeout = E2ESettings.ActionTimeoutMs,
+        });
+        await issue.ClickAsync();   // the confirm() is accepted by the session
+        await Assertions.Expect(issue).ToHaveCountAsync(0, new() { Timeout = E2ESettings.ActionTimeoutMs });
 
         return Ui.IdFromUrl(page.Url);
     }

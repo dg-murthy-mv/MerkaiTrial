@@ -78,6 +78,13 @@ var app = builder.Build();
 await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
     .WarmUpAsync(app.Services, "WebApi");
 
+// 101: compare the app's model with the real tables and log every
+// difference ([SchemaCheck] lines in webapi.out.log). Read-only, never
+// stops startup. Round 101's two invoice bugs were exactly this kind of
+// drift: Invoices.QuoteId NOT NULL, Invoices.Status defaulting to Sent.
+await MerkaiTrial.Infrastructure.Persistence.SchemaCheck
+    .RunAsync(app.Services, "WebApi");
+
 // ---------------- Pipeline — order matters ----------------
 // 063: was app.UseSerilogRequestLogging(). Same line, same position, but
 // the public quote token is taken out of the path before it is written —

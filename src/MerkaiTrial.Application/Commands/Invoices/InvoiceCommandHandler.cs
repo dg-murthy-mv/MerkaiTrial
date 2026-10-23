@@ -1884,11 +1884,56 @@ namespace MerkaiTrial.Application.Commands.Invoices
     {
         private readonly FlowDbContext _db;
         private readonly IRecordScopeService _scope;
+        private readonly ICurrentUserService _currentUser;   // 101
+        private readonly IssueInvoiceHandler _issue;         // 101
 
-        public InvoiceAccessHandler(FlowDbContext db, IRecordScopeService scope)
+        public InvoiceAccessHandler(FlowDbContext db, IRecordScopeService scope,
+            ICurrentUserService currentUser, IssueInvoiceHandler issue)
         {
             _db = db;
             _scope = scope;
+            _currentUser = currentUser;
+            _issue = issue;
+        }
+
+        /// <summary>
+        /// 101. Can the current user OPEN this invoice (and issue it)?
+        /// Anyone who can see it through its deal — plus the person an
+        /// approval rule names to issue it. Quotes have had the same rule
+        /// since 027 (QuoteApprovalEngine.CanReadQuoteAsync).
+        ///
+        /// Why: from 101, who may issue an over-limit manual invoice follows
+        /// the rule it trips — e.g. "over 10% → the Finance Director". If
+        /// that person's own visibility is Team or Own and the deal is not
+        /// theirs, CanSeeInvoiceAsync said no and they got 404: the one
+        /// person allowed to issue it could not even open it.
+        ///
+        /// Only for READING and ISSUING. Editing, paying, voiding and
+        /// deleting still need CanSeeInvoiceAsync.
+        /// </summary>
+        public async Task<bool> CanReadInvoiceAsync(Guid tenantId, Guid invoiceId, CancellationToken ct = default)
+        {
+            if (await CanSeeInvoiceAsync(tenantId, invoiceId, ct)) return true;
+            return await IsAskedToIssueAsync(tenantId, invoiceId, ct);
+        }
+
+        /// <summary>
+        /// 101. True when the invoice is a manual DRAFT over the workspace's
+        /// limits and the current user is one of the people the tripped
+        /// rule names to issue it. False for anything within the limits —
+        /// that does not make a draft visible to everybody.
+        /// </summary>
+        public async Task<bool> IsAskedToIssueAsync(Guid tenantId, Guid invoiceId, CancellationToken ct = default)
+        {
+            var invoice = await _db.Invoices.AsNoTracking()
+                .Include(i => i.Lines)
+                .FirstOrDefaultAsync(i => i.Id == invoiceId && i.TenantId == tenantId && !i.IsDeleted
+                                          && i.Status == InvoiceStatus.Draft && i.QuoteId == null, ct);
+            if (invoice is null) return false;
+
+            var me = await _currentUser.GetCurrentUserAsync();
+            var check = await _issue.CheckAsync(invoice, me, ct);
+            return check.Allowed && check.RuleReasons.Count > 0;
         }
 
         public async Task<bool> CanSeeInvoiceAsync(Guid tenantId, Guid invoiceId, CancellationToken ct = default)

@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Domain.Entities;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -19,7 +19,13 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             b.Property(x => x.Domain).HasMaxLength(255);
             b.Property(x => x.ReplyToEmail).HasMaxLength(320);
             b.Property(x => x.PreferredLanguage).HasMaxLength(10);
-            b.Property(x => x.Plan).HasMaxLength(32);
+            // 101 (SchemaCheck): both columns are NOT NULL in the database,
+            // and both places that create a workspace always fill them in
+            // (TenantCommandHandlers, TenantProvisioningService). Said here
+            // too, so the model matches the table and EF refuses a missing
+            // value with a clear message instead of a SQL error.
+            b.Property(x => x.Plan).HasMaxLength(32).IsRequired();
+            b.Property(x => x.CreatedAtUtc).IsRequired();
 
             // Currency is a 3-letter ISO code string (e.g., "THB")
             b.Property(x => x.DefaultCurrency)

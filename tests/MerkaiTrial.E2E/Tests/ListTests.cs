@@ -63,7 +63,7 @@ public class ListTests : E2ETest
         await Step("Click Value — sorted one way", async () =>
         {
             await header.ClickAsync();
-            await admin.WaitForURLAsync(u => u.Contains("Sort=value", StringComparison.OrdinalIgnoreCase));
+            await Ui.WaitForAddressAsync(admin, u => u.Contains("Sort=value", StringComparison.OrdinalIgnoreCase));
 
             var dir = await headerCell.GetAttributeAsync("aria-sort");
             var expected = dir == "descending"
@@ -99,7 +99,7 @@ public class ListTests : E2ETest
         await Step("Choose 25 — remembered next time", async () =>
         {
             await admin.Locator("#lpPageSize").SelectOptionAsync("25");
-            await admin.WaitForURLAsync(u => u.Contains("PageSize=25", StringComparison.OrdinalIgnoreCase));
+            await Ui.WaitForAddressAsync(admin, u => u.Contains("PageSize=25", StringComparison.OrdinalIgnoreCase));
 
             await admin.GotoAsync("/Leads");
             Assert.That(await admin.Locator("#lpPageSize").InputValueAsync(), Is.EqualTo("25"),
@@ -185,7 +185,7 @@ public class ListTests : E2ETest
         Assert.That(await admin.Locator("select[name='type']").InputValueAsync(), Is.EqualTo("Deal"));
 
         await admin.GetByRole(AriaRole.Link, new() { Name = "Clear the search and filter" }).ClickAsync();
-        await admin.WaitForURLAsync(u => !u.Contains("search=", StringComparison.OrdinalIgnoreCase));
+        await Ui.WaitForAddressAsync(admin, u => !u.Contains("search=", StringComparison.OrdinalIgnoreCase));
         await Expect(admin.GetByText("No task matches")).ToHaveCountAsync(0);
     }
 

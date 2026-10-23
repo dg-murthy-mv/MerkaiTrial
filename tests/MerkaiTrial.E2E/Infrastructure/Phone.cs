@@ -23,7 +23,8 @@ public static class Phone
     public static async Task ExpectFitsAsync(IPage page, string what)
     {
         // Late styles and fonts can widen a page after DOMContentLoaded.
-        try { await page.WaitForLoadStateAsync(LoadState.Load, new() { Timeout = 10_000 }); }
+        // 101d: readyState "complete", looked at — see Ui.WaitForDocumentAsync.
+        try { await Ui.WaitForDocumentAsync(page, 10_000, complete: true); }
         catch (Exception ex) when (Ui.IsTimeout(ex)) { /* measure what is there */ }
 
         var report = await page.EvaluateAsync<string[]>(@"() => {

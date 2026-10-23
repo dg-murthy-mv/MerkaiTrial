@@ -143,8 +143,7 @@ public class NotificationTests : E2ETest
             var before = await BellCountAsync(repPage);
 
             await row.ClickAsync();
-            await repPage.WaitForURLAsync(u => u.Contains($"/Leads/Detail/{leadId}", StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+            await Ui.WaitForAddressAsync(repPage, u => u.Contains($"/Leads/Detail/{leadId}", StringComparison.OrdinalIgnoreCase));
 
             Assert.That(await Db.IsNotificationReadAsync(notificationId), Is.True, "Opening it did not mark it read.");
             Assert.That(await BellCountAsync(repPage), Is.EqualTo(before - 1), "The bell count did not drop by one.");
@@ -215,8 +214,7 @@ public class NotificationTests : E2ETest
                         return true;
                     }");
                 await me.GetByRole(AriaRole.Button, new() { Name = "Save preferences" }).ClickAsync();
-                await me.WaitForURLAsync(u => u.Contains("tab=preferences", StringComparison.OrdinalIgnoreCase),
-                    new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+                await Ui.WaitForAddressAsync(me, u => u.Contains("tab=preferences", StringComparison.OrdinalIgnoreCase));
 
                 await me.GotoAsync("/Settings/Notifications?tab=preferences");
                 var after = await LeadAssignedRowAsync(me, "EventTypes");
@@ -316,8 +314,7 @@ public class NotificationTests : E2ETest
         {
             var row = await OpenBellRowAsync(repPage, subject);
             await row.ClickAsync();
-            await repPage.WaitForURLAsync(u => u.Contains($"/Leads/Detail/{leadId}", StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+            await Ui.WaitForAddressAsync(repPage, u => u.Contains($"/Leads/Detail/{leadId}", StringComparison.OrdinalIgnoreCase));
         });
 
         await Step("A task the admin gives himself tells nobody", async () =>

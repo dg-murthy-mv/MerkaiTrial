@@ -373,7 +373,6 @@ public class CustomFieldTests : E2ETest
 
         await box.FillAsync(minimum);
         await page.Locator("#cffPanel button[type=submit]").ClickAsync();
-        await page.WaitForURLAsync(u => u.Contains("_min=" + minimum, StringComparison.OrdinalIgnoreCase),
-            new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+        await Ui.WaitForAddressAsync(page, u => u.Contains("_min=" + minimum, StringComparison.OrdinalIgnoreCase));
     }
 }

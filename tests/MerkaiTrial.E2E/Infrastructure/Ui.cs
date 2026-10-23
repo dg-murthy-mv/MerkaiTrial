@@ -53,8 +53,7 @@ public static class Ui
         var landing = superAdmin ? "/Admin" : "/Dashboard";
         try
         {
-            await page.WaitForURLAsync(url => PathOf(url).StartsWith(landing, StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = E2ESettings.ActionTimeoutMs });
+            await WaitForAddressAsync(page, url => PathOf(url).StartsWith(landing, StringComparison.OrdinalIgnoreCase));
         }
         catch (Exception ex) when (Ui.IsTimeout(ex))
         {
@@ -96,14 +95,13 @@ public static class Ui
         var wait = E2ESettings.ActionTimeoutMs * 2;
         try
         {
-            await page.WaitForURLAsync(url => url.Contains("passwordSet=true", StringComparison.OrdinalIgnoreCase),
-                new PageWaitForURLOptions { Timeout = wait, WaitUntil = WaitUntilState.Commit });
+            await WaitForAddressAsync(page, url => url.Contains("passwordSet=true", StringComparison.OrdinalIgnoreCase), wait);
         }
         catch (Exception ex) when (IsTimeout(ex))
         {
             throw new AssertionException(
                 $"Setting the password from {MaskToken(link)} did not reach the sign-in page within {wait / 1000:0}s " +
-                $"(still on {PathOf(page.Url)}). " +
+                $"(still on {PathOf(page.Url)}; full address {MaskToken(LocalPart(page.Url))}). " +
                 (await StillLoadingAsync(page) ?? await DescribePageProblemsAsync(page)));
         }
         await page.GetByText("Your password is set").First
@@ -239,6 +237,77 @@ public static class Ui
     }
 
     /// <summary>
+    /// 101c. Waits until the address matches and the new page's document has
+    /// been read (readyState past "loading": the DOMContentLoaded moment),
+    /// by LOOKING, not by listening for load events.
+    ///
+    /// Why not page.WaitForURLAsync: when the click before it already rode
+    /// the navigation to the end (the server answered quickly), the page's
+    /// DOMContentLoaded has fired before WaitForURLAsync starts. Playwright
+    /// then waited for it to fire again and ran out of time on a page that
+    /// was sitting there finished. Round 101's run did exactly that after
+    /// "Create the deal": /Pipeline answered 200 in 0.3 s, and the test
+    /// failed 20 s later saying it never got there.
+    ///
+    /// Throws TimeoutException, so callers' IsTimeout() catches still work.
+    /// </summary>
+    public static async Task WaitForAddressAsync(IPage page, Func<string, bool> matches,
+        float timeoutMs = E2ESettings.ActionTimeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (!matches(page.Url))
+        {
+            if (DateTime.UtcNow >= deadline)
+                throw new System.TimeoutException(
+                    $"Timeout {timeoutMs:0}ms exceeded waiting for the address to change (still on {MaskToken(LocalPart(page.Url))}).");
+            await Task.Delay(100);
+        }
+
+        var left = (float)Math.Max(1000, (deadline - DateTime.UtcNow).TotalMilliseconds);
+        await WaitForDocumentAsync(page, left);
+    }
+
+    /// <summary>
+    /// 101d. Waits until the current document has been read
+    /// (readyState "interactive" — the DOMContentLoaded moment) or, with
+    /// <paramref name="complete"/>, fully loaded ("complete"). It LOOKS at
+    /// document.readyState instead of waiting for a load event.
+    ///
+    /// Never use page.WaitForLoadStateAsync / WaitForURLAsync in these tests.
+    /// Both wait for a load EVENT, and after a click that followed a
+    /// POST → redirect → GET to the end, that event has already fired.
+    /// Playwright then waits for it to fire again and times out on a page
+    /// that is sitting there finished. Runs 101-1 and 101-2 each lost a
+    /// different test to it ("Create the deal", then "Send it" — 60 s with
+    /// the log saying Load and NetworkIdle had both fired).
+    ///
+    /// A navigation in progress destroys the page's script context; that is
+    /// retried, not reported. Throws TimeoutException when time runs out.
+    /// </summary>
+    public static async Task WaitForDocumentAsync(IPage page, float timeoutMs = E2ESettings.ActionTimeoutMs,
+        bool complete = false)
+    {
+        var want = complete ? "document.readyState === 'complete'" : "document.readyState !== 'loading'";
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (true)
+        {
+            try
+            {
+                if (await page.EvaluateAsync<bool>("() => " + want)) return;
+            }
+            catch (PlaywrightException) when (DateTime.UtcNow < deadline)
+            {
+                // mid-navigation: no document to ask yet
+            }
+
+            if (DateTime.UtcNow >= deadline)
+                throw new System.TimeoutException(
+                    $"Timeout {timeoutMs:0}ms exceeded waiting for {PathOf(page.Url)} to {(complete ? "finish loading" : "be read")}.");
+            await Task.Delay(100);
+        }
+    }
+
+    /// <summary>
     /// 092. Waits for the address to match <paramref name="url"/> and the
     /// page to be usable (DOMContentLoaded — not every image and font,
     /// which is what the default "load" waits for). <paramref name="what"/>
@@ -251,7 +320,12 @@ public static class Ui
         var started = DateTime.UtcNow;
         try
         {
-            await page.WaitForURLAsync(url, new PageWaitForURLOptions { Timeout = timeoutMs, WaitUntil = WaitUntilState.Commit });
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (!url(page.Url))
+            {
+                if (DateTime.UtcNow >= deadline) throw new System.TimeoutException($"Timeout {timeoutMs:0}ms exceeded.");
+                await Task.Delay(100);
+            }
         }
         catch (Exception ex) when (IsTimeout(ex))
         {
@@ -263,7 +337,8 @@ public static class Ui
         var left = Math.Max(1000f, timeoutMs - (float)(DateTime.UtcNow - started).TotalMilliseconds);
         try
         {
-            await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new PageWaitForLoadStateOptions { Timeout = left });
+            // 101c: looked at, not listened for — see WaitForDocumentAsync.
+            await WaitForDocumentAsync(page, left);
         }
         catch (Exception ex) when (IsTimeout(ex))
         {
@@ -452,6 +527,14 @@ public static class Ui
 
     public static string PathOf(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.AbsolutePath.TrimEnd('/') : url;
+
+    /// <summary>
+    /// 101b. Path and query of a URL, for messages where the query is the
+    /// clue (?passwordSet=true versus ?ReturnUrl=...). Pass through
+    /// MaskToken before printing.
+    /// </summary>
+    public static string LocalPart(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.PathAndQuery : url;
 
     /// <summary>For messages: never print a whole token.</summary>
     public static string MaskToken(string link) =>

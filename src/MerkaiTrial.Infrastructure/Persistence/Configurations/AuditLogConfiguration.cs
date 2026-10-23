@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Domain.Entities;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -20,6 +20,17 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
 
         b.HasIndex(a => new { a.TenantId, a.CreatedAtUtc })
          .HasDatabaseName("IX_AuditLogs_Tenant_CreatedAt");
+
+        // 101 — "this record's history": the lead/deal timeline asks for
+        // one tenant's rows for ONE record (EntityType + EntityId), often of
+        // one Action (status changes, merges). With only the index above,
+        // SQL Server read through the tenant's whole audit trail — or the
+        // whole table — for every timeline. Round 101's run waited 15.2 s on
+        // it (PAGEIOLATCH_SH, reading from disk), and a lead page took over
+        // 20 s to open. Created by Sql/101c_AuditLogs_EntityIndex.sql.
+        b.HasIndex(a => new { a.TenantId, a.EntityType, a.EntityId, a.Action })
+         .HasDatabaseName("IX_AuditLogs_Tenant_Entity")
+         .IncludeProperties(a => new { a.CreatedAtUtc, a.By });
 
         // NO global query filter — see the exemption note in FlowDbContext.
         // Audit reads are SuperAdmin-only and legitimately cross-tenant;

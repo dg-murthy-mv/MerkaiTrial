@@ -60,7 +60,7 @@ public class SalesPipelineTests : E2ETest
             await Assertions.Expect(admin.Locator("input[name='Input.Stage']:checked")).ToHaveCountAsync(1);
 
             await admin.GetByRole(AriaRole.Button, new() { Name = "Create the deal" }).ClickAsync();
-            await admin.WaitForURLAsync(u => Ui.PathOf(u).StartsWith("/Pipeline", StringComparison.OrdinalIgnoreCase));
+            await Ui.WaitForAddressAsync(admin, u => Ui.PathOf(u).StartsWith("/Pipeline", StringComparison.OrdinalIgnoreCase));
         });
 
         // ── Quote ─────────────────────────────────────────────────────
@@ -156,18 +156,18 @@ public class SalesPipelineTests : E2ETest
             if (!admin.Url.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase))
             {
                 await openDraft.First.ClickAsync();
-                await admin.WaitForURLAsync(u => u.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase));
+                await Ui.WaitForAddressAsync(admin, u => u.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase));
             }
         });
 
         await Step("Issue the invoice", async () =>
         {
+            // 101: required, not "if present" — a new invoice must open as
+            // a draft. See Flows.IssuedInvoiceAsync.
             var issue = admin.GetByRole(AriaRole.Button, new() { Name = "Issue invoice" });
-            if (await issue.CountAsync() > 0)
-            {
-                await issue.ClickAsync();   // the confirm() is accepted by the session
-                await Assertions.Expect(issue).ToHaveCountAsync(0, new() { Timeout = E2ESettings.ActionTimeoutMs });
-            }
+            await Assertions.Expect(issue).ToHaveCountAsync(1, new() { Timeout = E2ESettings.ActionTimeoutMs });
+            await issue.ClickAsync();   // the confirm() is accepted by the session
+            await Assertions.Expect(issue).ToHaveCountAsync(0, new() { Timeout = E2ESettings.ActionTimeoutMs });
         });
 
         await Step("Record the full payment", async () =>

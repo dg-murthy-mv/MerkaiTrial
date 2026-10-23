@@ -270,7 +270,8 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
-                if (!await _access.CanSeeInvoiceAsync(tenantId, id, cancellationToken))
+                // 101: CanRead — the person a rule names to issue it may open it.
+                if (!await _access.CanReadInvoiceAsync(tenantId, id, cancellationToken))
                     return NotFound(new { error = $"Invoice {id} not found" });
 
                 var query = new GetInvoiceByIdQuery
@@ -666,7 +667,8 @@ namespace MerkaiTrial.WebApi.Controllers
         [Authorize(Policy = "Invoices.Read")]
         [ProducesResponseType(typeof(InvoiceWorkflowDto), StatusCodes.Status200OK)]
         public Task<IActionResult> GetWorkflow(Guid id, CancellationToken ct)
-            => RunGuarded(id, async tenantId => Ok(await _workflow.Handle(tenantId, id, ct)), "reading invoice workflow", ct);
+            => RunGuarded(id, async tenantId => Ok(await _workflow.Handle(tenantId, id, ct)), "reading invoice workflow", ct,
+                   readOnly: true);   // 101: the named approver may read it
 
         [HttpPost("{id:guid}/issue")]
         [Authorize(Policy = "Invoices.Update")]
@@ -675,7 +677,7 @@ namespace MerkaiTrial.WebApi.Controllers
             {
                 var number = await _issue.Handle(tenantId, id, ct);
                 return Ok(new { number });
-            }, "issuing invoice", ct);
+            }, "issuing invoice", ct, readOnly: true);   // 101: the named approver may issue it — the handler checks the limits
 
         [HttpPost("{id:guid}/void")]
         [Authorize(Policy = "Invoices.Update")]
@@ -771,14 +773,23 @@ namespace MerkaiTrial.WebApi.Controllers
             return (local.Length <= 2 ? local[..1] : local[..2]) + "****" + address[at..];
         }
 
-        /// <summary>Visibility check + the usual exception → status mapping.</summary>
+        /// <summary>
+        /// Visibility check + the usual exception → status mapping.
+        /// <paramref name="readOnly"/> (101): reading the workflow and
+        /// issuing use CanReadInvoiceAsync, so the person an approval rule
+        /// names can act on an invoice whose deal they don't otherwise see.
+        /// Everything else needs the deal to be visible.
+        /// </summary>
         private async Task<IActionResult> RunGuarded(
-            Guid id, Func<Guid, Task<IActionResult>> body, string what, CancellationToken ct)
+            Guid id, Func<Guid, Task<IActionResult>> body, string what, CancellationToken ct, bool readOnly = false)
         {
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
-                if (!await _access.CanSeeInvoiceAsync(tenantId, id, ct))
+                var allowed = readOnly
+                    ? await _access.CanReadInvoiceAsync(tenantId, id, ct)
+                    : await _access.CanSeeInvoiceAsync(tenantId, id, ct);
+                if (!allowed)
                     return NotFound(new { error = $"Invoice {id} not found" });
 
                 return await body(tenantId);
@@ -803,7 +814,7 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId();
             try
             {
-                if (!await _access.CanSeeInvoiceAsync(tenantId, id, ct))
+                if (!await _access.CanReadInvoiceAsync(tenantId, id, ct))   // 101
                     return NotFound(new { error = $"Invoice {id} not found" });
 
                 var pdfBytes = await _generatePdf.HandleAsync(tenantId, id, ct);

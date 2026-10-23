@@ -422,7 +422,7 @@ public class DealWorkTests : E2ETest
         await OpenTabAsync(page, dealId, "attachments");
         await page.Locator("#attachmentFile").SetInputFilesAsync(new FilePayload { Name = name, MimeType = mime, Buffer = bytes });
         await page.Locator("#attachments form[enctype='multipart/form-data'] button[type=submit]").ClickAsync();
-        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        await Ui.WaitForDocumentAsync(page);   // 101d
     }
 
     /// <summary>After an upload: a red message saying why, and the file is not on the list.</summary>
@@ -467,7 +467,7 @@ public class DealWorkTests : E2ETest
         var form = page.Locator("form[enctype='multipart/form-data']:has(input[type=file][name=file])");
         await form.Locator("input[type=file]").SetInputFilesAsync(new FilePayload { Name = name, MimeType = mime, Buffer = bytes });
         await form.Locator("button[type=submit]").ClickAsync();
-        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        await Ui.WaitForDocumentAsync(page);   // 101d
     }
 
     /// <summary>091. One attachment row on the quote page, by file name.</summary>
@@ -515,7 +515,7 @@ public class DealWorkTests : E2ETest
                 return true;
             }", new[] { action, field, value });
 
-        if (posted) await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        if (posted) await Ui.WaitForDocumentAsync(page);   // 101d
         return posted;
     }
 
