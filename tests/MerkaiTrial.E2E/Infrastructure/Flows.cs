@@ -34,6 +34,13 @@
 //
 // 099: ConvertLeadAsync waits for the pipeline page's DOMContentLoaded,
 // not its full "load" — a stalled CDN font failed one full run. See there.
+//
+// 100: the longer journeys several new tests need, written once —
+//   • LeadToDealAsync: add, qualify, convert; returns the lead and deal ids.
+//   • SendQuoteAsync: a quote for a deal, saved and sent; returns its id.
+//   • IssuedInvoiceAsync: the customer accepts a sent quote, Create
+//     invoice, Issue; returns the invoice's id.
+//   The same steps SalesPipelineTests takes, as reusable pieces.
 // =====================================================================
 
 using System.Globalization;
@@ -299,6 +306,75 @@ public static class Flows
         var text = (await link.InnerTextAsync()).Trim();
         Assert.That(text, Does.Contain("/q/"), "The customer link does not look like /q/{token}.");
         return Ui.Rebase(text);
+    }
+
+    // ── 100: whole journeys ───────────────────────────────────────────
+
+    /// <summary>
+    /// Add a lead in <paramref name="workspace"/>, qualify it and convert it
+    /// to a deal in a stage quotes can be raised from. Returns both ids;
+    /// the page ends on the pipeline board.
+    /// </summary>
+    public static async Task<(Guid LeadId, Guid DealId)> LeadToDealAsync(IPage page, TestTenant workspace,
+        string leadName, string email, string dealTitle, decimal value, string? companyName = null)
+    {
+        var leadId = await CreateLeadAsync(page, leadName, email, value, workspace, companyName);
+        await QualifyLeadAsync(page);
+        await ConvertLeadAsync(page, dealTitle, value);
+        var tenantId = await GlobalSetup.Db.TenantIdAsync(workspace.Name);
+        var dealId = await GlobalSetup.Db.DealIdByTitleAsync(tenantId, dealTitle);
+        return (leadId, dealId);
+    }
+
+    /// <summary>
+    /// A one-line quote for the deal, saved and sent to the customer.
+    /// Returns the quote's id; the page is left on the quote, showing its
+    /// customer link.
+    /// </summary>
+    public static async Task<Guid> SendQuoteAsync(IPage page, string dealTitle, QuoteLine line)
+    {
+        await FillQuoteAsync(page, dealTitle, line);
+        await SubmitQuoteAsync(page, send: true);
+        await CustomerLinkAsync(page);                 // fails, with the page's reason, if it was not sent
+        return Ui.IdFromUrl(page.Url);
+    }
+
+    /// <summary>
+    /// From a SENT quote: the customer accepts it on its public page,
+    /// then Create invoice and Issue invoice. Returns the invoice's id; the
+    /// page is left on the issued invoice.
+    /// </summary>
+    public static async Task<Guid> IssuedInvoiceAsync(IPage page, IPage customer, Guid quoteId)
+    {
+        var quoteUrl = $"/Quotes/Detail?id={quoteId}";
+        await page.GotoAsync(quoteUrl);
+        var link = await CustomerLinkAsync(page);
+        await AcceptAsCustomerAsync(customer, link);
+
+        await page.GotoAsync(quoteUrl);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create invoice" }).ClickAsync();
+
+        // Either straight to the invoice, or back on the quote with
+        // "A draft invoice exists — Open draft".
+        var openDraft = page.Locator("main a[href*='/Invoices/Detail']");
+        await Ui.WaitUntilAsync(page,
+            async () => page.Url.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase)
+                        || await openDraft.CountAsync() > 0,
+            "No invoice appeared after Create invoice.");
+        if (!page.Url.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase))
+        {
+            await openDraft.First.ClickAsync();
+            await page.WaitForURLAsync(u => u.Contains("/Invoices/Detail", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var issue = page.GetByRole(AriaRole.Button, new() { Name = "Issue invoice" });
+        if (await issue.CountAsync() > 0)
+        {
+            await issue.ClickAsync();   // the confirm() is accepted by the session
+            await Assertions.Expect(issue).ToHaveCountAsync(0, new() { Timeout = E2ESettings.ActionTimeoutMs });
+        }
+
+        return Ui.IdFromUrl(page.Url);
     }
 
     /// <summary>Opens the public quote in a signed-out session and accepts it.</summary>

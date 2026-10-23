@@ -2,6 +2,21 @@
 // LEAD COMMANDS - Write Operations
 // Location: MerkaiTrial.Application/Commands/Leads/LeadCommandHandlers.cs
 //
+// 100: ONE AT A TIME, AND A REPEAT IS A NO-OP
+//   • UpdateLeadStatusHandler locks the lead's row (RowLock) before it
+//     reads it. Two identical status changes arriving together (a double
+//     click, a retried request) used to both read the OLD status, both
+//     save, and both set off "when the status becomes …" rules — two
+//     tasks, two notifications. Now the second waits, reads the new
+//     status, sees nothing to change, and returns without saving,
+//     auditing or running rules.
+//   • ConvertLeadHandler locks the lead's row too, for the same reason
+//     as ConvertLeadToDealHandler: two conversions at once made two
+//     contacts. And ExistingCompanyId is now checked: it must be a
+//     company in the caller's own workspace. It was copied onto the new
+//     contact as given, so a company id from another workspace could be
+//     attached to this workspace's contact.
+//
 // 099: UpdateLeadHandler also tells the automation engine which CUSTOM
 //      fields changed (read before the edit, again after the save), so
 //      "when Tier changes to Gold" rules work.
@@ -91,6 +106,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;    // 079
+using MerkaiTrial.Application.Common;                   // 100 — RowLock
 using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.Automation;     // 098
@@ -723,6 +739,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
 
+                // 100 — before the read: a second identical change waits
+                // here, then sees the status already set (below).
+                await using var held = await RowLock.HoldAsync(_context, RowLock.Leads, dto.LeadId, cancellationToken);
+
                 var lead = await _context.Leads
                     .Where(l => l.Id == dto.LeadId && l.TenantId == dto.TenantId && !l.IsDeleted)
                     .VisibleTo(access)
@@ -731,6 +751,15 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
                 var statuses = await _statuses.GetAsync(dto.TenantId, cancellationToken);
+
+                // 100 — already in that status (a double click, a retried
+                // request, the other half of a race): nothing to save,
+                // nothing to audit, no rules to run.
+                if (string.Equals(lead.Status, dto.StatusKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    await held.CommitAsync(cancellationToken);
+                    return;
+                }
 
                 var target = statuses.Find(dto.StatusKey)
                     ?? throw new InvalidOperationException(
@@ -749,6 +778,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.UpdatedAtUtc = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync(cancellationToken);
+                await held.CommitAsync(cancellationToken);   // 100 — the lock ends here
+
                 // ✅ Status progression affects score
                 await _scoring.RecalculateAsync(lead.Id, lead.TenantId, cancellationToken);
                 await _audit.WriteAsync(
@@ -891,6 +922,9 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 var access = await _scope.GetAsync(RecordModules.Leads, cancellationToken);
 
+                // 100 — before the read; joins the transaction above.
+                await using var held = await RowLock.HoldAsync(_context, RowLock.Leads, cmd.LeadId, cancellationToken);
+
                 var lead = await _context.Leads
                     .Where(l => l.Id == cmd.LeadId && l.TenantId == cmd.TenantId && !l.IsDeleted)
                     .VisibleTo(access)
@@ -902,8 +936,20 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (lead.IsConverted)
                     throw new InvalidOperationException("Lead already converted");
 
+                // 100 — an existing company must be one of this
+                // workspace's own. The global filter already hides other
+                // workspaces' companies from this query, and the explicit
+                // TenantId says so out loud.
+                if (cmd.ExistingCompanyId is Guid existingCompanyId && existingCompanyId != Guid.Empty)
+                {
+                    var companyIsOurs = await _context.Companies
+                        .AnyAsync(c => c.Id == existingCompanyId && c.TenantId == cmd.TenantId && !c.IsDeleted, cancellationToken);
+                    if (!companyIsOurs)
+                        throw new InvalidOperationException("The company chosen isn't in this workspace. Pick one from the list, or create a new one.");
+                }
+
                 // Create Company if requested
-                Guid? companyId = cmd.ExistingCompanyId;
+                Guid? companyId = cmd.ExistingCompanyId == Guid.Empty ? null : cmd.ExistingCompanyId;
                 if (cmd.CreateCompany && !string.IsNullOrEmpty(cmd.CompanyName))
                 {
                     var company = new Company

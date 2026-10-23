@@ -39,8 +39,24 @@
 //      rules so they never fire on later tests' records.
 //  11. (099) BackdateLeadAsync — makes a lead look N days old, so a
 //      time-based rule ("no activity for 3 days") is due without waiting.
+//  13. (101) READ-ONLY: a person's role ids, and an invoice's biggest
+//      line discount.
+//  12. (100) READ-ONLY, for the security and money tests:
+//      • ApiIdentityAsync — who a person is and what their roles allow,
+//        read the way SignInService reads it at sign-in, so the test can
+//        make the same token Admin.Web would (Api.cs).
+//      • RowJsonAsync / CountWhereAsync — a record exactly as stored, and
+//        how many rows hang off it, so "workspace B could not change
+//        workspace A's record" is checked in the database, not on a page.
+//        Table and column names come from fixed lists, never from text.
+//      • Conversion, payment, quote and automation read-backs: what one
+//        conversion, one payment, one approval or one rule run left
+//        behind. Nothing in 12 writes, except DeleteAutomationRunsAsync
+//        (one rule's log lines for one record — the "the log line was
+//        lost" half of the automation retry test, _E2E only).
 // =====================================================================
 
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -586,6 +602,343 @@ public sealed class TestDatabase
         cmd.Parameters.AddWithValue("@d", days);
         cmd.Parameters.AddWithValue("@id", leadId);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    // ── 100: identities for API tokens (read-only) ───────────────────
+
+    /// <summary>
+    /// A person as the API will see them: their workspace, whether they are
+    /// its admin, its plan, and every "module.action" their roles grant —
+    /// read exactly as SignInService.BuildPrincipalAsync reads it.
+    /// </summary>
+    public async Task<ApiIdentity> ApiIdentityAsync(string email)
+    {
+        await using var conn = await OpenAsync();
+
+        Guid userId, tenantId;
+        bool isAdmin, isSuper;
+        string plan, storedEmail;
+        await using (var cmd = new SqlCommand(
+            @"SELECT TOP 1 u.Id, u.TenantId, u.Email, u.IsTenantAdmin, u.IsSuperAdmin, t.[Plan]
+              FROM Users u JOIN Tenants t ON t.Id = u.TenantId
+              WHERE u.Email = @e AND u.IsDeleted = 0", conn))
+        {
+            cmd.Parameters.AddWithValue("@e", email);
+            await using var r = await cmd.ExecuteReaderAsync();
+            if (!await r.ReadAsync())
+                throw new InvalidOperationException($"No live user with the email {email} in the test database.");
+            userId = r.GetGuid(0);
+            tenantId = r.GetGuid(1);
+            storedEmail = r.GetString(2);
+            isAdmin = r.GetBoolean(3);
+            isSuper = r.GetBoolean(4);
+            plan = r.IsDBNull(5) ? "starter" : r.GetString(5);
+        }
+
+        var permissions = new List<string>();
+        await using (var cmd = new SqlCommand(
+            @"SELECT r.Permissions FROM UserRoles ur JOIN Roles r ON r.Id = ur.RoleId
+              WHERE ur.UserId = @u AND r.IsDeleted = 0 AND (r.TenantId IS NULL OR r.TenantId = @t)", conn))
+        {
+            cmd.Parameters.AddWithValue("@u", userId);
+            cmd.Parameters.AddWithValue("@t", tenantId);
+            await using var r = await cmd.ExecuteReaderAsync();
+            while (await r.ReadAsync())
+            {
+                if (r.IsDBNull(0)) continue;
+                var json = r.GetString(0);
+                if (string.IsNullOrWhiteSpace(json)) continue;
+                try
+                {
+                    var perms = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(
+                        json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (perms is null) continue;
+                    foreach (var (module, actions) in perms)
+                        foreach (var action in actions)
+                            permissions.Add($"{module}.{action}");
+                }
+                catch (JsonException)
+                {
+                    // SignInService grants nothing from a broken role either.
+                }
+            }
+        }
+
+        return new ApiIdentity(userId, tenantId, storedEmail, isAdmin, isSuper, plan, permissions);
+    }
+
+    // ── 100: records exactly as stored (read-only) ────────────────────
+
+    private static readonly HashSet<string> SnapshotTables = new(StringComparer.Ordinal)
+    {
+        "Leads", "Contacts", "Companies", "Deals", "Quotes", "QuoteItems", "Invoices", "InvoiceLines",
+        "Payments", "Products", "Activities", "LeadNotes", "DealNotes", "LeadActivities", "DealActivities",
+        "LeadReminders", "DealReminders", "Attachments", "DealStageHistory", "QuoteApprovalRequests",
+    };
+
+    private static readonly HashSet<string> SnapshotColumns = new(StringComparer.Ordinal)
+    {
+        "Id", "LeadId", "DealId", "QuoteId", "InvoiceId", "ContactId", "CompanyId", "EntityId", "TenantId",
+        "ProductId",   // 100b — quote and invoice lines that name a product
+    };
+
+    /// <summary>
+    /// One row, every column, as JSON — or "(no row)". Two reads that
+    /// differ mean something changed it.
+    /// </summary>
+    public async Task<string> RowJsonAsync(string table, Guid id)
+    {
+        if (!SnapshotTables.Contains(table)) throw new ArgumentOutOfRangeException(nameof(table), table, "Not a snapshot table.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT * FROM dbo.[{table}] WHERE Id = @id FOR JSON PATH, INCLUDE_NULL_VALUES", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+
+        // FOR JSON can come back split over several rows.
+        var sb = new System.Text.StringBuilder();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) sb.Append(r.GetString(0));
+        return sb.Length == 0 ? "(no row)" : sb.ToString();
+    }
+
+    /// <summary>Rows in <paramref name="table"/> whose <paramref name="column"/> is <paramref name="value"/>, deleted ones included.</summary>
+    public async Task<int> CountWhereAsync(string table, string column, Guid value)
+    {
+        if (!SnapshotTables.Contains(table)) throw new ArgumentOutOfRangeException(nameof(table), table, "Not a snapshot table.");
+        if (!SnapshotColumns.Contains(column)) throw new ArgumentOutOfRangeException(nameof(column), column, "Not a snapshot column.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT COUNT(*) FROM dbo.[{table}] WHERE [{column}] = @v", conn);
+        cmd.Parameters.AddWithValue("@v", value);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>A live attachment's id on a record, by its file name.</summary>
+    public async Task<Guid?> AttachmentIdAsync(Guid entityId, string fileName)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT TOP 1 Id FROM Attachments WHERE EntityId = @e AND FileName = @f AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@f", fileName);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : null;
+    }
+
+    /// <summary>The newest live row in a notes/activities table for a record whose text column contains the marker.</summary>
+    public async Task<Guid?> ChildIdAsync(string table, string parentColumn, Guid parentId, string textColumn, string contains)
+    {
+        if (!SnapshotTables.Contains(table) || !SnapshotColumns.Contains(parentColumn))
+            throw new ArgumentOutOfRangeException(nameof(table));
+        if (textColumn is not ("Note" or "Subject" or "Description" or "Title"))
+            throw new ArgumentOutOfRangeException(nameof(textColumn));
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            $"SELECT TOP 1 Id FROM dbo.[{table}] WHERE [{parentColumn}] = @p AND CHARINDEX(@c, [{textColumn}]) > 0 ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@p", parentId);
+        cmd.Parameters.AddWithValue("@c", contains);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : null;
+    }
+
+    /// <summary>A user's id from their email.</summary>
+    public async Task<Guid> UserIdAsync(string email)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT TOP 1 Id FROM Users WHERE Email = @e AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", email);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : throw new InvalidOperationException($"No user {email}.");
+    }
+
+    // ── 100: one conversion (read-only) ───────────────────────────────
+
+    public sealed record LeadConversion(bool IsConverted, Guid? DealId, Guid? ContactId, Guid? ConvertedToContactId, string? Status);
+
+    public async Task<LeadConversion> LeadConversionAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT IsConverted, DealId, ContactId, ConvertedToContactId, Status FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No lead {leadId}.");
+        return new LeadConversion(
+            r.GetBoolean(0),
+            r.IsDBNull(1) ? null : r.GetGuid(1),
+            r.IsDBNull(2) ? null : r.GetGuid(2),
+            r.IsDBNull(3) ? null : r.GetGuid(3),
+            r.IsDBNull(4) ? null : Convert.ToString(r.GetValue(4)));
+    }
+
+    /// <summary>Live deals made from this lead.</summary>
+    public async Task<List<Guid>> DealIdsForLeadAsync(Guid leadId)
+    {
+        var ids = new List<Guid>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Id FROM Deals WHERE LeadId = @l AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@l", leadId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) ids.Add(r.GetGuid(0));
+        return ids;
+    }
+
+    /// <summary>A lead's status key as stored.</summary>
+    public async Task<string?> LeadStatusAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Status FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        return Convert.ToString(await cmd.ExecuteScalarAsync());
+    }
+
+    // ── 100: payments (read-only) ─────────────────────────────────────
+
+    public sealed record StoredPayment(Guid Id, decimal Amount, string Status, Guid? IdempotencyKey);
+
+    public async Task<List<StoredPayment>> PaymentsAsync(Guid invoiceId)
+    {
+        var list = new List<StoredPayment>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, Amount, Status, IdempotencyKey FROM Payments WHERE InvoiceId = @i AND IsDeleted = 0 ORDER BY CreatedAtUtc", conn);
+        cmd.Parameters.AddWithValue("@i", invoiceId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StoredPayment(r.GetGuid(0), r.GetDecimal(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetGuid(3)));
+        return list;
+    }
+
+    public sealed record StoredInvoice(string Status, decimal Total, decimal Balance);
+
+    /// <summary>An invoice's status (as stored — a name or a number), total and balance.</summary>
+    public async Task<StoredInvoice> InvoiceAsync(Guid invoiceId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Status, Total, Balance FROM Invoices WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", invoiceId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No invoice {invoiceId}.");
+        return new StoredInvoice(Convert.ToString(r.GetValue(0)) ?? "", r.GetDecimal(1), r.GetDecimal(2));
+    }
+
+    /// <summary>Live invoices raised from a quote.</summary>
+    public async Task<int> CountInvoicesForQuoteAsync(Guid quoteId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM Invoices WHERE QuoteId = @q AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@q", quoteId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    // ── 100: quotes (read-only) ───────────────────────────────────────
+
+    public sealed record StoredQuote(string Status, decimal GrandTotal, decimal LinesGrandTotal, decimal MaxDiscountPercent, string? PublicLinkToken);
+
+    /// <summary>
+    /// A quote's status, its stored grand total, the grand total its live
+    /// lines add up to, and the biggest discount on any line, as a
+    /// percentage of that line's gross.
+    /// </summary>
+    public async Task<StoredQuote> QuoteAsync(Guid quoteId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT q.Status, q.GrandTotal, q.PublicLinkToken,
+                     ISNULL((SELECT SUM(CASE WHEN i.UnitPrice * i.Quantity - i.LineDiscount < 0 THEN 0
+                                             ELSE i.UnitPrice * i.Quantity - i.LineDiscount END * (1 + i.TaxRate))
+                             FROM QuoteItems i WHERE i.QuoteId = q.Id AND i.IsDeleted = 0), 0),
+                     ISNULL((SELECT MAX(CASE WHEN i.UnitPrice * i.Quantity > 0
+                                             THEN 100.0 * i.LineDiscount / (i.UnitPrice * i.Quantity) ELSE 0 END)
+                             FROM QuoteItems i WHERE i.QuoteId = q.Id AND i.IsDeleted = 0), 0)
+              FROM Quotes q WHERE q.Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", quoteId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No quote {quoteId}.");
+        return new StoredQuote(
+            Convert.ToString(r.GetValue(0)) ?? "",
+            r.GetDecimal(1),
+            Convert.ToDecimal(r.GetValue(3)),
+            Convert.ToDecimal(r.GetValue(4)),
+            r.IsDBNull(2) ? null : r.GetString(2));
+    }
+
+    // ── 100: automation (read-only, plus one tidy-up) ─────────────────
+
+    /// <summary>"Already acted on" rows for one record from rules whose name contains the text.</summary>
+    public async Task<int> CountAutomationTimeFiresAsync(Guid entityId, string ruleNameContains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT COUNT(*) FROM AutomationTimeFires f JOIN AutomationRules r ON r.Id = f.RuleId
+              WHERE f.EntityId = @e AND CHARINDEX(@n, r.Name) > 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@n", ruleNameContains);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>Every rule-log line for one record from rules whose name contains the text, whatever its result.</summary>
+    public async Task<int> CountAllAutomationRunsAsync(Guid entityId, string ruleNameContains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM AutomationRuns WHERE EntityId = @e AND CHARINDEX(@n, RuleName) > 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@n", ruleNameContains);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>
+    /// Removes one rule's log lines for one record — "the worker stopped
+    /// after acting but before its log line was kept". _E2E only, like
+    /// everything here. The task and the "acted on" row stay.
+    /// </summary>
+    public async Task DeleteAutomationRunsAsync(Guid entityId, string ruleNameContains)
+    {
+        await EnsureIsE2EDatabaseAsync();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "DELETE FROM AutomationRuns WHERE EntityId = @e AND CHARINDEX(@n, RuleName) > 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@n", ruleNameContains);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Live tasks (and activities) on a record whose subject contains the text, done or not.</summary>
+    public async Task<int> CountTasksAsync(Guid entityId, string subjectContains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM Activities WHERE EntityId = @e AND IsDeleted = 0 AND CHARINDEX(@s, Subject) > 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@s", subjectContains);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    // ── 101: roles (read-only) ────────────────────────────────────────
+
+    /// <summary>The ids of every role a person holds, so a test that adds one can put them back.</summary>
+    public async Task<List<Guid>> UserRoleIdsAsync(string email)
+    {
+        var ids = new List<Guid>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT ur.RoleId FROM UserRoles ur JOIN Users u ON u.Id = ur.UserId
+              WHERE u.Email = @e AND u.IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", email);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) ids.Add(r.GetGuid(0));
+        return ids;
+    }
+
+    /// <summary>
+    /// 101. The biggest discount on any live line of an invoice, as a
+    /// percentage of that line's gross — what the customer would get.
+    /// </summary>
+    public async Task<decimal> InvoiceMaxDiscountPercentAsync(Guid invoiceId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT ISNULL(MAX(CASE WHEN UnitPrice * Quantity > 0
+                                     THEN 100.0 * LineDiscount / (UnitPrice * Quantity) ELSE 0 END), 0)
+              FROM InvoiceLines WHERE InvoiceId = @i AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@i", invoiceId);
+        return Convert.ToDecimal(await cmd.ExecuteScalarAsync());
     }
 
     private async Task<int> CountAsync(string sql, Guid tenantId, string value)

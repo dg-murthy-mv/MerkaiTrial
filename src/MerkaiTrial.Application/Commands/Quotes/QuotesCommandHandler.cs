@@ -4,6 +4,16 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (100 — the approved quote is the one that is sent)
+//   UpdateQuoteHandler and UpdateQuoteStatusHandler both lock the quote's
+//   row (RowLock) before they read it. A rep editing an APPROVED quote and
+//   pressing Send at the same moment could interleave: the send read
+//   "Approved" while the edit was saving bigger discounts, and the edited,
+//   never-approved version went to the customer. Now one waits for the
+//   other: either the send goes first (and the edit is then refused —
+//   the quote has been sent), or the edit goes first (the quote is back
+//   in Draft, and the send is then refused — it needs approval again).
+//
 // CHANGES (086b — WhatsApp headline wording)
 //   the quote status notification (sent / accepted / rejected) now carries
 //   Headline "Quote QUO-0042" for WhatsApp — the approved template already
@@ -863,6 +873,10 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
         public async Task Handle(Guid tenantId, Guid quoteId, UpdateQuoteStatusDto dto)
         {
+            // 100 — before the read; see the header. An early return below
+            // rolls back nothing (nothing was written) and frees the lock.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Quotes, quoteId);
+
             var quote = await _db.Quotes
                    .IgnoreQueryFilters()
                    .FirstOrDefaultAsync(q =>
@@ -1009,6 +1023,8 @@ namespace MerkaiTrial.Application.Commands.Quotes
             }
 
             await _db.SaveChangesAsync();
+            await held.CommitAsync();      // 100 — the lock ends with the status saved
+
             await _audit.WriteAsync(
                 AuditAction.QuoteStatusChanged, AuditEntityType.Quote, quote.Id, tenantId,
                 new
@@ -1250,6 +1266,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
         {
             var now = DateTime.UtcNow;
 
+            // 100 — before the read; see the header.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Quotes, quoteId);
+
             var quote = await _db.Quotes
                 .Include(q => q.Items)
                 .FirstOrDefaultAsync(q => q.Id == quoteId && q.TenantId == tenantId && !q.IsDeleted);
@@ -1403,6 +1422,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
             quote.GrandTotal    = Math.Max(0m, quote.Subtotal - discountTotal + taxTotal);
 
             await _db.SaveChangesAsync();
+            await held.CommitAsync();      // 100
         }
     }
     public class GetQuoteByTokenHandler : ICommandHandler
@@ -1903,10 +1923,23 @@ namespace MerkaiTrial.Application.Commands.Quotes
             // TenantId in the predicate as well as the query filter: a
             // ProductId is supplied by the caller, and a product belonging to
             // another tenant must not answer for one of ours.
-            return await db.Products.AsNoTracking()
+            var units = await db.Products.AsNoTracking()
                 .Where(p => p.TenantId == tenantId && ids.Contains(p.Id))
                 .Select(p => new { p.Id, p.UnitOfMeasure })
                 .ToDictionaryAsync(x => x.Id, x => x.UnitOfMeasure ?? UnitsOfMeasure.Unit, ct);
+
+            // 100 — every product named on the document must be one of
+            // this workspace's own (removed ones included, so an old quote
+            // still saves). Before, another workspace's product id was
+            // quietly stored on the line: nothing of theirs was shown, but
+            // the line pointed into their catalogue. Every quote and
+            // invoice save comes through here, so this one check covers
+            // them all.
+            if (units.Count != ids.Count)
+                throw new InvalidOperationException(
+                    "A product on this document isn't in your catalogue. Pick it again from the list.");
+
+            return units;
         }
 
         /// <summary>

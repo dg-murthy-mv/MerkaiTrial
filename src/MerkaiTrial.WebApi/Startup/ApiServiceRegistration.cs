@@ -28,6 +28,12 @@
 //     every 15 minutes, rule-log retention once a day), with its options
 //     from the "AutomationWorker" section — none are required.
 //
+// 100 — SWAGGER SAYS WHO MAY CALL WHAT
+//   AddApiSwagger adds PermissionOperationFilter: each operation in the
+//   (Development-only) Swagger document carries its [AllowAnonymous] flag
+//   and its permission policies, which the round-100 API authorization
+//   test reads to check every endpoint. Nothing else changes.
+//
 // The using list is copied from the old Program.cs on purpose — it is the
 // set of namespaces these types are known to live in.
 // =====================================================================
@@ -143,6 +149,7 @@ public static class ApiServiceRegistration
             c.SwaggerDoc("v1", new OpenApiInfo { Title = "MerkaiTrial.WebApi", Version = "v1" });
             c.CustomSchemaIds(t => t.FullName!.Replace('+', '.'));
             c.OperationFilter<FileUploadOperationFilter>();
+            c.OperationFilter<PermissionOperationFilter>();      // 100 — who may call it, for the E2E tests
             c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
             c.MapType<DateOnly>(() => new OpenApiSchema { Type = "string", Format = "date" });
             c.MapType<TimeOnly>(() => new OpenApiSchema { Type = "string", Format = "time" });

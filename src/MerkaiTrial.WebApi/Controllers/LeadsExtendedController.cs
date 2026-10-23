@@ -43,6 +43,16 @@
 //      call: omit ownerUserId and the owner is KEPT; send "" and the
 //      lead is unassigned.
 //
+// CHANGES (100 — the workspace always comes from the signed-in user)
+//   Notes, activities, reminders, assignment and the timeline took the
+//   workspace from the request: a ?tenantId= in the address, or TenantId
+//   in the body. The database's workspace filter already kept another
+//   workspace's rows out, so nothing leaked — but the id named in the
+//   request was still the one the handlers were asked about. Every action
+//   now uses the signed-in user's workspace, as the rest of the API does;
+//   a tenantId sent by the caller is ignored (the parameter stays, so
+//   Admin.Web's existing calls bind exactly as before).
+//
 // CHANGES (092 — the Export button)
 //
 //   ★ THE EXPORT READ THE TENANT FROM THE QUERY STRING — and the page never
@@ -148,7 +158,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (leadId != dto.LeadId)
                     return BadRequest(new { error = "Lead ID mismatch" });
 
-                var result = await _createNoteHandler.Handle(dto);
+                var result = await _createNoteHandler.Handle(dto with { TenantId = _currentUser.GetCurrentTenantId() });   // 100
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
@@ -175,7 +185,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                var result = await _getNotesHandler.Handle(tenantId, leadId);
+                var result = await _getNotesHandler.Handle(_currentUser.GetCurrentTenantId(), leadId);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -193,7 +203,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                await _deleteNoteHandler.Handle(tenantId, noteId);
+                await _deleteNoteHandler.Handle(_currentUser.GetCurrentTenantId(), noteId);
                 return NoContent();
             }
             catch (KeyNotFoundException ex)
@@ -224,7 +234,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (leadId != dto.LeadId)
                     return BadRequest(new { error = "Lead ID mismatch" });
 
-                var result = await _createActivityHandler.Handle(dto);
+                var result = await _createActivityHandler.Handle(dto with { TenantId = _currentUser.GetCurrentTenantId() });   // 100
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
@@ -250,7 +260,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                var result = await _getActivitiesHandler.Handle(tenantId, leadId);
+                var result = await _getActivitiesHandler.Handle(_currentUser.GetCurrentTenantId(), leadId);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -273,7 +283,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (leadId != dto.LeadId)
                     return BadRequest(new { error = "Lead ID mismatch" });
 
-                var result = await _createReminderHandler.Handle(dto);
+                var result = await _createReminderHandler.Handle(dto with { TenantId = _currentUser.GetCurrentTenantId() });   // 100
                 return Ok(result);
             }
             catch (KeyNotFoundException ex)
@@ -299,7 +309,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                var result = await _getRemindersHandler.Handle(tenantId, leadId);
+                var result = await _getRemindersHandler.Handle(_currentUser.GetCurrentTenantId(), leadId);
                 return Ok(result);
             }
             catch (Exception ex)
@@ -317,7 +327,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                await _completeReminderHandler.Handle(new CompleteReminderDto(tenantId, reminderId));
+                await _completeReminderHandler.Handle(new CompleteReminderDto(_currentUser.GetCurrentTenantId(), reminderId));
                 return NoContent();
             }
             catch (KeyNotFoundException ex)
@@ -364,7 +374,7 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (leadId != dto.LeadId)
                     return BadRequest(new { error = "Lead ID mismatch" });
 
-                await _assignLeadHandler.Handle(dto);
+                await _assignLeadHandler.Handle(dto with { TenantId = _currentUser.GetCurrentTenantId() });   // 100
                 return NoContent();
             }
             catch (KeyNotFoundException ex)
@@ -399,7 +409,7 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
-                var result = await _getTimelineHandler.Handle(tenantId, leadId);
+                var result = await _getTimelineHandler.Handle(_currentUser.GetCurrentTenantId(), leadId);
                 return Ok(result);
             }
             catch (Exception ex)

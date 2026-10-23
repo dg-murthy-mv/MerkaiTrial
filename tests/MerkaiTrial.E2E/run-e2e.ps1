@@ -1,4 +1,4 @@
-<#
+﻿<#
 =====================================================================
  FILE: tests/MerkaiTrial.E2E/run-e2e.ps1
 
@@ -23,6 +23,21 @@
  -ConnectionString "..." if yours lives elsewhere.
 
  090: also passes the WebApi's address to the tests (E2E_API_URL).
+
+ 100: a signing key for THIS RUN ONLY. Some tests call the WebApi
+      directly, as a given person, so they need to make the same kind of
+      token Admin.Web makes. The script makes a fresh random key each
+      run and gives it to BOTH test servers (Jwt__SigningKey, with
+      Jwt__Issuer=merkaitrial-admin and Jwt__Audience=merkaitrial-api)
+      and to the tests (E2E_JWT_KEY). It is never your real key and is
+      never saved in appsettings.
+        -ServersOnly: the key is also written to e2e-logs\e2e-jwt.key
+        while the servers run, so Test Explorer finds it, and the file is
+        deleted when you press Enter to stop them.
+        A server that is ALREADY running keeps the key it started with.
+        If e2e-logs\e2e-jwt.key exists (a -ServersOnly window is open),
+        that key is reused; if not, the script warns you, because the
+        direct-API tests will then be refused.
 =====================================================================
 #>
 [CmdletBinding()]
@@ -121,6 +136,21 @@ if (-not $SkipBuild) {
 $logDir = Join-Path $here 'e2e-logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
+# ── 100: this run's signing key ──────────────────────────────────────
+$jwtIssuer   = 'merkaitrial-admin'
+$jwtAudience = 'merkaitrial-api'
+$keyFile     = Join-Path $logDir 'e2e-jwt.key'
+$wroteKeyFile = $false
+
+function New-SigningKey {
+    # 48 random bytes as 96 hex characters: well over the 32 bytes
+    # HMAC-SHA256 needs, and nothing in it that a shell could mangle.
+    $bytes = New-Object byte[] 48
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
 function Test-Up([string]$url) {
     $code = & curl.exe -k -s -o NUL -w "%{http_code}" --max-time 3 $url 2>$null
     return ($code -and $code -ne '000')
@@ -183,25 +213,57 @@ function Stop-App($proc) {
 $api = $null; $admin = $null
 $exitCode = 0
 try {
-    if (Test-Up $apiUrl) {
+    # 100: one key for both servers and the tests. If either server is
+    # already up, it has the key it was started with — the one in the key
+    # file, when a -ServersOnly window started it.
+    $apiAlreadyUp   = Test-Up $apiUrl
+    $adminAlreadyUp = Test-Up "$adminUrl/Account/Login"
+    $jwtKey = $null
+    if (($apiAlreadyUp -or $adminAlreadyUp) -and (Test-Path $keyFile)) {
+        $jwtKey = (Get-Content $keyFile -Raw).Trim()
+        Write-Host "Reusing this run's signing key from $keyFile (the running server has it)." -ForegroundColor Yellow
+    }
+    if (-not $jwtKey) {
+        $jwtKey = New-SigningKey
+        if ($apiAlreadyUp -or $adminAlreadyUp) {
+            Write-Host "WARNING: a test server is already running, but $keyFile does not exist, so its" -ForegroundColor Yellow
+            Write-Host "signing key is unknown. The tests that call the WebApi directly will be refused." -ForegroundColor Yellow
+            Write-Host "Stop the running server(s) and run this script again to fix that." -ForegroundColor Yellow
+        }
+    }
+    $jwtVars = @{
+        'Jwt__SigningKey' = $jwtKey
+        'Jwt__Issuer'     = $jwtIssuer
+        'Jwt__Audience'   = $jwtAudience
+    }
+
+    if ($apiAlreadyUp) {
         Write-Host "WebApi is already running at $apiUrl - using it." -ForegroundColor Yellow
     } else {
         Write-Host "Starting WebApi..." -ForegroundColor Cyan
-        $api = Start-App $apiProj 'webapi' $apiUrl @{}
+        $api = Start-App $apiProj 'webapi' $apiUrl $jwtVars
         Wait-Up $apiUrl $api 'webapi'
     }
 
-    if (Test-Up "$adminUrl/Account/Login") {
+    if ($adminAlreadyUp) {
         Write-Host "Admin.Web is already running at $adminUrl - using it." -ForegroundColor Yellow
     } else {
         Write-Host "Starting Admin.Web..." -ForegroundColor Cyan
-        $admin = Start-App $adminProj 'adminweb' $adminUrl @{ 'WebApi__BaseUrl' = "$apiUrl/" }
+        $adminVars = @{ 'WebApi__BaseUrl' = "$apiUrl/" }
+        foreach ($k in $jwtVars.Keys) { $adminVars[$k] = $jwtVars[$k] }
+        $admin = Start-App $adminProj 'adminweb' $adminUrl $adminVars
         Wait-Up "$adminUrl/Account/Login" $admin 'adminweb'
     }
 
     Write-Host "Both apps are up. Logs: $logDir" -ForegroundColor Green
 
     if ($ServersOnly) {
+        # 100: Test Explorer has no E2E_JWT_KEY, so leave the key where
+        # E2ESettings looks for it — only while these servers run.
+        if ($api -or $admin) {
+            Set-Content -Path $keyFile -Value $jwtKey -NoNewline -Encoding ASCII
+            $wroteKeyFile = $true
+        }
         Write-Host ""
         Write-Host "Servers are running for Test Explorer. In Visual Studio, run the tests in" -ForegroundColor Green
         Write-Host "MerkaiTrial.E2E. (Set HEADED=1 in your environment to watch the browser.)" -ForegroundColor Green
@@ -215,6 +277,9 @@ try {
     $env:E2E_BASE_URL = $adminUrl
     $env:E2E_API_URL  = $apiUrl     # 090: the attachment test checks files cannot be fetched from the API directly
     $env:E2E_DB       = $ConnectionString
+    $env:E2E_JWT_KEY      = $jwtKey          # 100: the direct-API tests sign their tokens with it
+    $env:E2E_JWT_ISSUER   = $jwtIssuer
+    $env:E2E_JWT_AUDIENCE = $jwtAudience
     if ($Headed) { $env:HEADED = '1'; if (-not $env:E2E_SLOWMO) { $env:E2E_SLOWMO = '150' } }
 
     $testArgs = @('test', $testProj, '--nologo', '--logger', 'console;verbosity=normal')
@@ -273,6 +338,11 @@ try {
 finally {
     Stop-App $admin
     Stop-App $api
+    # 100: the key file lives only as long as the servers it belongs to.
+    if ($wroteKeyFile -and (Test-Path $keyFile)) {
+        Remove-Item $keyFile -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item Env:\E2E_JWT_KEY -ErrorAction SilentlyContinue
 }
 
 exit $exitCode

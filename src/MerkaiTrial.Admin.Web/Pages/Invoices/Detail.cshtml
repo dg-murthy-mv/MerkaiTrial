@@ -7,6 +7,12 @@
      4. Update Status buttons — gated with CanUpdate  (invoices.update)
      5. Delete button + modal confirm — CanDelete AND IsDeletableState
 
+     100. The Record Payment form carries a one-time key (paymentKey),
+     made fresh each time the page is drawn. Pressing Record Payment twice,
+     or resending the form, records ONE payment — the API answers the
+     repeat with the payment already recorded. The button also disables
+     itself while the form is on its way, so a second click does nothing.
+
      052. The line list prints QuantityDisplay instead of Quantity, so a
      decimal quantity arrives with its unit and without trailing zeros.
 
@@ -647,9 +653,11 @@
                 <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Record Payment</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="post" asp-page-handler="RecordPayment">
+            <form method="post" asp-page-handler="RecordPayment" id="paymentForm">
                 <div class="modal-body">
                     <input type="hidden" asp-for="Id" value="@Model.Invoice!.Id" />
+                    @* 100 — one payment per key; see the header. *@
+                    <input type="hidden" name="paymentKey" value="@Guid.NewGuid()" />
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
                         <strong>Current Balance:</strong> @Model.FormatCurrency(Model.Invoice!.Balance)
@@ -690,11 +698,24 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" class="btn btn-success" id="paymentSubmit">
                         <i class="bi bi-check-circle me-2"></i>Record Payment
                     </button>
                 </div>
             </form>
+            <script>
+                // 100 — a second click while the first is on its way does
+                // nothing. The key above is what really stops a double
+                // payment; this just saves the round trip.
+                (function () {
+                    var form = document.getElementById('paymentForm');
+                    if (!form) return;
+                    form.addEventListener('submit', function () {
+                        var b = document.getElementById('paymentSubmit');
+                        if (b) { b.disabled = true; b.innerHTML = 'Recording…'; }
+                    });
+                })();
+            </script>
         </div>
     </div>
 </div>

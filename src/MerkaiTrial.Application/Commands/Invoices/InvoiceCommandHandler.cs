@@ -4,6 +4,36 @@
 //
 // COMPLETE FILE — replaces the 017 version.
 //
+// 101 — A MANUAL INVOICE OVER THE LIMITS IS ISSUED BY THE RIGHT PERSON
+//   ✅ IssueInvoiceHandler.CheckAsync: who may issue a manual invoice that
+//      trips an approval rule now follows THAT RULE — the people who sign
+//      its final step (a named person, a role, or the deal owner's team
+//      managers). It was always "the deal owner's team managers", so a
+//      rule naming e.g. a Finance Director was never asked about manual
+//      invoices. Workspace admins may still issue anything, as before.
+//      A rule whose last step is "team managers" behaves exactly as 018.
+//   ✅ Issue and Update lock the draft's row (RowLock), so an edit that
+//      raises the discounts can't slip in between the limit check and the
+//      issue. One waits for the other; the issue then checks what will
+//      actually go out.
+//
+// 100 — MONEY IS COUNTED ONCE
+//   ✅ AddPayment locks the invoice's row (RowLock) before it reads what
+//      has been paid. Two payments recorded at the same moment both read
+//      "nothing paid yet", both passed the "not more than what's owed"
+//      check, and the invoice ended up paid twice over. Now the second
+//      waits, reads the first, and is refused if it would overpay.
+//   ✅ AddPayment takes an IdempotencyKey (CreatePaymentDto, or the API's
+//      Idempotency-Key header). The same key on the same invoice records
+//      ONE payment: a retry, a double click or a resent form gets the
+//      payment that was already recorded back, and nothing changes. The
+//      key is unique per invoice in the database too
+//      (100_PaymentIdempotency.sql), as a last line of defence.
+//   ✅ ReversePayment and VoidInvoice lock the invoice the same way, so a
+//      reversal, a void and a new payment can never interleave.
+//   ✅ CreateInvoiceFromQuote locks the QUOTE, so pressing Create invoice
+//      twice at once makes one invoice, not two for the same quote.
+//
 // 081 — CUSTOM FIELDS ON INVOICES
 //   ✅ CreateInvoice: the form's values (dto.CustomFields) are staged
 //      through CustomFieldValueWriter before the save. When an invoice is
@@ -352,15 +382,22 @@ namespace MerkaiTrial.Application.Commands.Invoices
             _logger.LogInformation("Creating invoice for tenant {TenantId}", dto.TenantId);
 
             // ── Record visibility ─────────────────────────────────────────
-            if (!dto.DealId.HasValue && dto.QuoteId.HasValue)
+            if (dto.QuoteId.HasValue)
             {
-                // Linked to a quote only — take the quote's deal.
+                // 100 — the quote must be one of this workspace's own,
+                // WHETHER OR NOT a deal was sent with it. Before, a deal
+                // in the request skipped this lookup, so an invoice could
+                // be saved pointing at another workspace's quote id.
                 var quoteDealId = await _db.Quotes.AsNoTracking()
                     .Where(q => q.Id == dto.QuoteId.Value && q.TenantId == dto.TenantId && !q.IsDeleted)
                     .Select(q => (Guid?)q.DealId)
                     .FirstOrDefaultAsync()
                     ?? throw new KeyNotFoundException($"Quote {dto.QuoteId} not found");
 
+                if (dto.DealId.HasValue && dto.DealId.Value != quoteDealId)
+                    throw new InvalidOperationException("That quote belongs to a different deal.");
+
+                // Linked to a quote only — take the quote's deal.
                 dto.DealId = quoteDealId;
             }
 
@@ -631,6 +668,11 @@ namespace MerkaiTrial.Application.Commands.Invoices
         public async Task<InvoiceDto> Handle(CreateInvoiceFromQuoteDto dto)
         {
             _logger.LogInformation("Creating invoice from quote {QuoteId}", dto.QuoteId);
+
+            // 100 — one invoice per quote (or per stage) even when Create
+            // invoice is pressed twice at once: the second request waits
+            // here, then finds the first one's invoice below and says so.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Quotes, dto.QuoteId);
 
             var quote = await _db.Quotes
                 .Include(q => q.Items)
@@ -905,6 +947,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             };
 
             var result = await _createInvoice.Handle(createDto);
+            await held.CommitAsync();      // 100
 
             if (stage == null)
                 _logger.LogInformation("Invoice {Number} created from quote {QuoteNumber}", result.Number, quote.Number);
@@ -946,6 +989,15 @@ namespace MerkaiTrial.Application.Commands.Invoices
         /// <summary>Issues a draft. Returns the invoice number it was given.</summary>
         public async Task<string> Handle(Guid tenantId, Guid invoiceId, CancellationToken ct = default)
         {
+            // 101 — the draft's row is locked BEFORE its lines are read and
+            // checked against the limits. Without it, a rep saving bigger
+            // discounts on the draft at the same moment a manager issued it
+            // could interleave: the manager's check saw the old lines, the
+            // claim below only looks at the status, and the invoice went out
+            // with lines nobody with the authority ever saw. UpdateInvoice
+            // takes the same lock, so one now waits for the other.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Invoices, invoiceId, ct);
+
             // Read-only load: the write below is ONE conditional UPDATE, so two
             // people issuing the same draft at once can't both win.
             var invoice = await _db.Invoices.AsNoTracking()
@@ -1046,6 +1098,8 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 _logger.LogWarning(ex, "Invoice {Number}: could not freeze product fields on late lines", invoice.Number);
             }
 
+            await held.CommitAsync(ct);      // 101 — the lock ends with the invoice issued
+
             await _audit.WriteAsync(
                 AuditAction.InvoiceStatusChanged, AuditEntityType.Invoice, invoice.Id, tenantId,
                 new { number = invoice.Number, from = "Draft", to = "Sent", via = "Issued", total = invoice.Total },
@@ -1060,7 +1114,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
         ///   from an accepted quote → yes (it was approved as a quote)
         ///   workspace admin        → yes
         ///   manual, within limits  → yes
-        ///   manual, over limits    → only a manager of the deal owner's team
+        ///   manual, over limits    → only someone who signs the FINAL step of
+        ///                            the approval rule it trips (101) — a
+        ///                            named person, a role, or the deal owner's
+        ///                            team managers, as the rule says
         /// </summary>
         public async Task<InvoiceIssueCheck> CheckAsync(Invoice invoice, CurrentUserContext me, CancellationToken ct = default)
         {
@@ -1078,11 +1135,38 @@ namespace MerkaiTrial.Application.Commands.Invoices
             if (!rules.RequiresApproval)
                 return new InvoiceIssueCheck(true, null, none, none);
 
-            // Nobody is excluded — a manager may issue their own team's invoice.
-            // For a deal with no owner, the ISSUER's team is the one that counts.
-            var approvers = await _approvals.ApproversForDealAsync(
-                invoice.TenantId, invoice.DealId, excludeUserId: null, teamFallbackUserId: me.UserId, ct);
+            // 101 — WHO may issue it follows the RULE it trips, as a quote's
+            // approval does: the people who sign the rule's FINAL step (the
+            // one whose sign-off completes the chain). Until 101 this was
+            // always "the deal owner's team managers", whatever the rule
+            // said — so where a workspace had set "discounts over 20% need
+            // the Finance Director", a team manager could still issue a 30%
+            // manual invoice, and the person the rule names was never asked.
+            // Workspace admins returned early above, as before.
+            //
+            // Nobody is excluded — the final approver may issue an invoice
+            // they drafted themselves. For a deal with no owner, the
+            // ISSUER's team is the one that counts (018, unchanged).
+            var finalStep = rules.RuleId is Guid ruleId
+                ? (await _approvals.GetRuleAsync(invoice.TenantId, ruleId, ct))?.Steps
+                    .OrderBy(s => s.StepOrder).LastOrDefault()
+                : null;
+
+            List<QuoteApprover> approvers;
+            if (finalStep is null || finalStep.ApproverKind == ApproverKind.TeamManagers)
+            {
+                approvers = await _approvals.ApproversForDealAsync(
+                    invoice.TenantId, invoice.DealId, excludeUserId: null, teamFallbackUserId: me.UserId, ct);
+            }
+            else
+            {
+                approvers = (await _approvals.ResolveStepAsync(
+                    invoice.TenantId, invoice.DealId, finalStep, finalStep.StepOrder, requesterId: null, ct)).Approvers;
+            }
+
             var names = approvers.Select(a => a.IsAdmin ? $"{a.Name} (admin)" : a.Name).ToList();
+            if (approvers.Count > 0 && !approvers.Any(a => a.IsAdmin))
+                names.Add("a workspace admin");
 
             if (approvers.Any(a => a.UserId == me.UserId))
                 return new InvoiceIssueCheck(true, null, rules.Reasons, names);
@@ -1124,6 +1208,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
 
         public async Task<InvoiceDto> Handle(UpdateInvoiceCommand request, CancellationToken cancellationToken)
         {
+            // 101 — the same lock Issue takes: an edit and an issue of the
+            // same draft never interleave. See IssueInvoiceHandler.Handle.
+            await using var held = await RowLock.HoldAsync(_context, RowLock.Invoices, request.Id, cancellationToken);
+
             var invoice = await _context.Invoices
                 .Include(i => i.Lines)
                 .Include(i => i.Payments)
@@ -1238,6 +1326,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             }
 
             await _context.SaveChangesAsync(cancellationToken);
+            await held.CommitAsync(cancellationToken);   // 101
             await _audit.WriteAsync(
                 AuditAction.InvoiceUpdated, AuditEntityType.Invoice, invoice.Id, request.TenantId,
                 new { number = invoice.Number, linesChanged, customFieldsSent = request.CustomFields is not null, total = invoice.Total },
@@ -1356,6 +1445,10 @@ namespace MerkaiTrial.Application.Commands.Invoices
 
         public async Task Handle(Guid tenantId, Guid invoiceId, string? reason, CancellationToken ct = default)
         {
+            // 100 — a payment recorded at this moment waits for the void, or
+            // the void waits for it and then refuses ("has payments").
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Invoices, invoiceId, ct);
+
             var invoice = await _db.Invoices
                 .Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.Id == invoiceId && i.TenantId == tenantId && !i.IsDeleted, ct)
@@ -1386,6 +1479,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             invoice.UpdatedBy = me.FullName;
 
             await _db.SaveChangesAsync(ct);
+            await held.CommitAsync(ct);    // 100
 
             await _audit.WriteAsync(
                 AuditAction.InvoiceStatusChanged, AuditEntityType.Invoice, invoice.Id, tenantId,
@@ -1422,10 +1516,28 @@ namespace MerkaiTrial.Application.Commands.Invoices
         {
             _logger.LogInformation("Recording payment for invoice {InvoiceId}", dto.InvoiceId);
 
+            // 100 — one payment at a time per invoice. Before the read, so
+            // "paid so far" below includes anything recorded a moment ago.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Invoices, dto.InvoiceId);
+
             var invoice = await _db.Invoices
                 .Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.Id == dto.InvoiceId && i.TenantId == dto.TenantId && !i.IsDeleted)
                 ?? throw new KeyNotFoundException($"Invoice {dto.InvoiceId} not found");
+
+            // 100 — the same request again. Whatever the invoice looks like
+            // now (paid, even), the answer is the payment already recorded.
+            if (dto.IdempotencyKey is Guid key && key != Guid.Empty)
+            {
+                var already = invoice.Payments.FirstOrDefault(p => p.IdempotencyKey == key);
+                if (already != null)
+                {
+                    await held.CommitAsync();
+                    _logger.LogInformation(
+                        "Payment for invoice {Number} was already recorded under this key — not recorded again", invoice.Number);
+                    return ToDto(already);
+                }
+            }
 
             if (invoice.Status == InvoiceStatus.Draft)
                 throw new InvalidOperationException("Issue the invoice before recording a payment against it.");
@@ -1457,6 +1569,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 PaidAtUtc = dto.PaidAtUtc,
                 Notes = dto.Notes,
                 ProviderTxnId = dto.ProviderTxnId,
+                IdempotencyKey = dto.IdempotencyKey is Guid k && k != Guid.Empty ? k : null,   // 100
                 CreatedAtUtc = DateTime.UtcNow,
                 CreatedBy = string.IsNullOrWhiteSpace(dto.CreatedBy) ? currentUser.FullName : dto.CreatedBy!,
                 IsDeleted = false
@@ -1473,6 +1586,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             invoice.UpdatedBy = payment.CreatedBy;
 
             await _db.SaveChangesAsync();
+            await held.CommitAsync();      // 100 — the lock ends with the payment saved
 
             if (invoice.Status == InvoiceStatus.Paid)
                 await TryTransitionDealToWonAsync(invoice, dto.TenantId, payment.CreatedBy);
@@ -1490,21 +1604,23 @@ namespace MerkaiTrial.Application.Commands.Invoices
             _logger.LogInformation("Payment of {Amount} recorded for invoice {Number}. Balance now {Balance}",
                 dto.Amount, invoice.Number, invoice.Balance);
 
-            return new PaymentDto
-            {
-                Id = payment.Id,
-                InvoiceId = payment.InvoiceId,
-                Amount = payment.Amount,
-                Currency = payment.Currency,
-                Method = payment.Method,
-                Status = payment.Status,
-                PaidAtUtc = payment.PaidAtUtc,
-                Notes = payment.Notes,
-                ProviderTxnId = payment.ProviderTxnId,
-                CreatedAtUtc = payment.CreatedAtUtc,
-                CreatedBy = payment.CreatedBy
-            };
+            return ToDto(payment);
         }
+
+        private static PaymentDto ToDto(Payment payment) => new()
+        {
+            Id = payment.Id,
+            InvoiceId = payment.InvoiceId,
+            Amount = payment.Amount,
+            Currency = payment.Currency,
+            Method = payment.Method,
+            Status = payment.Status,
+            PaidAtUtc = payment.PaidAtUtc,
+            Notes = payment.Notes,
+            ProviderTxnId = payment.ProviderTxnId,
+            CreatedAtUtc = payment.CreatedAtUtc,
+            CreatedBy = payment.CreatedBy ?? string.Empty
+        };
 
         // Deal → Won when the invoice is fully paid (never throws — log only).
         private async Task TryTransitionDealToWonAsync(Invoice invoice, Guid tenantId, string changedBy)
@@ -1562,6 +1678,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
         /// </summary>
         public async Task Handle(Guid tenantId, Guid invoiceId, Guid paymentId, string? reason, CancellationToken ct = default)
         {
+            // 100 — see AddPayment.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Invoices, invoiceId, ct);
+
             var invoice = await _db.Invoices
                 .Include(i => i.Payments)
                 .FirstOrDefaultAsync(i => i.Id == invoiceId && i.TenantId == tenantId && !i.IsDeleted, ct)
@@ -1594,6 +1713,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
             invoice.UpdatedBy = me.FullName;
 
             await _db.SaveChangesAsync(ct);
+            await held.CommitAsync(ct);    // 100
 
             await _audit.WriteCriticalAsync(
                 "PaymentReversed", AuditEntityType.Payment, payment.Id, tenantId,

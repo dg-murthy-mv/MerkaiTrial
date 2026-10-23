@@ -8,6 +8,13 @@
 //   catch (PlanLimitExceededException) re-throws without logging as error
 //   catch (KeyNotFoundException) re-throws in Update/Delete — same pattern
 //
+// 100 — THE COMPANY MUST BE THIS WORKSPACE'S
+//   Create and Update stored whatever CompanyId they were given. A contact
+//   could be saved pointing at another workspace's company (nothing of
+//   theirs was shown — every read is filtered by workspace — but the link
+//   crossed the boundary). ContactInput.CheckCompanyAsync refuses it with
+//   a 400 and a sentence, before anything is saved.
+//
 // 078b — AUDIT ON CREATE AND UPDATE
 //
 //   Only delete was audited (ContactDeleted). Create now writes
@@ -82,6 +89,22 @@ namespace MerkaiTrial.Application.Commands.Contacts
             errors.AddIf(InputRules.Text(postalCode, "the postal code", 20));
             InputRules.ThrowIfAny(errors);
         }
+
+        /// <summary>
+        /// 100. A company named on a contact must be one of this
+        /// workspace's own. Before, any company id was stored as given, so
+        /// a contact could point into another workspace's companies.
+        /// Throws InputValidationException — a 400 with the sentence, on
+        /// the path every contact controller action already has.
+        /// </summary>
+        public static async Task CheckCompanyAsync(FlowDbContext db, Guid tenantId, Guid? companyId, CancellationToken ct)
+        {
+            if (companyId is not Guid id || id == Guid.Empty) return;
+            var ours = await db.Companies.AsNoTracking()
+                .AnyAsync(c => c.Id == id && c.TenantId == tenantId && !c.IsDeleted, ct);
+            if (!ours)
+                throw new InputValidationException(new[] { "The company chosen isn't in this workspace. Pick one from the list." });
+        }
     }
 
     // ==================== CREATE CONTACT ====================
@@ -132,6 +155,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 // the mistake rather than counted against the plan.
                 ContactInput.Check(request.FirstName, request.LastName, request.JobTitle, request.Email,
                     request.Phone, request.Mobile, request.Address, request.City, request.Country, request.PostalCode);
+                await ContactInput.CheckCompanyAsync(_context, request.TenantId, request.CompanyId, cancellationToken);   // 100
 
                 // ── ✅ Plan quota check — MaxContacts from Plans table ────────
                 // Contact.TenantId = Guid, request.TenantId = Guid → direct comparison
@@ -315,6 +339,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 // 095 — before anything is assigned.
                 ContactInput.Check(request.FirstName, request.LastName, request.JobTitle, request.Email,
                     request.Phone, request.Mobile, request.Address, request.City, request.Country, request.PostalCode);
+                await ContactInput.CheckCompanyAsync(_context, request.TenantId, request.CompanyId, cancellationToken);   // 100
 
                 // 078b — what changed, by NAME, for the audit row.
                 var changed = new List<string>();

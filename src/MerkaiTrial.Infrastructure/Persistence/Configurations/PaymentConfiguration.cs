@@ -1,4 +1,14 @@
-﻿using MerkaiTrial.Domain.Entities;
+// =====================================================================
+// PaymentConfiguration.cs
+// Location: MerkaiTrial.Infrastructure/Persistence/Configurations/PaymentConfiguration.cs
+//
+// 100 — IdempotencyKey (nullable) and its filtered unique index
+// UX_Payments_Invoice_IdempotencyKey: one payment per key per invoice.
+// Created by Sql/100_PaymentIdempotency.sql; declared here so EF knows
+// the column and the index match.
+// =====================================================================
+
+using MerkaiTrial.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
@@ -56,6 +66,10 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
                 .HasMaxLength(500)
                 .IsRequired(false);
 
+            // 100
+            builder.Property(x => x.IdempotencyKey)
+                .IsRequired(false);
+
             // Audit fields
             builder.Property(x => x.CreatedAtUtc)
                 .IsRequired()
@@ -82,6 +96,12 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
 
             builder.HasIndex(x => x.InvoiceId)
                 .HasFilter("[IsDeleted] = 0");
+
+            // 100 — the same key on the same invoice is one payment.
+            builder.HasIndex(x => new { x.InvoiceId, x.IdempotencyKey })
+                .IsUnique()
+                .HasFilter("[IdempotencyKey] IS NOT NULL")
+                .HasDatabaseName("UX_Payments_Invoice_IdempotencyKey");
 
             // Check constraints (will be added via migration)
             // CK_Payments_Amount_Positive

@@ -52,6 +52,14 @@
 //   matching invoice, as a list) is unchanged — the quote and deal pages
 //   use it. Record visibility applies to both, in the same handler.
 //   "paged" is a literal segment, so routing prefers it to {id}.
+//
+// CHANGES (100 — a payment is counted once)
+//   POST api/invoices/{id}/payments takes an idempotency key, in the body
+//   (IdempotencyKey) or as the standard Idempotency-Key header (a GUID).
+//   The same key on the same invoice records ONE payment; sending it
+//   again answers exactly as the first time did, with the payment already
+//   recorded (same id), and records nothing new. A header that is not a
+//   GUID is a 400. See AddPaymentHandler.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Invoices;
@@ -571,6 +579,16 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 // Ensure invoice ID matches
                 dto.InvoiceId = id;
+
+                // 100 — the key may come as the Idempotency-Key header.
+                if (dto.IdempotencyKey is null &&
+                    Request.Headers.TryGetValue("Idempotency-Key", out var keyHeader) &&
+                    !string.IsNullOrWhiteSpace(keyHeader.ToString()))
+                {
+                    if (!Guid.TryParse(keyHeader.ToString(), out var headerKey) || headerKey == Guid.Empty)
+                        return BadRequest(new { error = "The Idempotency-Key header must be a GUID." });
+                    dto.IdempotencyKey = headerKey;
+                }
 
                 // Server-resolved identity always wins over whatever the client sent in the body.
                 dto.TenantId = _currentUserService.GetCurrentTenantId();

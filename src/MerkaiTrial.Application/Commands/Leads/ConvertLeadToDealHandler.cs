@@ -38,9 +38,26 @@
 //   the lead named none, the company its contact already belongs to.
 //   Sql/088b_BackfillConvertedDealCompanies.sql repairs deals converted
 //   before this fix.
+//
+// 100 — ONE CONVERSION, EVEN WHEN TWO ARRIVE TOGETHER
+//   Two requests converting the same lead at the same moment both read
+//   "not converted yet" before either saved, and each made its own deal
+//   (and its own contact and company when those were new). The lead's
+//   row is now locked first (RowLock), inside the existing transaction:
+//   the second request waits, then reads IsConverted = true and is told
+//   "Lead has already been converted". Other leads are not held up.
+//
+// 100 (second part) — TWO LEADS, ONE CUSTOMER
+//   Two different leads with the same company name or the same email,
+//   converted at the same moment, each checked "is there a company /
+//   contact already?" before either saved, and each created one. The
+//   conversion now also holds a named lock on the company name and on the
+//   email (RowLock.HoldNameAsync) before looking, so the second waits and
+//   then reuses what the first created.
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;     // 079
+using MerkaiTrial.Application.Common;                    // 100 — RowLock
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.Automation;     // 098
 using MerkaiTrial.Application.Commands.PipelineStages;
@@ -95,6 +112,10 @@ namespace MerkaiTrial.Application.Commands.Leads
             {
                 _logger.LogInformation("Starting lead conversion: LeadId={LeadId}", dto.LeadId);
 
+                // 100 — before the lead is read. Joins the transaction
+                // above; it commits (or rolls back) with it.
+                await using var held = await RowLock.HoldAsync(_db, RowLock.Leads, dto.LeadId);
+
                 // ── STEP 1: VALIDATE LEAD ─────────────────────────────────────
 
                 // Record visibility: outside your scope = not found.
@@ -113,16 +134,34 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
 
-                if (!statuses.IsQualified(lead.Status))
-                    throw new InvalidOperationException(
-                        $"Lead must be qualified to convert. Current status: {statuses.NameOf(lead.Status)}");
-
+                // 100 — "already converted" is checked FIRST. A converted
+                // lead's status is Converted, which is not a Qualified one,
+                // so the second of two simultaneous clicks used to be told
+                // "Lead must be qualified to convert. Current status:
+                // Converted" — true, but not the reason.
                 if (lead.IsConverted)
                     throw new InvalidOperationException(
                         $"Lead has already been converted to deal {lead.DealId}");
 
+                if (!statuses.IsQualified(lead.Status))
+                    throw new InvalidOperationException(
+                        $"Lead must be qualified to convert. Current status: {statuses.NameOf(lead.Status)}");
+
                 var currentUser = await _currentUserService.GetCurrentUserAsync();
                 var now = DateTime.UtcNow;
+
+                // 100 — the company and contact this conversion may CREATE,
+                // held by name until it commits. Two DIFFERENT leads for the
+                // same customer, converted together, used to both find "no
+                // such company / contact yet" and both create one. Sorted,
+                // so two conversions always take them in the same order.
+                var names = new List<string>();
+                if (!string.IsNullOrWhiteSpace(lead.CompanyName))
+                    names.Add(RowLock.NameKey("company", lead.TenantId, lead.CompanyName));
+                if (!lead.ContactId.HasValue && !string.IsNullOrWhiteSpace(lead.Email))
+                    names.Add(RowLock.NameKey("contact", lead.TenantId, lead.Email));
+                foreach (var name in names.OrderBy(n => n, StringComparer.Ordinal))
+                    await RowLock.HoldNameAsync(_db, name);
 
                 // ── STEP 2: RESOLVE OR CREATE COMPANY ─────────────────────────
 

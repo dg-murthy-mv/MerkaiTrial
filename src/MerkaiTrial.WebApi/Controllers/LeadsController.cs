@@ -42,6 +42,16 @@
 // 096 — GET /api/leads takes ?sort= and ?dir= (name, status, score, value,
 //   created). Checked against a fixed list in the handler; anything else
 //   is the default order.
+//
+// 100 — POST {leadId}/convert-to-deal takes the workspace from the signed-
+//   in user, like every other action here; it used the body's TenantId.
+//   POST {id}/convert is reachable again: LeadsWorkflowController (an old
+//   controller on the SAME route, trusting an X-Tenant-Id header and
+//   checking no permission) is deleted in this round, so the two no longer
+//   collide.
+//   PUT {id} also takes the workspace from the signed-in user now (the
+//   body's TenantId is overwritten). Uploading a file to a lead that is
+//   not this workspace's is a 404 — it was a 500.
 // =====================================================================
 
 using MerkaiTrial.Application.Authorization;            // 079
@@ -407,6 +417,9 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (id != dto.LeadId)
                     return BadRequest(new { error = "Lead ID mismatch" });
 
+                // 100 — the workspace is the signed-in user's, never the body's.
+                dto = dto with { TenantId = _currentUserService.GetCurrentTenantId() };
+
                 var result = await _updateHandler.Handle(dto, cancellationToken);
 
                 _logger.LogInformation("Lead updated successfully: {LeadId}", id);
@@ -566,6 +579,13 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (dto.LeadId != leadId)
                     return BadRequest(new { error = "LeadId in route and body must match" });
 
+                // 100 — the workspace is the signed-in user's, never the
+                // body's. The handler looks the lead, its statuses and the
+                // stages up by this id; the global filter already kept
+                // other workspaces' rows out, and now the id itself can't
+                // name one.
+                dto.TenantId = _currentUserService.GetCurrentTenantId();
+
                 _logger.LogInformation("API: Converting lead {LeadId} to deal", leadId);
 
                 var result = await _convertLeadToDealHandler.Handle(dto);
@@ -696,6 +716,10 @@ namespace MerkaiTrial.WebApi.Controllers
                     new UploadLeadAttachmentDto(tenantId, leadId, file, uploadedBy), ct);
 
                 return Ok(result);
+            }
+            catch (KeyNotFoundException)          // 100 — not this workspace's lead (was a 500)
+            {
+                return NotFound(new { error = $"Lead {leadId} not found" });
             }
             catch (InvalidOperationException ex) // file type/size validation
             {

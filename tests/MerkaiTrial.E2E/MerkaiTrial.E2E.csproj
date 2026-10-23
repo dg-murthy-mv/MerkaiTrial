@@ -6,6 +6,10 @@
     would: sign in, add a lead, send a quote, accept it as the customer,
     invoice it, record the payment.
 
+    100: the tests can also call the WebApi directly, as a given person,
+    with a token signed by the key run-e2e.ps1 gives both test servers for
+    the run (Infrastructure/Api.cs).
+
     Deliberately NO project references. The tests only see what a browser
     sees, plus a direct connection to the test database for the two things
     a browser cannot do: set a known super admin password, and read a reset
@@ -32,6 +36,11 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <!-- PasswordHasher only, the same one Merkai's PasswordService uses. -->
     <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="8.0.8" />
+    <!-- 100: tokens for calling the WebApi directly as a given person,
+         made exactly the way Admin.Web's ApiTokenService makes them.
+         6.35.0: the version Microsoft.Data.SqlClient 5.2.2 already brings,
+         so the two never pull different IdentityModel versions. -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.35.0" />
   </ItemGroup>
 
   <ItemGroup>

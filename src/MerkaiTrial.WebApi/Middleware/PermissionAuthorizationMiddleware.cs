@@ -20,7 +20,18 @@ namespace MerkaiTrial.WebApi.Middleware
             await _next(context);
 
             // If authorization failed (403) and it's an API request
-            if (context.Response.StatusCode == 403 && 
+            // 100b — ONLY when nothing has been written yet. An action that
+            // refused with its own sentence — StatusCode(403, new { error =
+            // "You can't approve your own request." }) — has already sent
+            // its headers and body. Adding this one on top changed headers
+            // that were already gone and wrote past the declared length, so
+            // Kestrel cut the connection: the caller got "Error while
+            // copying content to a stream" instead of the reason (found by
+            // the E2E test "A rep cannot issue an unapproved discounted
+            // quote"). The policy refusals this was written for still have
+            // an empty response at this point, so they are unchanged.
+            if (context.Response.StatusCode == 403 &&
+                !context.Response.HasStarted &&
                 context.Request.Path.StartsWithSegments("/api"))
             {
                 var endpoint = context.GetEndpoint();

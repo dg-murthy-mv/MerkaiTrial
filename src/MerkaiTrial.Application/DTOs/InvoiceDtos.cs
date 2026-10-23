@@ -4,6 +4,9 @@
 //
 // COMPLETE FILE — 052 (Phase B of the catalogue).
 //
+// 100 — CreatePaymentDto.IdempotencyKey: one payment per key per invoice,
+// however many times the request arrives. See AddPaymentHandler.
+//
 // InvoiceLineDto and CreateInvoiceLineDto move Quantity from int to
 // decimal and gain UnitOfMeasure, matching QuoteItemDto exactly. They
 // have to move in the same round: CreateInvoiceFromQuoteHandler copies
@@ -531,6 +534,15 @@ namespace MerkaiTrial.Application.DTOs
         public DateTime PaidAtUtc { get; set; }
         public string? Notes { get; set; }
         public string? ProviderTxnId { get; set; }
+
+        /// <summary>
+        /// 100. The same key on the same invoice records ONE payment — a
+        /// retried request gets the payment already recorded back instead
+        /// of adding a second. The payment form sends a fresh key each
+        /// time it is drawn; an API caller may send one here or in the
+        /// Idempotency-Key header. Null: no protection against retries.
+        /// </summary>
+        public Guid? IdempotencyKey { get; set; }
 
         public string CreatedBy { get; set; } = string.Empty;
     }

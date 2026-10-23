@@ -1,6 +1,11 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Invoices/Detail.cshtml.cs
 //
+// CHANGES (100 — a payment is counted once)
+//   ✅ OnPostRecordPayment takes the form's paymentKey and passes it on as
+//      CreatePaymentDto.IdempotencyKey. The same form sent twice records
+//      one payment; the second gets the same "recorded" message.
+//
 // CHANGES (085 — emailing invoices)
 //   ✅ "Email invoice" button and dialog (To, Cc, a personal message). The
 //      email carries the PDF as an attachment AND a secure link
@@ -378,7 +383,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
             decimal amount,
             DateTime paymentDate,
             string paymentMethod,
-            string? notes)
+            string? notes,
+            Guid? paymentKey)        // 100 — one payment per key, see the .cshtml header
         {
             // ✅ GATE: was completely absent — viewer could record payments by direct POST
             var permissionCheck = await ValidateRecordPaymentPermissionAsync();
@@ -400,7 +406,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
                     Method = paymentMethod,
                     PaidAtUtc = paymentDate.ToUniversalTime(),
                     Notes = notes,
-                    CreatedBy = currentUser.FullName
+                    CreatedBy = currentUser.FullName,
+                    IdempotencyKey = paymentKey is Guid k && k != Guid.Empty ? k : null   // 100
                 };
 
                 await _invoiceService.AddPaymentAsync(dto);

@@ -10,6 +10,15 @@
 //   E2E_DB         the TEST database connection    (Database must end in _E2E)
 //   HEADED=1       show the browser window
 //   E2E_SLOWMO=250 pause this many ms between browser actions (watching)
+//
+//   100 — calling the WebApi directly as a given person:
+//   E2E_JWT_KEY        the signing key run-e2e.ps1 gave BOTH test servers
+//                      for this run only (a fresh random one each run —
+//                      never your real key). With -ServersOnly it is also
+//                      written to e2e-logs/e2e-jwt.key while the servers
+//                      run, so Test Explorer finds it.
+//   E2E_JWT_ISSUER     merkaitrial-admin  (what run-e2e.ps1 sets)
+//   E2E_JWT_AUDIENCE   merkaitrial-api
 // =====================================================================
 
 namespace MerkaiTrial.E2E;
@@ -44,6 +53,39 @@ public static class E2ESettings
     public static string ApiBaseUrl =>
         (Environment.GetEnvironmentVariable("E2E_API_URL") is { Length: > 0 } v ? v : DefaultApiBaseUrl)
         .TrimEnd('/');
+
+    // ── 100: tokens for the WebApi ─────────────────────────────────────
+
+    /// <summary>
+    /// The run's signing key, or null when the servers were not started by
+    /// run-e2e.ps1 (then the tests that call the API directly say so).
+    /// </summary>
+    public static string? JwtSigningKey
+    {
+        get
+        {
+            if (Environment.GetEnvironmentVariable("E2E_JWT_KEY") is { Length: > 0 } v) return v.Trim();
+            try
+            {
+                // -ServersOnly: run-e2e.ps1 leaves the key here while its servers run.
+                var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+                for (var d = dir; d != null; d = d.Parent)
+                {
+                    var file = Path.Combine(d.FullName, "e2e-logs", "e2e-jwt.key");
+                    if (File.Exists(file)) return File.ReadAllText(file).Trim();
+                    if (File.Exists(Path.Combine(d.FullName, "MerkaiTrial.E2E.csproj"))) break;
+                }
+            }
+            catch { /* no key — the caller reports it */ }
+            return null;
+        }
+    }
+
+    public static string JwtIssuer =>
+        Environment.GetEnvironmentVariable("E2E_JWT_ISSUER") is { Length: > 0 } v ? v : "merkaitrial-admin";
+
+    public static string JwtAudience =>
+        Environment.GetEnvironmentVariable("E2E_JWT_AUDIENCE") is { Length: > 0 } v ? v : "merkaitrial-api";
 
     public static string ConnectionString =>
         Environment.GetEnvironmentVariable("E2E_DB") is { Length: > 0 } v ? v : DefaultConnectionString;

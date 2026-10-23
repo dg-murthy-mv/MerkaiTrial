@@ -47,7 +47,7 @@
 //   Time-based rules run from AutomationTimeRunner — the worker every few
 //   minutes, or "Check now" on the Automation page — through
 //   RunTimeRuleAsync. The worker gives its scope the workspace
-//   (WorkerTenantProvider), so the resolvers and the custom-field reader,
+//   (OverridableTenantProvider), so the resolvers and the custom-field reader,
 //   which go through the tenant filter, see the right rows; the engine's
 //   own queries name TenantId explicitly as well.
 //
@@ -61,6 +61,17 @@
 //       every quarter of an hour);
 //     • whatever the outcome once it runs, an AutomationTimeFire row is
 //       written with the run, so the same episode is never acted on twice.
+//
+// TWO CHECKS AT ONCE (100)
+//   The worker, a second WebApi instance and "Check now" can look at the
+//   same record in the same instant. Both find it due, both stage the
+//   task, and both try to save it WITH its AutomationTimeFire row. The
+//   unique (rule, record, episode) index lets exactly one of those saves
+//   through; the other fails as a whole, so its task never exists. Until
+//   100 that second save was then treated as the rule failing: an error
+//   in the log and a second attempt to write a "Failed" line. Now it is
+//   recognised for what it is — the other check already did it — and is
+//   dropped quietly: nothing logged as failed, nothing counted as run.
 // =====================================================================
 
 using System.Globalization;
@@ -448,6 +459,17 @@ public class AutomationEngine : ICommandHandler
 
             return true;
         }
+        catch (DbUpdateException ex) when (timeBased && IsAlreadyFired(ex))
+        {
+            // 100 — another check acted on this episode a moment ago; its
+            // save won the unique index and ours carried the same task. Not
+            // a failure, and nothing of ours was saved. See the header.
+            _db.ChangeTracker.Clear();
+            _logger.LogInformation(
+                "Automation rule {RuleId}: {EntityType} {EntityId} was already handled by another check",
+                rule.Id, entity, entityId);
+            return false;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Automation rule {RuleId} failed on {EntityType} {EntityId}", rule.Id, entity, entityId);
@@ -483,6 +505,15 @@ public class AutomationEngine : ICommandHandler
             }
             return timeBased;
         }
+    }
+
+    /// <summary>100. True when a save failed on AutomationTimeFires' unique (rule, record, episode) index.</summary>
+    private static bool IsAlreadyFired(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+            if (e.Message.Contains("UX_AutomationTimeFires_Rule_Entity_Episode", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
     }
 
     private void MarkFired(AutomationRule rule, Guid entityId, DateTime episodeAtUtc)

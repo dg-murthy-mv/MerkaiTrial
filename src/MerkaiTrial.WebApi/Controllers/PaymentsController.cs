@@ -1,4 +1,29 @@
-﻿using Microsoft.AspNetCore.Mvc;
+// =====================================================================
+// PaymentsController.cs
+// Location: MerkaiTrial.WebApi/Controllers/PaymentsController.cs
+//
+// 100 — PERMISSION ADDED. Both actions now need Invoices.Update.
+//
+//   Before this round the controller had no [Authorize] of its own, so
+//   the API's fallback policy ("signed in") was all that stood in front
+//   of it: a Viewer could start a checkout on an invoice (which writes
+//   Provider / ProviderRef / CheckoutUrl onto it) and could post to the
+//   webhook, which marks an invoice paid by its number. The record-a-
+//   payment button already needs Invoices.Update; these now match it.
+//
+//   The webhook was never reachable by a real payment provider: a
+//   provider sends no Merkai sign-in, so the fallback policy has always
+//   answered it with 401. That is unchanged. When online payments are
+//   switched on for real, the webhook needs its own round — anonymous,
+//   checked by the provider's signature instead (the way the Resend
+//   webhook is), and recording a Payment row through AddPaymentHandler
+//   rather than marking the invoice paid directly.
+//
+//   Nothing else in this file changed.
+// =====================================================================
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MerkaiTrial.Infrastructure.Payments;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -10,6 +35,7 @@ namespace MerkaiTrial.WebApi.Controllers;
 
 [ApiController]
 [Route("api/payments")]
+[Authorize(Policy = "Invoices.Update")]      // 100 — see the header
 public class PaymentsController : ControllerBase
 {
     private readonly FlowDbContext _db;

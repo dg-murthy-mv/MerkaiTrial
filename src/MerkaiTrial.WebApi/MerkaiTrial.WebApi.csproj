@@ -27,6 +27,7 @@
   <ItemGroup>
     <Folder Include="Authorization\" />
     <Folder Include="Middleware\" />
+    <Folder Include="SwaggerGen\" />
     <Folder Include="Workers\" />
     <Folder Include="Startup\" />
   </ItemGroup>

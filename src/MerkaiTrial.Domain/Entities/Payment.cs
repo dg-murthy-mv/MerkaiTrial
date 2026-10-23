@@ -7,6 +7,13 @@
 //      the history with Status = "Reversed", who reversed it, when and why,
 //      and stops counting towards the invoice. ReversedAtUtc / ReversedBy /
 //      ReversalReason are added by 018_InvoiceWorkflow.sql.
+//
+// CHANGES (100)
+//   ✅ IdempotencyKey: the key the request that recorded this payment
+//      carried. The same key on the same invoice records one payment, so
+//      a retried or double-submitted payment is never counted twice.
+//      Unique per invoice where set (100_PaymentIdempotency.sql). NULL for
+//      payments recorded before 100, and for callers that send no key.
 // =====================================================================
 
 namespace MerkaiTrial.Domain.Entities
@@ -23,6 +30,10 @@ namespace MerkaiTrial.Domain.Entities
         public string Status { get; set; } = PaymentStatusNames.Captured;  // Captured, Reversed (Pending, Failed, Refunded kept for gateways)
 
         public string? ProviderTxnId { get; set; }
+
+        /// <summary>100. One payment per key per invoice — see the header.</summary>
+        public Guid? IdempotencyKey { get; set; }
+
         public DateTime PaidAtUtc { get; set; }
         public string? Notes { get; set; }
 

@@ -4,6 +4,19 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (100 — one stage move at a time)
+//   ✅ TransitionDealStageHandler (automatic moves: quote accepted, invoice
+//      paid) and UpdateDealStageHandler (the board and the deal page) lock
+//      the deal's row (RowLock) before reading it. The same move arriving
+//      twice at once (a double drop on the board, a payment and its retry)
+//      used to read the old stage twice, write two history rows and set
+//      off "when the stage becomes …" rules twice. Now the second waits,
+//      reads the new stage, and stops at the existing "already there"
+//      check.
+//   ✅ CreateDealHandler refuses a contact, company or lead that is not
+//      this workspace's own (400 with a sentence). They were stored as
+//      sent, so a deal could point into another workspace's records.
+//
 // CHANGES (099 — automation)
 //   ✅ UpdateDealHandler tells the automation engine which CUSTOM fields
 //      changed, read before the edit and again after the save.
@@ -110,6 +123,7 @@ using System.Globalization;                              // 098
 using MerkaiTrial.Application.Commands.Automation;      // 098
 using MerkaiTrial.Application.Commands.CustomFields;     // 077
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Common;                    // 100 — RowLock
 using MerkaiTrial.Application.Configuration;            // 077
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;
@@ -251,6 +265,9 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var access = await _scope.GetAsync(RecordModules.Deals);
 
+            // 100 — before the read; see the header.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Deals, dealId);
+
             var deal = await _db.Deals
                 .Where(d => d.Id == dealId && d.TenantId == tenantGuid && !d.IsDeleted)
                 .VisibleTo(access)
@@ -293,6 +310,7 @@ namespace MerkaiTrial.Application.Commands.Deals
                 actorUserId: null, actorName: "the system");
 
             await _db.SaveChangesAsync();
+            await held.CommitAsync();      // 100
 
             await _audit.WriteAsync(
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, tenantGuid,
@@ -703,6 +721,24 @@ namespace MerkaiTrial.Application.Commands.Deals
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
             var tenantGuid = Guid.Parse(dto.TenantId);
+
+            // ── 100: the contact, company and lead must be this workspace's ──
+            // They were stored exactly as sent, so a deal could be saved
+            // pointing at another workspace's contact, company or lead.
+            // Nothing of theirs was shown (every read is filtered by
+            // workspace), but the link crossed the boundary. Refused with
+            // a sentence (400), before anything is counted or saved.
+            if (dto.ContactId != Guid.Empty &&
+                !await _db.Contacts.AsNoTracking().AnyAsync(c => c.Id == dto.ContactId && c.TenantId == tenantGuid && !c.IsDeleted))
+                throw new InvalidOperationException("The contact chosen isn't in this workspace. Pick one from the list.");
+
+            if (dto.CompanyId is Guid companyId && companyId != Guid.Empty &&
+                !await _db.Companies.AsNoTracking().AnyAsync(c => c.Id == companyId && c.TenantId == tenantGuid && !c.IsDeleted))
+                throw new InvalidOperationException("The company chosen isn't in this workspace. Pick one from the list.");
+
+            if (dto.LeadId is Guid leadId && leadId != Guid.Empty &&
+                !await _db.Leads.AsNoTracking().AnyAsync(l => l.Id == leadId && l.TenantId == tenantGuid && !l.IsDeleted))
+                throw new InvalidOperationException("The lead chosen isn't in this workspace.");
 
             // ── Plan quota check ─────────────────────────────────────────
             var planSettings = await _db.TenantSettings
@@ -1208,6 +1244,9 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var access = await _scope.GetAsync(RecordModules.Deals);
 
+            // 100 — before the read; see the header.
+            await using var held = await RowLock.HoldAsync(_db, RowLock.Deals, dealId);
+
             var deal = await _db.Deals
                 .Where(d => d.Id == dealId
                          && d.TenantId == tenantGuid
@@ -1261,6 +1300,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             }
 
             await _db.SaveChangesAsync();
+            await held.CommitAsync();      // 100
 
             await _audit.WriteAsync(
                 AuditAction.DealStageChanged, AuditEntityType.Deal, dealId, deal.TenantId,
