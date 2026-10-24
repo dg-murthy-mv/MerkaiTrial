@@ -233,6 +233,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         [BindProperty]
         public Dictionary<string, string?> CustomFields { get; set; } = new();
 
+        // ── 102: two people editing the same record ──────────────────
+        /// <summary>
+        /// The record's version when this form was loaded, carried in a
+        /// hidden field and sent with the save. If someone else saved in
+        /// between, the API refuses (409) instead of overwriting them.
+        /// </summary>
+        [BindProperty] public string? Version { get; set; }
+
+        /// <summary>True when the save was refused because someone else changed the record. Shows the Reload link.</summary>
+        public bool RecordChanged { get; private set; }
+
         /// <summary>Active Deal custom fields, in order.</summary>
         public List<CustomFieldDefinitionDto> ActiveCustomFields { get; private set; } = new();
         public bool CustomFieldsLoadFailed { get; private set; }
@@ -384,6 +395,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     ContactName = "Unknown Contact";
                 }
 
+                Version = deal.Version;   // 102
+
                 Input = new DealInputModel
                 {
                     Title             = deal.Title,
@@ -519,7 +532,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     // 077 — null when the field list could not be loaded.
                     CustomFields         = CustomFieldsLoadFailed
                                             ? null
-                                            : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
+                                            : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+                    Version              = this.Version     // 102
                 };
 
                 await _dealService.UpdateAsync(tenantId, id, updateDto);
@@ -529,6 +543,15 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
             }
             // IApiService turns the API's 400/403 { "error": ... } into this,
             // carrying the server's own wording.
+            catch (MerkaiTrial.Infrastructure.Persistence.RecordChangedException ex)
+            {
+                // 102 — someone else saved this deal after the form was loaded.
+                _logger.LogInformation("Deal {DealId} update refused — changed by someone else", id);
+                RecordChanged = true;
+                ModelState.AddModelError(string.Empty, ex.Message);
+                await ReloadListsAsync(id);
+                return Page();
+            }
             catch (InvalidOperationException ex)
             {
                 _logger.LogInformation("Deal {DealId} update refused: {Message}", id, ex.Message);

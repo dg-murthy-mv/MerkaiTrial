@@ -91,6 +91,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Security.Claims;
 using System.Text.Json;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -624,41 +625,40 @@ public class CurrentTenantService : ICurrentTenantService
         var (tenant, country, _) = Load();
         return !string.IsNullOrEmpty(tenant.Timezone)
             ? tenant.Timezone
-            : country.Timezone ?? "Asia/Kolkata";
+            : country.Timezone ?? WorkspaceTime.DefaultZoneId;
     }
 
     public string GetDateFormat() => Load().c.DateFormat ?? "dd/MM/yyyy";
     public string GetTimeFormat() => Load().c.TimeFormat ?? "HH:mm";
 
+    // 103 — one zone rule for the pages, the automation engine and the
+    // worker (WorkspaceTime): the workspace's zone, else its country's,
+    // else Asia/Kolkata. An id this server doesn't know falls through to
+    // the next one instead of turning every time into UTC.
+    private TimeZoneInfo? _zone;
+    private TimeZoneInfo Zone()
+    {
+        if (_zone is not null) return _zone;
+        var (tenant, country, _) = Load();
+        _zone = WorkspaceTime.Resolve(tenant.Timezone, country.Timezone);
+        if (!string.IsNullOrWhiteSpace(tenant.Timezone) && !WorkspaceTime.IsKnown(tenant.Timezone))
+            _logger.LogWarning("Workspace {TenantId} has a time zone this server doesn't know ({Tz}); using {Used}",
+                tenant.Id, tenant.Timezone, _zone.Id);
+        return _zone;
+    }
+
     public DateTime UtcToLocal(DateTime utcDateTime)
-    {
-        try
-        {
-            var tz = TimeZoneInfo.FindSystemTimeZoneById(GetTimezone());
-            return TimeZoneInfo.ConvertTimeFromUtc(
-                DateTime.SpecifyKind(utcDateTime, DateTimeKind.Utc), tz);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Timezone conversion failed for {Tz}", GetTimezone());
-            return utcDateTime;
-        }
-    }
+        => WorkspaceTime.ToLocal(utcDateTime, Zone());
+
+    /// <summary>
+    /// 103 — a wall-clock time in the workspace, in UTC. On the morning the
+    /// clocks go forward a skipped time (02:30) moves forward by the jump
+    /// (03:30); on the night they go back a doubled time (01:30) is the
+    /// first one. Before 103 the skipped time threw inside .NET, was
+    /// caught here and stored AS IF it were UTC — hours out.
+    /// </summary>
     public DateTime LocalToUtc(DateTime localDateTime)
-    {
-        try
-        {
-            var tz = TimeZoneInfo.FindSystemTimeZoneById(GetTimezone());
-            return TimeZoneInfo.ConvertTimeToUtc(
-                DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified), tz);
-        }
-        catch (Exception ex)
-        {
-            // Same fallback as UtcToLocal: treat the value as already UTC.
-            _logger.LogWarning(ex, "Timezone conversion failed for {Tz}", GetTimezone());
-            return DateTime.SpecifyKind(localDateTime, DateTimeKind.Utc);
-        }
-    }
+        => WorkspaceTime.ToUtc(localDateTime, Zone());
 
 
     public string FormatDate(DateTime utcDateTime)
@@ -762,6 +762,12 @@ public class CurrentTenantService : ICurrentTenantService
 
         // Trial expired → account locked
         if (tenant.IsTrialExpired()) return false;
+
+        // 103 — a suspended workspace is stopped too. IsSuspended is the
+        // "stop this workspace now" switch (Tenant.cs); it was only ever
+        // checked by inbound email, so a suspended workspace could keep
+        // writing through every page and the API.
+        if (tenant.IsSuspended) return false;
 
         // Active tenant
         return tenant.IsActive;

@@ -54,6 +54,7 @@
 //   not this workspace's is a 404 — it was a 500.
 // =====================================================================
 
+using MerkaiTrial.Infrastructure.Persistence;   // 102 — RecordChangedException
 using MerkaiTrial.Application.Authorization;            // 079
 using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.Commands.Countries;
@@ -429,6 +430,12 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Lead {id} not found" });
+            }
+            catch (RecordChangedException ex)
+            {
+                // 102 — someone else saved this record after the form was
+                // loaded. Nothing was saved; the message says to reload.
+                return StatusCode(StatusCodes.Status409Conflict, new { error = ex.Message });
             }
             catch (InvalidOperationException ex)
             {

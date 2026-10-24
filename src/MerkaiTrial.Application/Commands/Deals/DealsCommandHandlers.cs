@@ -638,7 +638,8 @@ namespace MerkaiTrial.Application.Commands.Deals
                 row.Vertical?.Name
             )
             {
-                CustomFieldValues = customFieldValues      // 077
+                CustomFieldValues = customFieldValues,     // 077
+                Version = RecordVersion.Of(d.RowVersion)   // 102
             };
         }
     }
@@ -682,7 +683,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 d.ContactId, $"{row.Contact.FirstName} {row.Contact.LastName}".Trim(),
                 d.OwnerUserId, null, d.LeadId, null, d.Tags,
                 d.CreatedAtUtc, d.CreatedBy, d.UpdatedAtUtc, d.UpdatedBy
-            );
+            )
+            {
+                Version = RecordVersion.Of(d.RowVersion)   // 102
+            };
         }
     }
 
@@ -740,20 +744,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 !await _db.Leads.AsNoTracking().AnyAsync(l => l.Id == leadId && l.TenantId == tenantGuid && !l.IsDeleted))
                 throw new InvalidOperationException("The lead chosen isn't in this workspace.");
 
-            // ── Plan quota check ─────────────────────────────────────────
-            var planSettings = await _db.TenantSettings
-                .AsNoTracking()
-                .FirstOrDefaultAsync(ts => ts.TenantId == tenantGuid);
-
-            if (planSettings != null)
-            {
-                var currentDealCount = await _db.Deals
-                    .CountAsync(d => d.TenantId == tenantGuid && !d.IsDeleted);
-
-                if (currentDealCount >= planSettings.MaxDeals)
-                    throw new PlanLimitExceededException(
-                        "deals", currentDealCount, planSettings.MaxDeals);
-            }
+            // ── Plan quota (103: PlanQuota) ──────────────────────────────
+            // Held until the deal is saved, so two saves at once can't both
+            // take the last place; the limit is read live.
+            await using var quota = await PlanQuota.HoldAsync(_db, tenantGuid, PlanQuota.Deals);
 
             // ── Stage, from the TENANT's pipeline ────────────────────────
             // Deal.Stage has a composite FK to PipelineStages(TenantId, Key),
@@ -851,6 +845,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             }
 
             await _db.SaveChangesAsync();
+            await quota.CommitAsync();   // 103
 
             await _audit.WriteAsync(
                 AuditAction.DealCreated, AuditEntityType.Deal, deal.Id, deal.TenantId,
@@ -961,6 +956,10 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
+
+            // 102 — made from the version on screen? Refused before
+            // anything changes if someone else saved since.
+            RecordVersion.Expect(_db, deal, versioned => versioned.RowVersion, dto.Version, "deal");
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
             var stages = await _stages.GetAsync(tenantGuid);
@@ -1351,12 +1350,14 @@ namespace MerkaiTrial.Application.Commands.Deals
         private readonly ICurrentUserService _currentUserService;
         private readonly IAuditService _audit;
         private readonly IRecordScopeService _scope;
+        private readonly IStageResolver _stages;   // 102
 
         public DeleteDealHandler(FlowDbContext db, ICurrentUserService currentUserService, IAuditService audit,
-            IRecordScopeService scope)
+            IRecordScopeService scope, IStageResolver stages)
         {
             _db                 = db;
             _scope              = scope;
+            _stages             = stages;
             _currentUserService = currentUserService;
             _audit              = audit;
         }
@@ -1372,6 +1373,12 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             if (deal is null)
                 throw new KeyNotFoundException($"Deal {dealId} not found");
+
+            // 102 — the rules were only on the two deal PAGES; the API
+            // deleted any deal, closed or invoiced. Now here, for everyone.
+            var why = await DeleteRules.WhyDealCannotBeDeletedAsync(
+                _db, deal.TenantId, deal, await _stages.GetAsync(deal.TenantId));
+            if (why is not null) throw new InvalidOperationException(why);
 
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 

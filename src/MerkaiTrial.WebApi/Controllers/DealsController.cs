@@ -70,6 +70,7 @@
 //      (InvalidOperation) instead of a generic 500.
 // =====================================================================
 
+using MerkaiTrial.Infrastructure.Persistence;   // 102 — RecordChangedException
 using MerkaiTrial.Application.Authorization;            // 077 — Policies.*
 using MerkaiTrial.Application.Commands.Deals;
 using MerkaiTrial.Application.Commands.PipelineStages;
@@ -341,6 +342,12 @@ namespace MerkaiTrial.WebApi.Controllers
                 _logger.LogWarning("Refused stage change on deal {DealId}: {Message}", id, ex.Message);
                 return StatusCode(403, new { error = ex.Message });
             }
+            catch (RecordChangedException ex)
+            {
+                // 102 — someone else saved this record after the form was
+                // loaded. Nothing was saved; the message says to reload.
+                return StatusCode(StatusCodes.Status409Conflict, new { error = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { error = ex.Message });
@@ -376,6 +383,11 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound(new { error = $"Deal {id} not found" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 102 — refused, with the reason (DeleteRules).
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {
@@ -480,8 +492,26 @@ namespace MerkaiTrial.WebApi.Controllers
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
             try
             {
-                await _transitionDealStage.HandleAsync(
-                    tenantId, dealId, dto.Stage, dto.Probability, changedBy: "System");
+                // 102 — the PERSON's move, the same one PUT /stage makes.
+                //
+                // This used to call TransitionDealStageHandler: the SYSTEM
+                // move, which runs when a quote is accepted or an invoice is
+                // paid. It skips the stage's entry requirements ("Won needs
+                // an accepted quote") and the reopen rules on purpose — for
+                // the system. Exposed here to anyone with deals.update, it
+                // let a rep move a deal straight to Won with no accepted
+                // quote, and wrote "System" into the history instead of the
+                // rep's name. No page calls this route; it was only a way
+                // round the rules.
+                //
+                // Now every check applies, the history names the person,
+                // and Probability in the body is ignored (each stage sets
+                // its own, as on the board). The system move is still used
+                // — directly, by the quote and invoice code — never over HTTP.
+                if (string.IsNullOrWhiteSpace(dto.Stage))
+                    return BadRequest(new { error = "Stage is required" });
+
+                await _updateDealStageHandler.HandleAsync(tenantId, dealId, dto.Stage);
 
                 _logger.LogInformation("Deal {DealId} transitioned to stage {Stage}", dealId, dto.Stage);
 

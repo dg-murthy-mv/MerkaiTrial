@@ -617,9 +617,9 @@ public sealed class TestDatabase
 
         Guid userId, tenantId;
         bool isAdmin, isSuper;
-        string plan, storedEmail;
+        string plan, storedEmail, stamp;
         await using (var cmd = new SqlCommand(
-            @"SELECT TOP 1 u.Id, u.TenantId, u.Email, u.IsTenantAdmin, u.IsSuperAdmin, t.[Plan]
+            @"SELECT TOP 1 u.Id, u.TenantId, u.Email, u.IsTenantAdmin, u.IsSuperAdmin, t.[Plan], u.SecurityStamp
               FROM Users u JOIN Tenants t ON t.Id = u.TenantId
               WHERE u.Email = @e AND u.IsDeleted = 0", conn))
         {
@@ -633,6 +633,7 @@ public sealed class TestDatabase
             isAdmin = r.GetBoolean(3);
             isSuper = r.GetBoolean(4);
             plan = r.IsDBNull(5) ? "starter" : r.GetString(5);
+            stamp = r.IsDBNull(6) ? "" : r.GetString(6);     // 102 — as BuildPrincipalAsync: null becomes ""
         }
 
         var permissions = new List<string>();
@@ -664,7 +665,7 @@ public sealed class TestDatabase
             }
         }
 
-        return new ApiIdentity(userId, tenantId, storedEmail, isAdmin, isSuper, plan, permissions);
+        return new ApiIdentity(userId, tenantId, storedEmail, isAdmin, isSuper, plan, permissions, stamp);
     }
 
     // ── 100: records exactly as stored (read-only) ────────────────────
@@ -955,5 +956,260 @@ public sealed class TestDatabase
         var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync();
         return conn;
+    }
+
+    // ── 102: read-backs for tests 83–90 (read-only, plus one plan-limit setter) ──
+
+    /// <summary>Live leads in the workspace whose name, email or company contains <paramref name="marker"/>.</summary>
+    public async Task<List<StoredLead>> LeadsMatchingAsync(Guid tenantId, string marker)
+    {
+        var list = new List<StoredLead>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT Id, FullName, Email, Phone, CompanyName, Source FROM Leads
+              WHERE TenantId = @t AND IsDeleted = 0
+                AND (CHARINDEX(@m, FullName) > 0 OR CHARINDEX(@m, ISNULL(Email, '')) > 0 OR CHARINDEX(@m, ISNULL(CompanyName, '')) > 0)
+              ORDER BY CreatedAtUtc", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@m", marker);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StoredLead(r.GetGuid(0), r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
+                r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5)));
+        return list;
+    }
+
+    public sealed record StoredLead(Guid Id, string FullName, string? Email, string? Phone, string? CompanyName, string? Source);
+
+    /// <summary>One lead as stored now.</summary>
+    public async Task<StoredLead> LeadAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, FullName, Email, Phone, CompanyName, Source FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No lead {leadId}.");
+        return new StoredLead(r.GetGuid(0), r.GetString(1),
+            r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
+            r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5));
+    }
+
+    /// <summary>Live leads in the workspace.</summary>
+    public async Task<int> CountLiveLeadsAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM Leads WHERE TenantId = @t AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>The workspace's lead limit (TenantSettings.MaxLeads), or null with no settings row.</summary>
+    public async Task<int?> MaxLeadsAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT TOP 1 MaxLeads FROM TenantSettings WHERE TenantId = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return await cmd.ExecuteScalarAsync() is int n ? n : null;
+    }
+
+    /// <summary>
+    /// Sets the workspace's lead limit. Test 86 lowers it for one step to
+    /// prove a refused import writes nothing, and ALWAYS puts it back.
+    /// </summary>
+    public async Task SetMaxLeadsAsync(Guid tenantId, int maxLeads)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("UPDATE TenantSettings SET MaxLeads = @m WHERE TenantId = @t", conn);
+        cmd.Parameters.AddWithValue("@m", maxLeads);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Is the row soft-deleted? Null when there is no such row.</summary>
+    public async Task<bool?> IsRowDeletedAsync(string table, Guid id)
+    {
+        if (table is not ("Deals" or "Contacts" or "Companies" or "Quotes" or "Leads" or "Invoices"))
+            throw new ArgumentOutOfRangeException(nameof(table), table, "Not a soft-delete table.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT IsDeleted FROM dbo.[{table}] WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        return await cmd.ExecuteScalarAsync() is bool b ? b : null;
+    }
+
+    /// <summary>Audit rows for one record with this Action ("DealDeleted", "DealStageChanged"…).</summary>
+    public async Task<int> CountAuditAsync(Guid entityId, string action)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM AuditLogs WHERE EntityId = @e AND [Action] = @a", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@a", action);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    public sealed record StageMove(string? From, string To, string? By, DateTime AtUtc);
+
+    /// <summary>A deal's stage history, oldest first.</summary>
+    public async Task<List<StageMove>> StageHistoryAsync(Guid dealId)
+    {
+        var list = new List<StageMove>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT FromStage, ToStage, ChangedBy, ChangedAtUtc FROM DealStageHistory WHERE DealId = @d ORDER BY ChangedAtUtc, Id", conn);
+        cmd.Parameters.AddWithValue("@d", dealId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StageMove(r.IsDBNull(0) ? null : r.GetString(0), r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetString(2), r.GetDateTime(3)));
+        return list;
+    }
+
+    /// <summary>One text column of one row, as stored ("Deals"/"Title", "Companies"/"Name"…).</summary>
+    public async Task<string?> TextAsync(string table, string column, Guid id)
+    {
+        var allowed = (table, column) switch
+        {
+            ("Deals", "Title" or "Description" or "Tags") => true,
+            ("Contacts", "FirstName" or "LastName" or "JobTitle" or "Phone" or "Email") => true,
+            ("Companies", "Name" or "TaxId") => true,
+            ("Leads", "FullName" or "CompanyName" or "Phone" or "Email" or "Address") => true,
+            _ => false,
+        };
+        if (!allowed) throw new ArgumentOutOfRangeException(nameof(column), $"{table}.{column}");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT [{column}] FROM dbo.[{table}] WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        var v = await cmd.ExecuteScalarAsync();
+        return v is null or DBNull ? null : Convert.ToString(v);
+    }
+
+    /// <summary>Live quote lines (name, quantity, unit price), in order — to prove an accepted quote's lines never move.</summary>
+    public async Task<string> QuoteLinesAsync(Guid quoteId)
+    {
+        var parts = new List<string>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Name, Quantity, UnitPrice, LineDiscount, TaxRate FROM QuoteItems WHERE QuoteId = @q AND IsDeleted = 0 ORDER BY CreatedAtUtc, Id", conn);
+        cmd.Parameters.AddWithValue("@q", quoteId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            parts.Add($"{r.GetString(0)} | {r.GetValue(1)} × {r.GetValue(2)} − {r.GetValue(3)} @ {r.GetValue(4)}");
+        return string.Join(" ; ", parts);
+    }
+
+    // ── 103: time zones (test 91) and plan limits / trial state (test 92) ──
+
+    /// <summary>The workspace's own time zone id as stored (Tenants.Timezone).</summary>
+    public async Task<string?> TenantTimezoneAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Timezone FROM Tenants WHERE Id = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        var v = await cmd.ExecuteScalarAsync();
+        return v is null or DBNull ? null : (string)v;
+    }
+
+    /// <summary>The stored (UTC) due time of each live task on a record whose subject contains the text, oldest first.</summary>
+    public async Task<List<DateTime>> TaskDueTimesAsync(Guid entityId, string subjectContains)
+    {
+        var list = new List<DateTime>();
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT DueDate FROM Activities
+              WHERE EntityId = @e AND IsDeleted = 0 AND IsTask = 1 AND DueDate IS NOT NULL AND CHARINDEX(@s, Subject) > 0
+              ORDER BY CreatedAtUtc, Id", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@s", subjectContains);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) list.Add(DateTime.SpecifyKind(r.GetDateTime(0), DateTimeKind.Utc));
+        return list;
+    }
+
+    public sealed record WorkspaceLimits(int MaxUsers, int MaxLeads, int MaxDeals);
+
+    /// <summary>The workspace's own limits (TenantSettings), or null with no settings row.</summary>
+    public async Task<WorkspaceLimits?> WorkspaceLimitsAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT TOP 1 MaxUsers, MaxLeads, MaxDeals FROM TenantSettings WHERE TenantId = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        return await r.ReadAsync() ? new WorkspaceLimits(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2)) : null;
+    }
+
+    /// <summary>Puts a workspace's limits back after a test changed them. _E2E only, like everything here.</summary>
+    public async Task SetWorkspaceLimitsAsync(Guid tenantId, WorkspaceLimits limits)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE TenantSettings SET MaxUsers = @u, MaxLeads = @l, MaxDeals = @d WHERE TenantId = @t", conn);
+        cmd.Parameters.AddWithValue("@u", limits.MaxUsers);
+        cmd.Parameters.AddWithValue("@l", limits.MaxLeads);
+        cmd.Parameters.AddWithValue("@d", limits.MaxDeals);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Live (not deleted) rows of a workspace in one of the tables a plan limits.</summary>
+    public async Task<int> CountLiveAsync(string table, Guid tenantId)
+    {
+        if (table is not ("Leads" or "Deals" or "Contacts" or "Companies" or "Users"))
+            throw new ArgumentOutOfRangeException(nameof(table), table, "Not a table a plan limits.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT COUNT(*) FROM dbo.[{table}] WHERE TenantId = @t AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    public sealed record TrialState(string Plan, DateTime? TrialExpiresAt, bool IsSuspended);
+
+    /// <summary>The workspace's plan name, trial end and suspended switch, as stored.</summary>
+    public async Task<TrialState> TrialStateAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT [Plan], TrialExpiresAt, IsSuspended FROM Tenants WHERE Id = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No workspace {tenantId}.");
+        return new TrialState(r.GetString(0), r.IsDBNull(1) ? null : DateTime.SpecifyKind(r.GetDateTime(1), DateTimeKind.Utc), r.GetBoolean(2));
+    }
+
+    /// <summary>
+    /// 103. Moves a workspace's trial clock (or its suspended switch). There
+    /// is no screen that ends a trial early — time does — so the test moves
+    /// the end date instead, and ALWAYS puts the original back. _E2E only.
+    /// </summary>
+    public async Task SetTrialStateAsync(Guid tenantId, TrialState state)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE Tenants SET [Plan] = @p, TrialExpiresAt = @x, IsSuspended = @s WHERE Id = @t", conn);
+        cmd.Parameters.AddWithValue("@p", state.Plan);
+        cmd.Parameters.AddWithValue("@x", (object?)state.TrialExpiresAt ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@s", state.IsSuspended);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>A lead's stored status key and whether it is converted.</summary>
+    public async Task<(string Status, bool IsConverted)> LeadStateAsync(Guid leadId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT Status, IsConverted FROM Leads WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No lead {leadId}.");
+        return (r.GetString(0), r.GetBoolean(1));
+    }
+
+    /// <summary>Is there a live account with this email (in any workspace)?</summary>
+    public async Task<bool> LiveUserExistsAsync(string email)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM Users WHERE Email = @e AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", email);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0) > 0;
     }
 }

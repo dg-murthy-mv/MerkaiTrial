@@ -32,6 +32,7 @@
 
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Common;                    // 103 — WorkspaceTime
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -122,6 +123,9 @@ public class TransitionActionRunner : ICommandHandler
 
         var ownerName = await OwnerNameAsync(tenantId, deal.OwnerUserId, ct);
 
+        // 103 — the workspace's clock, for task due times (see TaskDueUtc).
+        var zone = await WorkspaceTime.ForTenantAsync(_db, tenantId, ct);
+
         var created = 0;
         var problems = new List<string>();
 
@@ -170,9 +174,7 @@ public class TransitionActionRunner : ICommandHandler
                     // is stamped now. A task has no activity date.
                     ActivityDate: isTask ? null : DateTime.UtcNow,
                     IsTask: isTask,
-                    DueDate: isTask
-                        ? DateTime.UtcNow.Date.AddDays(Math.Clamp(action.DueInDays, 0, 365)).AddHours(9)
-                        : null,
+                    DueDate: isTask ? TaskDueUtc(action.DueInDays, zone, DateTime.UtcNow) : null,
                     AssignedToUserId: assignee,
 
                     // Honest about who wrote this. Attributing an
@@ -229,6 +231,21 @@ public class TransitionActionRunner : ICommandHandler
 
             _ => Clean(dealOwnerId) ?? Clean(movedByUserId)
         };
+    }
+
+    /// <summary>
+    /// 103 — N days on at 09:00 on the WORKSPACE's clock. It was 09:00 UTC on
+    /// the UTC date: 14:30 for an Indian workspace, 04:00 or 05:00 in New
+    /// York, and on the wrong day for a workspace far enough east of London
+    /// shortly after its midnight. A task due today whose 09:00 has passed
+    /// is due in an hour, so it is never born overdue (the same rule as the
+    /// automation engine).
+    /// </summary>
+    internal static DateTime TaskDueUtc(int dueInDays, TimeZoneInfo zone, DateTime nowUtc)
+    {
+        var localToday = WorkspaceTime.ToLocal(nowUtc, zone).Date;
+        var due = WorkspaceTime.ToUtc(localToday.AddDays(Math.Clamp(dueInDays, 0, 365)).AddHours(9), zone);
+        return due <= nowUtc ? nowUtc.AddHours(1) : due;
     }
 
     private async Task<string?> OwnerNameAsync(Guid tenantId, string? ownerUserId, CancellationToken ct)

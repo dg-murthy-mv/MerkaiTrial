@@ -70,6 +70,7 @@
 
 using MerkaiTrial.Application.Commands.Automation;     // 098
 using MerkaiTrial.Application.Commands.LeadStatuses;
+using MerkaiTrial.Application.Common;                   // RowLock (100), PlanQuota (103)
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
@@ -407,6 +408,16 @@ internal static class ImportValidator
 
             // ── Email ─────────────────────────────────────────────────
             var email = Get(row, ImportFields.Email);
+            // 102 — longer than the column holds (Leads.Email is 200).
+            // Before, it passed the review and failed the WHOLE import at
+            // commit: "The import failed and nothing was saved", no row
+            // number. Now it is this row's problem, said on this row.
+            if (email != null && email.Length > MaxEmail)
+            {
+                messages.Add($"The email is {email.Length} characters long — more than the {MaxEmail} a lead can hold — imported without it");
+                email = null;
+                verdict = RowVerdict.Warning;
+            }
             if (email != null && !LeadFileParser.LooksLikeEmail(email))
             {
                 messages.Add($"\"{email}\" doesn't look like an email — imported without it");
@@ -416,6 +427,13 @@ internal static class ImportValidator
 
             // ── Phone ─────────────────────────────────────────────────
             var phoneRaw = Get(row, ImportFields.Phone);
+            // 102 — same as the email above (Leads.Phone is 50).
+            if (phoneRaw != null && phoneRaw.Length > MaxPhone)
+            {
+                messages.Add($"The phone is {phoneRaw.Length} characters long — more than the {MaxPhone} a lead can hold — imported without it");
+                phoneRaw = null;
+                verdict = RowVerdict.Warning;
+            }
             var phoneKey = LeadFileParser.NormalisePhone(phoneRaw, ctx.CountryCode);
             if (phoneRaw != null && phoneKey == null)
             {
@@ -431,46 +449,57 @@ internal static class ImportValidator
             }
 
             // ── Duplicates ────────────────────────────────────────────
+            // 102 — the FILE is checked first. A row that repeats an earlier
+            // row of the same file is skipped, whatever the setting — even
+            // when both match a lead that already exists. Before, the
+            // database match was checked first and the in-file check was
+            // skipped for it, so with "Import anyway" a person who was
+            // already a lead AND listed twice in the file came in twice.
             Guid? existingId = null;
+            int? firstInFile = null;
+            string? sameWhat = null;
 
-            if (email != null && ctx.ExistingByEmail.TryGetValue(email, out var byEmailId))
-                existingId = byEmailId;
-            else if (phoneKey != null && ctx.ExistingByPhone.TryGetValue(phoneKey, out var byPhoneId))
-                existingId = byPhoneId;
-
-            if (existingId.HasValue)
+            if (email != null && seenEmails.TryGetValue(email, out var firstRow))
             {
+                firstInFile = firstRow; sameWhat = "email";
+            }
+            else if (phoneKey != null && seenPhones.TryGetValue(phoneKey, out var firstPhoneRow))
+            {
+                firstInFile = firstPhoneRow; sameWhat = "phone";
+            }
+
+            if (firstInFile.HasValue)
+            {
+                // ExistingLeadId stays null: an in-file repeat neither
+                // creates a lead nor fills in an existing one twice.
                 verdict = RowVerdict.Duplicate;
-                messages.Add(duplicateAction switch
-                {
-                    DuplicateAction.Update => "Already in your leads — blank fields will be filled in",
-                    DuplicateAction.Import => "Already in your leads — will be imported again",
-                    _ => "Already in your leads — will be skipped"
-                });
+                messages.Add($"Same {sameWhat} as row {firstInFile} in this file — will be skipped");
             }
             else
             {
-                // Same person twice inside the file.
-                if (email != null && seenEmails.TryGetValue(email, out var firstRow))
+                if (email != null) seenEmails[email] = rowNumber;
+                if (phoneKey != null) seenPhones[phoneKey] = rowNumber;
+
+                if (email != null && ctx.ExistingByEmail.TryGetValue(email, out var byEmailId))
+                    existingId = byEmailId;
+                else if (phoneKey != null && ctx.ExistingByPhone.TryGetValue(phoneKey, out var byPhoneId))
+                    existingId = byPhoneId;
+
+                if (existingId.HasValue)
                 {
                     verdict = RowVerdict.Duplicate;
-                    messages.Add($"Same email as row {firstRow} in this file — will be skipped");
-                }
-                else if (phoneKey != null && seenPhones.TryGetValue(phoneKey, out var firstPhoneRow))
-                {
-                    verdict = RowVerdict.Duplicate;
-                    messages.Add($"Same phone as row {firstPhoneRow} in this file — will be skipped");
-                }
-                else
-                {
-                    if (email != null) seenEmails[email] = rowNumber;
-                    if (phoneKey != null) seenPhones[phoneKey] = rowNumber;
+                    messages.Add(duplicateAction switch
+                    {
+                        DuplicateAction.Update => "Already in your leads — blank fields will be filled in",
+                        DuplicateAction.Import => "Already in your leads — will be imported again",
+                        _ => "Already in your leads — will be skipped"
+                    });
                 }
             }
 
             // ── Lookups ───────────────────────────────────────────────
             Guid? sourceId = null;
-            var sourceText = Get(row, ImportFields.Source);
+            var sourceText = Truncate(Get(row, ImportFields.Source), MaxSource);   // 102 — Leads.Source is 100
             if (sourceText != null)
             {
                 if (ctx.SourcesByName.TryGetValue(sourceText, out var sid)) sourceId = sid;
@@ -632,6 +661,11 @@ internal static class ImportValidator
 
         return results;
     }
+
+    // 102 — the Leads columns a file can overflow (LeadConfiguration).
+    private const int MaxEmail = 200;
+    private const int MaxPhone = 50;
+    private const int MaxSource = 100;
 
     private static string? Truncate(string? s, int max) =>
         s is null ? null : (s.Length > max ? s[..max] : s);
@@ -810,77 +844,17 @@ public class CommitLeadImportHandler : ICommandHandler
 
         var statuses = await _statusResolver.GetAsync(request.TenantId, ct);
 
-        var ctx = await ImportValidator.BuildContextAsync(
-            _db, request.TenantId, defaultCurrency, countryCode, statuses, ct, request.DateFormat);
-
-        var rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
-
-        // ── Quota, checked BEFORE anything is written ─────────────────
-        var currentCount = await _db.Leads.CountAsync(
-            l => l.TenantId == request.TenantId && !l.IsDeleted, ct);
-
-        var maxLeads = await _db.TenantSettings
-            .Where(s => s.TenantId == request.TenantId)
-            .Select(s => s.MaxLeads)
-            .FirstOrDefaultAsync(ct);
-
-        var toCreate = rows.Where(r => ShouldCreate(r, request.Duplicates)).ToList();
-
-        if (maxLeads > 0 && currentCount + toCreate.Count > maxLeads)
-            throw new InvalidOperationException(
-                $"This import would put you at {currentCount + toCreate.Count:N0} leads, over your plan limit of {maxLeads:N0}. " +
-                $"You can import {Math.Max(0, maxLeads - currentCount):N0} more.");
-
         var now = DateTime.UtcNow;
         var imported = 0;
         var createdIds = new List<Guid>();                 // 098 — for the automation rules
         var updated = 0;
+        var customWritten = 0;
+        List<ResolvedRow> rows;
 
         // Who ends up owning rows that name no owner, and which existing
         // leads "Update" may touch.
         var access = await _scope.GetAsync(RecordModules.Leads, ct);
         var defaultOwner = access.SeesAll ? null : access.UserId;
-
-        // 092 — custom fields by id, and which ones the existing leads that
-        // "Fill in the blanks" may touch already hold. One query, before the
-        // loop: (lead id, field id) pairs that must NOT be written.
-        var customById = ctx.CustomFields.ToDictionary(f => f.Id);
-        var filled = new HashSet<(Guid LeadId, Guid FieldId)>();
-
-        if (request.Duplicates == DuplicateAction.Update)
-        {
-            var updateIds = rows
-                .Where(r => r.Verdict == RowVerdict.Duplicate && r.ExistingLeadId.HasValue && r.CustomValues is { Count: > 0 })
-                .Select(r => r.ExistingLeadId!.Value)
-                .Distinct()
-                .ToList();
-
-            if (updateIds.Count > 0)
-            {
-                var fieldIds = customById.Keys.ToList();
-                var held = await _db.CustomFieldValues.AsNoTracking()
-                    .Where(v => v.TenantId == request.TenantId &&
-                                updateIds.Contains(v.EntityId) && fieldIds.Contains(v.DefinitionId))
-                    .Select(v => new { v.EntityId, v.DefinitionId })
-                    .ToListAsync(ct);
-
-                foreach (var h in held) filled.Add((h.EntityId, h.DefinitionId));
-            }
-        }
-
-        var customWritten = 0;
-
-        void StageCustom(Guid leadId, Dictionary<Guid, string>? values)
-        {
-            if (values is null) return;
-            foreach (var (fieldId, wire) in values)
-            {
-                if (!customById.TryGetValue(fieldId, out var field)) continue;
-                if (!filled.Add((leadId, fieldId))) continue;     // already holds a value — never overwrite
-                if (ImportCustomFields.Stage(_db, request.TenantId, leadId, field, wire, request.ImportedBy, now))
-                    customWritten++;
-            }
-        }
 
         // ── One transaction: 400 good rows and one bad one means nothing
         //    is written, rather than a half-loaded list nobody can trust.
@@ -888,6 +862,88 @@ public class CommitLeadImportHandler : ICommandHandler
 
         try
         {
+            // ── 102: ONE IMPORT AT A TIME PER WORKSPACE ───────────────
+            // Everything from here to the commit runs under one lock per
+            // workspace. Before 102 the existing leads were read BEFORE the
+            // transaction and nothing stopped two commits running together:
+            //   • the same file committed twice at once (a double-click on
+            //     Import, or the review open in two tabs) imported every
+            //     row twice;
+            //   • two uploads of the same list, committed together, each
+            //     saw the other's people as new.
+            // Now the second commit waits for the first, then finds the
+            // upload already used (below), or — for a second upload of the
+            // same list — reads the first one's leads as duplicates.
+            await RowLock.HoldNameAsync(_db, RowLock.NameKey("lead-import", request.TenantId, "commit"), ct);
+
+            if (_sessions.Get(request.SessionId, request.TenantId) is null)
+                throw new ImportRefusedException(
+                    "This file has already been imported — it was sent twice. Nothing was imported a second time. " +
+                    "Open Leads to see the result.");
+
+            var ctx = await ImportValidator.BuildContextAsync(
+                _db, request.TenantId, defaultCurrency, countryCode, statuses, ct, request.DateFormat);
+
+            rows = ImportValidator.Resolve(session.Grid, request.Mapping, ctx, request.Duplicates);
+
+            // ── Quota, checked BEFORE anything is written ─────────────
+            // 103 — the same lock PlanQuota takes for one lead, held to the
+            // end of this transaction: a lead added on the form while the
+            // import runs waits, then counts the imported ones. The limit
+            // is read live, the same way (no settings row or a negative
+            // limit = none to apply).
+            await RowLock.HoldNameAsync(_db, RowLock.NameKey("quota", request.TenantId, PlanQuota.Leads), ct);
+
+            var currentCount = await PlanQuota.CountAsync(_db, request.TenantId, PlanQuota.Leads, ct);
+            var limit = await PlanQuota.LimitAsync(_db, request.TenantId, PlanQuota.Leads, ct);
+            var maxLeads = limit ?? 0;
+
+            var toCreate = rows.Where(r => ShouldCreate(r, request.Duplicates)).ToList();
+
+            if (limit is >= 0 && currentCount + toCreate.Count > maxLeads)
+                throw new ImportRefusedException(
+                    $"This import would put you at {currentCount + toCreate.Count:N0} leads, over your plan limit of {maxLeads:N0}. " +
+                    $"You can import {Math.Max(0, maxLeads - currentCount):N0} more. Nothing was imported.");
+
+            // 092 — custom fields by id, and which ones the existing leads that
+            // "Fill in the blanks" may touch already hold. One query, before the
+            // loop: (lead id, field id) pairs that must NOT be written.
+            var customById = ctx.CustomFields.ToDictionary(f => f.Id);
+            var filled = new HashSet<(Guid LeadId, Guid FieldId)>();
+
+            if (request.Duplicates == DuplicateAction.Update)
+            {
+                var updateIds = rows
+                    .Where(r => r.Verdict == RowVerdict.Duplicate && r.ExistingLeadId.HasValue && r.CustomValues is { Count: > 0 })
+                    .Select(r => r.ExistingLeadId!.Value)
+                    .Distinct()
+                    .ToList();
+
+                if (updateIds.Count > 0)
+                {
+                    var fieldIds = customById.Keys.ToList();
+                    var held = await _db.CustomFieldValues.AsNoTracking()
+                        .Where(v => v.TenantId == request.TenantId &&
+                                    updateIds.Contains(v.EntityId) && fieldIds.Contains(v.DefinitionId))
+                        .Select(v => new { v.EntityId, v.DefinitionId })
+                        .ToListAsync(ct);
+
+                    foreach (var h in held) filled.Add((h.EntityId, h.DefinitionId));
+                }
+            }
+
+            void StageCustom(Guid leadId, Dictionary<Guid, string>? values)
+            {
+                if (values is null) return;
+                foreach (var (fieldId, wire) in values)
+                {
+                    if (!customById.TryGetValue(fieldId, out var field)) continue;
+                    if (!filled.Add((leadId, fieldId))) continue;     // already holds a value — never overwrite
+                    if (ImportCustomFields.Stage(_db, request.TenantId, leadId, field, wire, request.ImportedBy, now))
+                        customWritten++;
+                }
+            }
+
             foreach (var r in rows)
             {
                 if (r.Verdict == RowVerdict.Error) continue;
@@ -970,7 +1026,22 @@ public class CommitLeadImportHandler : ICommandHandler
             }
 
             await _db.SaveChangesAsync(ct);
+
+            // 102 — the upload is used up BEFORE the commit releases the
+            // lock, so a second commit of it waiting on the lock finds it
+            // gone. (Removed after, as before 102, there was a moment when
+            // the waiter could still find it.) If the commit itself fails,
+            // the file is uploaded again — nothing was saved.
+            _sessions.Remove(request.SessionId);
+
             await tx.CommitAsync(ct);
+        }
+        catch (ImportRefusedException)
+        {
+            // A refusal with its own reason (already imported, plan limit):
+            // nothing was written, and the person is told exactly why.
+            await tx.RollbackAsync(ct);
+            throw;
         }
         catch (Exception ex)
         {
@@ -979,8 +1050,6 @@ public class CommitLeadImportHandler : ICommandHandler
             throw new InvalidOperationException(
                 "The import failed and nothing was saved. Please check the file and try again.");
         }
-
-        _sessions.Remove(request.SessionId);
 
         // 098 — "a lead is added" rules, after the commit. Never throws.
         if (createdIds.Count > 0)
@@ -1044,4 +1113,15 @@ public class CommitLeadImportHandler : ICommandHandler
 
         return duplicateAction == DuplicateAction.Import;
     }
+}
+
+/// <summary>
+/// 102. The import was refused before anything was written, for a reason
+/// the person can act on (the file was already imported, the plan limit).
+/// An InvalidOperationException, so the controller shows the message as it
+/// shows every other refusal.
+/// </summary>
+public sealed class ImportRefusedException : InvalidOperationException
+{
+    public ImportRefusedException(string message) : base(message) { }
 }

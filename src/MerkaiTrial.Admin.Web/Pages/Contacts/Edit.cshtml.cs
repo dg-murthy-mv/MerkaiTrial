@@ -84,6 +84,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
         /// <summary>075. Posted as CustomFields[&lt;field id&gt;] = value.</summary>
         [BindProperty] public Dictionary<string, string?> CustomFields { get; set; } = new();
 
+        // ── 102: two people editing the same record ──────────────────
+        /// <summary>
+        /// The record's version when this form was loaded, carried in a
+        /// hidden field and sent with the save. If someone else saved in
+        /// between, the API refuses (409) instead of overwriting them.
+        /// </summary>
+        [BindProperty] public string? Version { get; set; }
+
+        /// <summary>True when the save was refused because someone else changed the record. Shows the Reload link.</summary>
+        public bool RecordChanged { get; private set; }
+
         public SelectList CompanyOptions { get; set; } = new SelectList(Enumerable.Empty<SelectListItem>());
         public List<SelectListItem> CountryOptions { get; private set; } = new();
 
@@ -160,6 +171,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
 
                 var tenantId = CurrentUserService.GetCurrentTenantId();
                 var contact  = await _contactService.GetByIdAsync(tenantId, id);
+                Version = contact.Version;   // 102
 
                 Input = new InputModel
                 {
@@ -244,7 +256,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
                     // the form had no custom inputs, so say nothing about them.
                     CustomFields = CustomFieldsLoadFailed
                         ? null
-                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+                    Version = this.Version     // 102
                 };
 
                 await _contactService.UpdateAsync(Id, dto);
@@ -255,6 +268,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             {
                 TempData["ErrorMessage"] = "Contact not found.";
                 return RedirectToPage("./Index");
+            }
+            catch (MerkaiTrial.Infrastructure.Persistence.RecordChangedException ex)
+            {
+                // 102 — someone else saved this contact after the form was
+                // loaded. Their change stands; what was typed stays in the form.
+                RecordChanged = true;
+                ErrorMessage = ex.Message;
+                return Page();
             }
             catch (InvalidOperationException ex)
             {

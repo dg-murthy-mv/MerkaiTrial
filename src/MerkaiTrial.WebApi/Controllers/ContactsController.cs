@@ -32,6 +32,7 @@
 //     deals, created), checked against a fixed list in the handler.
 // =====================================================================
 
+using MerkaiTrial.Infrastructure.Persistence;   // 102 — RecordChangedException
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Contacts;
 using MerkaiTrial.Application.Configuration;
@@ -355,7 +356,8 @@ namespace MerkaiTrial.WebApi.Controllers
                     Notes      = dto.Notes,
                     IsPrimary  = dto.IsPrimary,
                     UpdatedBy  = currentUser.FullName,
-                    CustomFields = dto.CustomFields      // 075 — null = say nothing
+                    CustomFields = dto.CustomFields,     // 075 — null = say nothing
+                    Version      = dto.Version           // 102 — stale → 409
                 };
 
                 await _updateContact.Handle(command, cancellationToken);
@@ -369,6 +371,12 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound();
+            }
+            catch (RecordChangedException ex)
+            {
+                // 102 — someone else saved this record after the form was
+                // loaded. Nothing was saved; the message says to reload.
+                return StatusCode(StatusCodes.Status409Conflict, new { error = ex.Message });
             }
             catch (InvalidOperationException ex)               // 075 — custom field values
             {
@@ -408,6 +416,12 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 102 — refused, with the reason (DeleteRules). Admin.Web
+                // shows a 400's { "error": … } as the page's message.
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {

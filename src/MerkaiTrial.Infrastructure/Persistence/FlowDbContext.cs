@@ -272,6 +272,32 @@ public class FlowDbContext : DbContext
     public DbSet<QuoteApprovalSettings> QuoteApprovalSettings => Set<QuoteApprovalSettings>();
     public DbSet<QuoteApprovalRequest> QuoteApprovalRequests => Set<QuoteApprovalRequest>();
 
+    // =================================================================
+    // RECORD CHANGED BY SOMEONE ELSE (102)
+    //
+    // Leads, Deals, Contacts and Companies carry a rowversion. EF adds
+    // "AND RowVersion = <what was loaded>" to every UPDATE and DELETE of
+    // them, and when another save got there first the row isn't found and
+    // EF throws DbUpdateConcurrencyException — a type no page or
+    // controller knew, so it surfaced as "Failed to update" or a 500.
+    //
+    // Here it becomes RecordChangedException: an InvalidOperationException
+    // with a sentence for the person. Every controller already turns an
+    // InvalidOperationException into a 400 with its message, and the four
+    // edit endpoints turn this one into a 409 Conflict. Nothing was saved.
+    // =================================================================
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        try { return base.SaveChanges(acceptAllChangesOnSuccess); }
+        catch (DbUpdateConcurrencyException ex) { throw RecordChangedException.From(ex); }
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+        catch (DbUpdateConcurrencyException ex) { throw RecordChangedException.From(ex); }
+    }
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
@@ -696,3 +722,33 @@ public class FlowDbContext : DbContext
       in the API handler behind them.
    6. Open a public quote link.
    ===================================================================== */
+
+/// <summary>
+/// 102. Someone else saved this record after it was loaded, so this save
+/// was refused rather than overwrite their change. Nothing was saved.
+/// Thrown by FlowDbContext (a stale rowversion at save time) and by
+/// RecordVersion.Expect (an edit form posting an older version).
+/// </summary>
+public sealed class RecordChangedException : InvalidOperationException
+{
+    public RecordChangedException(string message, Exception? inner = null) : base(message, inner) { }
+
+    /// <summary>The person-facing sentence for a record kind ("lead", "deal"…).</summary>
+    public static string MessageFor(string kind) =>
+        $"Someone else changed this {kind} while you were editing it, so your changes were not saved. " +
+        $"Reload the {kind} to see what they changed, then make your changes again.";
+
+    public static RecordChangedException From(DbUpdateConcurrencyException ex)
+    {
+        var type = ex.Entries.FirstOrDefault()?.Metadata.ClrType.Name;
+        var kind = type switch
+        {
+            "Lead" => "lead",
+            "Deal" => "deal",
+            "Contact" => "contact",
+            "Company" => "company",
+            _ => "record",
+        };
+        return new RecordChangedException(MessageFor(kind), ex);
+    }
+}

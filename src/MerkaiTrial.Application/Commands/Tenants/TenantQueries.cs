@@ -181,7 +181,13 @@ public class GetTenantDetailHandler : ICommandHandler
         {
             try
             {
+                // 103 — IgnoreQueryFilters. TenantSettings is filtered to the
+                // CALLER's workspace, and the caller here is the super admin,
+                // so every other workspace's row was hidden: the Settings page
+                // showed the 5 / 100 / 50 defaults below instead of the real
+                // limits (and an empty feature list), whatever was stored.
                 var settings = await _context.Set<TenantSettings>()
+                    .IgnoreQueryFilters()
                     .AsNoTracking()
                     .FirstOrDefaultAsync(s => s.TenantId == tenantId, cancellationToken);
 

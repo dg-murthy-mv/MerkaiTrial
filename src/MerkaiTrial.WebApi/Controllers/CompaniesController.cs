@@ -40,6 +40,7 @@
 //   the handler.
 // =====================================================================
 
+using MerkaiTrial.Infrastructure.Persistence;   // 102 — RecordChangedException
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Companies;
 using MerkaiTrial.Application.Commands.CustomFields;
@@ -296,7 +297,8 @@ namespace MerkaiTrial.WebApi.Controllers
                     TaxId        = dto.TaxId,
                     Vertical     = dto.Vertical,
                     UpdatedBy    = currentUser.FullName,
-                    CustomFields = dto.CustomFields      // 078 — null = say nothing
+                    CustomFields = dto.CustomFields,     // 078 — null = say nothing
+                    Version      = dto.Version           // 102 — stale → 409
                 };
 
                 await _updateCompany.Handle(command, cancellationToken);
@@ -309,6 +311,17 @@ namespace MerkaiTrial.WebApi.Controllers
             }
             catch (CustomFieldValidationException ex)        // 078 — a sentence for the person
             {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (RecordChangedException ex)
+            {
+                // 102 — someone else saved this record after the form was
+                // loaded. Nothing was saved; the message says to reload.
+                return StatusCode(StatusCodes.Status409Conflict, new { error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 102 — any other refusal, with its sentence.
                 return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
@@ -345,6 +358,12 @@ namespace MerkaiTrial.WebApi.Controllers
             catch (KeyNotFoundException)
             {
                 return NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                // 102 — refused, with the reason (DeleteRules). Admin.Web
+                // shows a 400's { "error": … } as the page's message.
+                return BadRequest(new { error = ex.Message });
             }
             catch (Exception ex)
             {

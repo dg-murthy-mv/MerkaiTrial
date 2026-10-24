@@ -22,6 +22,10 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
         entity.ToTable("Leads");
         entity.HasKey(l => l.Id);
 
+        // 102 — optimistic concurrency: a save made from an older copy is refused.
+        // Column added by Sql/102_RowVersion.sql.
+        entity.Property(l => l.RowVersion).IsRowVersion().IsRequired();
+
         // ── Scalar properties ─────────────────────────────────────────
         entity.Property(l => l.FullName).HasMaxLength(200).IsRequired();
         entity.Property(l => l.Email).HasMaxLength(200);

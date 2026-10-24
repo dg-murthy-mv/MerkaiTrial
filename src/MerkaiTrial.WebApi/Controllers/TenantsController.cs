@@ -339,7 +339,7 @@ public class TenantsController : ControllerBase
             if (id != cmd.TenantId)
                 return BadRequest(new { error = "Tenant ID mismatch" });
 
-            await _updateSettingsHandler.Handle(cmd);
+            await _updateSettingsHandler.Handle(cmd, cmd.BypassPlanLimits);   // 103 — the override now arrives
             return NoContent();
         }
         catch (InvalidOperationException ex)

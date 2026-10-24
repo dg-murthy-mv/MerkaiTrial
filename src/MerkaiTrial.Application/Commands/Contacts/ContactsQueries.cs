@@ -32,6 +32,7 @@
 //     Companies lookup, as a safety net for a very large workspace.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;                   // 102 — RecordVersion
 using MerkaiTrial.Application.Commands.CustomFields;
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
@@ -359,6 +360,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
                 return new ContactDto
                 {
+                    Version      = RecordVersion.Of(contact.RowVersion),   // 102
                     Id           = contact.Id,
                     TenantId     = contact.TenantId,
                     CompanyId    = contact.CompanyId,

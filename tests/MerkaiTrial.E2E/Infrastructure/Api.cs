@@ -38,9 +38,16 @@ using Microsoft.IdentityModel.Tokens;
 namespace MerkaiTrial.E2E.Infrastructure;
 
 /// <summary>Who a token speaks for, as the database has it today.</summary>
+/// <remarks>
+/// 102: <see cref="SecurityStamp"/> is the person's stamp when the identity
+/// was read — like a session cookie, a snapshot. The API refuses a token
+/// whose stamp is no longer the person's, so a caller made BEFORE someone's
+/// roles changed stops working afterwards; make a new caller with
+/// Api.AsAsync after such a change (ManualInvoiceApprovalTests does).
+/// </remarks>
 public sealed record ApiIdentity(
     Guid UserId, Guid TenantId, string Email, bool IsTenantAdmin, bool IsSuperAdmin, string Plan,
-    IReadOnlyList<string> Permissions)
+    IReadOnlyList<string> Permissions, string? SecurityStamp = null)
 {
     /// <summary>
     /// Would the API's PermissionHandler let this person through
@@ -264,6 +271,9 @@ public static class Api
             new("Plan", id.Plan),
             new(ClaimTypes.Email, id.Email),
         };
+        // 102 — ApiTokenService puts the session's stamp in every token, and
+        // the API checks it against the database on every call.
+        if (id.SecurityStamp is not null) claims.Add(new Claim("SecurityStamp", id.SecurityStamp));
         foreach (var p in id.Permissions) claims.Add(new Claim("permission", p));
 
         var expires = expiresUtc ?? DateTime.UtcNow.AddMinutes(5);

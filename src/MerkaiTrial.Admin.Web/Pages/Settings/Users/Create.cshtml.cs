@@ -70,7 +70,7 @@ public class CreateModel : AuthorizedPageModel
     public string? ErrorMessage { get; set; }
 
     public int CurrentUserCount { get; private set; }
-    public bool AtLimit => CurrentUserCount >= MaxUsers;
+    public bool AtLimit => IsAtLimit(CurrentUserCount, MaxUsers);   // 103 — a negative limit is unlimited
 
     public string? InviteUrl { get; set; }
     public string? CreatedUserName { get; set; }
@@ -134,7 +134,7 @@ public class CreateModel : AuthorizedPageModel
             // The API enforces this too. Checking here as well means the
             // message is immediate rather than after a round trip.
             ErrorMessage = $"Your plan allows {MaxUsers} users and you have {CurrentUserCount}. "
-                         + "Deactivate someone, or upgrade to add more.";
+                         + "Remove someone who has left (switching a person off keeps their place), or upgrade to add more.";
             return Page();
         }
 

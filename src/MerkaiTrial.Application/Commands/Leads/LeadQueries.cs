@@ -47,6 +47,7 @@
 //       Call _tenantService.FormatDate(utc) in your Razor Page models.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;                   // 102 — RecordVersion
 using MerkaiTrial.Application.Commands.CustomFields;    // 079
 using MerkaiTrial.Application.Configuration;            // 079
 using MerkaiTrial.Application.DTOs;
@@ -386,7 +387,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ExpectedValue: row.Lead.EstimatedValue ?? 0m
                 )
                 {
-                    CustomFieldValues = customFieldValues      // 079
+                    CustomFieldValues = customFieldValues,     // 079
+                    Version = RecordVersion.Of(row.Lead.RowVersion)   // 102
                 };
             }
             catch (KeyNotFoundException) { throw; }

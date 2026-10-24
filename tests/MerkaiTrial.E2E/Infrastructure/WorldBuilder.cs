@@ -31,6 +31,11 @@
 // 092: EnsureWorkspaceCAsync — workspace C built the first time ANY
 // fixture needs it (the Own-visibility tests as well as the settings
 // tests), the same way D has been since 089.
+//
+// 103: workspace T (India / INR on New York time, for the daylight-saving
+// tests) and workspace E (India / INR, admin and one rep, whose limits and
+// trial the entitlement test changes), each built the first time its test
+// asks, the same way. Neither is shared with any other test.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -202,6 +207,70 @@ public sealed class WorldBuilder
         }
     }
 
+    private static readonly SemaphoreSlim WorkspaceTGate = new(1, 1);
+    private static readonly SemaphoreSlim WorkspaceEGate = new(1, 1);
+    private static Exception? _workspaceTFailure;
+    private static Exception? _workspaceEFailure;
+
+    /// <summary>
+    /// 103. Workspace T — India / INR, but with New York as its time zone
+    /// (chosen on Admin → Tenants → Create, as "Eastern Time (US)"), so the
+    /// clocks change twice a year. Admin only. For WorkspaceTimeTests.
+    /// </summary>
+    public static async Task<TestTenant> EnsureWorkspaceTAsync()
+    {
+        await WorkspaceTGate.WaitAsync();
+        try
+        {
+            if (World.T is not null) return World.T;
+            if (_workspaceTFailure is not null) throw Earlier("T", _workspaceTFailure);
+            try
+            {
+                World.T = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db)
+                    .BuildExtraWorkspaceAsync("T", IndiaOnNewYorkTime, Array.Empty<(string, string, string)>());
+            }
+            catch (Exception ex)
+            {
+                _workspaceTFailure = ex;
+                throw;
+            }
+            return World.T;
+        }
+        finally
+        {
+            WorkspaceTGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 103. Workspace E — India / INR, an admin and one rep. EntitlementTests
+    /// lowers its limits and runs its trial out, so no other test uses it.
+    /// </summary>
+    public static async Task<TestTenant> EnsureWorkspaceEAsync()
+    {
+        await WorkspaceEGate.WaitAsync();
+        try
+        {
+            if (World.E is not null) return World.E;
+            if (_workspaceEFailure is not null) throw Earlier("E", _workspaceEFailure);
+            try
+            {
+                World.E = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db)
+                    .BuildExtraWorkspaceAsync("E", India, new[] { ("rep", "Esha", Ui.RolePatterns.Rep) });
+            }
+            catch (Exception ex)
+            {
+                _workspaceEFailure = ex;
+                throw;
+            }
+            return World.E;
+        }
+        finally
+        {
+            WorkspaceEGate.Release();
+        }
+    }
+
     /// <summary>
     /// A workspace provisioned by the super admin, its admin's invite
     /// accepted, and the given people added by that admin — each of whom
@@ -249,6 +318,10 @@ public sealed class WorldBuilder
 
     private static readonly Market India    = new("India",    "INR", "Kolkata", TimeSpan.FromHours(5.5), "+919800000000");
     private static readonly Market Thailand = new("Thailand", "THB", "Bangkok", TimeSpan.FromHours(7),   "+66812345678");
+
+    // 103 — an Indian business on New York time ("Eastern Time (US)" on the
+    // Create page). The offset is winter's; it changes with the clocks.
+    private static readonly Market IndiaOnNewYorkTime = new("India", "INR", "Eastern Time", TimeSpan.FromHours(-5), "+919800000000");
 
     private async Task<(TestTenant Tenant, string InviteLink)> ProvisionAsync(IPage page, string key, Market market)
     {
@@ -342,6 +415,35 @@ public sealed class WorldBuilder
             UtcOffset = market.Offset,
             SamplePhone = market.Phone,
         }, link);
+    }
+
+    /// <summary>
+    /// 102. One more person in <paramref name="workspace"/>, added the way
+    /// an admin does it (Settings → Users → Add person) and signed up
+    /// through the invite link. For tests that switch a person off, strip
+    /// their roles or delete them — a person of their own, so no other
+    /// test's people are touched. The key should be unique to the test.
+    /// </summary>
+    public static async Task<TestUser> AddPersonForTestAsync(TestTenant workspace, string key, string firstName, string rolePattern)
+    {
+        var user = new TestUser(key, World.EmailFor(workspace.Key, key), E2ESettings.Password, firstName, "E2E");
+
+        await using (var session = await BrowserSession.StartAsync(GlobalSetup.Browser, $"add-person-{key}"))
+        {
+            await Ui.SignInAsync(session.Page, workspace.Admin);
+            var (invite, role) = await AddPersonAsync(session.Page, user, rolePattern);
+            workspace.People[key] = user;
+            workspace.RoleOf[key] = role;
+
+            await using (var invited = await BrowserSession.StartAsync(GlobalSetup.Browser, $"accept-invite-{key}"))
+            {
+                await Ui.SetPasswordFromLinkAsync(invited.Page, invite, user.Password);
+                invited.Succeeded();
+            }
+            session.Succeeded();
+        }
+
+        return user;
     }
 
     /// <summary>Settings → Users → Add person. Returns the invite link

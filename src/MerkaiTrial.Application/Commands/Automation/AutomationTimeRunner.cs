@@ -46,6 +46,7 @@
 
 using MerkaiTrial.Application.Commands.Activities;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -80,16 +81,33 @@ public class AutomationTimeRunner : ICommandHandler
         _logger = logger;
     }
 
-    /// <summary>Workspaces with at least one switched-on time-based rule — for the worker.</summary>
+    /// <summary>
+    /// Workspaces with at least one switched-on time-based rule — for the
+    /// worker. 103: only workspaces that may write. An expired trial or a
+    /// suspended workspace is read-only for its people, so its rules don't
+    /// create tasks or send messages behind their backs either.
+    /// </summary>
     public static Task<List<Guid>> TenantsWithTimeRulesAsync(FlowDbContext db, CancellationToken ct)
-        => db.AutomationRules.IgnoreQueryFilters().AsNoTracking()
-            .Where(r => r.Trigger == AutomationTrigger.TimeBased && r.IsActive && !r.IsDeleted)
+    {
+        var writable = WorkspaceAccess.WritableTenantIds(db, DateTime.UtcNow);
+        return db.AutomationRules.IgnoreQueryFilters().AsNoTracking()
+            .Where(r => r.Trigger == AutomationTrigger.TimeBased && r.IsActive && !r.IsDeleted
+                     && writable.Contains(r.TenantId))
             .Select(r => r.TenantId)
             .Distinct()
             .ToListAsync(ct);
+    }
 
     public async Task<AutomationTimeCheckResult> RunTenantAsync(Guid tenantId, CancellationToken ct = default)
     {
+        // 103 — checked here as well as in the worker's list: the list is
+        // read once per pass, and a trial can run out during a pass.
+        if (!await WorkspaceAccess.CanWriteAsync(_db, tenantId, ct))
+        {
+            _logger.LogInformation("Time-based rules skipped for tenant {TenantId}: the workspace is read-only (trial ended or suspended).", tenantId);
+            return new AutomationTimeCheckResult(0, 0, 0);
+        }
+
         var rules = await _db.AutomationRules.IgnoreQueryFilters().AsNoTracking()
             .Where(r => r.TenantId == tenantId && r.Trigger == AutomationTrigger.TimeBased && r.IsActive && !r.IsDeleted)
             .OrderBy(r => r.CreatedAtUtc).ThenBy(r => r.Id)
@@ -305,13 +323,7 @@ public class AutomationTimeRunner : ICommandHandler
             .ToDictionary(x => x.Id!.Value, x => x.Last);
     }
 
-    private async Task<TimeZoneInfo> ZoneAsync(Guid tenantId, CancellationToken ct)
-    {
-        var tz = await _db.Tenants.AsNoTracking()
-            .Where(x => x.Id == tenantId).Select(x => x.Timezone).FirstOrDefaultAsync(ct);
-        if (string.IsNullOrWhiteSpace(tz)) return TimeZoneInfo.Utc;
-        try { return TimeZoneInfo.FindSystemTimeZoneById(tz); }
-        catch (TimeZoneNotFoundException) { return TimeZoneInfo.Utc; }
-        catch (InvalidTimeZoneException) { return TimeZoneInfo.Utc; }
-    }
+    /// <summary>103 — the same zone rule as the pages and the engine (WorkspaceTime); it used to fall back to UTC.</summary>
+    private Task<TimeZoneInfo> ZoneAsync(Guid tenantId, CancellationToken ct)
+        => WorkspaceTime.ForTenantAsync(_db, tenantId, ct);
 }

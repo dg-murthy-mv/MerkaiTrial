@@ -87,6 +87,12 @@ public static class World
     /// <summary>089. Null until CustomFieldTests or NotificationTests builds it.</summary>
     public static TestTenant? D { get; set; }
 
+    /// <summary>103. Null until WorkspaceTimeTests builds it: India / INR, but on New York time (daylight saving).</summary>
+    public static TestTenant? T { get; set; }
+
+    /// <summary>103. Null until EntitlementTests builds it: India / INR, an admin and one rep — its limits and trial are changed by that test.</summary>
+    public static TestTenant? E { get; set; }
+
     /// <summary>A unique address under a per-run domain. example.com is
     /// reserved, so even a misrouted email can never reach a real person.</summary>
     public static string EmailFor(string tenantKey, string who) =>

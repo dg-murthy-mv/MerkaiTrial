@@ -70,7 +70,14 @@ namespace MerkaiTrial.Application.DTOs
         // Calculated
         public string FullName => $"{FirstName} {LastName}".Trim();
         public string DisplayName => !string.IsNullOrEmpty(LastName) ? $"{FirstName} {LastName}" : FirstName;
-        public string InitialsDisplay => $"{FirstName.Substring(0, 1)}{(LastName?.Substring(0, 1) ?? "")}".ToUpper();
+        // 100c — a one-word name (LastName "" rather than null) or a blank
+        // first name made Substring throw, and the whole response failed
+        // with a 500: GET api/contacts/{id} for a contact converted from a
+        // one-word lead name. ContactInitials.Of never throws.
+        public string InitialsDisplay => ContactInitials.Of(FirstName, LastName);
+
+        /// <summary>102. The row's version (RecordVersion). Read: as loaded. Update: the version the edit was made from — a stale one is refused (409).</summary>
+        public string? Version { get; set; }
     }
 
     public class ContactListItem
@@ -104,7 +111,11 @@ namespace MerkaiTrial.Application.DTOs
         // Calculated
         public string FullName => $"{FirstName} {LastName}".Trim();
         public string DisplayName => !string.IsNullOrEmpty(LastName) ? $"{FirstName} {LastName}" : FirstName;
-        public string InitialsDisplay => $"{FirstName.Substring(0, 1)}{(LastName?.Substring(0, 1) ?? "")}".ToUpper();
+        // 100c — a one-word name (LastName "" rather than null) or a blank
+        // first name made Substring throw, and the whole response failed
+        // with a 500: GET api/contacts/{id} for a contact converted from a
+        // one-word lead name. ContactInitials.Of never throws.
+        public string InitialsDisplay => ContactInitials.Of(FirstName, LastName);
     }
 
     public class CreateContactDto
@@ -160,6 +171,9 @@ namespace MerkaiTrial.Application.DTOs
 
         /// <summary>075. Null = say nothing about custom fields. See the file header.</summary>
         public Dictionary<Guid, string?>? CustomFields { get; set; }
+
+        /// <summary>102. The row's version (RecordVersion). Read: as loaded. Update: the version the edit was made from — a stale one is refused (409).</summary>
+        public string? Version { get; set; }
     }
 
     public record ContactStatsDto(
@@ -168,4 +182,17 @@ namespace MerkaiTrial.Application.DTOs
     int ContactsWithCompany,
     int ActiveCompanies
 );
+
+    /// <summary>100c. "Priya Sharma" → "PS", "Somchai" → "S", blank → "?".</summary>
+    public static class ContactInitials
+    {
+        public static string Of(string? firstName, string? lastName)
+        {
+            static string First(string? s) =>
+                string.IsNullOrWhiteSpace(s) ? "" : s.Trim().Substring(0, 1);
+
+            var initials = (First(firstName) + First(lastName)).ToUpperInvariant();
+            return initials.Length > 0 ? initials : "?";
+        }
+    }
 }

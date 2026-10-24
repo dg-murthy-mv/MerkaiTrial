@@ -73,6 +73,12 @@ await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
 // need an authenticated endpoint.
 app.UseStaticFiles();
 
+// 102: everything after this line — every page, handler and download —
+// tells the browser not to keep a copy, so Back after a View As switch or
+// a sign-out can't show the previous workspace's data. Static files above
+// are answered before this and keep their caching. Startup/NoStoreMiddleware.cs.
+app.UseNoStoreForAppResponses();
+
 if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 

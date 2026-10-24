@@ -45,9 +45,11 @@ public class TrialActiveActionFilter : IAsyncActionFilter
         var tenantCtx = http.RequestServices.GetRequiredService<ICurrentTenantService>();
 
         bool isActive;
+        bool trialEnded = false;
         try
         {
             isActive = tenantCtx.IsAccountActive();
+            if (!isActive) trialEnded = tenantCtx.IsTrialExpired();
         }
         catch (UnauthorizedAccessException)
         {
@@ -71,13 +73,18 @@ public class TrialActiveActionFilter : IAsyncActionFilter
             "Write refused on {Method} {Path}: tenant {TenantId} is not active (trial expired or suspended).",
             http.Request.Method, http.Request.Path, tenantClaim);
 
+        // 103 — says which: a trial that ran out, or a workspace that was
+        // paused (suspended or switched off) — the same read-only rule.
         context.Result = new ObjectResult(new ProblemDetails
         {
-            Title = "Trial ended",
-            Detail = "This workspace is read-only because its trial has ended. "
-                   + "Existing data can still be viewed and exported.",
+            Title = trialEnded ? "Trial ended" : "Workspace paused",
+            Detail = trialEnded
+                ? "This workspace is read-only because its trial has ended. "
+                  + "Existing data can still be viewed and exported."
+                : "This workspace is read-only because it has been paused. "
+                  + "Existing data can still be viewed and exported. Please contact MadeeVision.",
             Status = StatusCodes.Status403Forbidden,
-            Type = "https://merkai/errors/trial-expired",
+            Type = trialEnded ? "https://merkai/errors/trial-expired" : "https://merkai/errors/workspace-paused",
         })
         {
             StatusCode = StatusCodes.Status403Forbidden

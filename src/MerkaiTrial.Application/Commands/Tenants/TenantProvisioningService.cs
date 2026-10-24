@@ -51,6 +51,7 @@
 using System.Text.Json;
 using MerkaiTrial.Application.Commands.Plans;
 using MerkaiTrial.Application.Commands.PipelineStages;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.Security;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -180,6 +181,12 @@ public class TenantProvisioningService : ITenantProvisioningService
         ProvisionTenantRequest req, string provisionedBy, CancellationToken ct = default)
     {
         var plan = await _getPlan.Handle(req.Plan, ct);
+
+        // 103 — a zone this server doesn't know was stored as given, and
+        // every time in the workspace then fell back to another zone.
+        if (!string.IsNullOrWhiteSpace(req.TimeZone) && !WorkspaceTime.IsKnown(req.TimeZone))
+            throw new InvalidOperationException(
+                $"'{req.TimeZone}' isn't a time zone this server knows. Pick one from the list.");
 
         // Checked before the transaction so the failure is clean and the
         // message is specific.

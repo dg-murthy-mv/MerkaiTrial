@@ -94,7 +94,7 @@ else if (Model.InviteFailed)
     <div class="alert alert-warning">
         <i class="bi bi-lock me-2"></i>
         <strong>You've used all @Model.MaxUsers places on your plan.</strong>
-        Deactivate someone who has left, or @(Model.UpgradePrompt ?? "upgrade your plan") to add more.
+        Remove someone who has left (switching a person off keeps their place), or @(Model.UpgradePrompt ?? "upgrade your plan") to add more.
         <div class="mt-3">
             <a asp-page="./Index" class="btn btn-sm btn-outline-secondary">Back to users</a>
         </div>

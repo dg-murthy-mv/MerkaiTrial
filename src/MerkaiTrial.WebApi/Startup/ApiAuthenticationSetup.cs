@@ -20,6 +20,8 @@
 
 using System.Text;
 using MerkaiTrial.Application.Security;
+using MerkaiTrial.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -77,6 +79,78 @@ public static class ApiAuthenticationSetup
 
                 options.Events = new JwtBearerEvents
                 {
+                    // ── 102: REVOKED ACCESS ENDS ON THE NEXT CALL ──────
+                    // A valid signature and an unexpired token used to be
+                    // enough. Tokens live 5 minutes and carry the person's
+                    // permissions, so someone switched off, deleted, moved
+                    // out of the workspace or stripped of a role kept using
+                    // the API with what they used to have until it expired.
+                    //
+                    // Now every call also checks the database, the same
+                    // check Admin.Web makes on its cookie for every page:
+                    //   • the person exists, is active and not deleted;
+                    //   • they still belong to the workspace the token names;
+                    //   • that workspace is active;
+                    //   • their security stamp is the one the token carries.
+                    // Changing roles, a role's permissions or a password
+                    // rotates the stamp, so any of those ends old tokens too.
+                    //
+                    // One primary-key lookup per call. If the database can't
+                    // be asked, the token is refused (fail closed) — the
+                    // same choice the cookie check makes, for the same reason.
+                    OnTokenValidated = async ctx =>
+                    {
+                        var p = ctx.Principal;
+                        if (!Guid.TryParse(p?.FindFirst(SignInService.ClaimUserId)?.Value, out var userId) ||
+                            !Guid.TryParse(p?.FindFirst(SignInService.ClaimTenantId)?.Value, out var tenantId))
+                        {
+                            ctx.Fail("The token names no user or workspace.");
+                            return;
+                        }
+
+                        var stamp = p!.FindFirst(SignInService.ClaimSecurityStamp)?.Value;
+                        var log = ctx.HttpContext.RequestServices
+                            .GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
+
+                        try
+                        {
+                            var db = ctx.HttpContext.RequestServices.GetRequiredService<FlowDbContext>();
+
+                            // Runs before HttpContext.User exists, so there is
+                            // no tenant for the query filters yet — see the
+                            // same note in Admin.Web's AuthenticationSetup.
+                            var row = await db.Users.AsNoTracking().IgnoreQueryFilters()
+                                .Where(u => u.Id == userId && !u.IsDeleted && u.IsActive)
+                                .Select(u => new
+                                {
+                                    u.TenantId,
+                                    u.SecurityStamp,
+                                    TenantLive = db.Tenants.IgnoreQueryFilters()
+                                        .Any(t => t.Id == u.TenantId && t.IsActive && !t.IsDeleted),
+                                })
+                                .FirstOrDefaultAsync(ctx.HttpContext.RequestAborted);
+
+                            string? reason =
+                                row is null                  ? "the person is switched off or no longer exists" :
+                                row.TenantId != tenantId     ? "the person no longer belongs to that workspace" :
+                                !row.TenantLive              ? "the workspace is suspended" :
+                                stamp is null || !string.Equals(row.SecurityStamp ?? string.Empty, stamp, StringComparison.Ordinal)
+                                                             ? "the session was ended (roles, permissions or password changed)" :
+                                null;
+
+                            if (reason is not null)
+                            {
+                                log.LogWarning("JWT for user {UserId} refused: {Reason}", userId, reason);
+                                ctx.Fail("Access revoked: " + reason + ".");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            log.LogError(ex, "Could not check the token for user {UserId} against the database; refusing it", userId);
+                            ctx.Fail("The token could not be checked.");
+                        }
+                    },
+
                     OnAuthenticationFailed = ctx =>
                     {
                         // Rejected tokens are worth seeing. On a public

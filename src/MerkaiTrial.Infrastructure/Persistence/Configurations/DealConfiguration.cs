@@ -20,6 +20,10 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
 
             builder.HasKey(d => d.Id);
 
+            // 102 — optimistic concurrency: a save made from an older copy is refused.
+            // Column added by Sql/102_RowVersion.sql.
+            builder.Property(d => d.RowVersion).IsRowVersion().IsRequired();
+
             builder.Property(d => d.Title)
                 .IsRequired()
                 .HasMaxLength(200);

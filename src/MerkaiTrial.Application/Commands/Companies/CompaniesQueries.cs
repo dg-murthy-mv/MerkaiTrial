@@ -69,6 +69,7 @@
 //      Anything else is the original order (name). See ListSort.
 // =====================================================================
 
+using MerkaiTrial.Application.Common;                   // 102 — RecordVersion
 using MerkaiTrial.Application.Commands.CustomFields;
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
@@ -425,6 +426,7 @@ namespace MerkaiTrial.Application.Commands.Companies
 
                 return new CompanyDto
                 {
+                    Version             = RecordVersion.Of(company.RowVersion),   // 102
                     Id                  = company.Id,
                     TenantId            = company.TenantId,
                     Name                = company.Name,

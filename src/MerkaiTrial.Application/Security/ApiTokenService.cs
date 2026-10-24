@@ -73,6 +73,15 @@ public class ApiTokenService : IApiTokenService
             new(ClaimTypes.NameIdentifier, userId),
             new(SignInService.ClaimUserId, userId),
             new(SignInService.ClaimTenantId, tenantId),
+
+            // 102 — the session's security stamp. The API compares it with
+            // the database on EVERY call (ApiAuthenticationSetup,
+            // OnTokenValidated), exactly as Admin.Web's cookie check does.
+            // Without it the API trusted a token for its whole 5 minutes:
+            // a person switched off, deleted or stripped of a role kept
+            // calling the API with the permissions they no longer had.
+            new(SignInService.ClaimSecurityStamp,
+                principal.FindFirst(SignInService.ClaimSecurityStamp)?.Value ?? string.Empty),
         };
 
         // Carry the authorization facts so the API does not re-query them.

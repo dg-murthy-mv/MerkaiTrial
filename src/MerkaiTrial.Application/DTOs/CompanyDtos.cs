@@ -50,6 +50,9 @@ namespace MerkaiTrial.Application.DTOs
         /// which the detail page shows marked as retired.
         /// </summary>
         public Dictionary<Guid, string> CustomFieldValues { get; set; } = new();
+
+        /// <summary>102. The row's version (RecordVersion). Read: as loaded. Update: the version the edit was made from — a stale one is refused (409).</summary>
+        public string? Version { get; set; }
     }
 
     public class CompanyListItem
@@ -104,6 +107,9 @@ namespace MerkaiTrial.Application.DTOs
 
         /// <summary>078. Null = say nothing about custom fields. See the file header.</summary>
         public Dictionary<Guid, string?>? CustomFields { get; set; }
+
+        /// <summary>102. The row's version (RecordVersion). Read: as loaded. Update: the version the edit was made from — a stale one is refused (409).</summary>
+        public string? Version { get; set; }
     }
 
     public record CompanyStatsDto(

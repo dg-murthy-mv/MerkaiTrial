@@ -10,6 +10,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Plans;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -193,7 +194,16 @@ namespace MerkaiTrial.Application.Commands.Tenants
                 tenant.FromEmail       = cmd.FromEmail;
                 tenant.Phone           = cmd.Phone;
                 tenant.DefaultCurrency = cmd.DefaultCurrency ?? tenant.DefaultCurrency;
-                tenant.Timezone        = cmd.TimeZone;
+                // 103 — blank keeps the zone it has; a zone this server
+                // doesn't know is refused (it used to be stored, and every
+                // time in the workspace silently used another zone).
+                if (!string.IsNullOrWhiteSpace(cmd.TimeZone))
+                {
+                    if (!WorkspaceTime.IsKnown(cmd.TimeZone))
+                        throw new InvalidOperationException(
+                            $"'{cmd.TimeZone}' isn't a time zone this server knows. Pick one from the list.");
+                    tenant.Timezone = cmd.TimeZone.Trim();
+                }
                 tenant.UpdatedAtUtc    = DateTime.UtcNow;
                 tenant.UpdatedBy       = "System";
 
@@ -342,15 +352,16 @@ namespace MerkaiTrial.Application.Commands.Tenants
 
                     var errors = new List<string>();
 
-                    if (cmd.MaxUsers > plan.MaxUsers)
+                    // 103 — a negative plan limit is unlimited (as PlanQuota reads it).
+                    if (plan.MaxUsers >= 0 && cmd.MaxUsers > plan.MaxUsers)
                         errors.Add(
                             $"MaxUsers ({cmd.MaxUsers}) exceeds '{plan.DisplayName}' limit of {plan.MaxUsers}");
 
-                    if (cmd.MaxLeads > plan.MaxLeads)
+                    if (plan.MaxLeads >= 0 && cmd.MaxLeads > plan.MaxLeads)
                         errors.Add(
                             $"MaxLeads ({cmd.MaxLeads}) exceeds '{plan.DisplayName}' limit of {plan.MaxLeads}");
 
-                    if (cmd.MaxDeals > plan.MaxDeals)
+                    if (plan.MaxDeals >= 0 && cmd.MaxDeals > plan.MaxDeals)
                         errors.Add(
                             $"MaxDeals ({cmd.MaxDeals}) exceeds '{plan.DisplayName}' limit of {plan.MaxDeals}");
 
@@ -370,7 +381,13 @@ namespace MerkaiTrial.Application.Commands.Tenants
                 }
 
                 // ── Upsert TenantSettings ─────────────────────────────
+                // 103 — IgnoreQueryFilters, for the same reason as the read
+                // (GetTenantSettingsHandler): the super admin's own workspace
+                // filter hid the row, so this added a SECOND one, and the
+                // unique index UQ_TenantSettings_TenantId refused it — every
+                // save on Admin → Tenants → Settings failed with a 500.
                 var settings = await _context.Set<TenantSettings>()
+                    .IgnoreQueryFilters()
                     .FirstOrDefaultAsync(
                         s => s.TenantId == cmd.TenantId,
                         cancellationToken);

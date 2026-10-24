@@ -112,6 +112,20 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 }
             }
 
+            // 102 — 409 with { "error": … } from an edit: someone else saved
+            // the record after this person's form was loaded. Its own type,
+            // so an Edit page can keep what the person typed and say why.
+            // (Payments' 409s carry no "error" and fall through as before.)
+            if (response.StatusCode == HttpStatusCode.Conflict)
+            {
+                var message = ExtractErrorMessage(body);
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    _logger.LogWarning("{Verb} {Url} refused — record changed: {Message}", verb, url, message);
+                    throw new MerkaiTrial.Infrastructure.Persistence.RecordChangedException(message);
+                }
+            }
+
             // 403 from TrialActiveActionFilter — the workspace is read-only.
             // Worth its own message: "please try again" is actively misleading
             // when trying again will never work.

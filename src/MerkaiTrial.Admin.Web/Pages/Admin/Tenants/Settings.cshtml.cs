@@ -119,13 +119,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
             {
                 var errors = new List<string>();
 
-                if (Input.MaxUsers > Limits.MaxUsers)
+                // 103 — a negative plan limit is unlimited (as PlanQuota reads it).
+                if (Limits.MaxUsers >= 0 && Input.MaxUsers > Limits.MaxUsers)
                     errors.Add($"Max users ({Input.MaxUsers}) exceeds '{Limits.DisplayName}' plan limit ({Limits.MaxUsers})");
 
-                if (Input.MaxLeads > Limits.MaxLeads)
+                if (Limits.MaxLeads >= 0 && Input.MaxLeads > Limits.MaxLeads)
                     errors.Add($"Max leads ({Input.MaxLeads}) exceeds '{Limits.DisplayName}' plan limit ({Limits.MaxLeads})");
 
-                if (Input.MaxDeals > Limits.MaxDeals)
+                if (Limits.MaxDeals >= 0 && Input.MaxDeals > Limits.MaxDeals)
                     errors.Add($"Max deals ({Input.MaxDeals}) exceeds '{Limits.DisplayName}' plan limit ({Limits.MaxDeals})");
 
                 if (Input.StorageLimitGB > Limits.StorageLimitGB)
@@ -146,7 +147,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
                     MaxLeads:     Input.MaxLeads,
                     MaxDeals:     Input.MaxDeals,
                     StorageLimit: (long)(Input.StorageLimitGB * 1_073_741_824),
-                    FeatureFlags: Input.FeatureFlags
+                    FeatureFlags: Input.FeatureFlags,
+                    BypassPlanLimits: BypassPlanLimits   // 103 — sent on, so the API honours it
                 );
 
                 await _tenantService.UpdateSettingsAsync(command);

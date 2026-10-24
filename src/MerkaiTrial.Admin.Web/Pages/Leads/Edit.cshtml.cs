@@ -161,6 +161,17 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
         [BindProperty]
         public Dictionary<string, string?> CustomFields { get; set; } = new();
 
+        // ── 102: two people editing the same record ──────────────────
+        /// <summary>
+        /// The record's version when this form was loaded, carried in a
+        /// hidden field and sent with the save. If someone else saved in
+        /// between, the API refuses (409) instead of overwriting them.
+        /// </summary>
+        [BindProperty] public string? Version { get; set; }
+
+        /// <summary>True when the save was refused because someone else changed the record. Shows the Reload link.</summary>
+        public bool RecordChanged { get; private set; }
+
         // ── 093: duplicate warning ────────────────────────────────────
         /// <summary>True only when posted by "Save changes anyway".</summary>
         [BindProperty] public bool ConfirmDuplicate { get; set; }
@@ -295,6 +306,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     return RedirectToPage("./Detail", new { id });
                 }
 
+                Version = lead.Version;   // 102
+
                 Input = new InputModel
                 {
                     FullName = lead.FullName,
@@ -403,7 +416,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     // 079 — null when the field list could not be loaded.
                     CustomFields = CustomFieldsLoadFailed
                         ? null
-                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields)
+                        : CustomFieldForm.ToSubmission(CustomFields, ActiveCustomFields),
+                    Version = this.Version     // 102
                 };
 
                 await _leadService.UpdateAsync(dto);
@@ -424,6 +438,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             // ("Somchai's account is deactivated, so it cannot be given new
             // work."). The deal edit page has had this catch since 020; the
             // lead page never did.
+            catch (MerkaiTrial.Infrastructure.Persistence.RecordChangedException ex)
+            {
+                // 102 — someone else saved this lead after the form was
+                // loaded. Their change stands; what this person typed stays
+                // in the form, with a link to reload.
+                _logger.LogInformation("Lead {Id} update refused — changed by someone else", Id);
+                RecordChanged = true;
+                ModelState.AddModelError(string.Empty, ex.Message);
+                return Page();
+            }
             catch (InvalidOperationException ex)
             {
                 _logger.LogInformation("Lead {Id} update refused: {Message}", Id, ex.Message);

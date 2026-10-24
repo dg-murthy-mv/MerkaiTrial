@@ -48,6 +48,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
+using MerkaiTrial.Application.Common;                // 102 — DeleteRules
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;          // ✅ ADDED
@@ -113,36 +114,11 @@ namespace MerkaiTrial.Application.Commands.Companies
                 // 095 — before the quota check.
                 CompanyInput.Check(request.Name, request.Vertical, request.Country, request.TaxId);
 
-                // ── ✅ Plan quota check — MaxCompanies from Plans table ───────
-                // Company.TenantId = Guid, request.TenantId = Guid → direct comparison
-                // MaxCompanies is NOT in TenantSettings — must read from Plans via Tenants.Plan
-                var tenantPlan = await _context.Tenants
-                    .AsNoTracking()
-                    .Where(t => t.Id == request.TenantId && !t.IsDeleted)
-                    .Select(t => t.Plan)
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (!string.IsNullOrEmpty(tenantPlan))
-                {
-                    var plan = await _context.Plans
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(
-                            p => p.Name == tenantPlan && p.IsActive,
-                            cancellationToken);
-
-                    if (plan != null)
-                    {
-                        var currentCount = await _context.Companies
-                            .CountAsync(
-                                c => c.TenantId == request.TenantId && !c.IsDeleted,
-                                cancellationToken);
-
-                        if (currentCount >= plan.MaxCompanies)
-                            throw new PlanLimitExceededException(
-                                "companies", currentCount, plan.MaxCompanies);
-                    }
-                }
-                // ── end quota check ────────────────────────────────────────────
+                // ── Plan quota (103: PlanQuota) ───────────────────────────────
+                // MaxCompanies from the workspace's plan, read live, held
+                // until the company is saved so two saves can't take one place.
+                await using var quota = await PlanQuota.HoldAsync(
+                    _context, request.TenantId, PlanQuota.Companies, ct: cancellationToken);
 
                 var company = new Company
                 {
@@ -166,6 +142,7 @@ namespace MerkaiTrial.Application.Commands.Companies
                     request.CustomFields, request.CreatedBy, isNew: true, cancellationToken);
 
                 await _context.SaveChangesAsync(cancellationToken);
+                await quota.CommitAsync(cancellationToken);   // 103
 
                 // 078b — after the save; a failure here must not undo it.
                 try
@@ -230,6 +207,9 @@ namespace MerkaiTrial.Application.Commands.Companies
 
         /// <summary>078. Null = say nothing about custom fields.</summary>
         public Dictionary<Guid, string?>? CustomFields { get; set; }
+
+        /// <summary>102. The version the edit was made from; stale → RecordChangedException.</summary>
+        public string? Version { get; set; }
     }
 
     public class UpdateCompanyHandler : ICommandHandler
@@ -257,6 +237,10 @@ namespace MerkaiTrial.Application.Commands.Companies
 
                 if (company == null)
                     throw new KeyNotFoundException($"Company {request.Id} not found");
+
+                // 102 — made from the version on screen? Refused before
+                // anything changes if someone else saved since.
+                RecordVersion.Expect(_context, company, versioned => versioned.RowVersion, request.Version, "company");
 
                 // 095 — before anything is assigned.
                 CompanyInput.Check(request.Name, request.Vertical, request.Country, request.TaxId);
@@ -305,6 +289,7 @@ namespace MerkaiTrial.Application.Commands.Companies
             }
             catch (KeyNotFoundException) { throw; }
             catch (CustomFieldValidationException) { throw; } // 078 — expected, not a system error
+            catch (InvalidOperationException) { throw; }       // 102 — RecordChangedException and other refusals
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating company {Id}", request.Id);
@@ -346,6 +331,11 @@ namespace MerkaiTrial.Application.Commands.Companies
                 if (company == null)
                     throw new KeyNotFoundException($"Company {request.Id} not found");
 
+                // 102 — not while live contacts or deals depend on it.
+                var why = await DeleteRules.WhyCompanyCannotBeDeletedAsync(
+                    _context, request.TenantId, company.Id, cancellationToken);
+                if (why is not null) throw new InvalidOperationException(why);
+
                 company.IsDeleted = true;
                 company.UpdatedAtUtc = DateTime.UtcNow;
                 company.UpdatedBy = request.DeletedBy;
@@ -358,6 +348,7 @@ namespace MerkaiTrial.Application.Commands.Companies
                 _logger.LogInformation("Deleted company {Name}", company.Name);
             }
             catch (KeyNotFoundException) { throw; }
+            catch (InvalidOperationException) { throw; }   // 102 — a refusal, not a failure
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting company {Id}", request.Id);

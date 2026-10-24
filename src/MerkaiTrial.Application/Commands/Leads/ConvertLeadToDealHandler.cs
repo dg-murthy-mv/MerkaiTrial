@@ -163,6 +163,13 @@ namespace MerkaiTrial.Application.Commands.Leads
                 foreach (var name in names.OrderBy(n => n, StringComparer.Ordinal))
                     await RowLock.HoldNameAsync(_db, name);
 
+                // 103 — the plan's limits. Converting used to check none of
+                // them, so a workspace at its deal limit kept adding deals
+                // by converting leads. Each is held until this commits, in
+                // PlanQuota's order: deals, then companies, then contacts
+                // (each of those only when one is about to be created).
+                await using (await PlanQuota.HoldAsync(_db, lead.TenantId, PlanQuota.Deals)) { }
+
                 // ── STEP 2: RESOLVE OR CREATE COMPANY ─────────────────────────
 
                 Guid? companyId = null;
@@ -179,6 +186,8 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                     if (!companyId.HasValue)
                     {
+                        await using (await PlanQuota.HoldAsync(_db, lead.TenantId, PlanQuota.Companies)) { }   // 103
+
                         // ✅ FIX: resolve vertical name from lead.VerticalId
                         // Previously hardcoded "Generic" — now looks up the actual vertical name.
                         // Falls back to "Generic" only if lead has no vertical assigned.
@@ -272,6 +281,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                     else
                     {
                         // No duplicate found — create new contact
+                        await using (await PlanQuota.HoldAsync(_db, lead.TenantId, PlanQuota.Contacts)) { }   // 103
                         var newContact = await CreateContactFromLead(lead, companyId, currentUser.FullName, now);
                         _db.Contacts.Add(newContact);
                         await _db.SaveChangesAsync();
@@ -287,6 +297,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 else
                 {
                     // No email and no existing contact — create (no dedup possible)
+                    await using (await PlanQuota.HoldAsync(_db, lead.TenantId, PlanQuota.Contacts)) { }   // 103
                     var newContact = await CreateContactFromLead(lead, companyId, currentUser.FullName, now);
                     _db.Contacts.Add(newContact);
                     await _db.SaveChangesAsync();

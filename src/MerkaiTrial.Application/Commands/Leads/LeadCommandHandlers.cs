@@ -210,21 +210,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ? dto.Currency.Trim().ToUpperInvariant()
                     : _tenantService.GetCurrencyCode();
 
-                // ── ✅ Plan quota check ───────────────────────────────────────────
-                // ── Plan quota check ──────────────────────────────────────────────
-                var planSettings = await _context.TenantSettings
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(ts => ts.TenantId == dto.TenantId, cancellationToken);
-
-                if (planSettings != null)
-                {
-                    var currentLeadCount = await _context.Leads
-                        .CountAsync(l => l.TenantId == dto.TenantId && !l.IsDeleted, cancellationToken);
-
-                    if (currentLeadCount >= planSettings.MaxLeads)
-                        throw new PlanLimitExceededException("leads", currentLeadCount, planSettings.MaxLeads);
-                }
-                // ── end quota check ───────────────────────────────────────────────
+                // ── Plan quota (103: PlanQuota) ──────────────────────────────────
+                // Held until the lead is saved, so two saves at the same
+                // instant can't both take the last place. The limit is read
+                // live: a change the super admin made a second ago applies.
+                await using var quota = await PlanQuota.HoldAsync(
+                    _context, dto.TenantId, PlanQuota.Leads, ct: cancellationToken);
                 var statuses = await _statuses.GetAsync(dto.TenantId, cancellationToken);
                 var startStatus = statuses.Default
                     ?? throw new InvalidOperationException(
@@ -279,6 +270,7 @@ namespace MerkaiTrial.Application.Commands.Leads
                 await NotifyOwnerAsync(lead, currentUserId, cancellationToken);
 
                 await _context.SaveChangesAsync(cancellationToken);
+                await quota.CommitAsync(cancellationToken);   // 103 — the place is taken; let the next one count
 
                 // ✅ Recalculate score immediately after creation
                 await _scoring.RecalculateAsync(lead.Id, lead.TenantId, cancellationToken);
@@ -427,6 +419,10 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 if (lead == null)
                     throw new KeyNotFoundException($"Lead {dto.LeadId} not found");
+
+                // 102 — made from the version on screen? Refused before
+                // anything changes if someone else saved since.
+                RecordVersion.Expect(_context, lead, versioned => versioned.RowVersion, dto.Version, "lead");
 
                 // 095 — before anything is assigned.
                 LeadInput.Check(dto.FullName, dto.Email, dto.Phone, dto.CompanyName, dto.Address, dto.EstimatedValue);
@@ -661,7 +657,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                 {
                     // 079 — what is stored now, retired fields included.
                     CustomFieldValues = await CustomFieldValueWriter.ReadAsync(
-                        _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id, cancellationToken)
+                        _context, dto.TenantId, CustomFieldEntityTypes.Lead, lead.Id, cancellationToken),
+                    // 102 — the version AFTER this save, for the next edit.
+                    Version = RecordVersion.Of(lead.RowVersion)
                 };
             }
             catch (KeyNotFoundException) { throw; }
@@ -948,9 +946,16 @@ namespace MerkaiTrial.Application.Commands.Leads
                         throw new InvalidOperationException("The company chosen isn't in this workspace. Pick one from the list, or create a new one.");
                 }
 
+                // 103 — the plan's limits, held until this commits. Order
+                // matters (PlanQuota): companies before contacts.
+                var createsCompany = cmd.CreateCompany && !string.IsNullOrEmpty(cmd.CompanyName);
+                if (createsCompany)
+                    await using (await PlanQuota.HoldAsync(_context, cmd.TenantId, PlanQuota.Companies, ct: cancellationToken)) { }
+                await using (await PlanQuota.HoldAsync(_context, cmd.TenantId, PlanQuota.Contacts, ct: cancellationToken)) { }
+
                 // Create Company if requested
                 Guid? companyId = cmd.ExistingCompanyId == Guid.Empty ? null : cmd.ExistingCompanyId;
-                if (cmd.CreateCompany && !string.IsNullOrEmpty(cmd.CompanyName))
+                if (createsCompany)
                 {
                     var company = new Company
                     {

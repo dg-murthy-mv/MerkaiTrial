@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Domain.Enums;
+using MerkaiTrial.Domain.Enums;
 
 namespace MerkaiTrial.Domain.Entities
 {
@@ -53,6 +53,14 @@ namespace MerkaiTrial.Domain.Entities
         public DateTime? UpdatedAtUtc { get; set; }
         public string? UpdatedBy { get; set; }
         public bool IsDeleted { get; set; }
+
+        /// <summary>
+        /// 102. SQL Server rowversion — changes by itself on every write to the
+        /// row. An edit form carries the value it loaded; a save made from an
+        /// older value is refused instead of silently overwriting someone
+        /// else's change (RecordVersion, FlowDbContext). Never set by code.
+        /// </summary>
+        public byte[]? RowVersion { get; set; }
 
         // Navigation Properties
         public Contact? Contact { get; set; }

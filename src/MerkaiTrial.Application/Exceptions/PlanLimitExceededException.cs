@@ -6,7 +6,16 @@ using System.Threading.Tasks;
 
 namespace MerkaiTrial.Application.Exceptions
 {
-    public class PlanLimitExceededException : Exception
+    /// <summary>
+    /// A create refused because the workspace's plan is full.
+    ///
+    /// 103 — now an InvalidOperationException, like every other refusal.
+    /// Places that catch it by name still do (it is caught before the
+    /// general case everywhere); places that only knew "a refusal is an
+    /// InvalidOperationException" — the users endpoint, lead conversion —
+    /// now answer with its sentence (400) instead of a 500.
+    /// </summary>
+    public class PlanLimitExceededException : InvalidOperationException
     {
         public string Resource { get; }
         public int Current { get; }

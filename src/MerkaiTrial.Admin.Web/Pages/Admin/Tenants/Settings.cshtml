@@ -76,7 +76,7 @@
                                     <span class="text-danger">*</span>
                                 </label>
                                 <input asp-for="Input.MaxUsers" type="number" class="form-control"
-                                       min="1" max="@Model.Limits.MaxUsers" />
+                                       min="1" max="@(Model.Limits.MaxUsers >= 0 ? Model.Limits.MaxUsers.ToString() : "")" />
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
                                     Plan limit: <strong>@Model.Limits.MaxUsers</strong> users
@@ -91,7 +91,7 @@
                                     <span class="text-danger">*</span>
                                 </label>
                                 <input asp-for="Input.MaxLeads" type="number" class="form-control"
-                                       min="1" max="@Model.Limits.MaxLeads" />
+                                       min="1" max="@(Model.Limits.MaxLeads >= 0 ? Model.Limits.MaxLeads.ToString() : "")" />
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
                                     Plan limit: <strong>@Model.Limits.MaxLeads</strong> leads
@@ -106,7 +106,7 @@
                                     <span class="text-danger">*</span>
                                 </label>
                                 <input asp-for="Input.MaxDeals" type="number" class="form-control"
-                                       min="1" max="@Model.Limits.MaxDeals" />
+                                       min="1" max="@(Model.Limits.MaxDeals >= 0 ? Model.Limits.MaxDeals.ToString() : "")" />
                                 <div class="form-text">
                                     <i class="bi bi-info-circle"></i>
                                     Plan limit: <strong>@Model.Limits.MaxDeals</strong> deals
@@ -295,11 +295,12 @@
                 storageGB:  @Model.Limits.StorageLimitGB
             };
 
-            if (maxUsers  > limits.maxUsers)
+            // 103 — a negative plan limit is unlimited.
+            if (limits.maxUsers >= 0 && maxUsers  > limits.maxUsers)
                 errors.push(`Max users (${maxUsers}) exceeds plan limit (${limits.maxUsers})`);
-            if (maxLeads  > limits.maxLeads)
+            if (limits.maxLeads >= 0 && maxLeads  > limits.maxLeads)
                 errors.push(`Max leads (${maxLeads}) exceeds plan limit (${limits.maxLeads})`);
-            if (maxDeals  > limits.maxDeals)
+            if (limits.maxDeals >= 0 && maxDeals  > limits.maxDeals)
                 errors.push(`Max deals (${maxDeals}) exceeds plan limit (${limits.maxDeals})`);
             if (storageGB > limits.storageGB)
                 errors.push(`Storage (${storageGB} GB) exceeds plan limit (${limits.storageGB} GB)`);

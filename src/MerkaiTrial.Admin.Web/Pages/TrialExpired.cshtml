@@ -4,29 +4,43 @@
    Uses the normal tenant layout on purpose. The client is still signed in
    and their data is still there and readable — this is an explanation of a
    refused save, not a lockout screen.
+
+   103: says which of the two reasons applies — the trial ended, or the
+   workspace was paused. #readOnlyReason carries it for the tests.
    ===================================================================== *@
 @page
 @model MerkaiTrial.Admin.Web.Pages.TrialExpiredModel
 @{
-    ViewData["Title"] = "Trial ended";
+    ViewData["Title"] = Model.TrialEnded ? "Trial ended" : "Workspace paused";
 }
 
 <div class="container py-5" style="max-width: 42rem;">
-    <h1 class="h3 mb-3">Your trial has ended</h1>
+    @if (Model.TrialEnded)
+    {
+        <h1 class="h3 mb-3" id="readOnlyReason" data-reason="trial-ended">Your trial has ended</h1>
 
-    <p class="text-muted">
-        @if (Model.ExpiredOn.HasValue)
-        {
-            <text>
-                The trial for <strong>@Model.TenantName</strong> ended on
-                @Model.ExpiredOn.Value.ToString("d MMMM yyyy").
-            </text>
-        }
-        else
-        {
-            <text>The trial for <strong>@Model.TenantName</strong> has ended.</text>
-        }
-    </p>
+        <p class="text-muted">
+            @if (Model.ExpiredOn.HasValue)
+            {
+                <text>
+                    The trial for <strong>@Model.TenantName</strong> ended on
+                    @Model.ExpiredOn.Value.ToString("d MMMM yyyy").
+                </text>
+            }
+            else
+            {
+                <text>The trial for <strong>@Model.TenantName</strong> has ended.</text>
+            }
+        </p>
+    }
+    else
+    {
+        <h1 class="h3 mb-3" id="readOnlyReason" data-reason="paused">This workspace is paused</h1>
+
+        <p class="text-muted">
+            <strong>@Model.TenantName</strong> has been paused by MadeeVision.
+        </p>
+    }
 
     <div class="alert alert-info">
         <strong>Your data is safe.</strong>
@@ -35,9 +49,22 @@
     </div>
 
     <p>
-        To continue where you left off, contact your MadeeVision account
-        contact. Moving to a paid plan restores full access immediately —
-        nothing needs to be re-entered.
+        @if (Model.TrialEnded)
+        {
+            <text>
+                To continue where you left off, contact your MadeeVision account
+                contact. Moving to a paid plan restores full access immediately —
+                nothing needs to be re-entered.
+            </text>
+        }
+        else
+        {
+            <text>
+                To continue, contact your MadeeVision account contact. When the
+                workspace is switched back on, everything works again at once —
+                nothing needs to be re-entered.
+            </text>
+        }
     </p>
 
     <a class="btn btn-primary" asp-page="/Dashboard">Back to dashboard</a>

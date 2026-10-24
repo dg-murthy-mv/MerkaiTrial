@@ -318,9 +318,9 @@ namespace MerkaiTrial.Admin.Web.Pages
             return pct >= 90 ? "bg-danger" : pct >= 70 ? "bg-warning" : "bg-success";
         }
 
-        /// <summary>True when at or over the plan limit</summary>
+        /// <summary>True when at or over the plan limit. 103: a negative limit is unlimited, as the server treats it (PlanQuota).</summary>
         public static bool IsAtLimit(int current, int max)
-            => current >= max;
+            => max >= 0 && current >= max;
 
         // ── ✅ TRIAL HELPERS (merged from AppPageModel) ────────────────────
 

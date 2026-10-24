@@ -55,6 +55,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.CustomFields;
+using MerkaiTrial.Application.Common;                // 102 — DeleteRules
 using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Exceptions;          // ✅ ADDED
@@ -157,36 +158,11 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     request.Phone, request.Mobile, request.Address, request.City, request.Country, request.PostalCode);
                 await ContactInput.CheckCompanyAsync(_context, request.TenantId, request.CompanyId, cancellationToken);   // 100
 
-                // ── ✅ Plan quota check — MaxContacts from Plans table ────────
-                // Contact.TenantId = Guid, request.TenantId = Guid → direct comparison
-                // MaxContacts is NOT in TenantSettings — must read from Plans via Tenants.Plan
-                var tenantPlan = await _context.Tenants
-                    .AsNoTracking()
-                    .Where(t => t.Id == request.TenantId && !t.IsDeleted)
-                    .Select(t => t.Plan)
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (!string.IsNullOrEmpty(tenantPlan))
-                {
-                    var plan = await _context.Plans
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(
-                            p => p.Name == tenantPlan && p.IsActive,
-                            cancellationToken);
-
-                    if (plan != null)
-                    {
-                        var currentCount = await _context.Contacts
-                            .CountAsync(
-                                c => c.TenantId == request.TenantId && !c.IsDeleted,
-                                cancellationToken);
-
-                        if (currentCount >= plan.MaxContacts)
-                            throw new PlanLimitExceededException(
-                                "contacts", currentCount, plan.MaxContacts);
-                    }
-                }
-                // ── end quota check ───────────────────────────────────────────
+                // ── Plan quota (103: PlanQuota) ───────────────────────────────
+                // MaxContacts from the workspace's plan, read live, held until
+                // the contact is saved so two saves can't take one place.
+                await using var quota = await PlanQuota.HoldAsync(
+                    _context, request.TenantId, PlanQuota.Contacts, ct: cancellationToken);
 
                 var contact = new Contact
                 {
@@ -219,6 +195,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     request.CustomFields, request.CreatedBy, isNew: true, cancellationToken);
 
                 await _context.SaveChangesAsync(cancellationToken);
+                await quota.CommitAsync(cancellationToken);   // 103
 
                 // 078b — after the save; a failure here must not undo it.
                 try
@@ -308,6 +285,9 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
         /// <summary>075. Null = say nothing about custom fields.</summary>
         public Dictionary<Guid, string?>? CustomFields { get; set; }
+
+        /// <summary>102. The version the edit was made from; stale → RecordChangedException.</summary>
+        public string? Version { get; set; }
     }
 
     public class UpdateContactHandler : ICommandHandler
@@ -335,6 +315,10 @@ namespace MerkaiTrial.Application.Commands.Contacts
 
                 if (contact == null)
                     throw new KeyNotFoundException($"Contact {request.Id} not found");
+
+                // 102 — made from the version on screen? Refused before
+                // anything changes if someone else saved since.
+                RecordVersion.Expect(_context, contact, versioned => versioned.RowVersion, request.Version, "contact");
 
                 // 095 — before anything is assigned.
                 ContactInput.Check(request.FirstName, request.LastName, request.JobTitle, request.Email,
@@ -400,6 +384,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
             }
             catch (KeyNotFoundException) { throw; } // ✅ Expected — not a system error
             catch (CustomFieldValidationException) { throw; } // 075 — expected, not a system error
+            catch (InvalidOperationException) { throw; }       // 102 — RecordChangedException and other refusals
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating contact {Id}", request.Id);
@@ -442,6 +427,11 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 if (contact == null)
                     throw new KeyNotFoundException($"Contact {request.Id} not found");
 
+                // 102 — not while deals point at it.
+                var why = await DeleteRules.WhyContactCannotBeDeletedAsync(
+                    _context, request.TenantId, contact.Id, cancellationToken);
+                if (why is not null) throw new InvalidOperationException(why);
+
                 contact.IsDeleted = true;
                 contact.UpdatedAtUtc = DateTime.UtcNow;
                 contact.UpdatedBy = request.DeletedBy;
@@ -454,6 +444,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 _logger.LogInformation("Deleted contact {Name}", contact.DisplayName);
             }
             catch (KeyNotFoundException) { throw; } // ✅ Expected — not a system error
+            catch (InvalidOperationException) { throw; }   // 102 — a refusal, not a failure
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error deleting contact {Id}", request.Id);

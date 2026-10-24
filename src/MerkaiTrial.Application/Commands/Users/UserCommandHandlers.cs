@@ -1,8 +1,9 @@
-﻿// =====================================================================
+// =====================================================================
 // USER COMMAND HANDLERS - Write operations
 // Location: MerkaiTrial.Application/Commands/UserCommandHandlers.cs
 // =====================================================================
 
+using MerkaiTrial.Application.Common;   // 103 — PlanQuota
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
@@ -34,22 +35,15 @@ namespace MerkaiTrial.Application.Commands.Users
             // The limit that actually binds during a trial. Checked here in
             // the handler rather than in the page: the page is a courtesy, the
             // handler is the rule.
-            var settings = await _db.Set<TenantSettings>().AsNoTracking().IgnoreQueryFilters()
-                .FirstOrDefaultAsync(s => s.TenantId == cmd.TenantId);
-
-            if (settings is not null)
-            {
-                var current = await _db.Users.IgnoreQueryFilters()
-                    .CountAsync(u => u.TenantId == cmd.TenantId && !u.IsDeleted);
-
-                if (current >= settings.MaxUsers)
-                    throw new InvalidOperationException(
-                        $"This workspace already has {current} of {settings.MaxUsers} users. " +
-                        "Deactivate someone, or upgrade the plan to add more.");
-            }
-            // If there is no settings row the quota cannot be evaluated. That is
-            // a provisioning failure, not a reason to block — MadeeVision itself
-            // has no row. It is logged by the caller rather than failing here.
+            //
+            // 103 — PlanQuota: the limit read live and held until the person
+            // is saved, so two invitations sent at once can't both take the
+            // last place. Everyone in the workspace counts, switched on or
+            // off (a switched-off person keeps their place and can be
+            // switched back on). The old advice "deactivate someone" did not
+            // free a place, so the Add person page now says "remove someone".
+            // No settings row → no limit to apply (MadeeVision has none).
+            await using var quota = await PlanQuota.HoldAsync(_db, cmd.TenantId, PlanQuota.Users);
 
             // ── ROLES: validate BEFORE inserting anything ────────────────
             // Resolved up front so a bad role id fails the whole operation
@@ -122,6 +116,7 @@ namespace MerkaiTrial.Application.Commands.Users
             }
 
             await _db.SaveChangesAsync();
+            await quota.CommitAsync();   // 103
 
             var roleNames = await _db.UserRoles.IgnoreQueryFilters()
                 .Where(ur => ur.UserId == user.Id && ur.Role != null)
@@ -189,6 +184,14 @@ namespace MerkaiTrial.Application.Commands.Users
             user.IsActive = cmd.IsActive;
             user.UpdatedAtUtc = DateTime.UtcNow;
 
+            // 102 — switching someone OFF ends their sessions for good. Their
+            // cookie and API tokens were refused while they were off, but the
+            // stamp stayed the same, so switching them back ON brought every
+            // old session and token back to life. A new stamp means they
+            // sign in again, fresh, if they are switched back on.
+            if (!cmd.IsActive)
+                user.SecurityStamp = Guid.NewGuid().ToString("N");
+
             await _db.SaveChangesAsync();
         }
     }
@@ -207,6 +210,7 @@ namespace MerkaiTrial.Application.Commands.Users
 
             user.IsDeleted = true;
             user.UpdatedAtUtc = DateTime.UtcNow;
+            user.SecurityStamp = Guid.NewGuid().ToString("N");   // 102 — see UpdateUserStatusHandler
 
             await _db.SaveChangesAsync();
         }
@@ -293,6 +297,8 @@ namespace MerkaiTrial.Application.Commands.Users
 
                     user.IsActive = cmd.IsActive;
                     user.UpdatedAtUtc = DateTime.UtcNow;
+                    if (!cmd.IsActive)
+                        user.SecurityStamp = Guid.NewGuid().ToString("N");   // 102 — see UpdateUserStatusHandler
                     successCount++;
                 }
                 catch (Exception ex)

@@ -188,7 +188,11 @@ namespace MerkaiTrial.Application.DTOs
         int MaxLeads,
         int MaxDeals,
         long StorageLimit,
-        string? FeatureFlags
+        string? FeatureFlags,
+        // 103 — the Settings page's "Super Admin Override". It never reached
+        // the API, so the API checked against the plan anyway and refused
+        // every custom limit above it. The endpoint is super-admin only.
+        bool BypassPlanLimits = false
     );
 
     public record TenantListItem(

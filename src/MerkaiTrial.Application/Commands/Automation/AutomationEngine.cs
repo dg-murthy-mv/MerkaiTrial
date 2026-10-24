@@ -76,16 +76,17 @@
 
 using System.Globalization;
 using MerkaiTrial.Application.Commands.Activities;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.Commands.CustomFields;
 using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Commands.PipelineStages;
-using MerkaiTrial.Application.Security;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Application.Services.Notifications;
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using MerkaiTrial.Application.Security;
 
 namespace MerkaiTrial.Application.Commands.Automation;
 
@@ -878,18 +879,11 @@ internal sealed class RunContext
         FlowDbContext db, ILeadStatusResolver statuses, IStageResolver stages,
         Guid tenantId, AutomationOptionsDto options, CancellationToken ct)
     {
-        var tz = await db.Tenants.AsNoTracking()
-            .Where(t => t.Id == tenantId)
-            .Select(t => t.Timezone)
-            .FirstOrDefaultAsync(ct);
-
-        var zone = TimeZoneInfo.Utc;
-        if (!string.IsNullOrWhiteSpace(tz))
-        {
-            try { zone = TimeZoneInfo.FindSystemTimeZoneById(tz); }
-            catch (TimeZoneNotFoundException) { }
-            catch (InvalidTimeZoneException) { }
-        }
+        // 103 — the same zone rule as the pages (WorkspaceTime): the
+        // workspace's zone, else its country's, else Asia/Kolkata. It used
+        // to fall back to UTC, so a workspace with only a country set got
+        // "due today 18:00" in London time.
+        var zone = await WorkspaceTime.ForTenantAsync(db, tenantId, ct);
 
         return new RunContext
         {
@@ -953,13 +947,15 @@ internal sealed class RunContext
     public DateTime DueUtc(int dueInDays, DateTime nowUtc)
     {
         var days = Math.Clamp(dueInDays, 0, 365);
-        var localNow = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, _zone);
+        var localNow = WorkspaceTime.ToLocal(nowUtc, _zone);
 
         var local = days == 0
             ? localNow.Date.AddHours(18)
             : localNow.Date.AddDays(days).AddHours(10);
 
-        var utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(local, DateTimeKind.Unspecified), _zone);
+        // 103 — daylight saving: a skipped 10:00 moves forward by the jump,
+        // a doubled one is the first. ConvertTimeToUtc threw on the first.
+        var utc = WorkspaceTime.ToUtc(local, _zone);
         return utc <= nowUtc ? nowUtc.AddHours(1) : utc;
     }
 

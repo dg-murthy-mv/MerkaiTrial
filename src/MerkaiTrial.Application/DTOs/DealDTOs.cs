@@ -131,6 +131,9 @@ namespace MerkaiTrial.Application.DTOs
     {
         /// <summary>077. Every stored custom field value on this deal, field id → wire value.</summary>
         public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+
+        /// <summary>102. The row's version when this was read (RecordVersion). An edit form sends it back.</summary>
+        public string? Version { get; init; }
     }
 
     // ==================== SUMMARY (used by GetByIdAsync) ====================
@@ -168,6 +171,9 @@ namespace MerkaiTrial.Application.DTOs
         /// DealService.GetByIdAsync actually calls, so the Edit page gets it.
         /// </summary>
         public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+
+        /// <summary>102. The row's version when this was read (RecordVersion). An edit form sends it back.</summary>
+        public string? Version { get; init; }
     }
 
     // ==================== CREATE ====================
@@ -236,6 +242,9 @@ namespace MerkaiTrial.Application.DTOs
         /// an absent key is left alone, an empty value clears that field.
         /// </summary>
         public Dictionary<Guid, string?>? CustomFields { get; set; }
+
+        /// <summary>102. The Version the edit was made from. A stale one is refused (409 Conflict).</summary>
+        public string? Version { get; set; }
     }
 
     // ==================== NOTES ====================

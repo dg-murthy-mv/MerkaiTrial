@@ -119,7 +119,22 @@
         </div>
     }
 
+@* 102 — the save was refused because someone else changed this record
+   after the form was loaded. What was typed is still below. *@
+@if (Model.RecordChanged)
+{
+    <div class="alert alert-info d-flex align-items-start gap-2" role="status" id="recordChangedNotice">
+        <i class="bi bi-arrow-repeat mt-1"></i>
+        <div>
+            Your changes are still in the form below, so you can copy anything you need.
+            <a asp-page="./Edit" asp-route-id="@Model.DealId" id="recordChangedReload" class="alert-link">Reload the deal</a>
+            to see the latest version, then make your changes again.
+        </div>
+    </div>
+}
+
     <form method="post" id="pxForm" asp-route-id="@Model.DealId">
+        <input type="hidden" asp-for="Version" />   @* 102 *@
         @* The deal's current stage, carried straight back so the API sees no
            change. Not a choice — moving a deal is the transition bar's job on
            the deal page, and OnPostAsync re-reads the stored stage anyway so a

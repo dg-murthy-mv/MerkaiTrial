@@ -1694,6 +1694,17 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (invoiceNumber != null)
                 throw new InvalidOperationException($"Invoice {invoiceNumber} was raised from this quote, so it can't be deleted.");
 
+            // 102 — an ACCEPTED quote is the customer's yes: what they agreed
+            // to, at what price, and when. It could be deleted until an
+            // invoice was raised from it, which erased the acceptance — and
+            // left a deal that had been moved to Won on the strength of it
+            // with nothing behind the move. It stays on record now; the
+            // deal can be marked Lost if the sale fell through.
+            if (quote.Status == QuoteStatus.Accepted)
+                throw new InvalidOperationException(
+                    $"Quote {quote.Number} was accepted by the customer, so it stays on record and can't be deleted. " +
+                    "If the sale fell through, mark the deal Lost.");
+
             var currentUser = await _currentUserService.GetCurrentUserAsync();
 
             // Close any open approval request — nobody should be asked to

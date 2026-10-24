@@ -1,4 +1,4 @@
-﻿using MerkaiTrial.Domain.Entities;
+using MerkaiTrial.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -10,6 +10,10 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
         {
             builder.ToTable("Contacts");
             builder.HasKey(c => c.Id);
+
+            // 102 — optimistic concurrency: a save made from an older copy is refused.
+            // Column added by Sql/102_RowVersion.sql.
+            builder.Property(c => c.RowVersion).IsRowVersion().IsRequired();
 
             builder.Property(c => c.TenantId).IsRequired();
             builder.Property(c => c.FirstName).IsRequired().HasMaxLength(100);

@@ -76,6 +76,9 @@ namespace MerkaiTrial.Application.DTOs
     {
         /// <summary>079. Every stored custom value on this lead, keyed by field id, retired fields included.</summary>
         public Dictionary<Guid, string> CustomFieldValues { get; init; } = new();
+
+        /// <summary>102. The row's version when this was read (RecordVersion). An edit form sends it back.</summary>
+        public string? Version { get; init; }
     }
     // Soft delete lead
     public record DeleteLeadDto(
@@ -119,6 +122,9 @@ namespace MerkaiTrial.Application.DTOs
     {
         /// <summary>079. Null = say nothing about custom fields. See the file header.</summary>
         public Dictionary<Guid, string?>? CustomFields { get; init; }
+
+        /// <summary>102. The Version the edit was made from (LeadDetailDto.Version). Stale → 409.</summary>
+        public string? Version { get; init; }
     }
 
     public record LeadListItemDto(
