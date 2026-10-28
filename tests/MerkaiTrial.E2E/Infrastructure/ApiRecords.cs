@@ -60,6 +60,19 @@ public static class ApiRecords
         return ApiIds.IdOf(r);
     }
 
+    /// <summary>
+    /// 106-update2. Sends a quote to the customer the way the page's "Send to
+    /// customer" button does: moves it to Sent, which creates the customer
+    /// link and queues the email. (POST /send is only "send it AGAIN" and
+    /// refuses a quote that was never sent.) Workspace admins skip the
+    /// approval rules, so call this with an admin.
+    /// </summary>
+    public static async Task SendQuoteAsync(ApiCaller api, Guid quoteId)
+    {
+        var r = await api.PutAsync($"/api/quotes/{quoteId}/status", new { status = "Sent", baseUrl = E2ESettings.BaseUrl });
+        Assert.That(r.IsSuccess, Is.True, $"Sending the quote failed: {r}");
+    }
+
     public static async Task<Guid> InvoiceAsync(ApiCaller api, Guid dealId, string lineName)
     {
         var r = await api.PostAsync("/api/invoices", new

@@ -11,6 +11,9 @@
 //                    top of 3 emails per account per hour.)
 //   Set password     10 FAILED attempts (a link that isn't valid) per 15
 //                    minutes from one network address.
+//   Customer links   106: 20 WRONG links (/q/… or /i/… that lead nowhere)
+//                    per 10 minutes from one network address. Genuine
+//                    links keep working everywhere else.
 //
 // Only FAILURES count for sign-in and set-password: the threat is guessing
 // (passwords, links), and counting successes too would lock out an office
@@ -35,6 +38,7 @@ public static class AttemptRules
     public static readonly AttemptRule SignInFailures   = new("sign-in",         20, TimeSpan.FromMinutes(1));
     public static readonly AttemptRule ResetRequests    = new("forgot-password", 10, TimeSpan.FromHours(1));
     public static readonly AttemptRule SetPasswordFails = new("set-password",    10, TimeSpan.FromMinutes(15));
+    public static readonly AttemptRule PublicLinkMisses = new("public-link",     20, TimeSpan.FromMinutes(10));   // 106
 }
 
 public sealed class AttemptLimiter

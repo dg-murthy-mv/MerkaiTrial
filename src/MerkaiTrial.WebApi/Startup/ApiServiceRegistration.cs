@@ -368,7 +368,10 @@ public static class ApiServiceRegistration
                 http.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
                 // Longer than the sender's: an attachment can be several MB.
                 http.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds * 3, 30, 300));
-            });
+            })
+            // 106 — VUL-29: it follows attachment links from Resend's answer,
+            // so it may only ever connect to public internet addresses.
+            .ConfigurePrimaryHttpMessageHandler(PublicAddressOnly.Handler);
         }
         else
         {

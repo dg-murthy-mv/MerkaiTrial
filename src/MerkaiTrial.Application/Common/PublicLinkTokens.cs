@@ -47,6 +47,17 @@ public static class PublicLinkTokens
     /// <summary>A new token: exactly <see cref="Length"/> letters and digits.</summary>
     public static string New() => RandomNumberGenerator.GetString(Alphabet, Length);
 
+    /// <summary>
+    /// 106-update4 (VUL-21). True only when the stored token and the one in
+    /// the link are EXACTLY the same, upper and lower case included.
+    /// SQL Server's default collation compares text ignoring case, so a
+    /// "PublicLinkToken == token" query also finds the record for the
+    /// token in all capitals. Every public lookup checks again with this
+    /// after the query, so a link only opens when it is the real one.
+    /// </summary>
+    public static bool SameToken(string? stored, string? fromLink) =>
+        !string.IsNullOrEmpty(stored) && string.Equals(stored, fromLink, StringComparison.Ordinal);
+
     /// <summary>For log lines: the last four characters only.</summary>
     public static string Mask(string? token) =>
         string.IsNullOrEmpty(token) || token.Length < 8 ? "****" : "****" + token[^4..];

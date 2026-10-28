@@ -290,16 +290,59 @@ public class FlowDbContext : DbContext
     // InvalidOperationException into a 400 with its message, and the four
     // edit endpoints turn this one into a 409 Conflict. Nothing was saved.
     // =================================================================
+    //
+    // 106 — TWO CHECKS BEFORE ANYTHING IS SENT (CheckBeforeSave)
+    //   • AUDIT ROWS ARE ADD-ONLY. An AuditLog that is being changed or
+    //     deleted stops the whole save (AuditLogChangeException). Nothing in
+    //     the app does it today; this makes sure nothing ever can by
+    //     accident. Sql/106_AuditLogs_AddOnly.sql says the same to anyone
+    //     working on the database directly.
+    //   • TEXT TOO LONG FOR ITS COLUMN is refused with a sentence the person
+    //     can act on ("Full name can be at most 200 characters.") instead of
+    //     SQL Server's "String or binary data would be truncated", which
+    //     every controller answered with a 500. If SQL Server says it anyway
+    //     (a column the model doesn't know the length of), that becomes the
+    //     same exception with a general sentence.
+    // Both are InvalidOperationExceptions, which every controller already
+    // answers with a 400 and the message.
+    // =================================================================
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        CheckBeforeSave();
         try { return base.SaveChanges(acceptAllChangesOnSuccess); }
         catch (DbUpdateConcurrencyException ex) { throw RecordChangedException.From(ex); }
+        catch (DbUpdateException ex) when (ValueTooLongException.IsTruncation(ex)) { throw ValueTooLongException.General(ex); }
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        CheckBeforeSave();
         try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
         catch (DbUpdateConcurrencyException ex) { throw RecordChangedException.From(ex); }
+        catch (DbUpdateException ex) when (ValueTooLongException.IsTruncation(ex)) { throw ValueTooLongException.General(ex); }
+    }
+
+    /// <summary>106. Audit rows are add-only; text must fit its column. See above.</summary>
+    private void CheckBeforeSave()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.Entity is AuditLog && entry.State is EntityState.Modified or EntityState.Deleted)
+                throw new AuditLogChangeException();
+
+            if (entry.State is not (EntityState.Added or EntityState.Modified)) continue;
+
+            foreach (var property in entry.Properties)
+            {
+                if (property.Metadata.ClrType != typeof(string)) continue;
+                if (entry.State == EntityState.Modified && !property.IsModified) continue;
+                if (property.CurrentValue is not string text) continue;
+
+                var max = property.Metadata.GetMaxLength();
+                if (max is int limit && text.Length > limit)
+                    throw ValueTooLongException.For(property.Metadata.Name, limit);
+            }
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -755,4 +798,44 @@ public sealed class RecordChangedException : InvalidOperationException
         };
         return new RecordChangedException(MessageFor(kind), ex);
     }
+}
+
+/// <summary>
+/// 106. Text longer than its database column allows. Nothing was saved.
+/// The message names the field in words ("Full name can be at most 200
+/// characters.").
+/// </summary>
+public sealed class ValueTooLongException : InvalidOperationException
+{
+    private ValueTooLongException(string message, Exception? inner = null) : base(message, inner) { }
+
+    public static ValueTooLongException For(string propertyName, int max) =>
+        new($"{Words(propertyName)} can be at most {max:N0} characters.");
+
+    public static ValueTooLongException General(Exception inner) =>
+        new("One of the values is too long to save. Shorten the longest text and try again.", inner);
+
+    /// <summary>SQL Server 2628 / 8152: "String or binary data would be truncated".</summary>
+    public static bool IsTruncation(DbUpdateException ex) =>
+        ex.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2628 or 8152 };
+
+    /// <summary>"FullName" → "Full name", "ReplyToEmail" → "Reply to email".</summary>
+    private static string Words(string name)
+    {
+        var sb = new System.Text.StringBuilder(name.Length + 8);
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(name[i - 1])) sb.Append(' ').Append(char.ToLowerInvariant(c));
+            else sb.Append(i == 0 ? char.ToUpperInvariant(c) : c);
+        }
+        return sb.ToString();
+    }
+}
+
+/// <summary>106. An audit row was about to be changed or deleted. Nothing was saved.</summary>
+public sealed class AuditLogChangeException : InvalidOperationException
+{
+    public AuditLogChangeException()
+        : base("Audit records can't be changed or deleted.") { }
 }

@@ -166,18 +166,27 @@ namespace MerkaiTrial.Domain.Entities
         /// and the worker running, the message should still go where it was
         /// addressed. It is also the only copy once a user is deleted.
         /// </summary>
-        public string ToAddress { get; set; } = string.Empty;
+        public string ToAddress { get => _toAddress; set => _toAddress = EmailHeaderText.OneLine(value) ?? string.Empty; }
+        private string _toAddress = string.Empty;
 
-        public string? ToName { get; set; }
+        // 106 — VUL-24: every field that ends up in an email HEADER (To,
+        // Reply-To, Cc, Subject) is kept to one line. A name or subject
+        // carrying a line break ("Acme\r\nBcc: everyone@…") could otherwise
+        // add a header of its own wherever the message is turned into a
+        // real email. The body is HTML and is encoded where it is built.
+        public string? ToName { get => _toName; set => _toName = EmailHeaderText.OneLine(value); }
+        private string? _toName;
 
         /// <summary>Where replies go — normally the tenant's ReplyToEmail.</summary>
-        public string? ReplyToAddress { get; set; }
+        public string? ReplyToAddress { get => _replyTo; set => _replyTo = EmailHeaderText.OneLine(value); }
+        private string? _replyTo;
 
         /// <summary>
         /// 085. Copies, comma-separated ("accounts@acme.com, cfo@acme.com").
         /// Null for almost everything; invoice emails may carry up to five.
         /// </summary>
-        public string? CcAddresses { get; set; }
+        public string? CcAddresses { get => _cc; set => _cc = EmailHeaderText.OneLine(value); }
+        private string? _cc;
 
         /// <summary>
         /// 085. The person who pressed Send, when a person did. They are the
@@ -188,7 +197,8 @@ namespace MerkaiTrial.Domain.Entities
         public Guid? SentByUserId { get; set; }
 
         // ── What it says ──────────────────────────────────────────────
-        public string Subject { get; set; } = string.Empty;
+        public string Subject { get => _subject; set => _subject = EmailHeaderText.OneLine(value) ?? string.Empty; }
+        private string _subject = string.Empty;
 
         /// <summary>
         /// Rendered at QUEUE time, not at send time. A message is a record of
@@ -290,5 +300,38 @@ namespace MerkaiTrial.Domain.Entities
         public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
         public OutboundMessage? Message { get; set; }
+    }
+}
+
+namespace MerkaiTrial.Domain.Entities
+{
+    /// <summary>
+    /// 106 — VUL-24. Text that goes into an email header: one line, always.
+    /// Every control character (line breaks, tabs, NUL) and the Unicode line
+    /// and paragraph separators become a space; runs of spaces become one.
+    /// </summary>
+    public static class EmailHeaderText
+    {
+        public static string? OneLine(string? value)
+        {
+            if (value is null) return null;
+            var sb = new System.Text.StringBuilder(value.Length);
+            var lastWasSpace = false;
+            foreach (var c in value)
+            {
+                var space = char.IsControl(c) || c is '\u2028' or '\u2029' or '\u0085' || char.IsWhiteSpace(c);
+                if (space)
+                {
+                    if (!lastWasSpace && sb.Length > 0) sb.Append(' ');
+                    lastWasSpace = true;
+                }
+                else
+                {
+                    sb.Append(c);
+                    lastWasSpace = false;
+                }
+            }
+            return sb.ToString().TrimEnd();
+        }
     }
 }

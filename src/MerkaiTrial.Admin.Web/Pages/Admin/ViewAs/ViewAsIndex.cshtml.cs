@@ -93,7 +93,7 @@ public class IndexModel : PageModel
         var users = await _db.Users
             .AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(u => u.TenantId == tenantId && !u.IsDeleted)
+            .Where(u => u.TenantId == tenantId && !u.IsDeleted && !u.IsSuperAdmin)   // 106: never a super admin
             .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)
             .ToListAsync();
 
@@ -143,7 +143,9 @@ public class IndexModel : PageModel
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogWarning(ex, "ViewAs start rejected");
-            ErrorMessage = "Only a signed-in super admin can use View As.";
+            // 106: the service's own sentence ("…isn't available for super
+            // admin accounts" / "Only a signed-in super admin…").
+            ErrorMessage = ex.Message;
             return RedirectToPage();
         }
         catch (InvalidOperationException ex)

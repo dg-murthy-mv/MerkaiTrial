@@ -132,7 +132,11 @@ public class SetPasswordModel : PageModel
             return Page();
         }
 
-        var (ok, error) = _passwords.ValidateStrength(NewPassword);
+        // 106 — not built from the person's own name, email or workspace.
+        var workspaceName = token.User is null ? null : await _db.Tenants.AsNoTracking().IgnoreQueryFilters()
+            .Where(t => t.Id == token.User.TenantId).Select(t => t.Name).FirstOrDefaultAsync();
+        var (ok, error) = _passwords.ValidateStrength(NewPassword, token.User is null ? null
+            : new PasswordOwner(token.User.Email, token.User.FirstName, token.User.LastName, workspaceName));
         if (!ok) { ErrorMessage = error; return Page(); }
 
         // 104 — the link is used up FIRST, in one statement, and only the

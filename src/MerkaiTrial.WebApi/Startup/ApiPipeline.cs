@@ -15,6 +15,8 @@
 //   • X-Correlation-Id from the caller is reused only when it is a plain
 //     id (letters, digits, dashes, ≤ 64) — otherwise it would be copied
 //     into the log lines and the answer as sent.
+//   • 106 — UseApiSecurityHeaders: nosniff, no framing, no referrer, and a
+//     content policy that lets an API answer load nothing (VUL-22).
 //   • MapApiFaultProbe: GET /__e2e/fault, Development + Diagnostics:FaultProbe
 //     only. See ErrorDetails.cs.
 // =====================================================================
@@ -101,6 +103,32 @@ public static class ApiPipeline
         return app;
     }
 
+    /// <summary>
+    /// 106 — VUL-22. The API answers data, never pages, so the browser is told
+    /// exactly that: nothing may frame it, nothing may be guessed from it,
+    /// it may load nothing, and it sends no referrer. Swagger (Development
+    /// only) is left without the content policy — its page needs scripts.
+    /// Call FIRST, so error answers carry the headers too.
+    /// </summary>
+    public static WebApplication UseApiSecurityHeaders(this WebApplication app)
+    {
+        app.Use(async (ctx, next) =>
+        {
+            ctx.Response.OnStarting(() =>
+            {
+                var h = ctx.Response.Headers;
+                h["X-Content-Type-Options"] = "nosniff";
+                h["X-Frame-Options"] = "DENY";
+                h["Referrer-Policy"] = "no-referrer";
+                if (!ctx.Request.Path.StartsWithSegments("/swagger") && !h.ContainsKey("Content-Security-Policy"))
+                    h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+                return Task.CompletedTask;
+            });
+            await next();
+        });
+        return app;
+    }
+
     /// <summary>105. 1–64 characters, each a letter, a digit or a dash.</summary>
     private static bool IsPlainId(string? value)
         => !string.IsNullOrEmpty(value) && value.Length <= 64
@@ -137,6 +165,25 @@ public static class ApiPipeline
             errorApp.Run(async context =>
             {
                 var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+
+                // 106 — a request the server itself refused (too large: 413,
+                // malformed: 400) is the CALLER's mistake, not a crash: its
+                // own status, a plain sentence, a warning in the log.
+                if (ex is BadHttpRequestException bad)
+                {
+                    Log.Warning("Request refused before it reached the app: {Status} {Message}", bad.StatusCode, bad.Message);
+                    context.Response.StatusCode = bad.StatusCode;
+                    context.Response.ContentType = "application/problem+json";
+                    await context.Response.WriteAsJsonAsync(new ProblemDetails
+                    {
+                        Title = bad.StatusCode == StatusCodes.Status413PayloadTooLarge
+                            ? "That request is too large."
+                            : "That request could not be read.",
+                        Status = bad.StatusCode,
+                    });
+                    return;
+                }
+
                 Log.Error(ex, "Unhandled exception");
 
                 // 105: a reference to quote, never the exception itself.

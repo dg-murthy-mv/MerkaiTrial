@@ -46,6 +46,14 @@
 //     the session the super admin actually started.
 //   • Old sessions of the person (over a week past their limit) are
 //     deleted at each sign-in, so the table never grows without bound.
+//
+// 106 — VIEW AS (VUL-27)
+//   • Every start and every exit is written to the audit log (ViewAsStart /
+//     ViewAsEnd), in the VIEWED workspace's log, so its admins can see when
+//     MadeeVision staff looked. Written BEFORE the switch, and if it can't
+//     be written the switch does not happen: an unrecorded View As is the
+//     one thing this must never allow.
+//   • A super admin can't View As another super admin (or themselves).
 // =====================================================================
 
 using System.Security.Claims;
@@ -126,11 +134,13 @@ public class SignInService : ISignInService
     private readonly IPasswordService _passwords;
     private readonly IHttpContextAccessor _http;
     private readonly ILogger<SignInService> _logger;
+    private readonly IAuditService _audit;          // 106
 
     public SignInService(FlowDbContext db, IPasswordService passwords,
-                         IHttpContextAccessor http, ILogger<SignInService> logger)
+                         IHttpContextAccessor http, ILogger<SignInService> logger,
+                         IAuditService audit)
     {
-        _db = db; _passwords = passwords; _http = http; _logger = logger;
+        _db = db; _passwords = passwords; _http = http; _logger = logger; _audit = audit;
     }
 
     // ── PASSWORD SIGN-IN ──────────────────────────────────────────────
@@ -353,11 +363,22 @@ public class SignInService : ISignInService
             .FirstOrDefaultAsync(u => u.Id == targetUserId && u.TenantId == targetTenantId && !u.IsDeleted, ct)
             ?? throw new InvalidOperationException("Target user not found.");
 
+        // 106 — never another super admin, never yourself.
+        if (target.IsSuperAdmin || target.Id == realUserId)
+        {
+            _logger.LogWarning("Rejected ViewAs of super admin {TargetUserId} by {RealUserId}", targetUserId, realUserId);
+            throw new UnauthorizedAccessException("View As isn't available for super admin accounts.");
+        }
+
         var tenant = await _db.Tenants.AsNoTracking().IgnoreQueryFilters()
             .FirstAsync(t => t.Id == targetTenantId && !t.IsDeleted, ct);
 
         _logger.LogWarning("VIEW-AS START: superadmin {RealUserId} impersonating {TargetUserId} in tenant {TenantId}",
             realUserId, targetUserId, targetTenantId);
+
+        // 106 — recorded first; no record, no View As.
+        await _audit.WriteCriticalAsync(AuditAction.ViewAsStart, AuditEntityType.User, target.Id, targetTenantId,
+            new { viewing = target.Email, viewingName = target.FullName, workspace = tenant.Name, by = realUser.Email }, ct);
 
         // 105 — still the super admin's own session.
         var principal = await BuildPrincipalAsync(target, tenant, realUser, SessionIdOf(current), ct);
@@ -384,6 +405,13 @@ public class SignInService : ISignInService
             .FirstAsync(t => t.Id == realUser.TenantId, ct);
 
         _logger.LogWarning("VIEW-AS EXIT: superadmin {RealUserId} returned to own identity", realUserId);
+
+        // 106 — in the viewed workspace's log, like the start. A failure here
+        // is logged but does not trap the super admin inside View As.
+        var viewedUserId = Guid.TryParse(current.FindFirst(ClaimUserId)?.Value, out var vu) ? vu : (Guid?)null;
+        var viewedTenantId = Guid.TryParse(current.FindFirst(ClaimTenantId)?.Value, out var vt) ? vt : (Guid?)null;
+        await _audit.WriteAsync(AuditAction.ViewAsEnd, AuditEntityType.User, viewedUserId, viewedTenantId,
+            new { viewing = current.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value, by = realUser.Email }, ct);
 
         // 105 — the same session they started View As from.
         var principal = await BuildPrincipalAsync(realUser, tenant, realUser: null, SessionIdOf(current), ct);

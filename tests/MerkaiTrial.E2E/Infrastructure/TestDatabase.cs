@@ -60,6 +60,11 @@
 //      past every check, an email made to look sent for the webhook tests,
 //      and a person's stored hash and stamp for the secrets test. Every
 //      write is _E2E only, like the rest of this file.
+//
+// 106: text written past every check on contacts and people (line breaks
+//      for the email test), what an outgoing email was queued as, a
+//      received email and its attachments, audit rows, and trying to
+//      change or delete an audit row (always rolled back).
 // =====================================================================
 
 using System.Text.Json;
@@ -1256,6 +1261,9 @@ public sealed class TestDatabase
         ("Users", "IsTenantAdmin"), ("Users", "IsSuperAdmin"), ("Users", "Email"), ("Users", "IsActive"), ("Users", "TenantId"),
         ("Users", "MustChangePassword"), ("Users", "FirstName"),
         ("Roles", "Permissions"), ("Activities", "AssignedToUserId"), ("Activities", "TenantId"),
+        // 106
+        ("Quotes", "PublicLinkToken"), ("Invoices", "PublicLinkToken"),
+        ("Users", "LockoutEndUtc"), ("Users", "FailedLoginCount"), ("Users", "SecurityStamp"),
     };
 
     /// <summary>One column of one row, as text ("" for NULL, null for no such row). Only the pairs above.</summary>
@@ -1505,5 +1513,150 @@ public sealed class TestDatabase
         await using var r = await cmd.ExecuteReaderAsync();
         if (!await r.ReadAsync()) throw new InvalidOperationException($"No person {email}.");
         return (r.IsDBNull(0) ? null : r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1));
+    }
+
+    // =================================================================
+    // 106 — VUL-21 … VUL-30
+    // =================================================================
+
+    private static readonly HashSet<(string Table, string Column)> TextColumns = new()
+    {
+        ("Contacts", "FirstName"), ("Contacts", "LastName"),
+        ("Leads", "FullName"), ("Leads", "CompanyName"),
+        ("Users", "FirstName"), ("Users", "LastName"),
+        ("Tenants", "Name"),     // VUL-24 only: the test puts it back
+        ("Invoices", "PublicLinkToken"),   // VUL-21: test servers can't email, and emailing is what makes an invoice's link
+    };
+
+    /// <summary>106 (VUL-24). A name written straight into the database, past every check. _E2E only.</summary>
+    public async Task SetTextAsync(string table, string column, Guid id, string value)
+    {
+        if (!TextColumns.Contains((table, column))) throw new ArgumentOutOfRangeException(nameof(column), $"{table}.{column}");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"UPDATE dbo.[{table}] SET [{column}] = @v WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.AddWithValue("@v", value);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No {table} row {id} to change.");
+    }
+
+    public sealed record StoredOutbound(Guid Id, Guid TenantId, string ToAddress, string? ToName, string? ReplyToAddress,
+        string? CcAddresses, string Subject, string BodyHtml);
+
+    /// <summary>106 (VUL-24). An outgoing email exactly as it was queued.</summary>
+    public async Task<StoredOutbound?> OutboundAsync(Guid messageId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, TenantId, ToAddress, ToName, ReplyToAddress, CcAddresses, Subject, BodyHtml FROM dbo.OutboundMessages WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", messageId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        string? S(int i) => r.IsDBNull(i) ? null : r.GetString(i);
+        return new StoredOutbound(r.GetGuid(0), r.GetGuid(1), S(2) ?? "", S(3), S(4), S(5), S(6) ?? "", S(7) ?? "");
+    }
+
+    /// <summary>106 (VUL-24). Every email queued for a workspace since a moment, newest first.</summary>
+    public async Task<List<Guid>> OutboundSinceAsync(Guid tenantId, DateTime sinceUtc)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id FROM dbo.OutboundMessages WHERE TenantId = @t AND CreatedAtUtc >= @s ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@s", sinceUtc);
+        var ids = new List<Guid>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) ids.Add(r.GetGuid(0));
+        return ids;
+    }
+
+    public sealed record StoredInbound(Guid Id, Guid TenantId, int Status, int ProcessingState, Guid? LeadId, Guid? ContactId,
+        bool? SenderVerified, string Subject, int AttachmentCount, string? MatchNote, string? ProcessingError);
+
+    /// <summary>106 (VUL-25). A received email by the provider's id (whatever workspace it went to), or null.</summary>
+    public async Task<StoredInbound?> InboundAsync(string providerEmailId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, TenantId, Status, ProcessingState, LeadId, ContactId, SenderVerified, Subject, AttachmentCount, MatchNote, ProcessingError " +
+            "FROM dbo.InboundEmails WHERE ProviderEmailId = @p", conn);
+        cmd.Parameters.AddWithValue("@p", providerEmailId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        return new StoredInbound(r.GetGuid(0), r.GetGuid(1), Convert.ToInt32(r.GetValue(2)), Convert.ToInt32(r.GetValue(3)),
+            r.IsDBNull(4) ? null : r.GetGuid(4), r.IsDBNull(5) ? null : r.GetGuid(5),
+            r.IsDBNull(6) ? null : r.GetBoolean(6), r.IsDBNull(7) ? "" : r.GetString(7),
+            Convert.ToInt32(r.GetValue(8)), r.IsDBNull(9) ? null : r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10));
+    }
+
+    public sealed record StoredInboundFile(string FileName, string FileUrl, string? MimeType);
+
+    /// <summary>106 (VUL-25). The attachments kept from a received email.</summary>
+    public async Task<List<StoredInboundFile>> InboundFilesAsync(Guid inboundEmailId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT FileName, FileUrl, MimeType FROM dbo.InboundEmailAttachments WHERE InboundEmailId = @id", conn);
+        cmd.Parameters.AddWithValue("@id", inboundEmailId);
+        var list = new List<StoredInboundFile>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StoredInboundFile(r.GetString(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2)));
+        return list;
+    }
+
+    public sealed record StoredAudit(Guid Id, Guid? TenantId, string EntityType, Guid? EntityId, string Action, string By,
+        Guid? ActorUserId, string? Data, DateTime CreatedAtUtc);
+
+    /// <summary>106 (VUL-27/28). Audit rows with this action since a moment, newest first.</summary>
+    public async Task<List<StoredAudit>> AuditAsync(string action, DateTime sinceUtc, Guid? tenantId = null)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, TenantId, EntityType, EntityId, Action, [By], ActorUserId, Data, CreatedAtUtc FROM dbo.AuditLogs " +
+            "WHERE Action = @a AND CreatedAtUtc >= @s AND (@t IS NULL OR TenantId = @t) ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@a", action);
+        cmd.Parameters.AddWithValue("@s", sinceUtc);
+        cmd.Parameters.Add(new SqlParameter("@t", System.Data.SqlDbType.UniqueIdentifier) { Value = (object?)tenantId ?? DBNull.Value });
+        var list = new List<StoredAudit>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StoredAudit(r.GetGuid(0), r.IsDBNull(1) ? null : r.GetGuid(1), r.GetString(2),
+                r.IsDBNull(3) ? null : r.GetGuid(3), r.GetString(4), r.GetString(5),
+                r.IsDBNull(6) ? null : r.GetGuid(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetDateTime(8)));
+        return list;
+    }
+
+    /// <summary>
+    /// 106 (VUL-28). Tries to change, then to delete, one audit row — the
+    /// way someone at the database would — inside a transaction that is
+    /// ALWAYS rolled back. Returns what SQL Server said each time, or null
+    /// when it let it happen. _E2E only.
+    /// </summary>
+    public async Task<(string? Update, string? Delete)> TryTamperWithAuditAsync(Guid auditId)
+    {
+        async Task<string?> Attempt(string sql)
+        {
+            await using var conn = await OpenAsync();
+            await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
+            try
+            {
+                await using var cmd = new SqlCommand(sql, conn, tx);
+                cmd.Parameters.AddWithValue("@id", auditId);
+                await cmd.ExecuteNonQueryAsync();
+                return null;
+            }
+            catch (SqlException ex)
+            {
+                return ex.Message;
+            }
+            finally
+            {
+                try { await tx.RollbackAsync(); } catch (InvalidOperationException) { /* already rolled back by the error */ }
+            }
+        }
+
+        var update = await Attempt("UPDATE dbo.AuditLogs SET [By] = N'tampered' WHERE Id = @id");
+        var delete = await Attempt("DELETE FROM dbo.AuditLogs WHERE Id = @id");
+        return (update, delete);
     }
 }

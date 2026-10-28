@@ -235,8 +235,9 @@ public sealed class ResendEmailSender : IEmailSender
             From = string.IsNullOrWhiteSpace(_options.FromName)
                 ? _options.FromAddress
                 : $"{_options.FromName} <{_options.FromAddress}>",
-            To = new[] { to },
-            Subject = subject,
+            To = new[] { MerkaiTrial.Domain.Entities.EmailHeaderText.OneLine(to) ?? string.Empty },
+            // 106 — VUL-24: one line, whoever built the message.
+            Subject = MerkaiTrial.Domain.Entities.EmailHeaderText.OneLine(subject) ?? string.Empty,
             Html = message.BodyHtml,
             Text = message.BodyText,
             ReplyTo = SplitReplyTo(message.ReplyToAddress),
@@ -339,7 +340,7 @@ public sealed class ResendEmailSender : IEmailSender
     {
         if (string.IsNullOrWhiteSpace(value)) return null;
 
-        var parts = value
+        var parts = (MerkaiTrial.Domain.Entities.EmailHeaderText.OneLine(value) ?? string.Empty)   // 106
             .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

@@ -22,6 +22,11 @@
 //   Email__InboundWebhookSecret = whsec_... from the Resend webhook   ← 083
 //   (Email__InboundDomain is not secret — appsettings is fine for it.)
 //
+// 106 — UseApiSecurityHeaders first in the pipeline (VUL-22); request
+// bodies capped at 2 MB outside uploads (VUL-23); the E2E stand-in for
+// Resend's received-mail download (AddE2EInboundStub, VUL-25 — test
+// servers only, see Startup/E2EInboundStub.cs).
+//
 // 105 — three additions, marked below:
 //   • AddApiRateLimits / UseRateLimiter — 1,200 API calls a minute per
 //     person (Startup/ApiRateLimits.cs). After UseAuthentication: it
@@ -77,6 +82,11 @@ builder.Services
     .AddApiBackgroundServices()                // 038 — outbound worker; 083 — inbound worker
     .AddApiRateLimits(builder.Configuration);  // 105 — 1,200 calls a minute per person
 
+// 106 — test servers only (Development + Diagnostics:FakeInboundFolder):
+// received emails are read from a folder instead of Resend. Does nothing
+// anywhere else. Startup/E2EInboundStub.cs.
+builder.Services.AddE2EInboundStub(builder.Configuration, builder.Environment);
+
 // ---------------- Third-party licences ----------------
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 ExcelPackage.License.SetNonCommercialPersonal("MerkaiTrial");
@@ -100,6 +110,8 @@ await MerkaiTrial.Infrastructure.Persistence.SchemaCheck
 // /api/quotes/public/****bSxl rather than the whole thing. See
 // Startup/ApiPipeline.cs. 085: invoice tokens (/api/invoices/public/…) too,
 // through the same PublicLinkPaths rule.
+app.UseApiSecurityHeaders();                   // 106 — VUL-22, first so every answer has them
+app.UseRequestSizeCap();                       // 106 — VUL-23, 2 MB unless the action says more
 app.UseMaskedRequestLogging();
 app.UseCorrelationId();
 app.UseApiSwaggerInDevelopment();

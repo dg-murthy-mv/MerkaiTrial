@@ -24,6 +24,9 @@
 // note at the bottom of this file called for that page; this round
 // ships it.
 //
+// 106 — VUL-21/22: UseSecurityHeaders (every answer) and UsePublicLinkLimit
+// (customer links) — see the two files in Startup/.
+//
 // 105 — VUL-12: the error page follows Diagnostics:ShowErrorDetails
 // (Application/Common/ErrorDetails.cs) instead of the environment alone.
 // Development still shows the developer page by default; the E2E servers
@@ -93,6 +96,10 @@ await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
 // 104 — first, so everything after sees the visitor's address (see above).
 app.UseForwardedHeaders();
 
+// 106 — VUL-22: frame, sniffing, referrer, permissions and content policy
+// headers on EVERY answer, static files included. Startup/SecurityHeaders.cs.
+app.UseSecurityHeaders();
+
 // wwwroot only. Tenant attachments are NOT served from disk here — they
 // need an authenticated endpoint.
 app.UseStaticFiles();
@@ -115,6 +122,12 @@ if (!MerkaiTrial.Application.Common.ErrorDetails.Show(app.Configuration, app.Env
 // 085: invoice links (/i/{token}) are masked the same way, by the same
 // PublicLinkPaths rule — nothing to change here.
 app.UseMaskedRequestLogging();
+
+// 106 — VUL-21: 20 customer links that lead nowhere in 10 minutes from one
+// address, and that address is paused on /q/ and /i/ for the rest of the
+// 10 minutes. After the request logging, so a paused request is still in
+// the log. Startup/PublicLinkLimit.cs.
+app.UsePublicLinkLimit();
 
 // UseHsts + UseHttpsRedirection + UseRouting + UseAuthentication +
 // UseAuthorization, in that order. Do not call any of them again below.

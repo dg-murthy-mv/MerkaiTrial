@@ -372,6 +372,9 @@ namespace MerkaiTrial.Application.Commands.Invoices
             // A token is only ever given to an issued invoice; belt and braces.
             if (invoice is null || invoice.Status == InvoiceStatus.Draft) return null;
 
+            // 106-update4: the database ignored case above; the link must not.
+            if (!PublicLinkTokens.SameToken(invoice.PublicLinkToken, token)) return null;
+
             // The deal / quote rows are the invoice's own tenant's by
             // construction (same-tenant foreign keys), but say so anyway.
             var deal = invoice.Deal?.TenantId == invoice.TenantId ? invoice.Deal
@@ -510,10 +513,13 @@ namespace MerkaiTrial.Application.Commands.Invoices
             var invoice = await _db.Invoices.AsNoTracking()
                 .IgnoreQueryFilters()
                 .Where(i => i.PublicLinkToken == token && !i.IsDeleted && i.Status != InvoiceStatus.Draft)
-                .Select(i => new { i.Id, i.TenantId })
+                .Select(i => new { i.Id, i.TenantId, i.PublicLinkToken })
                 .FirstOrDefaultAsync(ct);
 
             if (invoice is null) return null;
+
+            // 106-update4: the database ignored case above; the link must not.
+            if (!PublicLinkTokens.SameToken(invoice.PublicLinkToken, token)) return null;
 
             var copy = await _db.InvoiceSentCopies.AsNoTracking()
                 .IgnoreQueryFilters()

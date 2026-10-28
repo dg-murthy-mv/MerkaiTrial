@@ -457,10 +457,13 @@ public class GetPipelineStagesHandler : ICommandHandler
                 .Distinct()
                 .ToListAsync(ct);
 
+            // 106-update2: EF drops the "== null" test above because the
+            // property is declared non-nullable, so a NULL still arrives
+            // here as null. Checked again in C#.
             foreach (var u in used)
             {
-                if (u.From.Length > 0) everUsed.Add(u.From);
-                if (u.To.Length > 0)   everUsed.Add(u.To);
+                if (!string.IsNullOrEmpty(u.From)) everUsed.Add(u.From);
+                if (!string.IsNullOrEmpty(u.To))   everUsed.Add(u.To);
             }
 
             // Ways in and ways out, counting only transitions a user could
@@ -475,6 +478,7 @@ public class GetPipelineStagesHandler : ICommandHandler
 
             foreach (var l in links)
             {
+                if (string.IsNullOrEmpty(l.FromStageKey) || string.IsNullOrEmpty(l.ToStageKey)) continue;
                 waysOut[l.FromStageKey] = waysOut.GetValueOrDefault(l.FromStageKey) + 1;
                 waysIn[l.ToStageKey]    = waysIn.GetValueOrDefault(l.ToStageKey) + 1;
             }

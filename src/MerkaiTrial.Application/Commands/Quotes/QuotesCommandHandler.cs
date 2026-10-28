@@ -1469,6 +1469,9 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             if (quote == null) return null;
 
+            // 106-update4: the database ignored case above; the link must not.
+            if (!PublicLinkTokens.SameToken(quote.PublicLinkToken, token)) return null;
+
             // (017) The link only works while the quote is in the customer's
             // hands. A quote pulled back to Revised / Draft / approval is
             // being edited — the customer must not see it half-changed.
@@ -1485,7 +1488,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 // the status would silently never advance past Sent.
                 var tracked = await _db.Quotes
                     .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(q => q.PublicLinkToken == token && !q.IsDeleted, ct);
+                    .FirstOrDefaultAsync(q => q.Id == quote.Id && !q.IsDeleted, ct);   // 106-update4: by id, already matched exactly
 
                 if (tracked != null)
                 {

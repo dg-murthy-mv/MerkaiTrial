@@ -135,10 +135,13 @@ public sealed class InboundEmailWorker : BackgroundService
 
         using (var scope = _scopes.CreateScope())
         {
-            var email = scope.ServiceProvider.GetRequiredService<IOptions<EmailOptions>>().Value;
-
             // Nothing to fetch with — leave every row exactly as it is.
-            if (!email.IsConfigured) return 0;
+            // 106: asked of the download client itself rather than of the
+            // API key, so the E2E stand-in (Startup/E2EInboundStub.cs) can
+            // run the real processing. With Resend it is the same question:
+            // ResendInboundClient.IsEnabled is "is there a key".
+            var client = scope.ServiceProvider.GetRequiredService<IResendInboundClient>();
+            if (!client.IsEnabled) return 0;
 
             var db = scope.ServiceProvider.GetRequiredService<FlowDbContext>();
             claimed = await ClaimAsync(db, ct);

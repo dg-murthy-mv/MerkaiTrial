@@ -1,0 +1,30 @@
+<!--
+  Directory.Build.targets  (Round 106-update2)
+  Location: the solution's top folder, next to MerkaiTrial.sln's src\ and tests\ folders.
+
+  MSBuild adds this file to EVERY project under this folder automatically.
+
+  WHY: the package check (VUL-30) found old copies of these libraries pulled
+  in by other packages (mostly EPPlus / OfficeOpenXml.Core.ExcelPackage /
+  OpenXmlTools, which were built against .NET Standard 1.x). Naming them
+  here makes every project use a patched version instead.
+
+  "8.0.*" means "the newest 8.0.x on NuGet", so the next Microsoft security
+  patch is picked up on the next restore without editing this file.
+  System.Net.Http and X509Certificates are old .NET Standard packages whose
+  last (patched) versions are fixed numbers.
+-->
+<Project>
+  <ItemGroup Label="Security pins (106-update2)">
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.*" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.*" />
+    <!-- 10.0.*, not 8.0.*: Scrutor and System.IdentityModel.Tokens.Jwt
+         already pull in 10.0 versions of these two, and NuGet refuses to go
+         back down (NU1605). The 10.0 packages run on .NET 8. -->
+    <PackageReference Include="System.Formats.Asn1" Version="10.0.*" />
+    <PackageReference Include="System.Text.Json" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.*" />
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <PackageReference Include="System.Security.Cryptography.X509Certificates" Version="4.3.2" />
+  </ItemGroup>
+</Project>

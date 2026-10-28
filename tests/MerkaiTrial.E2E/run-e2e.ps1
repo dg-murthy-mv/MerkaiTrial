@@ -50,6 +50,14 @@
                tests can sign events. Not a sending key: nothing can be
                sent with it, and it is never your real Resend secret. The
                tests make the same secret from the same key.
+      106: two more for the WebApi, one more for the tests.
+      Email__InboundDomain=inbound.e2e.invalid  a made-up receiving domain
+               (.invalid can never exist), so received email can be tested.
+      Diagnostics__FakeInboundFolder  e2e-logs\inbound: the test writes
+               what Resend would answer for a received email there, and
+               the WebApi reads it instead of calling Resend. Development
+               only. Not a key; it cannot receive real mail.
+      E2E_INBOUND_DIR  that folder, for the tests.
       E2E_LOG_DIR  where the servers' logs are, so the logging test can
                read them.
 =====================================================================
@@ -149,6 +157,9 @@ if (-not $SkipBuild) {
 # ── Start the apps ───────────────────────────────────────────────────
 $logDir = Join-Path $here 'e2e-logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+# 106: where the tests leave "received" emails for the WebApi's stand-in.
+$inboundDir = Join-Path $logDir 'inbound'
+New-Item -ItemType Directory -Force -Path (Join-Path $inboundDir 'files') | Out-Null
 
 # ── 100: this run's signing key ──────────────────────────────────────
 $jwtIssuer   = 'merkaitrial-admin'
@@ -266,7 +277,11 @@ try {
         Write-Host "WebApi is already running at $apiUrl - using it." -ForegroundColor Yellow
     } else {
         Write-Host "Starting WebApi..." -ForegroundColor Cyan
-        $apiVars = @{ 'Email__InboundWebhookSecret' = (Get-WebhookSecret $jwtKey) }   # 105
+        $apiVars = @{
+            'Email__InboundWebhookSecret'    = (Get-WebhookSecret $jwtKey)   # 105
+            'Email__InboundDomain'           = 'inbound.e2e.invalid'         # 106: made-up; .invalid never exists
+            'Diagnostics__FakeInboundFolder' = $inboundDir                   # 106: received mail read from here
+        }
         foreach ($k in $jwtVars.Keys) { $apiVars[$k] = $jwtVars[$k] }
         $api = Start-App $apiProj 'webapi' $apiUrl $apiVars
         Wait-Up $apiUrl $api 'webapi'
@@ -308,6 +323,7 @@ try {
     $env:E2E_JWT_ISSUER   = $jwtIssuer
     $env:E2E_JWT_AUDIENCE = $jwtAudience
     $env:E2E_LOG_DIR      = $logDir          # 105: the logging test reads the servers' logs
+    $env:E2E_INBOUND_DIR  = $inboundDir      # 106: received emails for the WebApi's stand-in
     if ($Headed) { $env:HEADED = '1'; if (-not $env:E2E_SLOWMO) { $env:E2E_SLOWMO = '150' } }
 
     $testArgs = @('test', $testProj, '--nologo', '--logger', 'console;verbosity=normal')

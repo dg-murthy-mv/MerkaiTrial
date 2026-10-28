@@ -169,8 +169,51 @@ public static class LeadFileParser
     // EXCEL
     // =================================================================
 
+    // 106 — VUL-23. An .xlsx is a zip. 10 MB of zip can unpack to tens of
+    // gigabytes (a "zip bomb"), and ClosedXML unpacks the whole workbook
+    // into memory — one such file could take the server down. So before
+    // ClosedXML sees it, the zip is walked and every part is actually
+    // unpacked and COUNTED (the sizes a zip claims for itself can lie):
+    // more than 2,000 parts, or more than 100 MB unpacked in all, and the
+    // file is refused. A real 5,000-row sheet is a few megabytes unpacked.
+    public const int MaxZipEntries = 2000;
+    public const long MaxUnpackedBytes = 100L * 1024 * 1024;
+
+    private static void RefuseZipBomb(byte[] bytes)
+    {
+        const string tooBig =
+            "That workbook is far larger inside than a lead list should be, so it wasn't opened. " +
+            "Save the sheet again as a plain .xlsx or .csv and import that.";
+
+        try
+        {
+            using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(bytes), System.IO.Compression.ZipArchiveMode.Read);
+            if (zip.Entries.Count > MaxZipEntries) throw new InvalidOperationException(tooBig);
+
+            long total = 0;
+            var buffer = new byte[81920];
+            foreach (var entry in zip.Entries)
+            {
+                using var s = entry.Open();
+                int read;
+                while ((read = s.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    total += read;
+                    if (total > MaxUnpackedBytes) throw new InvalidOperationException(tooBig);
+                }
+            }
+        }
+        catch (InvalidDataException)
+        {
+            throw new InvalidOperationException(
+                "That file isn't a readable Excel workbook. Open it in Excel, save it as .xlsx, and try again.");
+        }
+    }
+
     private static Grid ParseExcel(byte[] bytes)
     {
+        RefuseZipBomb(bytes);   // 106
+
         using var stream = new MemoryStream(bytes);
         using var workbook = new XLWorkbook(stream);
 
