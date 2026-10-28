@@ -244,8 +244,10 @@
                                     </a>
                                     @if (!vertical.IsSystem)
                                     {
+                                        @* 104 — the name travels as data, never inside the onclick's JavaScript (see confirmDelete). *@
                                         <button type="button" class="btn btn-outline-danger"
-                                                onclick="confirmDelete('@vertical.Id', '@vertical.Name')"
+                                                data-id="@vertical.Id" data-name="@vertical.Name"
+                                                onclick="confirmDelete(this)"
                                                 title="Delete">
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -312,7 +314,8 @@
                         @if (!vertical.IsSystem)
                         {
                             <button type="button" class="btn btn-outline-danger btn-sm"
-                                    onclick="confirmDelete('@vertical.Id', '@vertical.Name')">
+                                    data-id="@vertical.Id" data-name="@vertical.Name"
+                                    onclick="confirmDelete(this)">
                                 <i class="bi bi-trash me-1"></i>Delete
                             </button>
                         }
@@ -419,7 +422,14 @@
         }, 5000);
 
         // Delete confirmation
-        function confirmDelete(id, name) {
+        // 104 — SECURITY. The buttons passed the id and name inside onclick.
+        // Razor encodes an apostrophe as &#x27; and the browser decodes it
+        // again before running the handler, so a vertical named
+        //     x'); alert(document.cookie); ('
+        // ran as script. The id and name now arrive as data attributes.
+        function confirmDelete(btn) {
+            var id = btn.getAttribute('data-id');
+            var name = btn.getAttribute('data-name');
             if (confirm(`Are you sure you want to delete vertical "${name}"? This action cannot be undone.`)) {
                 document.getElementById('deleteId').value = id;
                 document.getElementById('deleteForm').action = '?handler=Delete&id=' + id;

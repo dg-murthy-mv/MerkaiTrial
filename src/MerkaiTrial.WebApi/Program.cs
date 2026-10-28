@@ -22,6 +22,14 @@
 //   Email__InboundWebhookSecret = whsec_... from the Resend webhook   ← 083
 //   (Email__InboundDomain is not secret — appsettings is fine for it.)
 //
+// 105 — three additions, marked below:
+//   • AddApiRateLimits / UseRateLimiter — 1,200 API calls a minute per
+//     person (Startup/ApiRateLimits.cs). After UseAuthentication: it
+//     counts per signed-in person, so it needs to know who that is.
+//   • MapApiFaultProbe — GET /__e2e/fault, ONLY in Development with
+//     Diagnostics:FaultProbe on (the E2E servers). See ErrorDetails.cs.
+//   • Error details follow Diagnostics:ShowErrorDetails (ApiPipeline).
+//
 // 038 also adds a BACKGROUND WORKER to this host. Two consequences worth
 // knowing:
 //
@@ -66,7 +74,8 @@ builder.Services
     .AddApiDomainServices()                    // current user, resolvers, audit, PDFs, …
     .AddTaxAndPayments()                       // per-country tax + payment providers
     .AddApiEmail(builder.Configuration)        // 038 — Resend sender + options; 083 — receiving
-    .AddApiBackgroundServices();               // 038 — outbound worker; 083 — inbound worker
+    .AddApiBackgroundServices()                // 038 — outbound worker; 083 — inbound worker
+    .AddApiRateLimits(builder.Configuration);  // 105 — 1,200 calls a minute per person
 
 // ---------------- Third-party licences ----------------
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
@@ -97,11 +106,13 @@ app.UseApiSwaggerInDevelopment();
 app.UseApiExceptionHandler();
 
 app.UseAuthentication();
+app.UseRateLimiter();                          // 105 — after authentication: counts per person
 app.UseAuthorization();
 app.UsePermissionAuthorizationMessages();
 
 app.MapControllers();
 app.MapApiUtilityEndpoints();
+app.MapApiFaultProbe();                        // 105 — Development + Diagnostics:FaultProbe only
 
 Log.Information("MerkaiTrial.WebApi started");
 

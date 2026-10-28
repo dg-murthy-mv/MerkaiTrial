@@ -25,6 +25,9 @@
 //
 // Every call returns an ApiResponse (status, body, content type) rather
 // than throwing, because most calls here are EXPECTED to be refused.
+//
+// 105: ApiResponse also carries the response headers (Headers / Header),
+// for the download, CORS and rate-limit tests.
 // =====================================================================
 
 using System.IdentityModel.Tokens.Jwt;
@@ -68,6 +71,12 @@ public sealed record ApiIdentity(
 public sealed record ApiResponse(int Status, string Body, string? ContentType, byte[] Bytes)
 {
     public bool IsSuccess => Status is >= 200 and < 300;
+
+    /// <summary>105. Every response header (content headers included), by name, ignoring case.</summary>
+    public IReadOnlyDictionary<string, string> Headers { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    public string? Header(string name) => Headers.TryGetValue(name, out var v) ? v : null;
 
     public JsonElement Json()
     {
@@ -174,7 +183,12 @@ public sealed class ApiCaller
         var bytes = await response.Content.ReadAsByteArrayAsync();
         var type = response.Content.Headers.ContentType?.MediaType;
         var text = IsText(type) ? Encoding.UTF8.GetString(bytes) : $"({bytes.Length} bytes of {type ?? "unknown"})";
-        return new ApiResponse((int)response.StatusCode, text, type, bytes);
+
+        var answerHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // 105
+        foreach (var h in response.Headers) answerHeaders[h.Key] = string.Join(", ", h.Value);
+        foreach (var h in response.Content.Headers) answerHeaders[h.Key] = string.Join(", ", h.Value);
+
+        return new ApiResponse((int)response.StatusCode, text, type, bytes) { Headers = answerHeaders };
     }
 
     /// <summary>A multipart upload with one file, the way the pages send attachments.</summary>

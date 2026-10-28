@@ -13,6 +13,14 @@
 //
 // or drag it onto https://trace.playwright.dev. That is what to send when
 // a test fails.
+//
+// 104: every session comes from a network address of its own. Sign-in,
+// forgot-password and set-password are now limited per address, and the
+// test browser is always on this machine — without this, every session in
+// a run (and every run within the hour) would share one address and one
+// allowance. The address is sent as X-Forwarded-For, which Admin.Web
+// believes only from this machine (as from a reverse proxy here). The
+// addresses are from 198.18.0.0/15, a range set aside for testing.
 // =====================================================================
 
 namespace MerkaiTrial.E2E.Infrastructure;
@@ -32,9 +40,15 @@ public sealed class BrowserSession : IAsyncDisposable
         Page = page;
     }
 
-    public static async Task<BrowserSession> StartAsync(IBrowser browser, string name, ViewportSize? viewport = null)
+    public static async Task<BrowserSession> StartAsync(IBrowser browser, string name, ViewportSize? viewport = null,
+        string? networkAddress = null)
     {
-        var context = await browser.NewContextAsync(E2ESettings.ContextOptions(viewport));
+        var options = E2ESettings.ContextOptions(viewport);
+        options.ExtraHTTPHeaders = new Dictionary<string, string>
+        {
+            ["X-Forwarded-For"] = networkAddress ?? NewNetworkAddress(),
+        };
+        var context = await browser.NewContextAsync(options);
         await context.Tracing.StartAsync(new TracingStartOptions
         {
             Title = name,
@@ -53,6 +67,15 @@ public sealed class BrowserSession : IAsyncDisposable
 
         return new BrowserSession(name, context, page);
     }
+
+    /// <summary>104. A network address no other session in this run has (198.18.0.0/15, the testing range).</summary>
+    public static string NewNetworkAddress()
+    {
+        var n = Interlocked.Increment(ref _addresses) % 125_000;
+        return $"198.{18 + n / 62_500}.{(n / 250) % 250 + 1}.{n % 250 + 1}";
+    }
+
+    private static int _addresses = Random.Shared.Next(0, 50_000);
 
     /// <summary>Call when the session's work finished; otherwise its trace is kept.</summary>
     public void Succeeded() => _succeeded = true;

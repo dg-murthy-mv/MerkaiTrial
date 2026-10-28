@@ -329,6 +329,12 @@ namespace MerkaiTrial.Application.Commands.Leads
                     ?? throw new InvalidOperationException(
                         "This workspace has no pipeline stages set up.");
 
+                // 104 — a new deal starts OPEN; the conversion form offered Won
+                // and Lost too, which skipped "Won needs an accepted quote".
+                if (stages.IsTerminal(chosen.Key))
+                    throw new InvalidOperationException(
+                        $"A new deal starts in an open stage. Convert into one, then move the deal to \u201c{chosen.Name}\u201d from its page, where that step's rules are checked.");
+
                 var dealStage = chosen.Key;
                 int probability = chosen.Probability;
 

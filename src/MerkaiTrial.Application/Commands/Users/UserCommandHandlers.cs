@@ -142,18 +142,27 @@ namespace MerkaiTrial.Application.Commands.Users
                 .FirstOrDefaultAsync(u => u.Id == cmd.UserId && u.TenantId == cmd.TenantId && !u.IsDeleted)
                 ?? throw new KeyNotFoundException($"User {cmd.UserId} not found");
 
-            // Check if email is being changed and if it's already taken
-            if (user.Email != cmd.Email)
+            // Check if email is being changed and if it's already taken.
+            // 104 — across ALL workspaces, as on create: an email belongs to
+            // one live account (UX_Users_Email_Live). Checked in this
+            // workspace only, a clash with another workspace's person passed
+            // here and failed at the save as a raw index error (a 500).
+            if (!string.Equals(user.Email, cmd.Email?.Trim(), StringComparison.OrdinalIgnoreCase))
             {
-                var emailExists = await _db.Users.AnyAsync(u =>
-                    u.TenantId == cmd.TenantId &&
-                    u.Email == cmd.Email &&
+                var newEmail = (cmd.Email ?? "").Trim();
+                var emailExists = await _db.Users.IgnoreQueryFilters().AnyAsync(u =>
+                    u.Email == newEmail &&
                     u.Id != cmd.UserId &&
                     !u.IsDeleted);
 
                 if (emailExists)
-                    throw new InvalidOperationException($"Email '{cmd.Email}' is already in use");
+                    throw new InvalidOperationException($"Email '{newEmail}' already belongs to an account. Each person can be in one workspace.");
             }
+
+            // 104 — switching someone off, or changing whether they are a
+            // workspace admin, through this edit ends their sessions, the same
+            // as the status switch (102): their sign-in carries the old access.
+            var accessChanged = (user.IsActive && !cmd.IsActive) || user.IsTenantAdmin != cmd.IsTenantAdmin;
 
             user.FirstName = cmd.FirstName.Trim();
             user.LastName = cmd.LastName.Trim();
@@ -164,6 +173,8 @@ namespace MerkaiTrial.Application.Commands.Users
             user.IsActive = cmd.IsActive;
             user.IsTenantAdmin = cmd.IsTenantAdmin;
             user.UpdatedAtUtc = DateTime.UtcNow;
+            if (accessChanged)
+                user.SecurityStamp = Guid.NewGuid().ToString("N");   // 104
 
             await _db.SaveChangesAsync();
         }

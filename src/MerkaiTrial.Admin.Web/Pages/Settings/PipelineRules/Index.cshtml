@@ -809,13 +809,20 @@
             };
         }
 
+        // 104 — SECURITY. A person's name is typed by people in the workspace,
+        // so everything that goes into this HTML is escaped first. A rep named
+        // <img src=x onerror=…> ran as script when an admin opened this page.
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
         function typeOptions(kind) {
             const list = kind === 1 ? ACT_TYPES.log : ACT_TYPES.task;
-            return list.map(t => `<option value="${t}">${t}</option>`).join('');
+            return list.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
         }
 
         function assigneeOptions() {
-            return ASSIGNEES.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+            return ASSIGNEES.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
         }
 
         function renderActions() {
@@ -858,7 +865,7 @@
                     <div class="col-12">
                       <label class="form-label">Title</label>
                       <input type="text" class="form-control form-control-sm" maxlength="200"
-                             data-f="Subject" data-n="${n}" value="${(a.Subject || '').replace(/"/g, '&quot;')}"
+                             data-f="Subject" data-n="${n}" value="${esc(a.Subject)}"
                              placeholder="Call {deal} to confirm the start date">
                       <div class="req-help">
                         {deal}, {stage} and {owner} are filled in when it runs.

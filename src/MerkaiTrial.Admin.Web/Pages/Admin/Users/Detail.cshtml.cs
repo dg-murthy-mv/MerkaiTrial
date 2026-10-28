@@ -119,7 +119,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Users
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to assign roles to user {UserId}", userId);
-                TempData["Error"] = $"Failed to assign roles: {ex.Message}";
+                TempData["Error"] = "Failed to assign roles: " + MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "they couldn't be saved just now.");   // 105
                 return RedirectToPage(new { tenantId, id = userId });
             }
         }

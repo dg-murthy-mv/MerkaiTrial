@@ -126,9 +126,21 @@ public static class ApiServiceRegistration
         services.AddControllers(options =>
         {
             options.Filters.Add<TrialActiveActionFilter>();
+            // 104 — the caller's workspace and name always win over the
+            // request's (Filters/RequestOwnershipFilter.cs).
+            options.Filters.Add<RequestOwnershipFilter>();
+            // 105 — page sizes and page numbers inside sane bounds on every
+            // list, whatever its handler does (Filters/ListBoundsFilter.cs).
+            options.Filters.Add<ListBoundsFilter>();
         })
         .AddJsonOptions(o =>
         {
+            // 105 — a body that is not valid JSON, or a value of the wrong
+            // type, is answered "The input was not valid." rather than with
+            // the serializer's own text, which names .NET types and our
+            // classes ("could not be converted to MerkaiTrial.…Dto").
+            o.AllowInputFormatterExceptionMessages = false;
+
             // Enums as strings — Admin.Web's ApiService reads them the same way.
             o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
             o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
@@ -339,6 +351,10 @@ public static class ApiServiceRegistration
         // as the sender. Its own typed HttpClient: a slow attachment
         // download must never hold up an outgoing send.
         services.AddScoped<IInboundEmailReceiver, InboundEmailReceiver>();
+
+        // 105 — VUL-19: each signed webhook event is acted on once. One per
+        // server: it remembers the event ids it has handled for ten minutes.
+        services.AddSingleton<WebhookReplayGuard>();
 
         // 085: delivery events (delivered / delayed / bounced / complained /
         // failed) come in on the same webhook; the receiver hands them here

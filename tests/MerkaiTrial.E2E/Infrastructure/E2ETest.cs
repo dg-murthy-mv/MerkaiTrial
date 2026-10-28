@@ -22,10 +22,11 @@ public abstract class E2ETest
     protected static TestDatabase Db => GlobalSetup.Db;
 
     /// <summary>A fresh, signed-out browser session.</summary>
-    protected async Task<IPage> NewPageAsync(string label = "anonymous", ViewportSize? viewport = null)
+    protected async Task<IPage> NewPageAsync(string label = "anonymous", ViewportSize? viewport = null,
+        string? networkAddress = null)
     {
         var name = $"{TestContext.CurrentContext.Test.Name}-{label}";
-        var session = await BrowserSession.StartAsync(GlobalSetup.Browser, name, viewport);
+        var session = await BrowserSession.StartAsync(GlobalSetup.Browser, name, viewport, networkAddress);
         _sessions.Add(session);
         return session.Page;
     }

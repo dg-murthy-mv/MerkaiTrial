@@ -32,8 +32,19 @@ namespace MerkaiTrial.Admin.Web.Services.Core
     /// Base API service with HTTP operations
     /// All modular services (LeadService, UserService, etc.) will use this
     /// </summary>
+    // 105 — VUL-20: every log line here that names the address now goes
+    // through Safe(url): public link tokens masked, query values dropped.
     public class ApiService : IApiService
     {
+        // 105 — VUL-20: log lines get the path with any public link token
+        // masked and the query reduced to its names — never what was typed.
+        private static string Safe(string? url)
+        {
+            if (string.IsNullOrEmpty(url)) return "(none)";
+            try { return HttpLoggingHandler.SafeTarget(new Uri(url, UriKind.RelativeOrAbsolute)); }
+            catch (UriFormatException) { return "(address not shown)"; }
+        }
+
         private readonly HttpClient _http;
         private readonly JsonSerializerOptions _json;
         private readonly ILogger<ApiService> _logger;
@@ -107,7 +118,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 {
                     // Logged as a warning, not an error: the API worked exactly
                     // as intended and refused something it should refuse.
-                    _logger.LogWarning("{Verb} {Url} rejected: {Message}", verb, url, message);
+                    _logger.LogWarning("{Verb} {Url} rejected: {Message}", verb, Safe(url), message);
                     throw new InvalidOperationException(message);
                 }
             }
@@ -121,7 +132,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                 var message = ExtractErrorMessage(body);
                 if (!string.IsNullOrWhiteSpace(message))
                 {
-                    _logger.LogWarning("{Verb} {Url} refused — record changed: {Message}", verb, url, message);
+                    _logger.LogWarning("{Verb} {Url} refused — record changed: {Message}", verb, Safe(url), message);
                     throw new MerkaiTrial.Infrastructure.Persistence.RecordChangedException(message);
                 }
             }
@@ -135,7 +146,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
 
                 if (!string.IsNullOrWhiteSpace(message))
                 {
-                    _logger.LogWarning("{Verb} {Url} forbidden: {Message}", verb, url, message);
+                    _logger.LogWarning("{Verb} {Url} forbidden: {Message}", verb, Safe(url), message);
                     throw new InvalidOperationException(message);
                 }
             }
@@ -207,7 +218,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "GET {Url} failed", url);
+                _logger.LogError(ex, "GET {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -232,7 +243,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POST {Url} failed", url);
+                _logger.LogError(ex, "POST {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -260,7 +271,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
                             ?? part.Headers.ContentDisposition?.FileName?.Trim('"')
                             ?? "That file";
                     var mb = (size.Value / (1024d * 1024d)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
-                    _logger.LogInformation("Upload to {Url} refused before sending: {Bytes} bytes", url, size.Value);
+                    _logger.LogInformation("Upload to {Url} refused before sending: {Bytes} bytes", Safe(url), size.Value);
                     throw new InvalidOperationException(
                         $"'{name}' is {mb} MB. Files can be up to {MaxUploadBytes / (1024 * 1024)} MB.");
                 }
@@ -275,7 +286,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             {
                 // The connection was closed under the upload — in practice
                 // the API's size limit when the length was not known above.
-                _logger.LogWarning(ex, "Upload to {Url} was cut off", url);
+                _logger.LogWarning(ex, "Upload to {Url} was cut off", Safe(url));
                 throw new InvalidOperationException(
                     "The upload was cut off before it finished. Files can be up to " +
                     $"{MaxUploadBytes / (1024 * 1024)} MB — if this one is smaller, please try again.");
@@ -315,7 +326,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "PUT {Url} failed", url);
+                _logger.LogError(ex, "PUT {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -337,7 +348,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "POST {Url} failed", url);
+                _logger.LogError(ex, "POST {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -360,7 +371,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "PUT {Url} failed", url);
+                _logger.LogError(ex, "PUT {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -383,7 +394,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "PATCH {Url} failed", url);
+                _logger.LogError(ex, "PATCH {Url} failed", Safe(url));
                 throw;
             }
         }
@@ -406,7 +417,7 @@ namespace MerkaiTrial.Admin.Web.Services.Core
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "DELETE {Url} failed", url);
+                _logger.LogError(ex, "DELETE {Url} failed", Safe(url));
                 throw;
             }
         }

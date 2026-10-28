@@ -84,6 +84,15 @@ public class ApiTokenService : IApiTokenService
                 principal.FindFirst(SignInService.ClaimSecurityStamp)?.Value ?? string.Empty),
         };
 
+        // 105 — the session this call comes from, so the API refuses a
+        // token minted just before Sign out (it lives up to 5 minutes).
+        // The session belongs to the person who signed in, which during
+        // View As is the super admin — RealUserId goes with it.
+        if (principal.FindFirst(SignInService.ClaimSessionId)?.Value is { Length: > 0 } sid)
+            claims.Add(new Claim(SignInService.ClaimSessionId, sid));
+        if (principal.FindFirst(SignInService.ClaimRealUserId)?.Value is { Length: > 0 } realUser)
+            claims.Add(new Claim(SignInService.ClaimRealUserId, realUser));
+
         // Carry the authorization facts so the API does not re-query them.
         foreach (var type in new[]
                  {

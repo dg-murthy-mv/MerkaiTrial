@@ -234,8 +234,16 @@ const userMenu   = document.getElementById('userMenu');
 const userHidden = document.getElementById('userIdInput');
 const userDdEl   = document.getElementById('userDd');
 
+// 104 — SECURITY. Names and role labels come from the workspace (any
+// workspace admin can type a person's name), so they are escaped before
+// they go into the menu's HTML. A name like <img src=x onerror=…> ran as
+// script on the SUPER ADMIN's page — from inside a client's workspace.
+function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function setUserMenuMessage(msg) {
-    userMenu.innerHTML = `<div class="vdd-option empty">${msg}</div>`;
+    userMenu.innerHTML = `<div class="vdd-option empty">${escHtml(msg)}</div>`;
 }
 
 async function loadUsers(tenantId) {
@@ -263,7 +271,7 @@ async function loadUsers(tenantId) {
 
         userMenu.innerHTML = users.map(u => {
             const label = u.roleDisplayName ? `${u.displayName} (${u.roleDisplayName})` : u.displayName;
-            return `<div class="vdd-option" data-value="${u.id}" data-label="${label}">${label}</div>`;
+            return `<div class="vdd-option" data-value="${escHtml(u.id)}" data-label="${escHtml(label)}">${escHtml(label)}</div>`;
         }).join('');
 
         userText.textContent = 'Select a user…';

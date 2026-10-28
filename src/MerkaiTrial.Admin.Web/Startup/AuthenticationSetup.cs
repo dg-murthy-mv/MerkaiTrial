@@ -35,6 +35,16 @@
 //
 //   It needs a search for BeginTransaction across the solution and a pass
 //   over each call site. Its own round, not a line slipped into this one.
+//
+// 105 — THE SESSION IS CHECKED TOO (VUL-11)
+//   The cookie now carries a session id ("sid") and every request checks
+//   that session in UserSessions, in the SAME query as the stamp:
+//     • signed out (EndedAtUtc set) → refused — a copied cookie stops
+//       working the moment the person presses Sign out;
+//     • past its 24-hour limit      → refused, however busy it was;
+//     • a cookie with no sid at all (made before this round) → refused
+//       once; the person signs in again and gets a session.
+//   The 8-hour idle limit (ExpireTimeSpan + sliding) is unchanged.
 // =====================================================================
 
 using MerkaiTrial.Application.Security;
@@ -87,7 +97,7 @@ public static class AuthenticationSetup
                 // /Account/Denied now redirects here.
                 options.AccessDeniedPath = "/AccessDenied";
 
-                options.ExpireTimeSpan    = TimeSpan.FromHours(8);
+                options.ExpireTimeSpan    = SignInService.IdleLimit;          // 8 hours
                 options.SlidingExpiration = true;
 
                 // Revalidate the security stamp so a password change or a
@@ -99,6 +109,18 @@ public static class AuthenticationSetup
                     var userIdRaw  = ctx.Principal?.FindFirst(SignInService.ClaimUserId)?.Value;
 
                     if (!Guid.TryParse(userIdRaw, out var userId)) { ctx.RejectPrincipal(); return; }
+
+                    // 105 — the session this cookie belongs to. No session
+                    // id: a cookie from before sessions existed. Signed out
+                    // once, the person signs in and gets one.
+                    var sessionId    = SignInService.SessionIdOf(ctx.Principal);
+                    var sessionOwner = SignInService.SessionOwnerOf(ctx.Principal);
+                    if (sessionId is null || sessionOwner is null)
+                    {
+                        ctx.RejectPrincipal();
+                        await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                        return;
+                    }
 
                     var db = ctx.HttpContext.RequestServices.GetRequiredService<FlowDbContext>();
 
@@ -142,12 +164,23 @@ public static class AuthenticationSetup
                     // session alive.
                     try
                     {
+                        // 105: one round trip — the person AND their session.
+                        var now = DateTime.UtcNow;
+                        var sid = sessionId.Value;
+                        var owner = sessionOwner.Value;
+
                         var row = await db.Users.AsNoTracking().IgnoreQueryFilters()
                             .Where(u => u.Id == userId && !u.IsDeleted && u.IsActive)
-                            .Select(u => new { u.SecurityStamp })
+                            .Select(u => new
+                            {
+                                u.SecurityStamp,
+                                SessionLive = db.UserSessions.Any(s =>
+                                    s.Id == sid && s.UserId == owner &&
+                                    s.EndedAtUtc == null && s.ExpiresAtUtc > now),
+                            })
                             .FirstOrDefaultAsync();
 
-                        if (row is null || row.SecurityStamp != stampClaim)
+                        if (row is null || row.SecurityStamp != stampClaim || !row.SessionLive)
                         {
                             ctx.RejectPrincipal();
                             await ctx.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);

@@ -398,10 +398,11 @@ public class IndexModel : AuthorizedPageModel
         }
     }
 
+    // 105 — VUL-12: the app's own refusals and the API's own sentence;
+    // anything else (SQL Server's text, a type name, a stack trace) is
+    // the fallback. The full exception is in the log either way.
     private static string Explain(Exception ex, string fallback)
-        => string.IsNullOrWhiteSpace(ex.Message) || ex is NullReferenceException
-            ? fallback
-            : ex.Message;
+        => MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, fallback);
 
     /// <summary>
     /// The first thing the validator objected to, in the wording the

@@ -34,6 +34,9 @@
 //      and put an explicit TenantId on every query they run after the
 //      workspace is known. That is the ONLY place those calls are allowed;
 //      every page-facing handler goes through the filter.
+//  20. (105) UserSessions — one row per sign-in (VUL-11). NO TenantId:
+//      a session belongs to a person and is read by the cookie check
+//      before there is a tenant on the request. Nothing to filter.
 //  19. (098) AutomationRule + AutomationRun — workflow automation. Both
 //      STRICTLY tenant-owned. Round 099's background check reads them
 //      with no tenant (IgnoreQueryFilters + an explicit TenantId on every
@@ -140,6 +143,7 @@ public class FlowDbContext : DbContext
     public DbSet<Activity> Activities { get; set; }
     public DbSet<Plan> Plans { get; set; }
     public DbSet<UserToken> UserTokens { get; set; }
+    public DbSet<UserSession> UserSessions => Set<UserSession>();   // 105
     public DbSet<PlanPricing> PlanPricings { get; set; }
     public DbSet<CompanyVertical> CompanyVerticals { get; set; }
     public DbSet<TaxRate> TaxRates { get; set; }

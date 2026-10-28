@@ -2,6 +2,13 @@
 // ReportQueries.cs
 // Location: MerkaiTrial.Application/Commands/Reports/ReportQueries.cs
 //
+// 105 — OWNER NAMES IN THE PIPELINE AND REP PERFORMANCE REPORTS
+//   Both looked owners up by "u.Id.ToString()", which SQL Server returns in
+//   CAPITALS, while Deal.OwnerUserId is stored in lower case. The exact-case
+//   lookup missed every owner, so those reports (and their Excel exports)
+//   showed "Unassigned" instead of the person. The lookups now ignore case.
+//   Found by the VUL-15 export test.
+//
 // CHANGES (deals visibility round)
 //   ✅ Every report now respects record visibility. A rep on Own sees
 //      reports built from HIS leads and deals only; Team sees the team's;
@@ -312,7 +319,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var ownerMap = await _db.Users
                 .Where(u => ownerIds.Contains(u.Id.ToString()))
                 .Select(u => new { Id = u.Id.ToString(), Name = $"{u.FirstName} {u.LastName}".Trim() })
-                .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+                // 105: SQL Server writes a Guid in CAPITALS and OwnerUserId is
+                // stored in lower case, so an exact-case lookup missed every
+                // owner and the report said "Unassigned" for all of them.
+                .ToDictionaryAsync(u => u.Id, u => u.Name, StringComparer.OrdinalIgnoreCase, ct);
 
             var byOwner = deals
                 .GroupBy(d => d.OwnerUserId ?? "Unassigned")
@@ -600,7 +610,10 @@ namespace MerkaiTrial.Application.Commands.Reports
             var ownerMap = await _db.Users
                 .Where(u => ownerIds.Contains(u.Id.ToString()))
                 .Select(u => new { Id = u.Id.ToString(), Name = $"{u.FirstName} {u.LastName}".Trim() })
-                .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+                // 105: SQL Server writes a Guid in CAPITALS and OwnerUserId is
+                // stored in lower case, so an exact-case lookup missed every
+                // owner and the report said "Unassigned" for all of them.
+                .ToDictionaryAsync(u => u.Id, u => u.Name, StringComparer.OrdinalIgnoreCase, ct);
 
             var reps = deals
                 .GroupBy(d => d.OwnerUserId ?? "Unassigned")

@@ -56,7 +56,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete tenant {TenantId}", id);
-                TempData["Error"] = $"Failed to delete tenant: {ex.Message}";
+                TempData["Error"] = "Failed to delete tenant: " + MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "it couldn't be deleted just now.");   // 105
                 return RedirectToPage(new { PageSize });
             }
         }
@@ -72,7 +72,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to toggle status for tenant {TenantId}", id);
-                TempData["Error"] = $"Failed to update status: {ex.Message}";
+                TempData["Error"] = "Failed to update status: " + MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "it couldn't be changed just now.");   // 105
                 return RedirectToPage(new { PageSize });
             }
         }

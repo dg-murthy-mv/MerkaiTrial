@@ -33,6 +33,7 @@ public class SetPasswordModel : PageModel
     private readonly IAccountEmails _accountEmails;       // 086
     private readonly IConfiguration _config;               // 086
     private readonly ILogger<SetPasswordModel> _logger;    // 086
+    private readonly AttemptLimiter _limiter;              // 104
 
     public SetPasswordModel(
         FlowDbContext db,
@@ -40,8 +41,10 @@ public class SetPasswordModel : PageModel
         IPasswordService passwords,
         IAccountEmails accountEmails,
         IConfiguration config,
-        ILogger<SetPasswordModel> logger)
+        ILogger<SetPasswordModel> logger,
+        AttemptLimiter limiter)
     {
+        _limiter = limiter;
         _db = db; _tokens = tokens; _passwords = passwords;
         _accountEmails = accountEmails; _config = config; _logger = logger;
     }
@@ -62,12 +65,45 @@ public class SetPasswordModel : PageModel
     public bool TokenValid { get; set; }
     public string? UserEmail { get; set; }
 
-    public async Task<IActionResult> OnGetAsync()
+    /// <summary>104 — what a refused link says. The same words whatever the reason, so the page never tells a guesser which part was wrong.</summary>
+    private const string BadLink = "This link is invalid or has expired. Please request a new one.";
+
+    private string? Address => HttpContext.Connection.RemoteIpAddress?.ToString();
+
+    /// <summary>
+    /// 104 — 10 links that don't work per 15 minutes from one network
+    /// address, then a pause. A link is 32 random bytes, so guessing one is
+    /// hopeless anyway; this stops anyone trying at scale.
+    /// </summary>
+    private bool TooManyBadLinks()
+    {
+        if (!_limiter.IsOver(AttemptRules.SetPasswordFails, Address)) return false;
+        Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        ErrorMessage = "Too many attempts from your network with links that don't work. " +
+                       "Please wait 15 minutes, or request a new link.";
+        return true;
+    }
+
+    /// <summary>A usable link for a person who can still use it (104: not deleted, not switched off).</summary>
+    private async Task<UserToken?> FindLinkAsync()
     {
         var token = await _tokens.FindUsableAsync(Token, Purpose);
+        if (token is null || token.User is null || token.User.IsDeleted || !token.User.IsActive)
+        {
+            _limiter.Count(AttemptRules.SetPasswordFails, Address);
+            return null;
+        }
+        return token;
+    }
+
+    public async Task<IActionResult> OnGetAsync()
+    {
+        if (TooManyBadLinks()) return Page();
+
+        var token = await FindLinkAsync();
         if (token is null)
         {
-            ErrorMessage = "This link is invalid or has expired. Please request a new one.";
+            ErrorMessage = BadLink;
             return Page();
         }
 
@@ -78,10 +114,12 @@ public class SetPasswordModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
-        var token = await _tokens.FindUsableAsync(Token, Purpose);
+        if (TooManyBadLinks()) return Page();
+
+        var token = await FindLinkAsync();
         if (token is null)
         {
-            ErrorMessage = "This link is invalid or has expired. Please request a new one.";
+            ErrorMessage = BadLink;
             return Page();
         }
 
@@ -97,6 +135,21 @@ public class SetPasswordModel : PageModel
         var (ok, error) = _passwords.ValidateStrength(NewPassword);
         if (!ok) { ErrorMessage = error; return Page(); }
 
+        // 104 — the link is used up FIRST, in one statement, and only the
+        // request that wins goes on to set a password. Before, it was marked
+        // used after the save, so the same link sent twice at the same moment
+        // set the password twice (the second one won). The password change
+        // and the link's use are one transaction: either both happen or
+        // neither does, and the link can be tried again.
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        if (!await _tokens.TryConsumeAsync(token))
+        {
+            await tx.RollbackAsync();
+            TokenValid = false;
+            ErrorMessage = BadLink;
+            return Page();
+        }
+
         var user = await _db.Users.IgnoreQueryFilters()
           .FirstAsync(u => u.Id == token.UserId);
 
@@ -109,10 +162,10 @@ public class SetPasswordModel : PageModel
         user.LockoutEndUtc = null;
 
         await _db.SaveChangesAsync();
-        await _tokens.ConsumeAsync(token);
 
         // Any other outstanding link for this user stops working now.
         await _tokens.RevokeAllAsync(user.Id, token.Purpose);
+        await tx.CommitAsync();
 
         // 086 — tell the owner. Never allowed to undo the change above.
         if (token.Purpose == TokenPurpose.PasswordReset)

@@ -245,7 +245,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading form");
-                ErrorMessage = $"Failed to load form: {ex.Message}";
+                // 105 — VUL-12: never the exception's own text.
+                ErrorMessage = MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "The form couldn't be loaded just now. Please refresh the page.");
                 return Page();
             }
         }
@@ -353,7 +354,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating lead");
-                ErrorMessage = $"Failed to create lead: {ex.Message}";
+                // 105 — VUL-12: the API's own refusal, or a plain sentence — never the exception.
+                ErrorMessage = MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "The lead couldn't be saved just now. Please try again.");
                 LoadTenantContext();
                 await LoadDropdownsAsync();
                 if (ActiveCustomFields.Count == 0 && !CustomFieldsLoadFailed) await LoadCustomFieldsAsync();

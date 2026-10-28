@@ -200,9 +200,13 @@
         }
 
         function updatePreview() {
-            const icon = document.querySelector('select[name="Input.Icon"]').value;
-            const color = document.querySelector('select[name="Input.Color"]').value;
-            const name = document.querySelector('input[name="Input.Name"]').value || 'Your Vertical Name';
+            // 104 — SECURITY. The name (and the picked icon and colour) are
+            // escaped before they go into the preview's HTML; a vertical a
+            // workspace created could carry a name like <img src=x onerror=…>.
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const icon = esc(document.querySelector('select[name="Input.Icon"]').value);
+            const color = esc(document.querySelector('select[name="Input.Color"]').value);
+            const name = esc(document.querySelector('input[name="Input.Name"]').value || 'Your Vertical Name');
 
             const preview = document.getElementById('iconPreview');
             preview.innerHTML = `

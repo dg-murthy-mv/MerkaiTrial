@@ -54,6 +54,12 @@
 //        behind. Nothing in 12 writes, except DeleteAutomationRunsAsync
 //        (one rule's log lines for one record — the "the log line was
 //        lost" half of the automation retry test, _E2E only).
+//
+// 105: sessions (read, and "a day later"), attachments (read, and point a
+//      row at another path), a lead's text and a person's first name written
+//      past every check, an email made to look sent for the webhook tests,
+//      and a person's stored hash and stamp for the secrets test. Every
+//      write is _E2E only, like the rest of this file.
 // =====================================================================
 
 using System.Text.Json;
@@ -675,12 +681,16 @@ public sealed class TestDatabase
         "Leads", "Contacts", "Companies", "Deals", "Quotes", "QuoteItems", "Invoices", "InvoiceLines",
         "Payments", "Products", "Activities", "LeadNotes", "DealNotes", "LeadActivities", "DealActivities",
         "LeadReminders", "DealReminders", "Attachments", "DealStageHistory", "QuoteApprovalRequests",
+        // 104 — the configuration and people the VUL-05 suite tries to reach
+        "Users", "UserRoles", "Roles", "LeadStatusDefinitions", "PipelineStages", "CustomFieldDefinitions",
+        "ProductCategories", "AutomationRules", "Teams", "Notifications", "OutboundMessages", "QuoteMilestones",
     };
 
     private static readonly HashSet<string> SnapshotColumns = new(StringComparer.Ordinal)
     {
         "Id", "LeadId", "DealId", "QuoteId", "InvoiceId", "ContactId", "CompanyId", "EntityId", "TenantId",
         "ProductId",   // 100b — quote and invoice lines that name a product
+        "UserId",      // 104 — a person's roles
     };
 
     /// <summary>
@@ -1211,5 +1221,289 @@ public sealed class TestDatabase
         await using var cmd = new SqlCommand("SELECT COUNT(*) FROM Users WHERE Email = @e AND IsDeleted = 0", conn);
         cmd.Parameters.AddWithValue("@e", email);
         return (int)(await cmd.ExecuteScalarAsync() ?? 0) > 0;
+    }
+
+    // ── 104: security tests (VUL-01 … VUL-10) ─────────────────────────
+
+    private static readonly HashSet<string> FirstIdTables = new(StringComparer.Ordinal)
+    {
+        "Roles", "LeadStatusDefinitions", "PipelineStages", "Notifications", "OutboundMessages", "Quotes", "LeadSources",
+    };
+
+    /// <summary>
+    /// One live row of a workspace's own in a table (the oldest by id), or
+    /// null when it has none — so a test can aim at a record of that kind.
+    /// </summary>
+    public async Task<Guid?> FirstIdAsync(string table, Guid tenantId)
+    {
+        if (!FirstIdTables.Contains(table)) throw new ArgumentOutOfRangeException(nameof(table), table, "Not a table this helper reads.");
+        // Lead statuses, pipeline stages, notifications and the outbox have no IsDeleted column.
+        var live = table is "Notifications" or "OutboundMessages" or "LeadStatusDefinitions" or "PipelineStages" ? "" : " AND IsDeleted = 0";
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT TOP 1 Id FROM dbo.[{table}] WHERE TenantId = @t{live} ORDER BY Id", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : null;
+    }
+
+    private static readonly HashSet<(string Table, string Column)> ValueColumns = new()
+    {
+        ("Leads", "TenantId"), ("Leads", "OwnerUserId"), ("Leads", "Status"), ("Leads", "IsConverted"), ("Leads", "Score"),
+        ("Leads", "CreatedBy"), ("Leads", "CreatedAtUtc"), ("Leads", "IsDeleted"), ("Leads", "SourceId"), ("Leads", "FullName"),
+        ("Contacts", "TenantId"), ("Companies", "TenantId"), ("Deals", "TenantId"), ("Deals", "Stage"), ("Deals", "CreatedBy"),
+        ("Deals", "OwnerUserId"), ("Deals", "ActualValue"),
+        ("Quotes", "Status"), ("Quotes", "TenantId"), ("Quotes", "Number"), ("Quotes", "GrandTotal"),
+        ("Invoices", "Status"), ("Invoices", "Balance"), ("Invoices", "Number"), ("Invoices", "TenantId"),
+        ("Users", "IsTenantAdmin"), ("Users", "IsSuperAdmin"), ("Users", "Email"), ("Users", "IsActive"), ("Users", "TenantId"),
+        ("Users", "MustChangePassword"), ("Users", "FirstName"),
+        ("Roles", "Permissions"), ("Activities", "AssignedToUserId"), ("Activities", "TenantId"),
+    };
+
+    /// <summary>One column of one row, as text ("" for NULL, null for no such row). Only the pairs above.</summary>
+    public async Task<string?> ValueAsync(string table, string column, Guid id)
+    {
+        if (!ValueColumns.Contains((table, column))) throw new ArgumentOutOfRangeException(nameof(column), $"{table}.{column}");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT [{column}] FROM dbo.[{table}] WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        if (r.IsDBNull(0)) return "";
+        var v = r.GetValue(0);
+        return v switch
+        {
+            DateTime d => d.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+            _ => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture),
+        };
+    }
+
+    /// <summary>Live rows of a workspace whose name/title text contains the marker (Leads, Deals, Contacts, Companies).</summary>
+    public async Task<int> CountContainingAsync(string table, Guid tenantId, string marker)
+    {
+        var column = table switch
+        {
+            "Leads" => "FullName", "Deals" => "Title", "Contacts" => "FirstName", "Companies" => "Name",
+            _ => throw new ArgumentOutOfRangeException(nameof(table), table, "Not a table this helper counts."),
+        };
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            $"SELECT COUNT(*) FROM dbo.[{table}] WHERE TenantId = @t AND IsDeleted = 0 AND CHARINDEX(@m, ISNULL([{column}], '')) > 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@m", marker);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>Every row in a table, deleted ones included — for "nothing was dropped or wiped" checks.</summary>
+    public async Task<int> CountAllRowsAsync(string table)
+    {
+        if (table is not ("Leads" or "Deals" or "Contacts" or "Companies" or "Users" or "Tenants" or "Quotes" or "Invoices" or "Products"))
+            throw new ArgumentOutOfRangeException(nameof(table), table, "Not a table this helper counts.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"SELECT COUNT(*) FROM dbo.[{table}]", conn);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>Reset links issued to a person since a moment — what the "3 an hour" rule counts.</summary>
+    public async Task<int> CountResetLinksAsync(Guid userId, DateTime sinceUtc)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM UserTokens WHERE UserId = @u AND Purpose = 'PasswordReset' AND CreatedAtUtc >= @s", conn);
+        cmd.Parameters.AddWithValue("@u", userId);
+        cmd.Parameters.AddWithValue("@s", sinceUtc);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    public sealed record StoredLink(DateTime CreatedAtUtc, DateTime ExpiresAtUtc, DateTime? ConsumedAtUtc);
+
+    /// <summary>The stored record of an emailed link (found by its hash, as the app finds it), or null.</summary>
+    public async Task<StoredLink?> LinkAsync(string link)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT CreatedAtUtc, ExpiresAtUtc, ConsumedAtUtc FROM UserTokens WHERE TokenHash = @h", conn);
+        cmd.Parameters.Add("@h", System.Data.SqlDbType.VarBinary, 64).Value = TokenHashOf(link);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        return new StoredLink(r.GetDateTime(0), r.GetDateTime(1), r.IsDBNull(2) ? null : r.GetDateTime(2));
+    }
+
+    /// <summary>
+    /// 104 (VUL-09). Moves an emailed link's expiry a minute into the past —
+    /// "two hours later", without waiting two hours. _E2E only.
+    /// </summary>
+    public async Task ExpireLinkAsync(string link)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE UserTokens SET ExpiresAtUtc = DATEADD(minute, -1, SYSUTCDATETIME()) WHERE TokenHash = @h", conn);
+        cmd.Parameters.Add("@h", System.Data.SqlDbType.VarBinary, 64).Value = TokenHashOf(link);
+        if (await cmd.ExecuteNonQueryAsync() != 1)
+            throw new InvalidOperationException("The link's stored record was not found, so it could not be expired.");
+    }
+
+    /// <summary>The SHA-256 the app stores for a link's token (UserTokenService.HashToken).</summary>
+    public static byte[] TokenHashOf(string link)
+    {
+        var m = Regex.Match(link, @"[?&]token=([^&#]+)", RegexOptions.IgnoreCase);
+        if (!m.Success) throw new ArgumentException("No token in the link: " + link);
+        var raw = Uri.UnescapeDataString(m.Groups[1].Value);
+        return System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw));
+    }
+
+    // =================================================================
+    // 105 — VUL-11 … VUL-20
+    // =================================================================
+
+    public sealed record StoredSession(Guid Id, DateTime CreatedAtUtc, DateTime ExpiresAtUtc, DateTime? EndedAtUtc, string? EndReason);
+
+    /// <summary>105 (VUL-11). A person's sign-in sessions, oldest first.</summary>
+    public async Task<List<StoredSession>> SessionsAsync(Guid userId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT Id, CreatedAtUtc, ExpiresAtUtc, EndedAtUtc, EndReason FROM dbo.UserSessions WHERE UserId = @u ORDER BY CreatedAtUtc", conn);
+        cmd.Parameters.AddWithValue("@u", userId);
+        var list = new List<StoredSession>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+            list.Add(new StoredSession(r.GetGuid(0), r.GetDateTime(1), r.GetDateTime(2),
+                r.IsDBNull(3) ? null : r.GetDateTime(3), r.IsDBNull(4) ? null : r.GetString(4)));
+        return list;
+    }
+
+    /// <summary>105 (VUL-11). Moves a session's 24-hour limit a minute into the past — "a day later". _E2E only.</summary>
+    public async Task ExpireSessionAsync(Guid sessionId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.UserSessions SET ExpiresAtUtc = DATEADD(minute, -1, SYSUTCDATETIME()) WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", sessionId);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No session {sessionId} to expire.");
+    }
+
+    public sealed record StoredAttachment(Guid Id, string FileName, string? MimeType, string FileUrl, long FileSize);
+
+    /// <summary>105 (VUL-13/14). The live attachment of a record with this exact name, or null.</summary>
+    public async Task<StoredAttachment?> AttachmentAsync(Guid entityId, string fileName)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT TOP 1 Id, FileName, MimeType, FileUrl, FileSize FROM dbo.Attachments " +
+            "WHERE EntityId = @e AND FileName = @n AND IsDeleted = 0 ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        cmd.Parameters.AddWithValue("@n", fileName);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+        return new StoredAttachment(r.GetGuid(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetString(3), Convert.ToInt64(r.GetValue(4)));
+    }
+
+    /// <summary>105 (VUL-13). Live attachments on a record.</summary>
+    public async Task<int> CountAttachmentsAsync(Guid entityId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM dbo.Attachments WHERE EntityId = @e AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", entityId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>105 (VUL-14). An attachment's stored path, as the app wrote it.</summary>
+    public async Task<string> AttachmentFileUrlAsync(Guid attachmentId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT FileUrl FROM dbo.Attachments WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", attachmentId);
+        return await cmd.ExecuteScalarAsync() as string
+            ?? throw new InvalidOperationException($"No attachment {attachmentId} in the test database.");
+    }
+
+    /// <summary>
+    /// 105 (VUL-14). Points an attachment's row at another path — what a
+    /// badly written row would look like. _E2E only; the test puts it back.
+    /// </summary>
+    public async Task SetAttachmentFileUrlAsync(Guid attachmentId, string fileUrl)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("UPDATE dbo.Attachments SET FileUrl = @u WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", attachmentId);
+        cmd.Parameters.AddWithValue("@u", fileUrl);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No attachment {attachmentId} to change.");
+    }
+
+    private static readonly HashSet<string> LeadTextColumns = new(StringComparer.Ordinal) { "FullName", "CompanyName", "Address", "Phone" };
+
+    /// <summary>
+    /// 105 (VUL-15). Writes a lead's text straight into the database, past
+    /// every check — whatever got in (an import, an old version), the
+    /// export must still not run it. _E2E only.
+    /// </summary>
+    public async Task SetLeadTextAsync(Guid leadId, string column, string value)
+    {
+        if (!LeadTextColumns.Contains(column)) throw new ArgumentOutOfRangeException(nameof(column), column, "Not a column this helper writes.");
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"UPDATE dbo.Leads SET [{column}] = @v WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", leadId);
+        cmd.Parameters.AddWithValue("@v", value);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No lead {leadId} to change.");
+    }
+
+    /// <summary>105 (VUL-15). A person's first name, written past every check. _E2E only.</summary>
+    public async Task SetUserFirstNameAsync(Guid userId, string firstName)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("UPDATE dbo.Users SET FirstName = @v WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", userId);
+        cmd.Parameters.AddWithValue("@v", firstName);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No user {userId} to change.");
+    }
+
+    /// <summary>105 (VUL-19). The newest email queued to an address, or null.</summary>
+    public async Task<Guid?> LatestOutboundIdAsync(string toAddress)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT TOP 1 Id FROM dbo.OutboundMessages WHERE ToAddress = @a ORDER BY CreatedAtUtc DESC", conn);
+        cmd.Parameters.AddWithValue("@a", toAddress);
+        return await cmd.ExecuteScalarAsync() is Guid g ? g : null;
+    }
+
+    /// <summary>
+    /// 105 (VUL-19). Makes a queued email look sent — the provider's id set,
+    /// nothing heard back yet — so delivery events can be aimed at it.
+    /// The test servers never send anything, so this is the only way one
+    /// gets a provider id. _E2E only.
+    /// </summary>
+    public async Task PrepareOutboundForWebhookAsync(Guid messageId, string providerMessageId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.OutboundMessages SET ProviderMessageId = @p, DeliveryStatus = 0, DeliveryStatusAtUtc = NULL, DeliveryDetail = NULL " +
+            "WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", messageId);
+        cmd.Parameters.AddWithValue("@p", providerMessageId);
+        if (await cmd.ExecuteNonQueryAsync() != 1) throw new InvalidOperationException($"No queued email {messageId} to prepare.");
+    }
+
+    /// <summary>105 (VUL-19). What delivery events have recorded on an email: the status number and when.</summary>
+    public async Task<(int Status, DateTime? AtUtc)> OutboundDeliveryAsync(Guid messageId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT DeliveryStatus, DeliveryStatusAtUtc FROM dbo.OutboundMessages WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", messageId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No queued email {messageId}.");
+        return (Convert.ToInt32(r.GetValue(0)), r.IsDBNull(1) ? null : r.GetDateTime(1));
+    }
+
+    /// <summary>105 (VUL-20). A person's stored password hash and security stamp — what must never be shown or logged.</summary>
+    public async Task<(string? PasswordHash, string? SecurityStamp)> UserSecretsAsync(string email)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT PasswordHash, SecurityStamp FROM dbo.Users WHERE Email = @e AND IsDeleted = 0", conn);
+        cmd.Parameters.AddWithValue("@e", email);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No person {email}.");
+        return (r.IsDBNull(0) ? null : r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1));
     }
 }

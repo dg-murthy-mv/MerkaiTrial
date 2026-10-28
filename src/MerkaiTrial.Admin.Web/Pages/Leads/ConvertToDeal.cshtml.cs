@@ -420,7 +420,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             if (Stages.Count > 0) return;
             try
             {
-                Stages = await _stageService.GetAsync(activeOnly: true);
+                // 104 — open stages only: a new deal can't START as Won or
+                // Lost (the API refuses it too). Closing is a move, with rules.
+                Stages = (await _stageService.GetAsync(activeOnly: true))
+                    .Where(s => s.Category == StageCategory.Open)
+                    .ToList();
             }
             catch (Exception ex)
             {

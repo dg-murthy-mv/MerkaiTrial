@@ -744,6 +744,10 @@ namespace MerkaiTrial.Application.Commands.Deals
                 !await _db.Leads.AsNoTracking().AnyAsync(l => l.Id == leadId && l.TenantId == tenantGuid && !l.IsDeleted))
                 throw new InvalidOperationException("The lead chosen isn't in this workspace.");
 
+            // 104 — and the source and industry: the system's or this
+            // workspace's own, never another workspace's (LookupGuard).
+            await LookupGuard.CheckAsync(_db, tenantGuid, dto.SourceId, null, dto.VerticalId);
+
             // ── Plan quota (103: PlanQuota) ──────────────────────────────
             // Held until the deal is saved, so two saves at once can't both
             // take the last place; the limit is read live.
@@ -764,6 +768,14 @@ namespace MerkaiTrial.Application.Commands.Deals
             var chosen = stages.ResolveOrDefault(dto.Stage)
                 ?? throw new InvalidOperationException(
                     "This workspace has no pipeline stages set up. Add them under Settings → Pipeline Stages.");
+
+            // 104 — a new deal starts OPEN. "Entry requirements are not
+            // checked on create" assumed the default stage, but the stage
+            // came from the body: a deal could be CREATED as Won, skipping
+            // "Won needs an accepted quote" and every other rule on the way.
+            if (stages.IsTerminal(chosen.Key))
+                throw new InvalidOperationException(
+                    $"A new deal starts in an open stage. Add it, then move it to \u201c{chosen.Name}\u201d from the deal page, where that step's rules are checked.");
 
             var stage = chosen.Key;
             var probability = dto.Probability ?? chosen.Probability;
@@ -796,7 +808,9 @@ namespace MerkaiTrial.Application.Commands.Deals
                 Probability = probability,
                 Tags = dto.Tags,
                 CreatedAtUtc = DateTime.UtcNow,
-                CreatedBy = dto.CreatedBy ?? currentUser.FullName,
+                // 104 — the signed-in person, never the body's CreatedBy:
+                // the author of a record is not something a caller chooses.
+                CreatedBy = currentUser.FullName,
                 UpdatedAtUtc = DateTime.UtcNow,
                 UpdatedBy = currentUser.FullName,
                 IsDeleted = false
@@ -992,6 +1006,10 @@ namespace MerkaiTrial.Application.Commands.Deals
             deal.ExpectedCloseDateUtc = dto.ExpectedCloseDateUtc;
             deal.Probability = dto.Probability;
             deal.Tags = dto.Tags;
+
+            // 104 — the industry must be the system's or this workspace's own
+            // (LookupGuard); another workspace's id was stored as sent.
+            await LookupGuard.CheckAsync(_db, tenantGuid, null, null, dto.VerticalId);
 
             if (dto.VerticalId.HasValue)
                 deal.VerticalId = dto.VerticalId;

@@ -23,6 +23,13 @@
 // error page, and the original exception was swallowed on the way. The
 // note at the bottom of this file called for that page; this round
 // ships it.
+//
+// 105 — VUL-12: the error page follows Diagnostics:ShowErrorDetails
+// (Application/Common/ErrorDetails.cs) instead of the environment alone.
+// Development still shows the developer page by default; the E2E servers
+// set it to false, so they show /Error exactly as production does and the
+// tests can check nothing leaks. MapGet(/__e2e/fault) — the fault probe —
+// exists only in Development with Diagnostics:FaultProbe on.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Startup;
@@ -52,6 +59,20 @@ builder.Configuration.AddJsonFile("appsettings.tenants.json", optional: true, re
 // boot if demo auth is enabled outside Development/Demo.
 builder.AddMerkaiAuthentication();
 
+// 104 — the sign-in, forgot-password and set-password limits
+// (Application/Security/AttemptLimiter.cs). One per server, in memory.
+builder.Services.AddSingleton<MerkaiTrial.Application.Security.AttemptLimiter>();
+
+// 104 — the visitor's real network address when a reverse proxy on this
+// machine (IIS, nginx) passes it on in X-Forwarded-For. Only a proxy on
+// this machine is believed (the default: loopback), so a visitor can't
+// pick their own address by sending the header themselves.
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor;
+    o.ForwardLimit = 1;
+});
+
 builder.Services
     .AddAdminWebPages()                                 // Razor Pages, /Admin guard, account-state filter
     .AddAdminWebAuthorization()                         // "Module.Action" policies
@@ -69,6 +90,9 @@ await MerkaiTrial.Infrastructure.Persistence.DatabaseWarmup
 
 // ---------------- Pipeline — order matters ----------------
 
+// 104 — first, so everything after sees the visitor's address (see above).
+app.UseForwardedHeaders();
+
 // wwwroot only. Tenant attachments are NOT served from disk here — they
 // need an authenticated endpoint.
 app.UseStaticFiles();
@@ -79,7 +103,10 @@ app.UseStaticFiles();
 // are answered before this and keep their caching. Startup/NoStoreMiddleware.cs.
 app.UseNoStoreForAppResponses();
 
-if (!app.Environment.IsDevelopment())
+// 105: was `if (!app.Environment.IsDevelopment())`. In Development .NET
+// adds its own developer page outside everything else; this handler sits
+// inside it and catches first, so with details off the visitor gets /Error.
+if (!MerkaiTrial.Application.Common.ErrorDetails.Show(app.Configuration, app.Environment))
     app.UseExceptionHandler("/Error");
 
 // 063: was app.UseSerilogRequestLogging(). Same line, same position, but
@@ -105,6 +132,17 @@ app.UseMerkaiAuthPipeline();
 app.UseTenantContextWarmup();
 
 app.MapRazorPages();
+
+// 105 — VUL-12. Throws on purpose, for the E2E error-page test. Mapped
+// ONLY in Development with Diagnostics:FaultProbe = true (run-e2e.ps1).
+if (MerkaiTrial.Application.Common.ErrorDetails.FaultProbeOn(app.Configuration, app.Environment))
+{
+    app.MapGet(MerkaiTrial.Application.Common.ErrorDetails.FaultProbePath, IResult () =>
+            throw new InvalidOperationException(MerkaiTrial.Application.Common.ErrorDetails.FaultProbeMessage))
+       .AllowAnonymous();
+    Log.Warning("Diagnostics:FaultProbe is on: {Path} throws on purpose (E2E servers only)",
+        MerkaiTrial.Application.Common.ErrorDetails.FaultProbePath);
+}
 
 app.MapGet("/", context =>
 {

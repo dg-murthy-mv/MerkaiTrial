@@ -63,7 +63,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Users
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to delete user {UserId}", userId);
-                TempData["Error"] = $"Failed to delete user: {ex.Message}";
+                TempData["Error"] = "Failed to delete user: " + MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "they couldn't be deleted just now.");   // 105
                 return RedirectToPage(new { TenantId = tenantId, PageSize });
             }
         }

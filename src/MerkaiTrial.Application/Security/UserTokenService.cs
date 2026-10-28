@@ -19,6 +19,14 @@ namespace MerkaiTrial.Application.Security
 
         Task ConsumeAsync(UserToken token, CancellationToken ct = default);
 
+        /// <summary>
+        /// 104 — marks the token used IF nobody has used it yet, in one
+        /// statement. True for exactly one caller, however many arrive at
+        /// once with the same link; false for the rest (and for a token that
+        /// has expired in the meantime).
+        /// </summary>
+        Task<bool> TryConsumeAsync(UserToken token, CancellationToken ct = default);
+
         Task RevokeAllAsync(Guid userId, string purpose, CancellationToken ct = default);
     }
 
@@ -78,6 +86,17 @@ namespace MerkaiTrial.Application.Security
         {
             token.ConsumedAtUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<bool> TryConsumeAsync(UserToken token, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+            var claimed = await _db.Set<UserToken>()
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == token.Id && t.ConsumedAtUtc == null && t.ExpiresAtUtc > now)
+                .ExecuteUpdateAsync(s => s.SetProperty(t => t.ConsumedAtUtc, now), ct);
+            if (claimed == 1) token.ConsumedAtUtc = now;
+            return claimed == 1;
         }
 
         public async Task RevokeAllAsync(Guid userId, string purpose, CancellationToken ct = default)

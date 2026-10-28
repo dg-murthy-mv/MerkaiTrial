@@ -16,6 +16,20 @@
 // only AddAuthentication registers — so the app compiles and then throws
 // on startup. It also means ApiCurrentUserService finds no claims and
 // every tenant-scoped request fails.
+//
+// 105 — VUL-11
+//   • Only HS256 is accepted (ValidAlgorithms). An unsigned token ("none")
+//     or one claiming another algorithm is refused before anything else.
+//   • A token must carry an expiry (RequireExpirationTime, stated here
+//     rather than left to the default).
+//   • A token whose NameIdentifier is missing or differs from its UserId
+//     is refused (401) — it used to reach a handler and give a 500.
+//   • IncludeErrorDetails off: a refused token gets a bare 401, with no
+//     reason in the WWW-Authenticate header (the log still has it).
+//   • A token minted from a session that has since been SIGNED OUT is
+//     refused, the same as the website refuses the cookie. Admin.Web puts
+//     the session id ("sid") in every token it makes; when one is there,
+//     the session must still be live and belong to that person.
 // =====================================================================
 
 using System.Text;
@@ -56,6 +70,14 @@ public static class ApiAuthenticationSetup
             {
                 options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
 
+                // 105 — VUL-12: a refused token is a bare 401. Left on, the
+                // WWW-Authenticate header spelled out WHY ("the signature key
+                // was not found", "the session was signed out"), which tells
+                // someone forging tokens which part they got right. The
+                // reason is still in webapi.out.log (OnAuthenticationFailed
+                // and the "JWT … refused" line below).
+                options.IncludeErrorDetails = false;
+
                 // The token carries "UserId" and "TenantId" as literal claim
                 // types. Leaving the inbound claim-type map on would rewrite
                 // them to WS-Federation URIs and ApiCurrentUserService would
@@ -71,6 +93,9 @@ public static class ApiAuthenticationSetup
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey         = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
                     ValidateLifetime         = true,
+                    RequireExpirationTime    = true,                                  // 105
+                    RequireSignedTokens      = true,                                  // 105
+                    ValidAlgorithms          = new[] { SecurityAlgorithms.HmacSha256 }, // 105
                     ClockSkew                = TimeSpan.FromSeconds(30),
 
                     NameClaimType            = SignInService.ClaimUserId,
@@ -108,7 +133,24 @@ public static class ApiAuthenticationSetup
                             return;
                         }
 
+                        // 105: the rest of the API reads the person from the
+                        // NameIdentifier claim. A token without it (or naming
+                        // someone else there) used to pass this check and
+                        // then fail deep inside a handler with a 500. Every
+                        // token Admin.Web makes carries both, equal.
+                        if (!Guid.TryParse(p!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var nameId)
+                            || nameId != userId)
+                        {
+                            ctx.Fail("The token's person claims disagree.");
+                            return;
+                        }
+
                         var stamp = p!.FindFirst(SignInService.ClaimSecurityStamp)?.Value;
+
+                        // 105 — the session the token was minted from, when
+                        // it names one (Admin.Web's always do).
+                        var sid   = SignInService.SessionIdOf(p);
+                        var owner = SignInService.SessionOwnerOf(p) ?? userId;
                         var log = ctx.HttpContext.RequestServices
                             .GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearer");
 
@@ -119,6 +161,10 @@ public static class ApiAuthenticationSetup
                             // Runs before HttpContext.User exists, so there is
                             // no tenant for the query filters yet — see the
                             // same note in Admin.Web's AuthenticationSetup.
+                            var now = DateTime.UtcNow;
+                            var hasSession = sid.HasValue;
+                            var sessionId = sid ?? Guid.Empty;
+
                             var row = await db.Users.AsNoTracking().IgnoreQueryFilters()
                                 .Where(u => u.Id == userId && !u.IsDeleted && u.IsActive)
                                 .Select(u => new
@@ -127,6 +173,9 @@ public static class ApiAuthenticationSetup
                                     u.SecurityStamp,
                                     TenantLive = db.Tenants.IgnoreQueryFilters()
                                         .Any(t => t.Id == u.TenantId && t.IsActive && !t.IsDeleted),
+                                    SessionLive = !hasSession || db.UserSessions.Any(s =>
+                                        s.Id == sessionId && s.UserId == owner &&
+                                        s.EndedAtUtc == null && s.ExpiresAtUtc > now),
                                 })
                                 .FirstOrDefaultAsync(ctx.HttpContext.RequestAborted);
 
@@ -136,6 +185,7 @@ public static class ApiAuthenticationSetup
                                 !row.TenantLive              ? "the workspace is suspended" :
                                 stamp is null || !string.Equals(row.SecurityStamp ?? string.Empty, stamp, StringComparison.Ordinal)
                                                              ? "the session was ended (roles, permissions or password changed)" :
+                                !row.SessionLive             ? "the session it came from was signed out or has expired" :
                                 null;
 
                             if (reason is not null)

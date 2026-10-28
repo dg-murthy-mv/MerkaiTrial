@@ -223,10 +223,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
             Duplicates: Duplicates,
             ImportedBy: null);                  // set server-side
 
+        // 105 — VUL-12: the app's own refusals and the API's own sentence;
+        // anything else (SQL Server's text, a type name, a stack trace) is
+        // the fallback. The full exception is in the log either way.
         private static string Explain(Exception ex, string fallback)
-            => string.IsNullOrWhiteSpace(ex.Message) || ex is NullReferenceException
-                ? $"{fallback} Please try again."
-                : ex.Message;
+            => MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, $"{fallback} Please try again.");
 
         // ── View helpers ──────────────────────────────────────────────
 

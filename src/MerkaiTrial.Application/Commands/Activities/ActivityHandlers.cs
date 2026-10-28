@@ -1379,13 +1379,25 @@ namespace MerkaiTrial.Application.Commands.Activities
 
             for (var level = 0; level < 5 && frontier.Count > 0 && found.Count < 50; level++)
             {
-                var rows = await _db.Set<AuditLog>().AsNoTracking()
-                    .Where(l => l.TenantId == tenantId &&
-                                l.EntityType == AuditEntityType.Lead &&
-                                l.Action == AuditAction.LeadMerged &&
-                                frontier.Contains((Guid?)l.EntityId))
-                    .Select(l => l.Data)
-                    .ToListAsync(ct);
+                // 105: one plain lookup per lead, not "EntityId IN (a list)".
+                // The list version made SQL Server read the WHOLE AuditLogs
+                // table on a bad day (35-second timeouts on the lead page in
+                // the E2E run); "EntityId = @id" always uses the index
+                // IX_AuditLogs_Tenant_Entity (TenantId, EntityType, EntityId,
+                // Action). Almost every lead has no merges, so this is ONE
+                // quick lookup that finds nothing.
+                var rows = new List<string?>();
+                foreach (var id in frontier)
+                {
+                    var entityId = id;
+                    rows.AddRange(await _db.Set<AuditLog>().AsNoTracking()
+                        .Where(l => l.TenantId == tenantId &&
+                                    l.EntityType == AuditEntityType.Lead &&
+                                    l.EntityId == entityId &&
+                                    l.Action == AuditAction.LeadMerged)
+                        .Select(l => l.Data)
+                        .ToListAsync(ct));
+                }
 
                 var next = new List<Guid?>();
                 foreach (var data in rows)

@@ -25,6 +25,19 @@
 //     'page.html' can't be attached — that type of file isn't allowed. …
 //     'huge.pdf' is 11.0 MB. Files can be up to 10 MB.
 //   The checks themselves are unchanged.
+//
+// 105 — WHAT IS INSIDE, NOT WHAT IT SAYS (VUL-13)
+//   The type a browser or mail program declares is chosen by whoever sends
+//   the file, and until now it was all that was checked: a web page sent
+//   as "image/png" was stored and served back as one. Now every save —
+//   uploads (SaveAsync) and email attachments (SaveBytesAsync) — goes
+//   through FileContentCheck:
+//     • the name must end in an allowed type (or, with no ending at all,
+//       the declared type picks one and the ending is added);
+//     • the bytes must really be that type (PDF, PNG, a .docx zip, text…);
+//     • Word and Excel files with macros are refused.
+//   The stored type is the proven one; the declared type is ignored.
+//   Refusals are sentences for the person, as in 091.
 // =====================================================================
 
 using MerkaiTrial.Application.Services.Storage;
@@ -43,37 +56,8 @@ public class LocalFileStorageService : IFileStorageService
     // Max 10MB per file — reasonable for CRM docs
     private const long MaxFileSizeBytes = 10 * 1024 * 1024;
 
-    private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "image/jpeg", "image/png", "image/gif", "image/webp",
-        "text/plain", "text/csv",
-    };
-
-    /// <summary>
-    /// 083. Extension → the allowed type it stands for. Used ONLY when the
-    /// sender labelled the file application/octet-stream (or nothing), so
-    /// it can never widen the list above.
-    /// </summary>
-    private static readonly Dictionary<string, string> TypeByExtension = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".pdf"]  = "application/pdf",
-        [".doc"]  = "application/msword",
-        [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        [".xls"]  = "application/vnd.ms-excel",
-        [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        [".jpg"]  = "image/jpeg",
-        [".jpeg"] = "image/jpeg",
-        [".png"]  = "image/png",
-        [".gif"]  = "image/gif",
-        [".webp"] = "image/webp",
-        [".txt"]  = "text/plain",
-        [".csv"]  = "text/csv",
-    };
+    // 105: the allowed types now live in FileContentCheck.ByExtension,
+    // with the signature each one's bytes must have.
 
     public LocalFileStorageService(
         IHostEnvironment env,
@@ -96,27 +80,40 @@ public class LocalFileStorageService : IFileStorageService
         if (file.Length > MaxFileSizeBytes)
             throw new InvalidOperationException(TooLargeMessage(file.FileName, file.Length));
 
-        // Validate MIME type — 091: likewise.
-        if (!AllowedMimeTypes.Contains(file.ContentType))
-            throw new InvalidOperationException(
-                $"'{SafeName(file.FileName)}' can't be attached — that type of file isn't allowed. " +
-                "Use a PDF, Word or Excel file, an image (JPG, PNG, GIF, WebP), or a text or CSV file.");
+        if (file.Length == 0)
+            throw new InvalidOperationException($"'{SafeName(file.FileName)}' is empty.");
 
-        var (fullPath, fileUrl) = BuildPath(tenantId, entityType, file.FileName);
+        // 105 — the type comes from the name and is proved by the contents.
+        var expected = FileContentCheck.Expected(file.FileName, file.ContentType)
+            ?? throw new InvalidOperationException(NotAllowedMessage(file.FileName));
 
-        await using (var stream = new FileStream(fullPath, FileMode.Create))
+        byte[] content;
+        using (var buffer = new MemoryStream((int)file.Length))
         {
-            await file.CopyToAsync(stream, ct);
+            await file.CopyToAsync(buffer, ct);
+            content = buffer.ToArray();
         }
 
-        _logger.LogInformation("File saved: {FileName} → {FileUrl}", file.FileName, fileUrl);
+        if (FileContentCheck.WhyNot(content, expected) is { } why)
+        {
+            _logger.LogWarning("Upload refused: {FileName} declared {Declared}, {Why}",
+                SafeName(file.FileName), file.ContentType, why);
+            throw new InvalidOperationException($"'{SafeName(file.FileName)}' can't be attached — {why}.");
+        }
+
+        var name = NameWithEnding(file.FileName, expected);
+        var (fullPath, fileUrl) = BuildPath(tenantId, entityType, name);
+
+        await File.WriteAllBytesAsync(fullPath, content, ct);
+
+        _logger.LogInformation("File saved: {FileName} → {FileUrl}", name, fileUrl);
 
         return new FileUploadResult
         {
             FileUrl = fileUrl,
-            FileSize = file.Length,
-            MimeType = file.ContentType,
-            FileName = Path.GetFileName(file.FileName),
+            FileSize = content.LongLength,
+            MimeType = expected.MimeType,
+            FileName = name,
         };
     }
 
@@ -134,20 +131,25 @@ public class LocalFileStorageService : IFileStorageService
         if (refusal is not null)
             throw new InvalidOperationException($"'{SafeName(fileName)}' was not saved: {refusal}.");
 
-        var type = Resolve(contentType, fileName)!;
-        var (fullPath, fileUrl) = BuildPath(tenantId, entityType, fileName);
+        // 105 — the contents must be what the name says.
+        var expected = FileContentCheck.Expected(fileName, contentType)!;
+        if (FileContentCheck.WhyNot(content, expected) is { } why)
+            throw new InvalidOperationException($"'{SafeName(fileName)}' was not saved: {why}.");
+
+        var name = NameWithEnding(fileName, expected);
+        var (fullPath, fileUrl) = BuildPath(tenantId, entityType, name);
 
         await File.WriteAllBytesAsync(fullPath, content, ct);
 
         _logger.LogInformation("File saved: {FileName} ({Bytes} bytes) → {FileUrl}",
-            SafeName(fileName), content.LongLength, fileUrl);
+            name, content.LongLength, fileUrl);
 
         return new FileUploadResult
         {
             FileUrl = fileUrl,
             FileSize = content.LongLength,
-            MimeType = type,
-            FileName = SafeName(fileName),
+            MimeType = expected.MimeType,
+            FileName = name,
         };
     }
 
@@ -170,7 +172,9 @@ public class LocalFileStorageService : IFileStorageService
     {
         if (sizeBytes <= 0) return "the file is empty";
         if (sizeBytes > MaxFileSizeBytes) return $"larger than {MaxFileSizeBytes / (1024 * 1024)} MB";
-        if (Resolve(contentType, fileName) is null) return "that type of file is not allowed";
+        // 105: by its name (or, with no ending, its declared type). The
+        // contents are checked when the file is saved.
+        if (FileContentCheck.Expected(fileName, contentType) is null) return "that type of file is not allowed";
         return null;
     }
 
@@ -193,25 +197,20 @@ public class LocalFileStorageService : IFileStorageService
 
     // ── helpers ───────────────────────────────────────────────────────
 
+    /// <summary>105. "'page.html' can't be attached — that type of file isn't allowed. …"</summary>
+    private static string NotAllowedMessage(string? fileName)
+        => $"'{SafeName(fileName)}' can't be attached — that type of file isn't allowed. {FileContentCheck.AllowedList}";
+
     /// <summary>
-    /// The allowed type this file counts as, or null. A declared type wins
-    /// when it is on the list; octet-stream / blank falls back to the
-    /// extension; anything else is refused.
+    /// 105. The name shown and downloaded: cleaned, and given its type's
+    /// ending when it had none ("invoice" sent as a PDF → "invoice.pdf").
     /// </summary>
-    private static string? Resolve(string? contentType, string? fileName)
+    private static string NameWithEnding(string? fileName, AllowedFileType type)
     {
-        var declared = (contentType ?? string.Empty).Split(';')[0].Trim();
-
-        if (AllowedMimeTypes.Contains(declared)) return declared.ToLowerInvariant();
-
-        var generic = declared.Length == 0
-                   || declared.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase);
-
-        if (generic && !string.IsNullOrWhiteSpace(fileName)
-            && TypeByExtension.TryGetValue(Path.GetExtension(fileName), out var byExt))
-            return byExt;
-
-        return null;
+        var name = SafeName(fileName);
+        if (!string.IsNullOrEmpty(Path.GetExtension(name))) return name;
+        var room = 255 - type.Extension.Length;
+        return (name.Length <= room ? name : name[..room]) + type.Extension;
     }
 
     /// <summary>uploads/{tenantId}/{entityType}/{year}/{guid}{ext} — unchanged layout.</summary>

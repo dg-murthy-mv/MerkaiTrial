@@ -26,6 +26,26 @@
 //   • A stored hash that cannot be read (corrupt row, hand-edited
 //     database) now counts as a wrong password and is logged, instead of
 //     taking the sign-in page down for that person.
+//
+// 105 — A SESSION ON THE SERVER (VUL-11)
+//   Signing out used to only ask the browser to forget its cookie. A copy
+//   of the cookie kept working for up to 8 hours (2 weeks with "keep me
+//   signed in"), because nothing on the server knew the session had ended.
+//
+//   • Every sign-in now writes a UserSessions row and the cookie carries
+//     its id ("sid"). The cookie check in Admin.Web refuses a cookie
+//     whose row is ended, past its limit, or missing.
+//   • SignOutAsync ends THIS row only — the person's other browsers stay
+//     signed in.
+//   • A session lasts at most 24 hours from sign-in (MaxSessionLifetime),
+//     however busy it is; the 8-hour idle limit is unchanged. "Keep me
+//     signed in" now means "survives closing the browser", still within
+//     the 24 hours — it used to mean two weeks.
+//   • View As keeps the super admin's session (the sid is carried into
+//     the impersonated cookie and back out), so Exit and Sign out work on
+//     the session the super admin actually started.
+//   • Old sessions of the person (over a week past their limit) are
+//     deleted at each sign-in, so the table never grows without bound.
 // =====================================================================
 
 using System.Security.Claims;
@@ -68,6 +88,29 @@ public class SignInService : ISignInService
     public const string ClaimViewingAs    = "ViewingAs";
     public const string ClaimRealUserId   = "RealUserId";
     public const string ClaimRealTenantId = "RealTenantId";
+
+    /// <summary>105. The UserSessions row this cookie belongs to.</summary>
+    public const string ClaimSessionId    = "sid";
+
+    /// <summary>105. However busy it is, a session ends this long after sign-in.</summary>
+    public static readonly TimeSpan MaxSessionLifetime = TimeSpan.FromHours(24);
+
+    /// <summary>105. Without activity, the cookie ends after this (unchanged: 8 hours).</summary>
+    public static readonly TimeSpan IdleLimit = TimeSpan.FromHours(8);
+
+    /// <summary>
+    /// 105. The person whose session a principal belongs to: the super admin
+    /// during View As (RealUserId), otherwise the signed-in person.
+    /// </summary>
+    public static Guid? SessionOwnerOf(ClaimsPrincipal? principal)
+    {
+        var raw = principal?.FindFirst(ClaimRealUserId)?.Value ?? principal?.FindFirst(ClaimUserId)?.Value;
+        return Guid.TryParse(raw, out var id) ? id : null;
+    }
+
+    /// <summary>105. The session id a principal carries, or null.</summary>
+    public static Guid? SessionIdOf(ClaimsPrincipal? principal)
+        => Guid.TryParse(principal?.FindFirst(ClaimSessionId)?.Value, out var id) ? id : null;
 
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -175,14 +218,34 @@ public class SignInService : ISignInService
         user.LockoutEndUtc = null;
         user.LastLoginUtc = DateTime.UtcNow;
         user.SecurityStamp ??= Guid.NewGuid().ToString("N");
+
+        // 105 — the session this sign-in starts, saved with the user row.
+        var now = DateTime.UtcNow;
+        var session = new UserSession
+        {
+            Id           = Guid.NewGuid(),
+            UserId       = user.Id,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.Add(MaxSessionLifetime),
+            IpAddress    = Cut(_http.HttpContext?.Connection.RemoteIpAddress?.ToString(), 64),
+            UserAgent    = Cut(_http.HttpContext?.Request.Headers.UserAgent.ToString(), 256),
+        };
+        _db.UserSessions.Add(session);
         await _db.SaveChangesAsync(ct);
 
-        var principal = await BuildPrincipalAsync(user, tenant, realUser: null, ct);
+        await ForgetOldSessionsAsync(user.Id, now, ct);
+
+        var principal = await BuildPrincipalAsync(user, tenant, realUser: null, session.Id, ct);
+
+        // The cookie never outlives the session. Without "keep me signed in"
+        // it is a browser-session cookie that ends after 8 idle hours; with
+        // it, it survives closing the browser — until the 24-hour limit.
+        var cookieEnds = rememberMe ? session.ExpiresAtUtc : Min(now.Add(IdleLimit), session.ExpiresAtUtc);
 
         await _http.HttpContext!.SignInAsync(Scheme, principal, new AuthenticationProperties
         {
             IsPersistent = rememberMe,
-            ExpiresUtc   = DateTimeOffset.UtcNow.AddHours(rememberMe ? 24 * 14 : 8),
+            ExpiresUtc   = new DateTimeOffset(cookieEnds, TimeSpan.Zero),
             AllowRefresh = true
         });
 
@@ -205,7 +268,60 @@ public class SignInService : ISignInService
         catch (FormatException) { /* cannot happen with our own hash; never let it reach the user */ }
     }
 
-    public async Task SignOutAsync() => await _http.HttpContext!.SignOutAsync(Scheme);
+    /// <summary>
+    /// 105. Ends THIS session on the server, then clears the cookie. A copy
+    /// of the cookie is refused from the next request on, wherever it is.
+    /// The person's other sessions are left alone.
+    /// </summary>
+    public async Task SignOutAsync()
+    {
+        var http = _http.HttpContext!;
+        var sid = SessionIdOf(http.User);
+
+        if (sid is { } id)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                await _db.UserSessions
+                    .Where(s => s.Id == id && s.EndedAtUtc == null)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(s => s.EndedAtUtc, (DateTime?)now)
+                        .SetProperty(s => s.EndReason, SessionEndReason.SignedOut));
+            }
+            catch (Exception ex)
+            {
+                // The cookie is still cleared below. Logged at Error: a
+                // session that could not be ended stays usable from a copy
+                // until its 24-hour limit, and that is worth knowing about.
+                _logger.LogError(ex, "Could not end session {SessionId} on sign-out", id);
+            }
+        }
+
+        await http.SignOutAsync(Scheme);
+    }
+
+    /// <summary>105. A person's sessions more than a week past their limit — nobody needs them.</summary>
+    private async Task ForgetOldSessionsAsync(Guid userId, DateTime now, CancellationToken ct)
+    {
+        try
+        {
+            var cutoff = now.AddDays(-7);
+            await _db.UserSessions
+                .Where(s => s.UserId == userId && s.ExpiresAtUtc < cutoff)
+                .ExecuteDeleteAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // Housekeeping only; never a reason to fail a sign-in.
+            _logger.LogWarning(ex, "Could not clear old sessions for user {UserId}", userId);
+        }
+    }
+
+    private static DateTime Min(DateTime a, DateTime b) => a <= b ? a : b;
+
+    private static string? Cut(string? value, int max)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Length <= max ? value : value[..max];
 
     // ── VIEW AS ───────────────────────────────────────────────────────
     public async Task StartViewAsAsync(Guid targetUserId, Guid targetTenantId, CancellationToken ct = default)
@@ -243,7 +359,8 @@ public class SignInService : ISignInService
         _logger.LogWarning("VIEW-AS START: superadmin {RealUserId} impersonating {TargetUserId} in tenant {TenantId}",
             realUserId, targetUserId, targetTenantId);
 
-        var principal = await BuildPrincipalAsync(target, tenant, realUser, ct);
+        // 105 — still the super admin's own session.
+        var principal = await BuildPrincipalAsync(target, tenant, realUser, SessionIdOf(current), ct);
         await _http.HttpContext!.SignInAsync(Scheme, principal);
     }
 
@@ -268,13 +385,14 @@ public class SignInService : ISignInService
 
         _logger.LogWarning("VIEW-AS EXIT: superadmin {RealUserId} returned to own identity", realUserId);
 
-        var principal = await BuildPrincipalAsync(realUser, tenant, realUser: null, ct);
+        // 105 — the same session they started View As from.
+        var principal = await BuildPrincipalAsync(realUser, tenant, realUser: null, SessionIdOf(current), ct);
         await _http.HttpContext!.SignInAsync(Scheme, principal);
     }
 
     // ── PRINCIPAL CONSTRUCTION ────────────────────────────────────────
     private async Task<ClaimsPrincipal> BuildPrincipalAsync(
-        User user, Tenant tenant, User? realUser, CancellationToken ct)
+        User user, Tenant tenant, User? realUser, Guid? sessionId, CancellationToken ct)
     {
         var claims = new List<Claim>
         {
@@ -288,6 +406,11 @@ public class SignInService : ISignInService
             new(ClaimPlan, tenant.Plan ?? "starter"),
             new(ClaimMustChangePassword, user.MustChangePassword.ToString().ToLowerInvariant()),
         };
+
+        // 105 — no session id, no cookie that passes the check. Every path
+        // that builds a principal has one; this is the belt to that brace.
+        if (sessionId is { } sid)
+            claims.Add(new Claim(ClaimSessionId, sid.ToString()));
 
         var effectiveSuperAdmin = realUser?.IsSuperAdmin ?? user.IsSuperAdmin;
         claims.Add(new Claim(ClaimIsSuperAdmin, effectiveSuperAdmin.ToString().ToLowerInvariant()));

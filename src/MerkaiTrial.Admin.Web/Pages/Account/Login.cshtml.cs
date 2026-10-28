@@ -14,7 +14,13 @@ namespace MerkaiTrial.Admin.Web.Pages.Account;
 public class LoginModel : PageModel
 {
     private readonly ISignInService _signIn;
-    public LoginModel(ISignInService signIn) => _signIn = signIn;
+    private readonly AttemptLimiter _limiter;   // 104
+
+    public LoginModel(ISignInService signIn, AttemptLimiter limiter)
+    {
+        _signIn = signIn;
+        _limiter = limiter;
+    }
 
     [BindProperty, Required, EmailAddress]
     public string Email { get; set; } = string.Empty;
@@ -43,10 +49,22 @@ public class LoginModel : PageModel
     {
         if (!ModelState.IsValid) return Page();
 
+        // 104 — 20 failed sign-ins a minute from one network address, then
+        // a pause. Checked BEFORE the password, so once the limit is reached
+        // a guesser learns nothing more — not even that a guess was right.
+        var address = HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (_limiter.IsOver(AttemptRules.SignInFailures, address))
+        {
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            ErrorMessage = "Too many sign-in attempts from your network. Please wait a minute and try again.";
+            return Page();
+        }
+
         var result = await _signIn.PasswordSignInAsync(Email.Trim(), Password, RememberMe);
 
         if (result.Outcome != SignInOutcome.Success)
         {
+            _limiter.Count(AttemptRules.SignInFailures, address);   // 104 — failures only
             ErrorMessage = result.Message ?? "Email or password is incorrect.";
             return Page();
         }

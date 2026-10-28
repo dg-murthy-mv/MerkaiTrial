@@ -20,6 +20,7 @@ using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Queries;
+using MerkaiTrial.Application.Security;   // 104 — AccessChangeGuard
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -39,6 +40,17 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly GetRoleUsersHandler _getRoleUsersHandler;
         private readonly GetRoleStatsHandler _getStatsHandler;
         private readonly ILogger<RolesController> _logger;
+        private readonly AccessChangeGuard _accessGuard;   // 104
+
+        /// <summary>104 — the platform's super admin (outside View As) is not limited by the guard.</summary>
+        private bool IsSuperAdmin =>
+            User.HasClaim("IsSuperAdmin", "true") && !User.HasClaim("ViewingAs", "true");
+
+        private ObjectResult Refused(PrivilegeEscalationException ex)
+        {
+            _logger.LogWarning("Role change refused for {UserId}: {Message}", User.FindFirst("UserId")?.Value, ex.Message);
+            return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
+        }
 
         public RolesController(
             GetPaginatedRolesHandler getPaginatedHandler,
@@ -50,8 +62,10 @@ namespace MerkaiTrial.WebApi.Controllers
             GetRolesLookupHandler getLookupHandler,
             GetRoleUsersHandler getRoleUsersHandler,
             GetRoleStatsHandler getStatsHandler,
+            AccessChangeGuard accessGuard,                 // 104
             ILogger<RolesController> logger)
         {
+            _accessGuard = accessGuard;
             _getPaginatedHandler = getPaginatedHandler;
             _getAllHandler = getAllHandler;
             _getDetailHandler = getDetailHandler;
@@ -131,8 +145,15 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
+                if (!IsSuperAdmin)
+                    await _accessGuard.CheckRoleAsync(null, command.Permissions);   // 104
+
                 var role = await _createHandler.Handle(command);
                 return CreatedAtAction(nameof(GetById), new { id = role.Id }, role);
+            }
+            catch (PrivilegeEscalationException ex)
+            {
+                return Refused(ex);
             }
             catch (InvalidOperationException ex)
             {
@@ -156,8 +177,15 @@ namespace MerkaiTrial.WebApi.Controllers
                 if (id != command.RoleId)
                     return BadRequest("Role ID mismatch");
 
+                if (!IsSuperAdmin)
+                    await _accessGuard.CheckRoleAsync(id, command.Permissions);   // 104
+
                 await _updateHandler.Handle(command);
                 return NoContent();
+            }
+            catch (PrivilegeEscalationException ex)
+            {
+                return Refused(ex);
             }
             catch (KeyNotFoundException)
             {
@@ -183,8 +211,15 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try
             {
+                if (!IsSuperAdmin)
+                    await _accessGuard.CheckRoleAsync(id, null);   // 104
+
                 await _deleteHandler.Handle(id);
                 return NoContent();
+            }
+            catch (PrivilegeEscalationException ex)
+            {
+                return Refused(ex);
             }
             catch (KeyNotFoundException)
             {

@@ -125,8 +125,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Notifications
                 await LoadAsync();
 
                 var target = Items.FirstOrDefault(i => i.Id == open.Value)?.Url;
+
+                // 105 — VUL-16: only ever to a page on this site. The app
+                // writes these links itself, but a link that was ever stored
+                // wrong (or written by a future feature from a person's
+                // input) must not send someone to another website.
+                if (!string.IsNullOrEmpty(target) && Url.IsLocalUrl(target))
+                    return LocalRedirect(target);
+
                 if (!string.IsNullOrEmpty(target))
-                    return Redirect(target);
+                    Logger.LogWarning("Notification {Id} has a link that is not on this site — not followed", open.Value);
 
                 // It points at nothing, or it is not on this page. Falling
                 // through shows the list, which is a reasonable landing spot.

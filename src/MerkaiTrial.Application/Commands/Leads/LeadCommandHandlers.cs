@@ -203,6 +203,11 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // 095 — before the quota check and before anything is staged.
                 LeadInput.Check(dto.FullName, dto.Email, dto.Phone, dto.CompanyName, dto.Address, dto.EstimatedValue);
 
+                // 104 — the source, channel and industry must be the system's
+                // or this workspace's own; another workspace's id was stored
+                // as sent (LookupGuard).
+                await LookupGuard.CheckAsync(_context, dto.TenantId, dto.SourceId, dto.ChannelId, dto.VerticalId, cancellationToken);
+
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
                 // FIX 1: Currency from tenant if not provided in DTO
@@ -427,6 +432,11 @@ namespace MerkaiTrial.Application.Commands.Leads
                 // 095 — before anything is assigned.
                 LeadInput.Check(dto.FullName, dto.Email, dto.Phone, dto.CompanyName, dto.Address, dto.EstimatedValue);
 
+                // 104 — the source, channel and industry must be the system's
+                // or this workspace's own; another workspace's id was stored
+                // as sent (LookupGuard).
+                await LookupGuard.CheckAsync(_context, dto.TenantId, dto.SourceId, dto.ChannelId, dto.VerticalId, cancellationToken);
+
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
                 // FIX 1: Currency from tenant if not provided
@@ -470,7 +480,10 @@ namespace MerkaiTrial.Application.Commands.Leads
                 lead.ChannelId = dto.ChannelId;
                 lead.SourceId = dto.SourceId;
                 lead.VerticalId = dto.VerticalId;
-                lead.Score = dto.Score;
+                // 104 — Score is not taken from the request. It is worked out
+                // by LeadScoringService (just below, after the save); a caller
+                // could post any number and, where scoring is switched off for
+                // the plan, it stuck.
                 lead.EstimatedValue = dto.EstimatedValue;
                 lead.OwnerUserId = ownerDecision.OwnerUserId;        // 041
                 lead.UpdatedAtUtc = DateTime.UtcNow;

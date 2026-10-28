@@ -211,9 +211,13 @@
     <script>
         function updatePreview() {
             const nameInput = document.getElementById('Input_Name');
-            const name = nameInput && !nameInput.disabled ? nameInput.value : '@Model.Input.Name';
-            const icon = document.getElementById('Input_Icon').value || '@Model.Input.Icon';
-            const color = document.getElementById('Input_Color').value || '@Model.Input.Color';
+            // 104 — SECURITY. The name (and the picked icon and colour) are
+            // escaped before they go into the preview's HTML; a vertical a
+            // workspace created could carry a name like <img src=x onerror=…>.
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const name = esc(nameInput && !nameInput.disabled ? nameInput.value : @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Input.Name ?? "")));
+            const icon = esc(document.getElementById('Input_Icon').value || @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Input.Icon ?? "")));
+            const color = esc(document.getElementById('Input_Color').value || @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Input.Color ?? "")));
 
             const preview = document.getElementById('iconPreview');
             preview.innerHTML = `

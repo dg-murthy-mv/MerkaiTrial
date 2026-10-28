@@ -4,6 +4,19 @@
 // NEW FILE. The request pipeline pieces that were inline in Program.cs.
 // ORDER MATTERS — Program.cs calls these in the same order as before:
 //   correlation id → swagger (dev) → exception handler → auth → endpoints
+//
+// 105 — VUL-12
+//   • Error details follow ONE switch, Diagnostics:ShowErrorDetails
+//     (Application/Common/ErrorDetails.cs) — Development by default, and
+//     off on the E2E servers so they answer errors the way production does.
+//   • The answer to an unexpected error carries a reference (traceId, the
+//     same id as X-Correlation-Id and every log line of the request), so a
+//     person can quote it and the log line can be found — and nothing else.
+//   • X-Correlation-Id from the caller is reused only when it is a plain
+//     id (letters, digits, dashes, ≤ 64) — otherwise it would be copied
+//     into the log lines and the answer as sent.
+//   • MapApiFaultProbe: GET /__e2e/fault, Development + Diagnostics:FaultProbe
+//     only. See ErrorDetails.cs.
 // =====================================================================
 
 using MerkaiTrial.Application.Common;
@@ -72,9 +85,12 @@ public static class ApiPipeline
     {
         app.Use(async (ctx, next) =>
         {
-            var cid = ctx.Request.Headers.ContainsKey("X-Correlation-Id")
-                ? ctx.Request.Headers["X-Correlation-Id"].ToString()
-                : Guid.NewGuid().ToString("N");
+            // 105: only a plain id is reused (letters, digits, dashes, at
+            // most 64). Anything else — a line break, a script, a page of
+            // text — would be copied into every log line of the request and
+            // back into the answer, so it gets a fresh id instead.
+            var sent = ctx.Request.Headers["X-Correlation-Id"].ToString();
+            var cid = IsPlainId(sent) ? sent : Guid.NewGuid().ToString("N");
 
             ctx.Items["CorrelationId"] = cid;
             ctx.Response.Headers["X-Correlation-Id"] = cid;
@@ -85,6 +101,11 @@ public static class ApiPipeline
         return app;
     }
 
+    /// <summary>105. 1–64 characters, each a letter, a digit or a dash.</summary>
+    private static bool IsPlainId(string? value)
+        => !string.IsNullOrEmpty(value) && value.Length <= 64
+           && value.All(c => char.IsAsciiLetterOrDigit(c) || c == '-');
+
     /// <summary>
     /// Swagger and the developer exception page — Development ONLY.
     /// Previously served unconditionally, publishing every endpoint to
@@ -94,7 +115,9 @@ public static class ApiPipeline
     {
         if (!app.Environment.IsDevelopment()) return app;
 
-        app.UseDeveloperExceptionPage();
+        // 105: the developer page only while details may be shown.
+        if (ErrorDetails.Show(app.Configuration, app.Environment))
+            app.UseDeveloperExceptionPage();
         app.UseSwagger();
         app.UseSwaggerUI(c =>
         {
@@ -107,6 +130,8 @@ public static class ApiPipeline
     /// <summary>Unhandled exceptions → ProblemDetails. Stack trace in Development only.</summary>
     public static WebApplication UseApiExceptionHandler(this WebApplication app)
     {
+        var showDetails = ErrorDetails.Show(app.Configuration, app.Environment);   // 105
+
         app.UseExceptionHandler(errorApp =>
         {
             errorApp.Run(async context =>
@@ -114,19 +139,40 @@ public static class ApiPipeline
                 var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
                 Log.Error(ex, "Unhandled exception");
 
+                // 105: a reference to quote, never the exception itself.
+                var reference = context.Items["CorrelationId"] as string ?? context.TraceIdentifier;
+
                 var problem = new ProblemDetails
                 {
-                    Title = "Unexpected error",
+                    Title = "Something went wrong. Please try again.",
                     Status = StatusCodes.Status500InternalServerError,
-                    Detail = app.Environment.IsDevelopment() ? ex?.ToString() : null,
-                    Instance = context.TraceIdentifier
+                    Detail = showDetails ? ex?.ToString() : null,
                 };
+                problem.Extensions["traceId"] = reference;
 
                 context.Response.StatusCode = problem.Status.Value;
                 context.Response.ContentType = "application/problem+json";
                 await context.Response.WriteAsJsonAsync(problem);
             });
         });
+        return app;
+    }
+
+    /// <summary>
+    /// 105. GET /__e2e/fault — throws ErrorDetails.FaultProbeMessage, so the
+    /// tests can check what an unexpected error looks like from outside.
+    /// Mapped ONLY in Development with Diagnostics:FaultProbe = true.
+    /// </summary>
+    public static WebApplication MapApiFaultProbe(this WebApplication app)
+    {
+        if (!ErrorDetails.FaultProbeOn(app.Configuration, app.Environment)) return app;
+
+        app.MapGet(ErrorDetails.FaultProbePath, IResult () =>
+                throw new InvalidOperationException(ErrorDetails.FaultProbeMessage))
+           .AllowAnonymous()
+           .ExcludeFromDescription();
+
+        Log.Warning("Diagnostics:FaultProbe is on: {Path} throws on purpose (E2E servers only)", ErrorDetails.FaultProbePath);
         return app;
     }
 

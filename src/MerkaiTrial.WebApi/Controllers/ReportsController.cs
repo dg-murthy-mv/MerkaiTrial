@@ -4,6 +4,7 @@
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Reports;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
@@ -478,6 +479,19 @@ namespace MerkaiTrial.WebApi.Controllers
 
         private FileContentResult ExcelFile(ExcelPackage pkg, string name)
         {
+            // 105 — VUL-15: owner names, stage names, deal titles, contact
+            // names… are people's text. Any that starts like a formula
+            // (= + - @) is marked quote-prefix, so Excel keeps it as text
+            // even after an edit. Values are unchanged. (A copy re-saved as
+            // CSV by hand loses the mark — the agreed limit.)
+            foreach (var ws in pkg.Workbook.Worksheets)
+            {
+                if (ws.Dimension is null) continue;
+                foreach (var cell in ws.Cells[ws.Dimension.Address])
+                    if (cell.Value is string text && SpreadsheetText.LooksLikeFormula(text))
+                        cell.Style.QuotePrefix = true;
+            }
+
             var bytes = pkg.GetAsByteArray();
             return File(bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

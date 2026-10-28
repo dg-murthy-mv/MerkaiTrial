@@ -321,8 +321,10 @@
                                 </a>
                                 @if (!Model.Vertical.IsSystem)
                                 {
-                                    <button type="button" class="btn btn-outline-danger" 
-                                            onclick="confirmDelete('@Model.Vertical.Id', '@Model.Vertical.Name')">
+                                    @* 104 — the name travels as data, never inside the onclick's JavaScript. *@
+                                    <button type="button" class="btn btn-outline-danger"
+                                            data-id="@Model.Vertical.Id" data-name="@Model.Vertical.Name"
+                                            onclick="confirmDelete(this)">
                                         <i class="bi bi-trash"></i> Delete Vertical
                                     </button>
                                 }
@@ -372,7 +374,11 @@
 
 @section Scripts {
     <script>
-        function confirmDelete(id, name) {
+        // 104 — reads the id and name from the button's data attributes (was
+        // passed inside the onclick, where a quote in the name broke out).
+        function confirmDelete(btn) {
+            var id = btn.getAttribute('data-id');
+            var name = btn.getAttribute('data-name');
             if (confirm(`Are you sure you want to delete vertical "${name}"?\n\nThis action cannot be undone.`)) {
                 document.getElementById('deleteId').value = id;
                 document.getElementById('deleteForm').action = '/Admin/Verticals/Index?handler=Delete&id=' + id;

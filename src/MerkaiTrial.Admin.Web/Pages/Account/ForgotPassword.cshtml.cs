@@ -41,13 +41,16 @@ namespace MerkaiTrial.Admin.Web.Pages.Account
         private readonly IAccountEmails _accountEmails;
         private readonly IConfiguration _config;
         private readonly ILogger<ForgotPasswordModel> _logger;
+        private readonly MerkaiTrial.Application.Security.AttemptLimiter _limiter;   // 104
 
         public ForgotPasswordModel(
             FlowDbContext db,
             IAccountEmails accountEmails,
             IConfiguration config,
-            ILogger<ForgotPasswordModel> logger)
+            ILogger<ForgotPasswordModel> logger,
+            MerkaiTrial.Application.Security.AttemptLimiter limiter)
         {
+            _limiter = limiter;
             _db = db;
             _accountEmails = accountEmails;
             _config = config;
@@ -75,6 +78,18 @@ namespace MerkaiTrial.Admin.Web.Pages.Account
             if (!ModelState.IsValid) return Page();
 
             var address = Email.Trim();
+
+            // 104 — 10 requests an hour from one network address. Past that
+            // nothing is sent, and the answer is the same "check your email"
+            // as always: the page never says it was limited, so it can't be
+            // used to tell which addresses have accounts.
+            var network = HttpContext.Connection.RemoteIpAddress?.ToString();
+            if (!_limiter.TryCount(MerkaiTrial.Application.Security.AttemptRules.ResetRequests, network))
+            {
+                _logger.LogWarning("Password reset requests from {Address} paused: over the hourly limit", network);
+                Submitted = true;
+                return Page();
+            }
 
             try
             {

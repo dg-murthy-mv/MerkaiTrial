@@ -271,6 +271,14 @@ public static class InboundEmailFiling
             {
                 if (already.Contains(file.FileName, StringComparer.OrdinalIgnoreCase)) continue;
 
+                // 105 — VUL-14: only a file in this workspace's own folder.
+                if (!MerkaiTrial.Application.Commands.Attachments.GetAttachmentDownloadHandler
+                        .IsInWorkspaceFolder(file.FileUrl, email.TenantId))
+                {
+                    logger.LogWarning("Email attachment {AttachmentId} points outside its workspace's folder — not copied", file.Id);
+                    continue;
+                }
+
                 try
                 {
                     await using var stream = await storage.OpenReadAsync(file.FileUrl, ct);

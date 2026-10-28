@@ -43,9 +43,18 @@
 //   4. Handle returns the row count with the bytes, so the controller can
 //      audit the export. An export is the easiest way to walk out of the
 //      door with a customer list; it should leave a trace.
+//
+// 105 — VUL-15: TEXT THAT LOOKS LIKE A FORMULA STAYS TEXT
+//   Before saving, every text cell starting with = + - @ (or a tab or line
+//   break) is marked quote-prefix (Common/SpreadsheetText.cs), like typing
+//   an apostrophe in front of it in Excel. Values are unchanged, so the
+//   file still imports back exactly; Excel never runs them — not on open,
+//   not after an edit. (Agreed limit: a copy someone re-saves as CSV
+//   themselves loses the mark, as any CSV would.)
 // =====================================================================
 
 using ClosedXML.Excel;
+using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.Commands.CustomFields;
 using MerkaiTrial.Application.Commands.Leads.Import;
 using MerkaiTrial.Application.Commands.LeadStatuses;
@@ -264,6 +273,11 @@ namespace MerkaiTrial.Application.Commands.Leads
 
             ws.SheetView.FreezeRows(1);
             ws.Columns().AdjustToContents();
+
+            // 105 — VUL-15. After AdjustToContents, which reads the styles.
+            foreach (var cell in ws.CellsUsed(c => c.DataType == XLDataType.Text))
+                if (SpreadsheetText.LooksLikeFormula(cell.GetString()))
+                    cell.Style.IncludeQuotePrefix = true;
 
             using var stream = new MemoryStream();
             workbook.SaveAs(stream);

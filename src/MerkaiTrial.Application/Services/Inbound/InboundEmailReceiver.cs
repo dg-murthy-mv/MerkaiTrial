@@ -32,6 +32,14 @@
 // workspace (an old regenerated alias, a typo, spam to random names) is
 // answered 200 and dropped with a masked log line. Answering with an
 // error would only make Resend retry it.
+//
+// 105 — EACH SIGNED EVENT IS ACTED ON ONCE (VUL-19). After the signature
+// check, the event's id (svix-id) is taken from WebhookReplayGuard. A copy
+// of an event already handled — the same signed request posted again
+// inside the five minutes its timestamp is accepted — is answered
+// "duplicate" and changes nothing. The id is given back when handling did
+// not finish (try again later, not configured, an error), because
+// Resend's own retry carries the same id and must get through.
 // =====================================================================
 
 using System.Text.Json;
@@ -84,15 +92,18 @@ public sealed class InboundEmailReceiver : IInboundEmailReceiver
     private readonly FlowDbContext _db;
     private readonly EmailOptions _options;
     private readonly IEmailDeliveryEvents _delivery;     // 085
+    private readonly WebhookReplayGuard _replays;        // 105
     private readonly ILogger<InboundEmailReceiver> _logger;
 
     public InboundEmailReceiver(
         FlowDbContext db,
         IOptions<EmailOptions> options,
         IEmailDeliveryEvents delivery,
+        WebhookReplayGuard replays,
         ILogger<InboundEmailReceiver> logger)
     {
         _db = db;
+        _replays = replays;
         _options = options.Value;
         _delivery = delivery;
         _logger = logger;
@@ -123,6 +134,37 @@ public sealed class InboundEmailReceiver : IInboundEmailReceiver
             return new(InboundReceiveOutcome.Unauthorised, "Signature check failed.");
         }
 
+        // ── 105: once per event ───────────────────────────────────────
+        // The verifier has already refused a missing svix-id.
+        var eventId = headers.SvixId!.Trim();
+        if (!_replays.TryTake(eventId, DateTime.UtcNow))
+        {
+            _logger.LogWarning("Inbound webhook event {EventId} was already handled — the copy changed nothing", Short(eventId));
+            return new(InboundReceiveOutcome.Duplicate, "Already received.");
+        }
+
+        InboundReceiveResult result;
+        try
+        {
+            result = await HandleSignedAsync(rawBody, domain, ct);
+        }
+        catch
+        {
+            _replays.GiveBack(eventId);
+            throw;
+        }
+
+        if (result.Outcome is InboundReceiveOutcome.RetryLater or InboundReceiveOutcome.NotConfigured)
+            _replays.GiveBack(eventId);
+
+        return result;
+    }
+
+    private static string Short(string id) => id.Length <= 40 ? id : id[..40];
+
+    /// <summary>Everything after the signature and the once-only check.</summary>
+    private async Task<InboundReceiveResult> HandleSignedAsync(string rawBody, string? domain, CancellationToken ct)
+    {
         // ── 2. Read it ────────────────────────────────────────────────
         JsonDocument doc;
         try { doc = JsonDocument.Parse(rawBody); }

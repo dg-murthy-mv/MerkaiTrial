@@ -412,14 +412,18 @@
                 return;
             }
 
+            // 104 — SECURITY. Every value here was typed inside the client's
+            // workspace, so it is escaped before it becomes HTML. A name like
+            // <img src=x onerror=…> ran as script on the super admin's page.
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
             const tbody = document.getElementById('usersTableBody');
             tbody.innerHTML = users.map(user => `
                 <tr>
-                    <td>${user.fullName}</td>
-                    <td><a href="mailto:${user.email}">${user.email}</a></td>
-                    <td>${user.phone || '-'}</td>
-                    <td>${user.department || '-'}</td>
-                    <td>${user.jobTitle || '-'}</td>
+                    <td>${esc(user.fullName)}</td>
+                    <td><a href="mailto:${encodeURIComponent(user.email || '')}">${esc(user.email)}</a></td>
+                    <td>${esc(user.phone || '-')}</td>
+                    <td>${esc(user.department || '-')}</td>
+                    <td>${esc(user.jobTitle || '-')}</td>
                     <td>
                         <span class="badge ${user.isActive ? 'bg-success' : 'bg-danger'}">
                             ${user.isActive ? 'Active' : 'Inactive'}

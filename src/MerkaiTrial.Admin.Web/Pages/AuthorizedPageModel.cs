@@ -353,7 +353,10 @@ namespace MerkaiTrial.Admin.Web.Pages
             catch (HttpRequestException ex)
             {
                 Logger.LogWarning(ex, "{Context}: API call failed", context);
-                TempData["Error"] = $"{context}: {ex.Message}";
+                // 105 — VUL-12: the API's own refusal, or a plain sentence.
+                // ex.Message here is the whole response body of the call.
+                TempData["Error"] = $"{context}: " +
+                    MerkaiTrial.Admin.Web.Services.Core.SafeErrorText.For(ex, "it couldn't be loaded just now.");
             }
             catch (Exception ex)
             {

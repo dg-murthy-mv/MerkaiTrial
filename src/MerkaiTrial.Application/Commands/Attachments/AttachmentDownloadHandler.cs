@@ -28,6 +28,15 @@
 //   (Leads.Read, Deals.Read, …) for the record type.
 //
 // Registered automatically: the Scrutor scan picks up every ICommandHandler.
+//
+// 105 — VUL-14: THE FILE MUST BE IN THIS WORKSPACE'S OWN FOLDER.
+//   Storage already refuses any path outside the uploads folder. Inside it,
+//   every workspace has its own folder (/uploads/<workspace id>/…), and a
+//   row of workspace A's could still have named a file in workspace B's
+//   folder if it was ever written wrongly (a bad import, a hand fix, a bug
+//   in some future handler). Now the stored path must start with THIS
+//   workspace's folder and contain no "..", or the answer is "not found" —
+//   the same as any other refusal — and a warning is logged.
 // =====================================================================
 
 using MerkaiTrial.Application.Security;
@@ -87,6 +96,14 @@ namespace MerkaiTrial.Application.Commands.Attachments
             if (!await CanSeeOwnerAsync(tenantId, a.EntityType, a.EntityId, ct))
                 return null;
 
+            // 105 — only from this workspace's own folder.
+            if (!IsInWorkspaceFolder(a.FileUrl, tenantId))
+            {
+                _logger.LogWarning(
+                    "Attachment {AttachmentId} points outside its workspace's folder — refused", attachmentId);
+                return null;
+            }
+
             var stream = await _storage.OpenReadAsync(a.FileUrl, ct);
             if (stream is null)
             {
@@ -101,6 +118,23 @@ namespace MerkaiTrial.Application.Commands.Attachments
                 string.IsNullOrWhiteSpace(a.FileName) ? "attachment" : a.FileName,
                 string.IsNullOrWhiteSpace(a.MimeType) ? "application/octet-stream" : a.MimeType,
                 a.EntityType);
+        }
+
+        /// <summary>
+        /// 105. "/uploads/{workspace id}/…" with no "..", no "\" and no
+        /// drive or host — the only shape the storage service ever writes.
+        /// </summary>
+        public static bool IsInWorkspaceFolder(string? fileUrl, Guid tenantId)
+        {
+            if (string.IsNullOrWhiteSpace(fileUrl)) return false;
+
+            var prefix = $"/uploads/{tenantId:N}/";
+            if (!fileUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+            var rest = fileUrl[prefix.Length..];
+            if (rest.Length == 0 || rest.Contains('\\') || rest.Contains(':') || rest.Contains('%')) return false;
+
+            return rest.Split('/').All(part => part.Length > 0 && part != "." && part != "..");
         }
 
         private async Task<bool> CanSeeOwnerAsync(Guid tenantId, string entityType, Guid entityId, CancellationToken ct)

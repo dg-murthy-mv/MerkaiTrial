@@ -20,6 +20,11 @@
 //   rather than marking the invoice paid directly.
 //
 //   Nothing else in this file changed.
+//
+// 105 — the webhook is switched off (answers 404 to everyone, changes
+//   nothing) until a provider's signature is really checked — see the
+//   note on the action. And a failed checkout save no longer sends SQL
+//   Server's own error text back.
 // =====================================================================
 
 using Microsoft.AspNetCore.Authorization;
@@ -106,7 +111,9 @@ public class PaymentsController : ControllerBase
         catch (DbUpdateException dbx)
         {
             _logger.LogError(dbx, "DB update failed during checkout for invoice {Invoice}", invoiceNumber);
-            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Database update failed.", detail: dbx.GetBaseException().Message);
+            // 105 — VUL-12: was detail: dbx.GetBaseException().Message, which is
+            // SQL Server's own text (table, column and constraint names).
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "The invoice could not be updated just now.");
         }
         catch (Exception ex)
         {
@@ -116,58 +123,31 @@ public class PaymentsController : ControllerBase
     }
 
     // POST /api/payments/webhook/{provider}
+    //
+    // 105 — VUL-19: SWITCHED OFF. Every call is answered 404 and nothing
+    // changes.
+    //
+    // It used to mark an invoice paid from nothing but its number in the
+    // address: /api/payments/webhook/razorpay?invoice=INV-0042. None of the
+    // four providers checked a signature (Razorpay's said "TODO"), the
+    // invoice was set to Paid with a zero balance directly — no Payment
+    // row, so none of the payment rules, history or idempotency applied —
+    // and anyone allowed to edit invoices could call it. A real provider
+    // never could: it has no Merkai sign-in.
+    //
+    // When online payments are switched on for real, this becomes an
+    // anonymous endpoint per provider that checks THAT provider's
+    // signature over the raw body, rejects replays by the provider's event
+    // id, and records the money through AddPaymentHandler like the Record
+    // payment button. Until then it must do nothing at all.
     [HttpPost("webhook/{provider}")]
-    public async Task<IActionResult> Webhook(string provider, CancellationToken ct)
+    [AllowAnonymous]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public IActionResult Webhook(string provider)
     {
-        if (string.IsNullOrWhiteSpace(provider))
-            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "provider is required.");
-
-        try
-        {
-            if (!Enum.TryParse<PaymentProviderKind>(provider, true, out var kind))
-                return Problem(statusCode: StatusCodes.Status400BadRequest, title: $"Unknown provider '{provider}'.");
-
-            IPaymentProvider p;
-            try
-            {
-                p = _factory.Resolve(kind);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Webhook resolve failed for provider {Provider}", provider);
-                return Problem(statusCode: StatusCodes.Status400BadRequest, title: $"Unsupported provider '{provider}'.");
-            }
-
-            var (ok, invoiceNumber) = await p.HandleWebhookAsync(Request, ct);
-
-            if (!ok || string.IsNullOrWhiteSpace(invoiceNumber))
-            {
-                _logger.LogWarning("Webhook not processed (ok={Ok}) for provider {Provider}", ok, provider);
-                return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Webhook not processed.");
-            }
-
-            try
-            {
-                await _invoices.MarkPaidAsync(invoiceNumber, ct);
-            }
-            catch (Exception markEx)
-            {
-                _logger.LogError(markEx, "MarkPaid failed for invoice {Invoice} via provider {Provider}", invoiceNumber, provider);
-                // return 202 so provider doesn't retry endlessly if this is our internal issue
-                return StatusCode(StatusCodes.Status202Accepted, new { status = "accepted", invoice = invoiceNumber });
-            }
-
-            return Ok(new { status = "ok", invoice = invoiceNumber });
-        }
-        catch (OperationCanceledException oce)
-        {
-            _logger.LogWarning(oce, "Webhook canceled for provider {Provider}", provider);
-            return Problem(statusCode: StatusCodes.Status408RequestTimeout, title: "Request canceled or timed out.");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected webhook error for provider {Provider}", provider);
-            return Problem(statusCode: StatusCodes.Status500InternalServerError, title: "Webhook failed.");
-        }
+        _logger.LogWarning(
+            "Refused a call to the payment webhook ({Provider}): online payments are not switched on",
+            provider.Length <= 30 ? provider : provider[..30]);
+        return NotFound();
     }
 }

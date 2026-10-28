@@ -282,7 +282,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 var companies = await companiesTask;
                 var sources   = await sourcesTask;
                 var users     = await usersTask;
-                Stages        = await stagesTask;
+                // 104 — open stages only: a new deal can't START as Won or Lost.
+                Stages        = (await stagesTask).Where(s => s.Category == StageCategory.Open).ToList();
 
                 // Start where the tenant says deals start, unless the user
                 // has already chosen (a validation round-trip keeps theirs).

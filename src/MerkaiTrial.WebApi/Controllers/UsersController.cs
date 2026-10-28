@@ -32,6 +32,7 @@
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Users;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Security;   // 104 — AccessChangeGuard
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -54,7 +55,15 @@ public class UsersController : ControllerBase
     private readonly GetUserStatsHandler _getStatsHandler;
     private readonly BulkUpdateUserStatusHandler _bulkUpdateStatusHandler;
     private readonly GetSalesTeamHandler _getSalesTeamHandler;
+    private readonly AccessChangeGuard _accessGuard;   // 104 — nobody gives more access than they have
     private readonly ILogger<UsersController> _logger;
+
+    /// <summary>104 — a refused escalation, with its sentence (Admin.Web shows it).</summary>
+    private ObjectResult Refused(PrivilegeEscalationException ex)
+    {
+        _logger.LogWarning("Access change refused for {UserId}: {Message}", User.FindFirst("UserId")?.Value, ex.Message);
+        return StatusCode(StatusCodes.Status403Forbidden, new { error = ex.Message });
+    }
 
     public UsersController(
         GetUsersPaginatedHandler getPaginatedHandler,
@@ -69,8 +78,10 @@ public class UsersController : ControllerBase
         GetUserStatsHandler getStatsHandler,
         BulkUpdateUserStatusHandler bulkUpdateStatusHandler,
         GetSalesTeamHandler getSalesTeamHandler,
+        AccessChangeGuard accessGuard,                 // 104
         ILogger<UsersController> logger)
     {
+        _accessGuard = accessGuard;
         _getPaginatedHandler = getPaginatedHandler;
         _getDetailHandler = getDetailHandler;
         _createHandler = createHandler;
@@ -249,9 +260,13 @@ public class UsersController : ControllerBase
             // a user in their own workspace, not the other one.
             var scoped = cmd with { TenantId = ResolveTenant(cmd.TenantId) };
 
+            if (!IsSuperAdmin)
+                await _accessGuard.CheckNewPersonAsync(scoped.TenantId, scoped.IsTenantAdmin, scoped.RoleIds);
+
             var result = await _createHandler.Handle(scoped);
             return Ok(result);
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
         catch (Exception ex)
@@ -274,9 +289,14 @@ public class UsersController : ControllerBase
             // edit ANY user by guessing an id. See the note at the bottom.
 
             var scoped = cmd with { TenantId = ResolveTenant(cmd.TenantId) };
+
+            if (!IsSuperAdmin)
+                await _accessGuard.CheckChangePersonAsync(scoped.TenantId, id, scoped.IsTenantAdmin, null);
+
             await _updateHandler.Handle(scoped);
             return NoContent();
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
@@ -297,9 +317,14 @@ public class UsersController : ControllerBase
             if (id != cmd.UserId) return BadRequest(new { error = "User ID mismatch" });
 
             var scoped = cmd with { TenantId = ResolveTenant(cmd.TenantId) };
+
+            if (!IsSuperAdmin)
+                await _accessGuard.CheckChangePersonAsync(scoped.TenantId, id, null, null);
+
             await _updateStatusHandler.Handle(scoped);
             return NoContent();
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (Exception ex)
@@ -323,9 +348,13 @@ public class UsersController : ControllerBase
             if (Guid.TryParse(User.FindFirst("UserId")?.Value, out var me) && me == id)
                 return BadRequest(new { error = "You cannot delete your own account." });
 
+            if (!IsSuperAdmin)
+                await _accessGuard.CheckChangePersonAsync(scopedTenant, id, null, null);
+
             await _deleteHandler.Handle(scopedTenant, id);
             return NoContent();
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (Exception ex)
@@ -345,9 +374,14 @@ public class UsersController : ControllerBase
             if (id != cmd.UserId) return BadRequest(new { error = "User ID mismatch" });
 
             var scoped = cmd with { TenantId = ResolveTenant(cmd.TenantId) };
+
+            if (!IsSuperAdmin)
+                await _accessGuard.CheckChangePersonAsync(scoped.TenantId, id, null, scoped.RoleIds ?? new List<Guid>());
+
             await _assignRolesHandler.Handle(scoped);
             return NoContent();
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (Exception ex)
@@ -365,8 +399,14 @@ public class UsersController : ControllerBase
         try
         {
             var scoped = cmd with { TenantId = ResolveTenant(cmd.TenantId) };
+
+            if (!IsSuperAdmin)
+                foreach (var userId in scoped.UserIds ?? new List<Guid>())
+                    await _accessGuard.CheckChangePersonAsync(scoped.TenantId, userId, null, null);
+
             return Ok(await _bulkUpdateStatusHandler.Handle(scoped));
         }
+        catch (PrivilegeEscalationException ex) { return Refused(ex); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (Exception ex)
         {

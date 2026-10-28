@@ -38,6 +38,20 @@
         If e2e-logs\e2e-jwt.key exists (a -ServersOnly window is open),
         that key is reused; if not, the script warns you, because the
         direct-API tests will then be refused.
+
+ 105: three more settings for the test servers, and one for the tests.
+      Diagnostics__ShowErrorDetails=false  both servers answer errors the
+               way production does (no stack traces), so the error tests
+               see what a visitor would.
+      Diagnostics__FaultProbe=true  /__e2e/fault throws on purpose, for
+               those tests. Only ever mapped in Development.
+      Email__InboundWebhookSecret  a webhook signing secret made from
+               THIS RUN's signing key, for the WebApi only, so the webhook
+               tests can sign events. Not a sending key: nothing can be
+               sent with it, and it is never your real Resend secret. The
+               tests make the same secret from the same key.
+      E2E_LOG_DIR  where the servers' logs are, so the logging test can
+               read them.
 =====================================================================
 #>
 [CmdletBinding()]
@@ -151,6 +165,15 @@ function New-SigningKey {
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
 }
 
+# 105: the webhook signing secret for this run — made from the run's
+# signing key, so the tests (which have the key) can make it too.
+function Get-WebhookSecret([string]$key) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $hash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("e2e-webhook:" + $key)) }
+    finally { $sha.Dispose() }
+    return 'whsec_' + [Convert]::ToBase64String($hash)
+}
+
 function Test-Up([string]$url) {
     $code = & curl.exe -k -s -o NUL -w "%{http_code}" --max-time 3 $url 2>$null
     return ($code -and $code -ne '000')
@@ -182,6 +205,8 @@ function Start-App($proj, [string]$name, [string]$urls, [hashtable]$extra) {
         'WhatsApp__Enabled'          = 'false'
         'WhatsApp__AccessToken'      = ' '
         'Email__AppBaseUrl'          = $adminUrl
+        'Diagnostics__ShowErrorDetails' = 'false'   # 105: errors as production shows them
+        'Diagnostics__FaultProbe'       = 'true'    # 105: /__e2e/fault, Development only
     }
     foreach ($k in $extra.Keys) { $vars[$k] = $extra[$k] }
 
@@ -241,7 +266,9 @@ try {
         Write-Host "WebApi is already running at $apiUrl - using it." -ForegroundColor Yellow
     } else {
         Write-Host "Starting WebApi..." -ForegroundColor Cyan
-        $api = Start-App $apiProj 'webapi' $apiUrl $jwtVars
+        $apiVars = @{ 'Email__InboundWebhookSecret' = (Get-WebhookSecret $jwtKey) }   # 105
+        foreach ($k in $jwtVars.Keys) { $apiVars[$k] = $jwtVars[$k] }
+        $api = Start-App $apiProj 'webapi' $apiUrl $apiVars
         Wait-Up $apiUrl $api 'webapi'
     }
 
@@ -280,6 +307,7 @@ try {
     $env:E2E_JWT_KEY      = $jwtKey          # 100: the direct-API tests sign their tokens with it
     $env:E2E_JWT_ISSUER   = $jwtIssuer
     $env:E2E_JWT_AUDIENCE = $jwtAudience
+    $env:E2E_LOG_DIR      = $logDir          # 105: the logging test reads the servers' logs
     if ($Headed) { $env:HEADED = '1'; if (-not $env:E2E_SLOWMO) { $env:E2E_SLOWMO = '150' } }
 
     $testArgs = @('test', $testProj, '--nologo', '--logger', 'console;verbosity=normal')
