@@ -22,6 +22,13 @@
 
    COMPLETE FILE — replaces the 028 version.
 
+   107-update — BIG WORKSPACES. The page draws at most the newest 500
+   quotes (IndexModel.ListLimit), list and board alike, and says so when
+   there are more. The search box now ALSO searches on the server: typing
+   filters what is on screen as before, and Enter sends the search with the
+   filters (form="qFilter", name="SearchTerm"), so a quote beyond the newest
+   500 can still be found. The cards above always count every quote.
+
    WHAT CHANGED SINCE 028 AND WHY
 
    1. YOU COULD ONLY SEE "OPEN". Nine columns did not fit a 1366px
@@ -311,9 +318,12 @@
 
         <div class="input-group input-group-sm" style="width:260px;">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
-            <input type="search" class="form-control" id="qSearch"
+            @* 107-update: Enter submits the filter form with this term, so the
+               server searches every quote, not only the ones drawn. *@
+            <input type="search" class="form-control" id="qSearch" name="SearchTerm" form="qFilter"
+                   value="@Model.SearchTerm"
                    aria-label="Search quotes by number, customer or deal"
-                   placeholder="Number, customer or deal" autocomplete="off" />
+                   placeholder="Number, customer or deal — Enter searches all" autocomplete="off" />
         </div>
 
         <form method="get" class="d-flex align-items-center gap-2 flex-wrap" id="qFilter">
@@ -366,6 +376,16 @@
             }
         </div>
     </div>
+
+    @if (Model.Capped)
+    {
+        @* 107-update *@
+        <div class="alert alert-info py-2 small" id="qCapped">
+            <i class="bi bi-info-circle me-1"></i>
+            Showing the newest @Model.Quotes.Count.ToString("N0") of @Model.TotalMatching.ToString("N0") quotes.
+            Type in the search box and press <strong>Enter</strong>, or choose a status or dates, to find the others.
+        </div>
+    }
 
     @if (odd.Count > 0)
     {
@@ -557,6 +577,7 @@
                                             <form method="post" asp-page-handler="Delete" class="d-inline q-del"
                                                   data-number="@q.Number"
                                                   asp-route-StatusFilter="@Model.StatusFilter"
+                                                  asp-route-SearchTerm="@Model.SearchTerm"
                                                   asp-route-FromDate="@IndexModel.IsoDate(Model.FromDate)"
                                                   asp-route-ToDate="@IndexModel.IsoDate(Model.ToDate)">
                                                 <input type="hidden" name="quoteId" value="@q.Id" />

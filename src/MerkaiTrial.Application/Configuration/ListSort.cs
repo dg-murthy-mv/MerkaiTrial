@@ -70,10 +70,18 @@ namespace MerkaiTrial.Application.Configuration
         /// The digits of a search, for matching phone numbers whatever
         /// separators they were stored with. Null when there are fewer than
         /// four — "a1" must not turn into "every number containing a 1".
+        ///
+        /// 107-update2: null too when the search has a LETTER in it. "Perf
+        /// Lead 25000" or "Invoice 2026" is a name, not a phone number, and
+        /// the separator-blind match strips six characters from every phone
+        /// in the workspace on every search — with 50,000 leads that alone
+        /// kept a search busy for seconds. A number typed with spaces,
+        /// dashes, dots, brackets or a + still matches exactly as before.
         /// </summary>
         public static string? PhoneDigits(string? search)
         {
             if (string.IsNullOrWhiteSpace(search)) return null;
+            if (search.Any(char.IsLetter)) return null;
             var digits = new string(search.Where(char.IsAsciiDigit).ToArray());
             return digits.Length >= 4 ? digits : null;
         }

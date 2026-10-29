@@ -14,6 +14,7 @@
 using MerkaiTrial.Domain.Entities;
 using MerkaiTrial.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;   // 107-update2 — GetAuditFiltersHandler
 
 namespace MerkaiTrial.Application.Queries;
 
@@ -169,11 +170,34 @@ public class GetAuditLogsHandler : ICommandHandler
 public class GetAuditFiltersHandler : ICommandHandler
 {
     private readonly FlowDbContext _db;
+    private readonly IMemoryCache _cache;
 
-    public GetAuditFiltersHandler(FlowDbContext db) => _db = db;
+    public GetAuditFiltersHandler(FlowDbContext db, IMemoryCache cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
+    /// <summary>
+    /// 107-update2: kept for 10 minutes per workspace. The two drop-downs
+    /// list every KIND of record and action the log has ever held, read by
+    /// going through the whole log — 200,000 rows in a big workspace, every
+    /// time the page opened (25–34 s in the performance run). The kinds
+    /// hardly ever change; a brand-new one shows up within 10 minutes.
+    /// </summary>
     public async Task<(List<string> EntityTypes, List<string> Actions)> Handle(
         Guid tenantId, CancellationToken ct = default)
+    {
+        var key = "audit-filters:" + tenantId.ToString("N");
+        if (_cache.TryGetValue(key, out (List<string>, List<string>) cached)) return cached;
+
+        var result = await ReadAsync(tenantId, ct);
+        _cache.Set(key, result, TimeSpan.FromMinutes(10));
+        return result;
+    }
+
+    private async Task<(List<string> EntityTypes, List<string> Actions)> ReadAsync(
+        Guid tenantId, CancellationToken ct)
     {
         var entityTypes = await _db.Set<AuditLog>().AsNoTracking()
             .Where(a => a.TenantId == tenantId)

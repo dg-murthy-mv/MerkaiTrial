@@ -604,7 +604,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     return RedirectToPage("/Pipeline/Detail", new { id });
                 }
 
-                var quotes = await _quoteService.GetAllAsync(tenantId);
+                var quotes = await _quoteService.GetAllAsync(tenantId, dealId: id);   // 107-update: this deal's only
                 var hasAcceptedQuote = quotes?.Any(q =>
                     q.DealId == id &&
                     (q.Status == "Accepted" || q.Status == "Invoiced")) == true;

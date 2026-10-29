@@ -134,6 +134,55 @@ public class QuotesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// 107-update. GET /api/quotes/paged — one page of the quotes list
+    /// (page size 1–500), newest first, or by issue date with order=issued.
+    /// </summary>
+    [HttpGet("paged")]
+    [Authorize(Policy = "Quotes.Read")]
+    public async Task<ActionResult<PaginatedResult<QuoteListItem>>> GetPaged(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 25,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null,
+        [FromQuery] string? order = null)
+    {
+        var tenantId = _currentUserService.GetCurrentTenantId();
+        try
+        {
+            return Ok(await _getQuotesHandler.HandlePagedAsync(tenantId, pageNumber, pageSize, status, fromDate, toDate,
+                search, byIssueDate: string.Equals(order, "issued", StringComparison.OrdinalIgnoreCase)));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get a page of quotes for tenant {TenantId}", tenantId);
+            return StatusCode(500, new { error = "Failed to retrieve quotes" });
+        }
+    }
+
+    /// <summary>
+    /// 107-update. POST /api/quotes/deal-status { dealIds } — per deal, its
+    /// latest quote and whether one is accepted (the pipeline board's
+    /// badges). POST because a board can show 500 deals.
+    /// </summary>
+    [HttpPost("deal-status")]
+    [Authorize(Policy = "Quotes.Read")]
+    public async Task<ActionResult<List<QuoteDealStatusDto>>> GetDealStatus([FromBody] QuoteDealStatusRequest request)
+    {
+        var tenantId = _currentUserService.GetCurrentTenantId();
+        try
+        {
+            return Ok(await _getQuotesHandler.DealStatusAsync(tenantId, request?.DealIds ?? new List<Guid>()));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get quote badges for tenant {TenantId}", tenantId);
+            return StatusCode(500, new { error = "Failed to retrieve quotes" });
+        }
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Policy = "Quotes.Read")]
     public async Task<ActionResult<QuoteDto>> GetById(

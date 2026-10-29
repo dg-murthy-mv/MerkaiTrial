@@ -249,18 +249,99 @@ namespace MerkaiTrial.Application.Commands.Quotes
             DateTime? fromDate = null,
             DateTime? toDate = null)
         {
+            var query = await FilteredAsync(tenantId, dealId, status, fromDate, toDate);
+            var rows = await ProjectAsync(query.OrderByDescending(q => q.CreatedAtUtc).ThenBy(q => q.Id));
+            await AddListValuesAsync(tenantId, rows);
+            return rows;
+        }
+
+        /// <summary>
+        /// 107-update. One page of the quotes list: filtered, searched (number,
+        /// deal, company or contact), newest first — or by issue date when
+        /// <paramref name="byIssueDate"/>. Page size 1–500.
+        /// </summary>
+        public async Task<PaginatedResult<QuoteListItem>> HandlePagedAsync(
+            Guid tenantId, int pageNumber, int pageSize,
+            string? status = null, DateTime? fromDate = null, DateTime? toDate = null,
+            string? search = null, bool byIssueDate = false)
+        {
+            pageSize = Math.Clamp(pageSize, 1, 500);
+            var page = Math.Max(pageNumber, 1);
+
+            var query = await FilteredAsync(tenantId, null, status, fromDate, toDate);
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var s = search.Trim().ToLower();
+                query = query.Where(q =>
+                    q.Number.ToLower().Contains(s) ||
+                    q.Deal.Title.ToLower().Contains(s) ||
+                    (q.Deal.Company != null && q.Deal.Company.Name.ToLower().Contains(s)) ||
+                    (q.Deal.Contact != null && (
+                        q.Deal.Contact.FirstName.ToLower().Contains(s) ||
+                        (q.Deal.Contact.LastName != null && q.Deal.Contact.LastName.ToLower().Contains(s)) ||
+                        (q.Deal.Contact.Company != null && q.Deal.Contact.Company.Name.ToLower().Contains(s)))));
+            }
+
+            var total = await query.CountAsync();
+            var totalPages = total == 0 ? 1 : (int)Math.Ceiling(total / (double)pageSize);
+            if (page > totalPages) page = totalPages;
+
+            var ordered = byIssueDate
+                ? query.OrderByDescending(q => q.IssueDateUtc).ThenByDescending(q => q.CreatedAtUtc).ThenBy(q => q.Id)
+                : query.OrderByDescending(q => q.CreatedAtUtc).ThenBy(q => q.Id);
+
+            // The page's ids first (a narrow sort), then the rows themselves.
+            var ids = await ordered.Skip((page - 1) * pageSize).Take(pageSize).Select(q => q.Id).ToListAsync();
+            var position = ids.Select((id, i) => (id, i)).ToDictionary(p => p.id, p => p.i);
+            var rows = ids.Count == 0
+                ? new List<QuoteListItem>()
+                : (await ProjectAsync(_db.Quotes.AsNoTracking().Where(q => ids.Contains(q.Id))))
+                    .OrderBy(r => position[r.Id]).ToList();
+
+            await AddListValuesAsync(tenantId, rows);
+
+            return new PaginatedResult<QuoteListItem> { Items = rows, TotalCount = total, Page = page, PageSize = pageSize };
+        }
+
+        /// <summary>
+        /// 107-update. Per deal: the latest quote's number and status, and any
+        /// accepted quote — for the pipeline board's badges, on the deals it
+        /// actually shows (it used to load every quote in the workspace).
+        /// </summary>
+        public async Task<List<QuoteDealStatusDto>> DealStatusAsync(Guid tenantId, IReadOnlyCollection<Guid> dealIds)
+        {
+            var ids = dealIds.Where(i => i != Guid.Empty).Distinct().Take(1000).ToList();
+            if (ids.Count == 0) return new List<QuoteDealStatusDto>();
+
+            var dealAccess = await _scope.GetAsync(RecordModules.Deals);
+            var quotes = await _db.Quotes.AsNoTracking()
+                .Where(q => q.TenantId == tenantId && !q.IsDeleted && ids.Contains(q.DealId))
+                .WithVisibleDeal(_db, dealAccess)
+                .Select(q => new { q.Id, q.DealId, q.Number, q.Status, q.CreatedAtUtc })
+                .ToListAsync();
+
+            return quotes
+                .GroupBy(q => q.DealId)
+                .Select(g =>
+                {
+                    var latest = g.OrderByDescending(q => q.CreatedAtUtc).First();
+                    var accepted = g.FirstOrDefault(q => q.Status == QuoteStatus.Accepted);
+                    return new QuoteDealStatusDto(g.Key, latest.Number, latest.Status.ToString(), accepted != null, accepted?.Id);
+                })
+                .ToList();
+        }
+
+        /// <summary>Visibility and the filters, shared by both reads.</summary>
+        private async Task<IQueryable<Quote>> FilteredAsync(
+            Guid tenantId, Guid? dealId, string? status, DateTime? fromDate, DateTime? toDate)
+        {
             // Quotes follow their deal's visibility.
             var dealAccess = await _scope.GetAsync(RecordModules.Deals);
 
-            IQueryable<Quote> query = _db.Quotes
+            var query = _db.Quotes.AsNoTracking()
                 .Where(q => q.TenantId == tenantId && !q.IsDeleted)
-                .WithVisibleDeal(_db, dealAccess)
-                .Include(q => q.Deal)
-                    .ThenInclude(d => d.Contact)
-                        .ThenInclude(c => c!.Company)     // 053
-                .Include(q => q.Deal)
-                    .ThenInclude(d => d!.Company)         // 053
-                .Include(q => q.Items.Where(i => !i.IsDeleted));
+                .WithVisibleDeal(_db, dealAccess);
 
             if (dealId.HasValue)
                 query = query.Where(q => q.DealId == dealId.Value);
@@ -274,39 +355,65 @@ namespace MerkaiTrial.Application.Commands.Quotes
             if (toDate.HasValue)
                 query = query.Where(q => q.IssueDateUtc <= toDate.Value);
 
-            var quotesData = await query
-                .OrderByDescending(q => q.CreatedAtUtc)
-                .ToListAsync();
+            return query;
+        }
 
-            var rows = quotesData.Select(q => new QuoteListItem(
+        /// <summary>
+        /// 107-update. The list row, read as just the columns it shows. It
+        /// used to load each quote WITH its deal, contact, both companies and
+        /// every line (one wide row per line) and count the lines in memory.
+        /// The customer is named by the one rule (053, CustomerNaming).
+        /// The order is the caller's.
+        /// </summary>
+        private static async Task<List<QuoteListItem>> ProjectAsync(IQueryable<Quote> ordered)
+        {
+            var raw = await ordered.Select(q => new
+            {
                 q.Id,
                 q.DealId,
                 q.Number,
-                q.Deal.Title,
-                // 053: the COMPANY when there is one, the person otherwise.
-                // This column is headed "Company" on the list; it held a
-                // person's name.
-                CustomerNaming.DisplayFor(q.Deal),
+                DealTitle      = q.Deal.Title,
+                DealCompany    = q.Deal.Company != null ? q.Deal.Company.Name : null,
+                ContactCompany = q.Deal.Contact != null && q.Deal.Contact.Company != null ? q.Deal.Contact.Company.Name : null,
+                FirstName      = q.Deal.Contact != null ? q.Deal.Contact.FirstName : null,
+                LastName       = q.Deal.Contact != null ? q.Deal.Contact.LastName : null,
                 q.IssueDateUtc,
                 q.ExpiresAtUtc,
                 q.Currency,
-                q.Status.ToString(),
+                q.Status,
                 q.GrandTotal,
-                q.Items.Count,
-                q.CreatedAtUtc
+                ItemCount      = q.Items.Count(i => !i.IsDeleted),
+                q.CreatedAtUtc,
+            }).ToListAsync();
+
+            return raw.Select(r => new QuoteListItem(
+                r.Id,
+                r.DealId,
+                r.Number,
+                r.DealTitle ?? "",
+                // 053: the COMPANY when there is one, the person otherwise.
+                CustomerNaming.Display(r.DealCompany, r.ContactCompany, r.FirstName, r.LastName),
+                r.IssueDateUtc,
+                r.ExpiresAtUtc,
+                r.Currency,
+                r.Status.ToString(),
+                r.GrandTotal,
+                r.ItemCount,
+                r.CreatedAtUtc
             )).ToList();
+        }
 
-            // 081 — the "Show on the list" custom values, for these rows only.
+        /// <summary>081 — the "Show on the list" custom values, for these rows only.</summary>
+        private async Task AddListValuesAsync(Guid tenantId, List<QuoteListItem> rows)
+        {
+            if (rows.Count == 0) return;
             var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(_db, tenantId, CustomFieldEntityTypes.Quote);
-            if (defs.Any(d => d.ShowInList) && rows.Count > 0)
-            {
-                var values = await CustomFieldListQuery.ListValuesAsync(
-                    _db, tenantId, defs, rows.Select(r => r.Id).ToList());
-                foreach (var r in rows)
-                    if (values.TryGetValue(r.Id, out var map)) r.CustomFieldValues = map;
-            }
+            if (!defs.Any(d => d.ShowInList)) return;
 
-            return rows;
+            var values = await CustomFieldListQuery.ListValuesAsync(
+                _db, tenantId, defs, rows.Select(r => r.Id).ToList());
+            foreach (var r in rows)
+                if (values.TryGetValue(r.Id, out var map)) r.CustomFieldValues = map;
         }
     }
 

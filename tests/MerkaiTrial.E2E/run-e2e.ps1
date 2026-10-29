@@ -60,6 +60,19 @@
       E2E_INBOUND_DIR  that folder, for the tests.
       E2E_LOG_DIR  where the servers' logs are, so the logging test can
                read them.
+
+ 107: performance tests.
+      Diagnostics__RequestCost=true  both servers count each request's
+               database queries (and Admin.Web its WebApi calls) and say so
+               in an X-E2E-Cost header and at /__e2e/cost/{id}. Development
+               only; numbers, never data.
+      -UpdatePerfBaseline  accept this run's timings as the new normal
+               (perf-baseline.json). Use it once after a deliberate change
+               or on a new computer. Without it, a page more than 50%
+               slower than the baseline fails.
+      -PerfLoadSeconds 120  how long the "20 people at once" test runs.
+      Only the performance tests:    -Filter "Category=Performance"
+      Everything except them:        -Filter "Category!=Performance"
 =====================================================================
 #>
 [CmdletBinding()]
@@ -70,6 +83,8 @@ param(
     [string]$Filter,
     [switch]$ServersOnly,
     [switch]$SkipBuild,
+    [switch]$UpdatePerfBaseline,
+    [int]$PerfLoadSeconds = 120,
     [int]$AdminPort = 7393,
     [int]$ApiPort = 7391
 )
@@ -218,6 +233,7 @@ function Start-App($proj, [string]$name, [string]$urls, [hashtable]$extra) {
         'Email__AppBaseUrl'          = $adminUrl
         'Diagnostics__ShowErrorDetails' = 'false'   # 105: errors as production shows them
         'Diagnostics__FaultProbe'       = 'true'    # 105: /__e2e/fault, Development only
+        'Diagnostics__RequestCost'      = 'true'    # 107: count each request's queries, Development only
     }
     foreach ($k in $extra.Keys) { $vars[$k] = $extra[$k] }
 
@@ -324,6 +340,9 @@ try {
     $env:E2E_JWT_AUDIENCE = $jwtAudience
     $env:E2E_LOG_DIR      = $logDir          # 105: the logging test reads the servers' logs
     $env:E2E_INBOUND_DIR  = $inboundDir      # 106: received emails for the WebApi's stand-in
+    $env:E2E_PERF_LOAD_SECONDS = "$PerfLoadSeconds"                  # 107
+    if ($UpdatePerfBaseline) { $env:E2E_PERF_UPDATE_BASELINE = '1' } # 107
+    else { Remove-Item Env:\E2E_PERF_UPDATE_BASELINE -ErrorAction SilentlyContinue }
     if ($Headed) { $env:HEADED = '1'; if (-not $env:E2E_SLOWMO) { $env:E2E_SLOWMO = '150' } }
 
     $testArgs = @('test', $testProj, '--nologo', '--logger', 'console;verbosity=normal')
@@ -368,6 +387,8 @@ try {
     Write-Host ""
     Write-Host "Full output : $runLog"
     Write-Host "Short list  : $summaryLog"
+    $perfReport = Join-Path $artifacts 'perf-report.txt'   # 107
+    if (Test-Path $perfReport) { Write-Host "Performance : $perfReport" }
     if ($exitCode -ne 0) {
         Write-Host ""
         Write-Host "Some tests failed. Send me summary.txt and test-run.txt from e2e-logs." -ForegroundColor Red

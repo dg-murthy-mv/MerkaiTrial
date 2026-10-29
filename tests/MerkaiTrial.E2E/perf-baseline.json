@@ -1,0 +1,282 @@
+{
+  "audit.far": {
+    "ms": 110,
+    "queries": 10,
+    "recorded": "2026-10-29 13:26"
+  },
+  "audit.first": {
+    "ms": 103,
+    "queries": 10,
+    "recorded": "2026-10-29 13:26"
+  },
+  "audit.search": {
+    "ms": 631,
+    "queries": 10,
+    "recorded": "2026-10-29 13:26"
+  },
+  "audit.year": {
+    "ms": 101,
+    "queries": 10,
+    "recorded": "2026-10-29 13:26"
+  },
+  "browser.contacts": {
+    "ms": 1543,
+    "queries": null,
+    "recorded": "2026-10-29 13:29"
+  },
+  "browser.dashboard": {
+    "ms": 1855,
+    "queries": null,
+    "recorded": "2026-10-29 13:29"
+  },
+  "browser.leads": {
+    "ms": 1730,
+    "queries": null,
+    "recorded": "2026-10-29 13:29"
+  },
+  "browser.pipeline": {
+    "ms": 1589,
+    "queries": null,
+    "recorded": "2026-10-29 13:29"
+  },
+  "browser.quotes": {
+    "ms": 2332,
+    "queries": null,
+    "recorded": "2026-10-29 13:29"
+  },
+  "companies.far": {
+    "ms": 791,
+    "queries": 21,
+    "recorded": "2026-10-29 13:26"
+  },
+  "companies.first": {
+    "ms": 569,
+    "queries": 21,
+    "recorded": "2026-10-29 13:26"
+  },
+  "companies.search": {
+    "ms": 810,
+    "queries": 21,
+    "recorded": "2026-10-29 13:26"
+  },
+  "companies.sort": {
+    "ms": 1694,
+    "queries": 21,
+    "recorded": "2026-10-29 13:26"
+  },
+  "contacts.far": {
+    "ms": 484,
+    "queries": 19,
+    "recorded": "2026-10-29 13:26"
+  },
+  "contacts.first": {
+    "ms": 597,
+    "queries": 19,
+    "recorded": "2026-10-29 13:26"
+  },
+  "contacts.search": {
+    "ms": 1966,
+    "queries": 19,
+    "recorded": "2026-10-29 16:10"
+  },
+  "contacts.sort": {
+    "ms": 948,
+    "queries": 19,
+    "recorded": "2026-10-29 13:26"
+  },
+  "dashboard.admin": {
+    "ms": 1039,
+    "queries": 42,
+    "recorded": "2026-10-29 13:22"
+  },
+  "dashboard.rep": {
+    "ms": 697,
+    "queries": 52,
+    "recorded": "2026-10-29 13:22"
+  },
+  "detail.company": {
+    "ms": 271,
+    "queries": 20,
+    "recorded": "2026-10-29 13:26"
+  },
+  "detail.contact": {
+    "ms": 582,
+    "queries": 27,
+    "recorded": "2026-10-29 13:26"
+  },
+  "detail.deal": {
+    "ms": 724,
+    "queries": 59,
+    "recorded": "2026-10-29 13:26"
+  },
+  "detail.invoice": {
+    "ms": 876,
+    "queries": 28,
+    "recorded": "2026-10-29 13:26"
+  },
+  "detail.lead": {
+    "ms": 497,
+    "queries": 53,
+    "recorded": "2026-10-29 13:26"
+  },
+  "detail.quote": {
+    "ms": 847,
+    "queries": 48,
+    "recorded": "2026-10-29 13:26"
+  },
+  "inbox": {
+    "ms": 98,
+    "queries": 11,
+    "recorded": "2026-10-29 13:26"
+  },
+  "invoices.far": {
+    "ms": 408,
+    "queries": 16,
+    "recorded": "2026-10-29 13:26"
+  },
+  "invoices.first": {
+    "ms": 346,
+    "queries": 16,
+    "recorded": "2026-10-29 13:26"
+  },
+  "invoices.search": {
+    "ms": 1072,
+    "queries": 16,
+    "recorded": "2026-10-29 13:26"
+  },
+  "invoices.sort": {
+    "ms": 371,
+    "queries": 16,
+    "recorded": "2026-10-29 13:26"
+  },
+  "leads.far": {
+    "ms": 634,
+    "queries": 34,
+    "recorded": "2026-10-29 13:26"
+  },
+  "leads.first": {
+    "ms": 705,
+    "queries": 34,
+    "recorded": "2026-10-29 13:26"
+  },
+  "leads.rep": {
+    "ms": 635,
+    "queries": 40,
+    "recorded": "2026-10-29 13:26"
+  },
+  "leads.search": {
+    "ms": 1438,
+    "queries": 35,
+    "recorded": "2026-10-29 16:10"
+  },
+  "leads.sort": {
+    "ms": 184,
+    "queries": 35,
+    "recorded": "2026-10-29 16:10"
+  },
+  "load.median": {
+    "ms": 150,
+    "queries": null,
+    "recorded": "2026-10-29 16:13"
+  },
+  "load.p95": {
+    "ms": 2634,
+    "queries": null,
+    "recorded": "2026-10-29 16:13"
+  },
+  "pipeline.board": {
+    "ms": 481,
+    "queries": 41,
+    "recorded": "2026-10-29 13:26"
+  },
+  "pipeline.far": {
+    "ms": 351,
+    "queries": 41,
+    "recorded": "2026-10-29 13:26"
+  },
+  "pipeline.rep": {
+    "ms": 454,
+    "queries": 47,
+    "recorded": "2026-10-29 13:26"
+  },
+  "pipeline.search": {
+    "ms": 1482,
+    "queries": 41,
+    "recorded": "2026-10-29 13:26"
+  },
+  "pipeline.sort": {
+    "ms": 455,
+    "queries": 41,
+    "recorded": "2026-10-29 13:26"
+  },
+  "pipeline.table": {
+    "ms": 491,
+    "queries": 41,
+    "recorded": "2026-10-29 13:26"
+  },
+  "quotes.board": {
+    "ms": 473,
+    "queries": 19,
+    "recorded": "2026-10-29 13:26"
+  },
+  "quotes.list": {
+    "ms": 486,
+    "queries": 19,
+    "recorded": "2026-10-29 13:26"
+  },
+  "save.contact.add": {
+    "ms": 42,
+    "queries": 12,
+    "recorded": "2026-10-29 16:11"
+  },
+  "save.deal.add": {
+    "ms": 29,
+    "queries": 15,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.deal.delete": {
+    "ms": 191,
+    "queries": 13,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.deal.edit": {
+    "ms": 16,
+    "queries": 11,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.deal.move": {
+    "ms": 27,
+    "queries": 16,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.lead.add": {
+    "ms": 210,
+    "queries": 17,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.lead.delete": {
+    "ms": 204,
+    "queries": 9,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.lead.edit": {
+    "ms": 161,
+    "queries": 17,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.quote.add": {
+    "ms": 287,
+    "queries": 15,
+    "recorded": "2026-10-29 13:28"
+  },
+  "save.quote.delete": {
+    "ms": 198,
+    "queries": 13,
+    "recorded": "2026-10-29 13:28"
+  },
+  "tasks": {
+    "ms": 44,
+    "queries": 11,
+    "recorded": "2026-10-29 13:26"
+  }
+}

@@ -148,9 +148,22 @@ namespace MerkaiTrial.Application.Commands.Leads
                 var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
                 if (page > totalPages) page = totalPages;
 
-                var items = await Ordered(leadsQuery, query.Sort, query.Dir)
+                // 107-update4 — the page's ids first. SQL sorts only the
+                // order's few columns, not whole rows: "sorted by value" used
+                // to sort every lead's name, email, phone, channel and source
+                // (50,000 rows) to show 10, which needed a large block of
+                // SQL Server memory and timed out at 30 s when memory was
+                // short. Then only those rows are read, and put back in order.
+                var pageIds = await Ordered(leadsQuery, query.Sort, query.Dir)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
+                    .Select(l => l.Id)
+                    .ToListAsync(cancellationToken);
+                var position = pageIds.Select((id, i) => (id, i)).ToDictionary(p => p.id, p => p.i);
+
+                var items = (await _context.Leads
+                    .AsNoTracking()
+                    .Where(l => pageIds.Contains(l.Id))
                     .Select(l => new LeadListItem(
                         l.Id,
                         l.FullName,
@@ -169,7 +182,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                         l.OwnerUserId,
                         null
                     ))
-                    .ToListAsync(cancellationToken);
+                    .ToListAsync(cancellationToken))
+                    .OrderBy(i => position[i.Id])
+                    .ToList();
 
                 // 096 — the owners' names, one query for the page (note 9).
                 items = await WithOwnerNamesAsync(tenantId, items, cancellationToken);

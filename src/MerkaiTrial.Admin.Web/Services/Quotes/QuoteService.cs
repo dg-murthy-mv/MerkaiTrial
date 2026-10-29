@@ -12,6 +12,18 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
             DateTime? fromDate = null,
             DateTime? toDate = null);
 
+        /// <summary>
+        /// 107-update. One page of quotes (GET api/quotes/paged), newest first
+        /// — or by issue date with byIssueDate. Dates as GetAllAsync's
+        /// (inclusive). Throws on failure, so the page can say so.
+        /// </summary>
+        Task<PaginatedResult<QuoteListItem>> GetPagedAsync(
+            int pageNumber, int pageSize, string? status = null, DateTime? fromDate = null, DateTime? toDate = null,
+            string? search = null, bool byIssueDate = false);
+
+        /// <summary>107-update. The pipeline board's quote badges, for the deals it shows.</summary>
+        Task<List<QuoteDealStatusDto>> GetDealStatusAsync(IEnumerable<Guid> dealIds);
+
         Task<QuoteDto> GetByIdAsync(Guid tenantId, Guid quoteId);
         Task<QuoteDto> CreateAsync(CreateQuoteDto dto);
         Task UpdateAsync(Guid tenantId, Guid quoteId, UpdateQuoteDto dto);
@@ -112,6 +124,30 @@ namespace MerkaiTrial.Admin.Web.Services.Quotes
                 _logger.LogError(ex, "Failed to get quotes for tenant {TenantId}", tenantId);
                 return new List<QuoteListItem>();
             }
+        }
+
+        public async Task<PaginatedResult<QuoteListItem>> GetPagedAsync(
+            int pageNumber, int pageSize, string? status = null, DateTime? fromDate = null, DateTime? toDate = null,
+            string? search = null, bool byIssueDate = false)
+        {
+            var url = $"api/quotes/paged?pageNumber={pageNumber}&pageSize={pageSize}";
+            if (!string.IsNullOrEmpty(status)) url += $"&status={Uri.EscapeDataString(status)}";
+            if (fromDate.HasValue) url += $"&fromDate={fromDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (toDate.HasValue)   url += $"&toDate={toDate.Value:yyyy-MM-ddTHH:mm:ss}";
+            if (!string.IsNullOrWhiteSpace(search)) url += $"&search={Uri.EscapeDataString(search.Trim())}";
+            if (byIssueDate) url += "&order=issued";
+
+            return await _apiService.GetAsync<PaginatedResult<QuoteListItem>>(url)
+                   ?? new PaginatedResult<QuoteListItem> { Page = 1, PageSize = pageSize };
+        }
+
+        public async Task<List<QuoteDealStatusDto>> GetDealStatusAsync(IEnumerable<Guid> dealIds)
+        {
+            var ids = dealIds.Distinct().ToList();
+            if (ids.Count == 0) return new List<QuoteDealStatusDto>();
+            return await _apiService.PostAsync<List<QuoteDealStatusDto>>("api/quotes/deal-status",
+                       new QuoteDealStatusRequest { DealIds = ids })
+                   ?? new List<QuoteDealStatusDto>();
         }
 
         public async Task<QuoteDto> GetByIdAsync(Guid tenantId, Guid quoteId)

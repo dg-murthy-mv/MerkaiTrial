@@ -345,6 +345,17 @@ public class FlowDbContext : DbContext
         }
     }
 
+    /// <summary>
+    /// 107. Every context counts its database commands for the current
+    /// request (Diagnostics/RequestCost.cs) — only while the test servers
+    /// are counting one; otherwise the interceptor returns at once.
+    /// </summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        optionsBuilder.AddInterceptors(MerkaiTrial.Infrastructure.Diagnostics.RequestCostInterceptor.Instance);
+        base.OnConfiguring(optionsBuilder);
+    }
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);

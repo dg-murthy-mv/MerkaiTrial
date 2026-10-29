@@ -147,6 +147,14 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     // CustomFieldListQuery). Null = no field could match.
                     var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, search);
 
+                    // 107-update3 — the companies whose name matches: a short
+                    // list SQL finds once. The search used to join every
+                    // contact to its company first, which needed a large
+                    // block of SQL Server memory and went past 30 s.
+                    var matchingCompanies = _context.Companies
+                        .Where(co => co.TenantId == tenantId && co.Name.ToLower().Contains(search))
+                        .Select(co => (Guid?)co.Id);
+
                     if (cfMatches is null)
                     {
                         query = query.Where(c =>
@@ -156,7 +164,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                             (c.Phone     != null && c.Phone.Contains(search)) ||
                             (c.Mobile    != null && c.Mobile.Contains(search)) ||
                             (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
-                            (c.Company   != null && c.Company.Name.ToLower().Contains(search)) ||
+                            (c.CompanyId != null && matchingCompanies.Contains(c.CompanyId)) ||
                             (digits != "" && c.Phone != null &&
                              c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
@@ -173,7 +181,7 @@ namespace MerkaiTrial.Application.Commands.Contacts
                             (c.Phone     != null && c.Phone.Contains(search)) ||
                             (c.Mobile    != null && c.Mobile.Contains(search)) ||
                             (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
-                            (c.Company   != null && c.Company.Name.ToLower().Contains(search)) ||
+                            (c.CompanyId != null && matchingCompanies.Contains(c.CompanyId)) ||
                             (digits != "" && c.Phone != null &&
                              c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
@@ -200,10 +208,21 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 var totalPages = totalCount == 0 ? 1 : (int)Math.Ceiling(totalCount / (double)pageSize);
                 if (page > totalPages) page = totalPages;
 
-                // ✅ BUG 3 FIX: subquery for real DealCount per contact
-                var contacts = await Ordered(query, request.Sort, request.Dir)   // 096
+                // 107-update2 — the page's ids first: SQL sorts only the
+                // order's few columns (the company sort used to join, sort
+                // and count deals for every contact in the workspace, and
+                // went past 60 s with 30,000 contacts). Then those rows.
+                var pageIds = await Ordered(query, request.Sort, request.Dir)   // 096
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
+                    .Select(c => c.Id)
+                    .ToListAsync(cancellationToken);
+                var position = pageIds.Select((id, i) => (id, i)).ToDictionary(p => p.id, p => p.i);
+
+                // ✅ BUG 3 FIX: subquery for real DealCount per contact
+                var contacts = (await _context.Contacts
+                    .AsNoTracking()
+                    .Where(c => pageIds.Contains(c.Id))
                     .Select(c => new ContactListItem
                     {
                         Id          = c.Id,
@@ -222,7 +241,9 @@ namespace MerkaiTrial.Application.Commands.Contacts
                                         .Count(d => d.ContactId == c.Id && !d.IsDeleted),
                         CreatedAtUtc = c.CreatedAtUtc
                     })
-                    .ToListAsync(cancellationToken);
+                    .ToListAsync(cancellationToken))
+                    .OrderBy(c => position[c.Id])
+                    .ToList();
 
                 // ── 3. LIST COLUMN VALUES, this page only ────────────────
                 var listValues = await CustomFieldListQuery.ListValuesAsync(
@@ -263,7 +284,12 @@ namespace MerkaiTrial.Application.Commands.Contacts
             IOrderedQueryable<Contact> ordered = key switch
             {
                 // A contact with no company sorts with "" — first going up, last going down.
-                "company" => contacts.OrderByDir(c => c.Company != null ? c.Company.Name : "", desc)
+                // 107-update3 — the company's name looked up per contact
+                // (by its key) rather than joining every company first.
+                "company" => contacts.OrderByDir(c => _context.Companies
+                                                        .Where(co => (Guid?)co.Id == c.CompanyId)
+                                                        .Select(co => co.Name)
+                                                        .FirstOrDefault() ?? "", desc)
                                      .ThenBy(c => c.FirstName).ThenBy(c => c.LastName),
                 "email"   => contacts.OrderByDir(c => c.Email ?? "", desc),
                 "deals"   => contacts.OrderByDir(c => _context.Deals.Count(d => d.ContactId == c.Id && !d.IsDeleted), desc)

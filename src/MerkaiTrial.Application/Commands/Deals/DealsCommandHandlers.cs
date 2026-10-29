@@ -4,6 +4,18 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (107-update — performance with 20,000 deals)
+//   ✅ GetDealsHandler pages in two steps. Step 1 sorts only what the
+//      order needs and takes the page's ids; step 2 reads those rows,
+//      only the columns the list shows. It used to sort WHOLE deal, contact
+//      and company rows (every column, the long text ones included) for
+//      the entire workspace to hand back 10 — SQL Server reserved memory
+//      for that sort on every call, and with 20,000 deals the board and
+//      the table took 30–40 s while other pages queued behind it.
+//   ✅ GetDealSummaryHandler (new): the dashboard's deal numbers counted by
+//      the database over every deal the person can see. The dashboard
+//      counted the newest 500 only, so its totals were wrong past that.
+//
 // CHANGES (100 — one stage move at a time)
 //   ✅ TransitionDealStageHandler (automatic moves: quote accepted, invoice
 //      paid) and UpdateDealStageHandler (the board and the deal page) lock
@@ -408,16 +420,20 @@ namespace MerkaiTrial.Application.Commands.Deals
             // The plan limit counts every deal in the workspace, whoever owns it.
             var quotaUsed = await _db.Deals.CountAsync(d => d.TenantId == tenantId && !d.IsDeleted);
 
-            var query =
-                from d    in _db.Deals.VisibleTo(access)
-                join c    in _db.Contacts  on d.ContactId  equals c.Id
-                join comp in _db.Companies on d.CompanyId  equals (Guid?)comp.Id into compGroup
-                from comp in compGroup.DefaultIfEmpty()
-                where d.TenantId == tenantId && !d.IsDeleted
-                select new { Deal = d, Contact = c, Company = comp };
+            // 107-update3 — deals ONLY. This used to join every deal to its
+            // contact and its company before counting and sorting. With
+            // 20,000 deals that join needed a large block of SQL Server
+            // memory just to count, and under memory pressure the count
+            // waited past 30 s. The contact join changed nothing (every deal
+            // has its contact — the database requires it), and the company
+            // is now looked up only where it is needed: the search and the
+            // company sort. Counts and the default order now read the deal
+            // indexes alone.
+            var query = _db.Deals.VisibleTo(access)
+                .Where(d => d.TenantId == tenantId && !d.IsDeleted);
 
             if (!string.IsNullOrEmpty(request.Stage))
-                query = query.Where(x => x.Deal.Stage == request.Stage);
+                query = query.Where(d => d.Stage == request.Stage);
 
             // 077 — the ACTIVE custom fields for deals: search, filters, columns.
             var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
@@ -430,18 +446,24 @@ namespace MerkaiTrial.Application.Commands.Deals
                 // 077 — custom text values and dropdown choice labels too.
                 var cfMatches = CustomFieldListQuery.SearchMatches(_db, tenantId, defs, q);
 
+                // The companies whose name matches — a small list SQL finds
+                // once, instead of joining every deal to its company.
+                var matchingCompanies = _db.Companies
+                    .Where(co => co.TenantId == tenantId && co.Name.ToLower().Contains(q))
+                    .Select(co => (Guid?)co.Id);
+
                 query = cfMatches is null
-                    ? query.Where(x =>
-                        x.Deal.Title.ToLower().Contains(q) ||
-                        (x.Company != null && x.Company.Name.ToLower().Contains(q)))
-                    : query.Where(x =>
-                        x.Deal.Title.ToLower().Contains(q) ||
-                        (x.Company != null && x.Company.Name.ToLower().Contains(q)) ||
-                        cfMatches.Contains(x.Deal.Id));
+                    ? query.Where(d =>
+                        d.Title.ToLower().Contains(q) ||
+                        matchingCompanies.Contains(d.CompanyId))
+                    : query.Where(d =>
+                        d.Title.ToLower().Contains(q) ||
+                        matchingCompanies.Contains(d.CompanyId) ||
+                        cfMatches.Contains(d.Id));
             }
 
             if (!string.IsNullOrEmpty(request.OwnerUserId))
-                query = query.Where(x => x.Deal.OwnerUserId == request.OwnerUserId);
+                query = query.Where(d => d.OwnerUserId == request.OwnerUserId);
 
             // 077 — custom field filters, ANDed. A local per clause so EF
             // inlines the subquery (see CustomFieldListQuery).
@@ -449,8 +471,8 @@ namespace MerkaiTrial.Application.Commands.Deals
             {
                 var ids = clause.EntityIds;
                 query = clause.Exclude
-                    ? query.Where(x => !ids.Contains(x.Deal.Id))
-                    : query.Where(x => ids.Contains(x.Deal.Id));
+                    ? query.Where(d => !ids.Contains(d.Id))
+                    : query.Where(d => ids.Contains(d.Id));
             }
 
             var total = await query.CountAsync();
@@ -471,37 +493,70 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             var ordered = sortKey switch
             {
-                "title"       => query.OrderByDir(x => x.Deal.Title, desc),
-                "company"     => query.OrderByDir(x => x.Company != null ? x.Company.Name : "", desc),
-                "stage"       => query.OrderByDir(x => x.Deal.Stage, desc),
-                "value"       => query.OrderByDir(x => x.Deal.ExpectedValue, desc),
-                "probability" => query.OrderByDir(x => x.Deal.Probability, desc),
-                "close"       => query.OrderByDir(x => x.Deal.ExpectedCloseDateUtc, desc),
-                "created"     => query.OrderByDir(x => x.Deal.CreatedAtUtc, desc),
-                _             => query.OrderByDescending(x => x.Deal.CreatedAtUtc)
+                "title"       => query.OrderByDir(d => d.Title, desc),
+                // A deal with no company sorts with "" — first going up, last going down (as before).
+                "company"     => query.OrderByDir(d => _db.Companies
+                                                        .Where(co => (Guid?)co.Id == d.CompanyId)
+                                                        .Select(co => co.Name)
+                                                        .FirstOrDefault() ?? "", desc),
+                "stage"       => query.OrderByDir(d => d.Stage, desc),
+                "value"       => query.OrderByDir(d => d.ExpectedValue, desc),
+                "probability" => query.OrderByDir(d => d.Probability, desc),
+                "close"       => query.OrderByDir(d => d.ExpectedCloseDateUtc, desc),
+                "created"     => query.OrderByDir(d => d.CreatedAtUtc, desc),
+                _             => query.OrderByDescending(d => d.CreatedAtUtc)
             };
 
             if (sortKey is not (null or "created"))
-                ordered = ordered.ThenByDescending(x => x.Deal.CreatedAtUtc);
+                ordered = ordered.ThenByDescending(d => d.CreatedAtUtc);
 
-            var rows = await ordered
-                .ThenBy(x => x.Deal.Id)       // 096 — stable: paging never repeats or skips a deal
+            // 107-update — step 1: the page's ids only. SQL sorts the few
+            // columns the order needs, not whole rows.
+            var pageIds = await ordered
+                .ThenBy(d => d.Id)            // 096 — stable: paging never repeats or skips a deal
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(d => d.Id)
                 .ToListAsync();
 
+            // Step 2: those deals, only the columns the list shows, put back
+            // in the page's order.
+            var position = pageIds.Select((id, i) => (id, i)).ToDictionary(p => p.id, p => p.i);
+            var rows = pageIds.Count == 0
+                ? new List<DealRow>()
+                : (await (
+                    from d in _db.Deals.AsNoTracking()
+                    where pageIds.Contains(d.Id)
+                    join comp in _db.Companies on d.CompanyId equals (Guid?)comp.Id into compGroup
+                    from comp in compGroup.DefaultIfEmpty()
+                    select new DealRow(
+                        d.Id, d.Title, comp != null ? comp.Name : null, d.Stage, d.ExpectedValue, d.Currency,
+                        d.ExpectedCloseDateUtc, d.ActualCloseDateUtc, d.OwnerUserId, d.Probability))
+                    .ToListAsync())
+                  .OrderBy(r => position[r.Id])
+                  .ToList();
+
             var ownerIds = rows
-                .Where(x => !string.IsNullOrEmpty(x.Deal.OwnerUserId))
-                .Select(x => x.Deal.OwnerUserId!)
+                .Where(x => !string.IsNullOrEmpty(x.OwnerUserId))
+                .Select(x => x.OwnerUserId!)
                 .Distinct().ToList();
 
-            var ownerIdsLower = ownerIds.Select(id => id.ToLowerInvariant()).ToList();
+            // 107-update4 — matched as Guids. The old query turned EVERY
+            // user's id into lower-case text to compare it, so SQL Server
+            // read the whole Users table for each page of deals.
+            var ownerGuids = ownerIds
+                .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct()
+                .ToList();
 
-            var owners = ownerIdsLower.Any()
-                ? await _db.Users
-                    .Where(u => ownerIdsLower.Contains(u.Id.ToString().ToLower()))
-                    .Select(u => new { Id = u.Id.ToString().ToLower(), u.FirstName, u.LastName })
-                    .ToListAsync()
+            var owners = ownerGuids.Count > 0
+                ? (await _db.Users
+                    .Where(u => ownerGuids.Contains(u.Id))
+                    .Select(u => new { u.Id, u.FirstName, u.LastName })
+                    .ToListAsync())
+                  .Select(u => new { Id = u.Id.ToString().ToLowerInvariant(), u.FirstName, u.LastName })
+                  .ToList()
                 : new();
 
             // OrdinalIgnoreCase so DD100003-... and dd100003-... both match
@@ -509,38 +564,185 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             // 077 — list-column values for the deals on this page only.
             var listValues = await CustomFieldListQuery.ListValuesAsync(
-                _db, tenantId, defs, rows.Select(x => x.Deal.Id).ToList());
+                _db, tenantId, defs, rows.Select(x => x.Id).ToList());
 
             var items = rows.Select(x =>
             {
-                ownerMap.TryGetValue(x.Deal.OwnerUserId ?? "", out var owner);
+                ownerMap.TryGetValue(x.OwnerUserId ?? "", out var owner);
                 var ownerName     = owner != null ? $"{owner.FirstName} {owner.LastName}".Trim() : "Unassigned";
                 var ownerInitials = owner != null
-                    ? $"{owner.FirstName[..1]}{owner.LastName[..1]}".ToUpper()
+                    ? $"{Initial(owner.FirstName)}{Initial(owner.LastName)}".ToUpper()
                     : "UN";
 
                 return new DealListItem(
-                    x.Deal.Id,
-                    x.Deal.Title,
-                    x.Company?.Name,
-                    x.Deal.Stage,
-                    x.Deal.ExpectedValue,
-                    x.Deal.Currency ?? "",
-                    x.Deal.ExpectedCloseDateUtc,
-                    x.Deal.ActualCloseDateUtc,
-                    x.Deal.OwnerUserId,
+                    x.Id,
+                    x.Title,
+                    x.CompanyName,
+                    x.Stage,
+                    x.ExpectedValue,
+                    x.Currency ?? "",
+                    x.ExpectedCloseDateUtc,
+                    x.ActualCloseDateUtc,
+                    x.OwnerUserId,
                     ownerName,
                     ownerInitials,
-                    x.Deal.Probability
+                    x.Probability
                 )
                 {
-                    CustomFieldValues = listValues.TryGetValue(x.Deal.Id, out var cf)
+                    CustomFieldValues = listValues.TryGetValue(x.Id, out var cf)
                         ? cf
                         : new Dictionary<Guid, string>()
                 };
             }).ToList();
 
             return new GetDealsResponse(items, total, page, pageSize, quotaUsed);
+        }
+
+        /// <summary>107-update. The columns the deal list shows — nothing else is read.</summary>
+        internal sealed record DealRow(
+            Guid Id, string Title, string? CompanyName, string Stage, decimal ExpectedValue, string? Currency,
+            DateTime ExpectedCloseDateUtc, DateTime? ActualCloseDateUtc, string? OwnerUserId, int Probability);
+
+        /// <summary>The first letter, or nothing — an empty name no longer throws.</summary>
+        internal static string Initial(string? name) => string.IsNullOrEmpty(name) ? "" : name[..1];
+    }
+
+    // ==================== DEAL SUMMARY (107-update) ====================
+
+    /// <summary>
+    /// The dashboard's deal numbers, counted by the database over EVERY deal
+    /// the person can see (the dashboard used to load the newest 500 and
+    /// count those).
+    ///
+    /// The rules are exactly the dashboard's (043):
+    ///   • A stage's category (Open / Won / Lost) comes from the workspace's
+    ///     stages, retired ones included. A deal in a stage that no longer
+    ///     exists is a "ghost": counted as Open, and counted separately.
+    ///   • A deal belongs to the period by its close date: an open deal by
+    ///     when it is EXPECTED to close; a closed one by when it ACTUALLY
+    ///     closed, or its expected date when that is missing. Compared as
+    ///     picked dates (DateOnlyRange), half-open: from ≤ date &lt; to.
+    ///   • A deal with no close date at all belongs to no period ("undated").
+    ///   • No period = all time.
+    /// </summary>
+    public class GetDealSummaryHandler : ICommandHandler
+    {
+        private readonly FlowDbContext _db;
+        private readonly IRecordScopeService _scope;
+
+        public GetDealSummaryHandler(FlowDbContext db, IRecordScopeService scope)
+        {
+            _db = db;
+            _scope = scope;
+        }
+
+        public async Task<DealSummaryDto> HandleAsync(Guid tenantId, DateTime? fromUtc, DateTime? toUtcExclusive,
+            CancellationToken ct = default)
+        {
+            var access = await _scope.GetAsync(RecordModules.Deals, ct);
+
+            // The plan limit counts every deal in the workspace, whoever owns it.
+            var quotaUsed = await _db.Deals.CountAsync(d => d.TenantId == tenantId && !d.IsDeleted, ct);
+
+            var stages = await _db.PipelineStages.AsNoTracking()
+                .Where(s => s.TenantId == tenantId)
+                .Select(s => new { s.Key, s.Category })
+                .ToListAsync(ct);
+            var categoryOf = stages
+                .GroupBy(s => s.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Category, StringComparer.OrdinalIgnoreCase);
+            var closedKeys = stages.Where(s => s.Category != StageCategory.Open).Select(s => s.Key).ToList();
+
+            var deals = _db.Deals.AsNoTracking()
+                .Where(d => d.TenantId == tenantId && !d.IsDeleted)
+                .VisibleTo(access);
+
+            var noDate = default(DateTime);
+
+            // Ghosts: by stage over all the person's deals, then compared in
+            // memory (the stage list is the workspace's own, a handful).
+            var byStage = await deals.GroupBy(d => d.Stage)
+                .Select(g => new { Stage = g.Key, N = g.Count() })
+                .ToListAsync(ct);
+            var ghosts = byStage.Where(s => string.IsNullOrEmpty(s.Stage) || !categoryOf.ContainsKey(s.Stage)).Sum(s => s.N);
+
+            var undated = await deals.CountAsync(d =>
+                d.ExpectedCloseDateUtc == noDate &&
+                (d.ActualCloseDateUtc == null || d.ActualCloseDateUtc == noDate), ct);
+
+            // The deals of the period, each with the date that decides it.
+            var dated = deals.Where(d =>
+                d.ExpectedCloseDateUtc != noDate ||
+                (d.ActualCloseDateUtc != null && d.ActualCloseDateUtc != noDate));
+
+            var inPeriod = dated;
+            if (fromUtc is { } from && toUtcExclusive is { } to)
+            {
+                inPeriod = dated.Where(d =>
+                    (closedKeys.Contains(d.Stage) && d.ActualCloseDateUtc != null && d.ActualCloseDateUtc != noDate
+                        ? d.ActualCloseDateUtc.Value
+                        : d.ExpectedCloseDateUtc) >= from
+                    &&
+                    (closedKeys.Contains(d.Stage) && d.ActualCloseDateUtc != null && d.ActualCloseDateUtc != noDate
+                        ? d.ActualCloseDateUtc.Value
+                        : d.ExpectedCloseDateUtc) < to);
+            }
+
+            var periodByStage = await inPeriod.GroupBy(d => d.Stage)
+                .Select(g => new { Stage = g.Key, N = g.Count(), Value = g.Sum(d => d.ExpectedValue) })
+                .ToListAsync(ct);
+
+            StageCategory Cat(string? key) =>
+                key is not null && categoryOf.TryGetValue(key, out var c) ? c : StageCategory.Open;
+
+            var open = periodByStage.Where(s => Cat(s.Stage) == StageCategory.Open).ToList();
+            var won  = periodByStage.Where(s => Cat(s.Stage) == StageCategory.Won).ToList();
+            var lost = periodByStage.Where(s => Cat(s.Stage) == StageCategory.Lost).ToList();
+
+            // Top 5 open deals of the period by value — an unknown stage is open too.
+            var topRows = await (
+                from d in inPeriod.Where(d => !closedKeys.Contains(d.Stage))
+                join comp in _db.Companies on d.CompanyId equals (Guid?)comp.Id into compGroup
+                from comp in compGroup.DefaultIfEmpty()
+                orderby d.ExpectedValue descending, d.Id
+                select new GetDealsHandler.DealRow(
+                    d.Id, d.Title, comp != null ? comp.Name : null, d.Stage, d.ExpectedValue, d.Currency,
+                    d.ExpectedCloseDateUtc, d.ActualCloseDateUtc, d.OwnerUserId, d.Probability))
+                .Take(5)
+                .ToListAsync(ct);
+
+            var ownerIds = topRows.Select(r => Guid.TryParse(r.OwnerUserId, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty).Distinct().ToList();
+            var owners = ownerIds.Count == 0
+                ? new Dictionary<Guid, (string First, string Last)>()
+                : (await _db.Users.AsNoTracking()
+                    .Where(u => ownerIds.Contains(u.Id))
+                    .Select(u => new { u.Id, u.FirstName, u.LastName })
+                    .ToListAsync(ct))
+                  .ToDictionary(u => u.Id, u => (u.FirstName ?? "", u.LastName ?? ""));
+
+            var top = topRows.Select(r =>
+            {
+                var has = Guid.TryParse(r.OwnerUserId, out var g) && owners.ContainsKey(g);
+                var (first, last) = has ? owners[g] : ("", "");
+                return new DealListItem(
+                    r.Id, r.Title, r.CompanyName, r.Stage, r.ExpectedValue, r.Currency ?? "",
+                    r.ExpectedCloseDateUtc, r.ActualCloseDateUtc, r.OwnerUserId,
+                    has ? $"{first} {last}".Trim() : "Unassigned",
+                    has ? $"{GetDealsHandler.Initial(first)}{GetDealsHandler.Initial(last)}".ToUpper() : "UN",
+                    r.Probability);
+            }).ToList();
+
+            return new DealSummaryDto(
+                ActiveDeals:     open.Sum(s => s.N),
+                DealsWon:        won.Sum(s => s.N),
+                DealsLost:       lost.Sum(s => s.N),
+                PipelineValue:   open.Sum(s => s.Value),
+                WonValue:        won.Sum(s => s.Value),
+                UndatedDeals:    undated,
+                GhostStageDeals: ghosts,
+                QuotaUsed:       quotaUsed,
+                TopDeals:        top);
         }
     }
 

@@ -120,6 +120,17 @@ public sealed class ApiCaller
 
     public string Who { get; }
 
+    /// <summary>
+    /// 107-update5. When the API answers 429 "too many requests" (the
+    /// 1,200-a-minute limit per person, 105), wait the Retry-After it gives
+    /// and send again — up to about two minutes. Off by default: the tests
+    /// that CHECK the limits must see the 429 itself. Safe to re-send: the
+    /// rate limiter refuses a request before any of the API's code runs, so
+    /// nothing has happened yet. (This is not the old "retry a request whose
+    /// connection closed" that 100c removed — that one could repeat a save.)
+    /// </summary>
+    public bool WaitWhenPaced { get; set; }
+
     /// <summary>Null for the signed-out caller and for hand-made tokens.</summary>
     public ApiIdentity? Identity { get; }
 
@@ -158,7 +169,20 @@ public sealed class ApiCaller
         // the connection AFTER handling the request (fixed in the API), so
         // a re-send could repeat something that had happened. Every
         // request is now sent exactly once.
-        return await SendOnceAsync(method, path, json, headers, content);
+        //
+        // 107-update5 — the one exception, and only when WaitWhenPaced is
+        // on: a 429 from the per-person limit, which the API refuses before
+        // handling anything. A multipart body (content) is never re-sent.
+        var r = await SendOnceAsync(method, path, json, headers, content);
+        for (var waited = 0; r.Status == 429 && WaitWhenPaced && content == null && waited < 120; )
+        {
+            var seconds = int.TryParse(r.Header("Retry-After"), out var s) ? Math.Clamp(s, 1, 60) : 10;
+            TestContext.Progress.WriteLine($"    [api] {Who} is over the API's per-person limit — waiting {seconds}s as the API asks.");
+            await Task.Delay(TimeSpan.FromSeconds(seconds));
+            waited += seconds;
+            r = await SendOnceAsync(method, path, json, headers, content);
+        }
+        return r;
     }
 
     private async Task<ApiResponse> SendOnceAsync(HttpMethod method, string path, object? json,
@@ -314,6 +338,18 @@ public static class Api
     public static async Task EnsureTokensWorkAsync(ApiCaller admin)
     {
         var r = await admin.GetAsync("/api/leads?pageNumber=1&pageSize=1");
+
+        // 107-update5 — 429 means the token WORKED and this person has
+        // simply made 1,200 calls in the last minute (the tests before
+        // this one, now that the app answers fast). Wait it out.
+        for (var waited = 0; r.Status == 429 && waited < 120; )
+        {
+            var seconds = int.TryParse(r.Header("Retry-After"), out var s) ? Math.Clamp(s, 1, 60) : 10;
+            TestContext.Progress.WriteLine($"    [api] {admin.Who} is over the API's per-person limit — waiting {seconds}s as the API asks.");
+            await Task.Delay(TimeSpan.FromSeconds(seconds));
+            waited += seconds;
+            r = await admin.GetAsync("/api/leads?pageNumber=1&pageSize=1");
+        }
         if (r.Status == 200) return;
 
         throw new AssertionException(

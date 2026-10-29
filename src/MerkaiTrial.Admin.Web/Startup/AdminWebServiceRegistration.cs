@@ -148,6 +148,9 @@ public static class AdminWebServiceRegistration
         services.AddScoped<IApiTokenService, ApiTokenService>();
         services.AddTransient<ApiTokenForwardingHandler>();
         services.AddTransient<HttpLoggingHandler>();
+        // 107 — counts each call for the performance tests; does nothing
+        // unless the test servers are counting the page (RequestCost.cs).
+        services.AddTransient<MerkaiTrial.Infrastructure.Diagnostics.RequestCostHandler>();
 
         var apiBaseUrl = config["WebApi:BaseUrl"] ?? config["ApiBaseUrl"] ?? "https://localhost:61091/";
 
@@ -157,6 +160,7 @@ public static class AdminWebServiceRegistration
             client.BaseAddress = new Uri(apiBaseUrl);
             client.Timeout = TimeSpan.FromMinutes(30);
         })
+        .AddHttpMessageHandler<MerkaiTrial.Infrastructure.Diagnostics.RequestCostHandler>()   // 107
         .AddHttpMessageHandler<ApiTokenForwardingHandler>();
 
         // ApiClient — older typed client, still used by some pages.
@@ -174,6 +178,7 @@ public static class AdminWebServiceRegistration
             AllowAutoRedirect = false
         })
         .SetHandlerLifetime(TimeSpan.FromMinutes(5))
+        .AddHttpMessageHandler<MerkaiTrial.Infrastructure.Diagnostics.RequestCostHandler>()   // 107
         .AddHttpMessageHandler<ApiTokenForwardingHandler>()
         .AddHttpMessageHandler<HttpLoggingHandler>();
 

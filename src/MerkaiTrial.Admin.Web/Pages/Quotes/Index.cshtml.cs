@@ -141,6 +141,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         /// </summary>
         [BindProperty(SupportsGet = true)] public string? View { get; set; }
 
+        /// <summary>
+        /// 107-update. A search sent to the server (Enter in the search box),
+        /// so a quote beyond the newest <see cref="ListLimit"/> can still be
+        /// found. Typing still filters what is on screen as before.
+        /// </summary>
+        [BindProperty(SupportsGet = true)] public string? SearchTerm { get; set; }
+
+        /// <summary>
+        /// 107-update. The most quotes one page draws (list and board), newest
+        /// issue date first — the Pipeline board's rule. It used to draw every
+        /// quote in the workspace; with 10,000 the page took over a minute.
+        /// The filters and the search reach the rest; the cards above the
+        /// list always count everything.
+        /// </summary>
+        public const int ListLimit = 500;
+
+        /// <summary>107-update. How many quotes match the filters — more than are drawn when <see cref="Capped"/>.</summary>
+        public int TotalMatching { get; private set; }
+
+        public bool Capped => TotalMatching > Quotes.Count;
+
         [TempData] public string? ErrorMessage { get; set; }
         [TempData] public string? SuccessMessage { get; set; }
 
@@ -162,8 +183,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
 
                 Statistics = await _quoteService.GetStatisticsAsync(tenantId);
 
-                Quotes = await _quoteService.GetAllAsync(
-                    tenantId, null, StatusFilter, FromDate, ToDate);
+                // 107-update: the newest ListLimit, the filters and the search applied by the server.
+                var page = await _quoteService.GetPagedAsync(1, ListLimit, StatusFilter, FromDate, ToDate,
+                    SearchTerm, byIssueDate: true);
+                Quotes = page.Items;
+                TotalMatching = page.TotalCount;
 
                 // 081 — custom columns. Never blocks the page.
                 try
@@ -298,6 +322,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         {
             View,
             StatusFilter,
+            SearchTerm,   // 107-update
             FromDate = FromDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             ToDate = ToDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
         });
@@ -370,7 +395,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         // ── What's on screen right now ────────────────────────────────
 
         public bool HasFilter =>
-            !string.IsNullOrWhiteSpace(StatusFilter) || FromDate.HasValue || ToDate.HasValue;
+            !string.IsNullOrWhiteSpace(StatusFilter) || FromDate.HasValue || ToDate.HasValue
+            || !string.IsNullOrWhiteSpace(SearchTerm);   // 107-update
 
         public int ShownCount => Quotes.Count;
 

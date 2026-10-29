@@ -188,43 +188,38 @@ namespace MerkaiTrial.Application.Queries.Invoices
                     // Null = no custom field could match; keep the plain search.
                     var cfMatches = CustomFieldListQuery.SearchMatches(_context, tenantId, defs, s);
 
-                    // Written out twice rather than OR-ing in a constant
-                    // false, which EF would still have to translate.
+                    // 107-update2 — the deals that match are found ONCE (a
+                    // deal by its title, its company, or its contact's name or
+                    // company), then an invoice matches by its number, its
+                    // quote's number, or by being on one of those deals —
+                    // directly or through its quote. It used to walk invoice
+                    // → deal → contact → company for every invoice with an
+                    // OR at each step: 30 s with 5,000 invoices. Same matches.
+                    var matchingDeals = _context.Deals
+                        .Where(d => d.TenantId == tenantId && (
+                            d.Title.ToLower().Contains(s) ||
+                            (d.Company != null && d.Company.Name.ToLower().Contains(s)) ||
+                            (d.Contact != null && (
+                                d.Contact.FirstName.ToLower().Contains(s) ||
+                                (d.Contact.LastName != null && d.Contact.LastName.ToLower().Contains(s)) ||
+                                (d.Contact.Company != null && d.Contact.Company.Name.ToLower().Contains(s))))))
+                        .Select(d => d.Id);
+
+                    var matchingQuoteIds = _context.Quotes
+                        .Where(q => q.TenantId == tenantId && (q.Number.ToLower().Contains(s) || matchingDeals.Contains(q.DealId)))
+                        .Select(q => q.Id);
+
+                    // An invoice matches through its own deal or its quote's
+                    // deal (the same deal for every invoice raised from a quote).
                     query = cfMatches is null
                         ? query.Where(i =>
                             i.Number.ToLower().Contains(s) ||
-                            (i.Quote != null && i.Quote.Number.ToLower().Contains(s)) ||
-                            (i.Deal != null && (
-                                i.Deal.Title.ToLower().Contains(s) ||
-                                (i.Deal.Company != null && i.Deal.Company.Name.ToLower().Contains(s)) ||
-                                (i.Deal.Contact != null && (
-                                    i.Deal.Contact.FirstName.ToLower().Contains(s) ||
-                                    (i.Deal.Contact.LastName != null && i.Deal.Contact.LastName.ToLower().Contains(s)) ||
-                                    (i.Deal.Contact.Company != null && i.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
-                            (i.Deal == null && i.Quote != null && i.Quote.Deal != null && (
-                                i.Quote.Deal.Title.ToLower().Contains(s) ||
-                                (i.Quote.Deal.Company != null && i.Quote.Deal.Company.Name.ToLower().Contains(s)) ||
-                                (i.Quote.Deal.Contact != null && (
-                                    i.Quote.Deal.Contact.FirstName.ToLower().Contains(s) ||
-                                    (i.Quote.Deal.Contact.LastName != null && i.Quote.Deal.Contact.LastName.ToLower().Contains(s)) ||
-                                    (i.Quote.Deal.Contact.Company != null && i.Quote.Deal.Contact.Company.Name.ToLower().Contains(s)))))))
+                            (i.QuoteId != null && matchingQuoteIds.Contains(i.QuoteId.Value)) ||
+                            (i.DealId != null && matchingDeals.Contains(i.DealId.Value)))
                         : query.Where(i =>
                             i.Number.ToLower().Contains(s) ||
-                            (i.Quote != null && i.Quote.Number.ToLower().Contains(s)) ||
-                            (i.Deal != null && (
-                                i.Deal.Title.ToLower().Contains(s) ||
-                                (i.Deal.Company != null && i.Deal.Company.Name.ToLower().Contains(s)) ||
-                                (i.Deal.Contact != null && (
-                                    i.Deal.Contact.FirstName.ToLower().Contains(s) ||
-                                    (i.Deal.Contact.LastName != null && i.Deal.Contact.LastName.ToLower().Contains(s)) ||
-                                    (i.Deal.Contact.Company != null && i.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
-                            (i.Deal == null && i.Quote != null && i.Quote.Deal != null && (
-                                i.Quote.Deal.Title.ToLower().Contains(s) ||
-                                (i.Quote.Deal.Company != null && i.Quote.Deal.Company.Name.ToLower().Contains(s)) ||
-                                (i.Quote.Deal.Contact != null && (
-                                    i.Quote.Deal.Contact.FirstName.ToLower().Contains(s) ||
-                                    (i.Quote.Deal.Contact.LastName != null && i.Quote.Deal.Contact.LastName.ToLower().Contains(s)) ||
-                                    (i.Quote.Deal.Contact.Company != null && i.Quote.Deal.Contact.Company.Name.ToLower().Contains(s)))))) ||
+                            (i.QuoteId != null && matchingQuoteIds.Contains(i.QuoteId.Value)) ||
+                            (i.DealId != null && matchingDeals.Contains(i.DealId.Value)) ||
                             cfMatches.Contains(i.Id));
                 }
 

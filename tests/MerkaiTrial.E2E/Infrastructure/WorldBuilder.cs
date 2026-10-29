@@ -36,6 +36,14 @@
 // tests) and workspace E (India / INR, admin and one rep, whose limits and
 // trial the entitlement test changes), each built the first time its test
 // asks, the same way. Neither is shared with any other test.
+//
+// 107: the PERFORMANCE workspace (EnsurePerfWorkspaceAsync). Unlike every
+// other workspace it is NOT made fresh each run: it has a fixed name
+// ("E2E Performance") and fixed people (perf-admin, perf-rep01…09 at
+// perf-e2e.example.com), and is filled once with a big set of records
+// (PerfSeeder) that later runs reuse. The first run creates it through
+// the screens, like the others; later runs find it, give its people the
+// test password again and make sure its trial and limits still allow work.
 // =====================================================================
 
 using System.Text.RegularExpressions;
@@ -312,6 +320,93 @@ public sealed class WorldBuilder
     }
 
     // =================================================================
+    // 107 — the performance workspace
+    // =================================================================
+
+    /// <summary>
+    /// The performance workspace and its ten people (admin + perf-rep01…09),
+    /// made through the screens the first time and reused afterwards. Every
+    /// run: the people get the test password again (and are unlocked), the
+    /// workspace's limits allow millions of records and 25 people, and its
+    /// trial (if it has one) runs at least another month. Records are added
+    /// separately, by PerfSeeder.
+    /// </summary>
+    public static async Task<(TestTenant Tenant, Guid TenantId)> EnsurePerfWorkspaceAsync(PerfData perf)
+    {
+        var db = GlobalSetup.Db;
+        await db.EnsureIsE2EDatabaseAsync();
+        var builder = new WorldBuilder(GlobalSetup.Browser, db);
+
+        var admin = new TestUser("admin", PerfWorld.EmailOf("perf-admin"), E2ESettings.Password, "Perf", "Admin");
+        var tenant = new TestTenant
+        {
+            Key = "P",
+            Name = PerfWorld.WorkspaceName,
+            Admin = admin,
+            Country = India.Country,
+            Currency = India.Currency,
+            UtcOffset = India.Offset,
+            SamplePhone = India.Phone,
+        };
+
+        var tenantId = await perf.TenantIdByNameAsync(PerfWorld.WorkspaceName);
+        if (tenantId is null)
+        {
+            Log($"Creating the performance workspace '{PerfWorld.WorkspaceName}' (first run only)");
+            string invite;
+            await using (var session = await BrowserSession.StartAsync(builder._browser, "seed-provision-P"))
+            {
+                await Ui.SignInAsync(session.Page, World.SuperAdmin, superAdmin: true);
+                (_, invite) = await builder.ProvisionAsync(session.Page, "P", India, PerfWorld.WorkspaceName, admin);
+                session.Succeeded();
+            }
+            await builder.AcceptInviteAsync(admin, invite);
+            tenantId = await perf.TenantIdByNameAsync(PerfWorld.WorkspaceName)
+                       ?? throw new AssertionException("The performance workspace was created but can't be found by its name.");
+        }
+        else if (!await db.LiveUserExistsAsync(admin.Email))
+        {
+            throw new AssertionException(
+                $"A workspace named '{PerfWorld.WorkspaceName}' exists in the test database but its admin " +
+                $"({admin.Email}) does not — probably an earlier first run stopped half way. Rename it so the next " +
+                $"run makes a fresh one (its people's emails too, so they can be used again): " +
+                PerfWorld.StartAgainSql);
+        }
+
+        await perf.ResetPersonAsync(admin.Email, admin.Password);
+        await perf.KeepUsableAsync(tenantId.Value);
+
+        // The nine reps: whoever is missing is added by the admin, the way a person is.
+        // Names are letters only (some name rules refuse digits).
+        var surnames = new[] { "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet" };
+        var missing = new List<TestUser>();
+        for (var i = 1; i <= PerfWorld.RepCount; i++)
+        {
+            var key = $"rep{i:00}";
+            var user = new TestUser(key, PerfWorld.EmailOf($"perf-{key}"), E2ESettings.Password, "Perfrep", surnames[(i - 1) % surnames.Length]);
+            tenant.People[key] = user;
+            if (await db.LiveUserExistsAsync(user.Email)) await perf.ResetPersonAsync(user.Email, user.Password);
+            else missing.Add(user);
+        }
+
+        if (missing.Count > 0)
+        {
+            await using var session = await BrowserSession.StartAsync(builder._browser, "seed-people-P");
+            await Ui.SignInAsync(session.Page, admin);
+            foreach (var user in missing)
+            {
+                var (invite, role) = await AddPersonAsync(session.Page, user, Ui.RolePatterns.Rep);
+                tenant.RoleOf[user.Key] = role;
+                await builder.AcceptInviteAsync(user, invite);
+            }
+            session.Succeeded();
+        }
+
+        Log($"Ready: performance workspace '{tenant.Name}' with {tenant.People.Count + 1} people.");
+        return (tenant, tenantId.Value);
+    }
+
+    // =================================================================
 
     /// <summary>What Admin → Tenants → Create is asked for, per market.</summary>
     private sealed record Market(string Country, string Currency, string TimeZoneNeedle, TimeSpan Offset, string Phone);
@@ -323,10 +418,12 @@ public sealed class WorldBuilder
     // Create page). The offset is winter's; it changes with the clocks.
     private static readonly Market IndiaOnNewYorkTime = new("India", "INR", "Eastern Time", TimeSpan.FromHours(-5), "+919800000000");
 
-    private async Task<(TestTenant Tenant, string InviteLink)> ProvisionAsync(IPage page, string key, Market market)
+    private async Task<(TestTenant Tenant, string InviteLink)> ProvisionAsync(IPage page, string key, Market market,
+        string? fixedName = null, TestUser? fixedAdmin = null)
     {
-        var name = $"E2E {key} {World.Stamp}";
-        var admin = new TestUser("admin", World.EmailFor(key, "admin"), E2ESettings.Password, $"Admin{key}", "E2E");
+        // 107: the performance workspace keeps one name and one admin for good.
+        var name = fixedName ?? $"E2E {key} {World.Stamp}";
+        var admin = fixedAdmin ?? new TestUser("admin", World.EmailFor(key, "admin"), E2ESettings.Password, $"Admin{key}", "E2E");
 
         await page.GotoAsync("/Admin/Tenants/Create");
         await page.Locator("#Input_Name").FillAsync(name);

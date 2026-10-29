@@ -4,6 +4,10 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (107-update — performance):
+//   ✅ The quote badges on the cards are read for the deals on this page
+//      only (POST api/quotes/deal-status), not by loading every quote.
+//
 // CHANGES (096 — lists):
 //   ✅ THE TABLE VIEW PAGES AND SORTS ON THE SERVER. It drew the same 500
 //      deals the board loads, unsorted, on one long page. It now has its
@@ -633,38 +637,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
         }
 
         // ── Load Quote Status for Kanban Cards ─────────────────────────
+        // 107-update: only for the deals on this page (the board's and the
+        // table's), from POST api/quotes/deal-status. It used to load EVERY
+        // quote in the workspace — with their deals, contacts, companies and
+        // lines — to draw these badges; with 10,000 quotes that alone took
+        // longer than the 30-second limit.
         private async Task LoadQuoteStatusForDealsAsync(Guid tenantId)
         {
             try
             {
-                var allQuotes = await _quoteService.GetAllAsync(tenantId);
+                var dealIds = Deals.Select(d => d.Id).Concat(TableDeals.Select(d => d.Id)).Distinct().ToList();
+                var statuses = await _quoteService.GetDealStatusAsync(dealIds);
 
-                if (allQuotes == null || !allQuotes.Any())
-                {
-                    DealQuoteStatus = new();
-                    return;
-                }
-
-                DealQuoteStatus = allQuotes
-                    .Where(q => q.DealId.HasValue && q.DealId.Value != Guid.Empty)
-                    .GroupBy(q => q.DealId!.Value)
-                    .ToDictionary(
-                        g => g.Key,
-                        g =>
-                        {
-                            var ordered = g.OrderByDescending(q => q.CreatedAtUtc).ToList();
-                            var latest = ordered.First();
-                            var accepted = g.FirstOrDefault(q =>
-                                string.Equals(q.Status, "Accepted", StringComparison.OrdinalIgnoreCase));
-
-                            return new QuoteStatusInfo
-                            {
-                                HasAcceptedQuote = accepted != null,
-                                LatestQuoteNumber = latest.Number,
-                                LatestQuoteStatus = latest.Status,
-                                AcceptedQuoteId = accepted?.Id
-                            };
-                        });
+                DealQuoteStatus = statuses.ToDictionary(
+                    s => s.DealId,
+                    s => new QuoteStatusInfo
+                    {
+                        HasAcceptedQuote  = s.HasAcceptedQuote,
+                        LatestQuoteNumber = s.LatestQuoteNumber,
+                        LatestQuoteStatus = s.LatestQuoteStatus,
+                        AcceptedQuoteId   = s.AcceptedQuoteId,
+                    });
             }
             catch (Exception ex)
             {

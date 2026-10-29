@@ -104,6 +104,12 @@ app.UseSecurityHeaders();
 // need an authenticated endpoint.
 app.UseStaticFiles();
 
+// 107 — test servers only (Development + Diagnostics:RequestCost): counts
+// each page's database queries and WebApi calls, for the performance
+// tests. After static files (they do no database work), before sign-in
+// (its checks are counted). Infrastructure/Diagnostics/RequestCost.cs.
+MerkaiTrial.Infrastructure.Diagnostics.RequestCostSetup.UseRequestCost(app, app.Configuration, app.Environment);
+
 // 102: everything after this line — every page, handler and download —
 // tells the browser not to keep a copy, so Back after a View As switch or
 // a sign-out can't show the previous workspace's data. Static files above
@@ -156,6 +162,9 @@ if (MerkaiTrial.Application.Common.ErrorDetails.FaultProbeOn(app.Configuration, 
     Log.Warning("Diagnostics:FaultProbe is on: {Path} throws on purpose (E2E servers only)",
         MerkaiTrial.Application.Common.ErrorDetails.FaultProbePath);
 }
+
+// 107 — GET /__e2e/cost/{id}: a counted page's numbers. Test servers only.
+MerkaiTrial.Infrastructure.Diagnostics.RequestCostSetup.MapRequestCost(app, app.Configuration, app.Environment);
 
 app.MapGet("/", context =>
 {

@@ -214,6 +214,33 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         /// <summary>
+        /// 107-update. GET /api/deals/summary?fromUtc=&amp;toUtcExclusive= — the
+        /// dashboard's deal numbers, counted by the database over every deal
+        /// this person can see. No dates = all time. See GetDealSummaryHandler.
+        /// </summary>
+        [HttpGet("summary")]
+        [Authorize(Policy = Policies.DealsRead)]
+        [ProducesResponseType(typeof(DealSummaryDto), 200)]
+        [ProducesResponseType(500)]
+        public async Task<IActionResult> GetSummary(
+            [FromServices] GetDealSummaryHandler handler,
+            [FromQuery] DateTime? fromUtc = null,
+            [FromQuery] DateTime? toUtcExclusive = null,
+            CancellationToken cancellationToken = default)
+        {
+            var tenantId = _currentUserService.GetCurrentTenantId();
+            try
+            {
+                return Ok(await handler.HandleAsync(tenantId, fromUtc, toUtcExclusive, cancellationToken));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error summarising deals for tenant {TenantId}", tenantId);
+                return StatusCode(500, new { error = "Failed to summarise deals" });
+            }
+        }
+
+        /// <summary>
         /// GET /api/deals/{id} - Get single deal detail
         /// </summary>
         [HttpGet("{id:guid}")]

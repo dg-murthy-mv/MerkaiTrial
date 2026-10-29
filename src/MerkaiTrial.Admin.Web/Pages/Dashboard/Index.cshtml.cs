@@ -1,6 +1,13 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Dashboard/Index.cshtml.cs
 //
+// ✅ 107-update — PERFORMANCE (big workspaces)
+//   The deal panels read GET api/deals/summary: counted by the database
+//   over EVERY deal this person can see, with the same 043 rules. They used
+//   to load the newest 500 deals and count those here, which was slow and,
+//   past 500 deals, wrong. Recent quotes load the five shown (api/quotes/
+//   paged), not every quote of the period.
+//
 // ✅ SESSION 5 CLEANUP — AppPageModel retirement
 //   AppPageModel -> AuthorizedPageModel. This was the last of the two
 //   remaining AppPageModel subclasses; AppPageModel.cs can now be DELETED.
@@ -379,7 +386,11 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             var leadToEx = _periodStamps?.ToUtcExclusive;
 
             var leadStatsTask    = SafeAsyncIf(canLeads,    () => _leadService.GetStatsAsync(tenantId, leadFrom, leadToEx), "LeadStats");
-            var dealsTask        = SafeAsyncIf(canDeals,    () => _dealService.GetAllAsync(tenantId, pageSize: 500), "Deals");
+            // 107-update — the deal numbers come counted from the database
+            // (every deal this person can see), not counted here from the
+            // newest 500: with more deals than that the totals were wrong,
+            // and loading 500 whole deals took most of the page's time.
+            var dealsTask        = SafeAsyncIf(canDeals,    () => _dealService.GetSummaryAsync(_periodDates?.FromUtc, _periodDates?.ToUtcExclusive), "DealSummary");
             var quoteStatsTask   = SafeAsyncIf(canQuotes,   () => _quoteService.GetStatisticsAsync(tenantId, from, toEx),   "QuoteStats");
             var invoiceStatsTask = SafeAsyncIf(canInvoices, () => _invoiceService.GetStatisticsAsync(tenantId, from, toEx), "InvoiceStats");
 
@@ -388,11 +399,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             // One tick back off the half-open bound converts between the two
             // without moving a quote into the wrong year. Everything else in
             // this round is half-open; this one line is the adapter.
+            //
+            // 107-update — only the five shown, newest issue date first (it
+            // loaded every quote of the period and kept five).
             var recentQuotesTask = SafeAsyncIf(canQuotes,
-                () => _quoteService.GetAllAsync(
-                    tenantId,
+                () => _quoteService.GetPagedAsync(1, 5,
                     fromDate: from,
-                    toDate: toEx?.AddTicks(-1)),
+                    toDate: toEx?.AddTicks(-1),
+                    byIssueDate: true),
                 "RecentQuotes");
 
             await Task.WhenAll(
@@ -416,41 +430,26 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             }
 
             // ── Deal KPIs ─────────────────────────────────────────────
-            var dealsResponse = await dealsTask;
-            var deals = dealsResponse?.Items ?? new();
-            DealQuotaUsed = dealsResponse?.QuotaUsed ?? 0;
+            // 107-update: counted by the API (GetDealSummaryHandler) with the
+            // same rules this page used — category from the stage, the close
+            // date that decides the period, undated and ghost deals apart.
+            var summary = await dealsTask;
+            if (summary != null)
+            {
+                DealQuotaUsed   = summary.QuotaUsed;
+                GhostStageDeals = StagesLoaded ? summary.GhostStageDeals : 0;
+                UndatedDeals    = summary.UndatedDeals;
+                ActiveDeals     = summary.ActiveDeals;
+                DealsWon        = summary.DealsWon;
+                DealsLost       = summary.DealsLost;
+                PipelineValue   = summary.PipelineValue;
+                WonValue        = summary.WonValue;    // ✅ FIX 1: ExpectedValue of won deals, not cash
+                TopDeals        = summary.TopDeals;
+            }
 
-            // ── 043: counted by CATEGORY, and within the chosen period ──
-            //
-            // Every line below used to test the stage NAME against four
-            // literals. See change 1 in the header for what that did to a
-            // workspace with its own pipeline.
-            //
-            // A deal counts in a period by the date that period is about:
-            // an open deal by when it is EXPECTED to close (that is what a
-            // forecast is), a closed one by when it ACTUALLY closed, falling
-            // back to the expected date when the actual is missing.
-            GhostStageDeals = StagesLoaded ? deals.Count(d => !IsKnownStage(d.Stage)) : 0;
-
-            var inPeriod = deals.Where(InSelectedPeriod).ToList();
-
-            UndatedDeals = deals.Count(d => !HasCloseDate(d));
-
-            var openDeals = inPeriod.Where(d => CategoryOf(d.Stage) == StageCategory.Open).ToList();
-            var wonDeals  = inPeriod.Where(d => CategoryOf(d.Stage) == StageCategory.Won).ToList();
-
-            ActiveDeals   = openDeals.Count;
-            DealsWon      = wonDeals.Count;
-            DealsLost     = inPeriod.Count(d => CategoryOf(d.Stage) == StageCategory.Lost);
-            PipelineValue = openDeals.Sum(d => d.ExpectedValue);
-
-            // ✅ FIX 1: WonValue = ExpectedValue of won deals (not actual cash)
-            WonValue = wonDeals.Sum(d => d.ExpectedValue);
-
-            TopDeals = openDeals
-                .OrderByDescending(d => d.ExpectedValue)
-                .Take(5)
-                .ToList();
+            // 043's rules (by CATEGORY, never a stage name; a deal counts in
+            // a period by the date the period is about) now live in
+            // GetDealSummaryHandler — the same rules, applied in the database.
 
             // ── Quote KPIs ────────────────────────────────────────────
             var quoteStats = await quoteStatsTask;
@@ -476,11 +475,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
             }
 
             // ── Recent Quotes ─────────────────────────────────────────
-            var allQuotes = await recentQuotesTask;
-            RecentQuotes = (allQuotes ?? new())
-                .OrderByDescending(q => q.IssueDateUtc)
-                .Take(5)
-                .ToList();
+            var recent = await recentQuotesTask;
+            RecentQuotes = recent?.Items ?? new();
 
             return Page();
         }
@@ -587,39 +583,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Dashboard
         /// </summary>
         private UtcRange? _periodStamps;
 
-        private static bool HasCloseDate(DealListItem d)
-            => d.ExpectedCloseDateUtc != default
-            || (d.ActualCloseDateUtc.HasValue && d.ActualCloseDateUtc.Value != default);
-
-        /// <summary>
-        /// Is this deal part of the selected period?
-        ///
-        /// Compared against DateOnlyRange, not the timestamp range: since 034
-        /// these close dates hold a picked calendar date at midnight with no
-        /// offset, and shifting them by the tenant's timezone would move every
-        /// deal that closes on the first or last day of the year into the
-        /// wrong one.
-        ///
-        /// ActualCloseDateUtc is the one column 034 deliberately did NOT
-        /// repair — it holds a mixture of picked dates and DateTime.UtcNow
-        /// stamps — so a deal closed late on the final day of a financial year
-        /// can still land in the next one. That is a known, bounded
-        /// inaccuracy of at most one day on a column we chose not to rewrite;
-        /// it is not worth losing real close dates over.
-        /// </summary>
-        private bool InSelectedPeriod(DealListItem d)
-        {
-            if (_periodDates is not { } range) return true;      // all time
-            if (!HasCloseDate(d)) return false;                  // counted separately
-
-            var closed = CategoryOf(d.Stage) != StageCategory.Open;
-
-            var date = closed && d.ActualCloseDateUtc.HasValue && d.ActualCloseDateUtc.Value != default
-                ? d.ActualCloseDateUtc.Value
-                : d.ExpectedCloseDateUtc;
-
-            return date >= range.FromUtc && date < range.ToUtcExclusive;
-        }
+        // 107-update: HasCloseDate and InSelectedPeriod moved to the API
+        // (GetDealSummaryHandler), which applies them to every deal.
 
         /// <summary>
         /// Builds the dropdown and works out which period was asked for.

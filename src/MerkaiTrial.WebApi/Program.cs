@@ -22,6 +22,11 @@
 //   Email__InboundWebhookSecret = whsec_... from the Resend webhook   ← 083
 //   (Email__InboundDomain is not secret — appsettings is fine for it.)
 //
+// 107 — UseRequestCost / MapRequestCost: on the TEST servers only
+// (Development + Diagnostics:RequestCost), each request's database work
+// is counted and put on the answer (X-E2E-Cost), for the performance
+// tests. Does nothing anywhere else. Infrastructure/Diagnostics/RequestCost.cs.
+//
 // 106 — UseApiSecurityHeaders first in the pipeline (VUL-22); request
 // bodies capped at 2 MB outside uploads (VUL-23); the E2E stand-in for
 // Resend's received-mail download (AddE2EInboundStub, VUL-25 — test
@@ -47,6 +52,7 @@
 //     is the reason those exist.
 // =====================================================================
 
+using MerkaiTrial.Infrastructure.Diagnostics;   // 107
 using MerkaiTrial.WebApi.Middleware;
 using MerkaiTrial.WebApi.Startup;
 using OfficeOpenXml;
@@ -112,6 +118,7 @@ await MerkaiTrial.Infrastructure.Persistence.SchemaCheck
 // through the same PublicLinkPaths rule.
 app.UseApiSecurityHeaders();                   // 106 — VUL-22, first so every answer has them
 app.UseRequestSizeCap();                       // 106 — VUL-23, 2 MB unless the action says more
+app.UseRequestCost(app.Configuration, app.Environment);   // 107 — test servers only: each request's database work
 app.UseMaskedRequestLogging();
 app.UseCorrelationId();
 app.UseApiSwaggerInDevelopment();
@@ -125,6 +132,7 @@ app.UsePermissionAuthorizationMessages();
 app.MapControllers();
 app.MapApiUtilityEndpoints();
 app.MapApiFaultProbe();                        // 105 — Development + Diagnostics:FaultProbe only
+app.MapRequestCost(app.Configuration, app.Environment);   // 107 — GET /__e2e/cost/{id}, test servers only
 
 Log.Information("MerkaiTrial.WebApi started");
 

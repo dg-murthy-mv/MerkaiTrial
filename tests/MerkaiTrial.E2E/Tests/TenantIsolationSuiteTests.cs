@@ -92,6 +92,13 @@ public class TenantIsolationSuiteTests : E2ETest
         var b = await SignedInAsync(World.B.Admin);
         var apiA = await Api.AsAsync(World.A.Admin);
         var apiB = await Api.AsAsync(World.B.Admin);
+        // 107-update5 — workspace B's admin makes well over 1,200 API calls
+        // a minute across these modules now that the app is fast, and the
+        // per-person limit (105) started answering 429. A 429 would read as
+        // "refused" and hide whether the workspace check itself held, so
+        // wait out the limit and get the real answer instead.
+        apiA.WaitWhenPaced = true;
+        apiB.WaitWhenPaced = true;
         await Api.EnsureTokensWorkAsync(apiB);
 
         var ctx = await Step("Workspace B's own lead page: its form token and a status of B's", () => ContextAsync(b, w));

@@ -42,6 +42,13 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
             string? sort = null, string? dir = null);                 // 096
         Task<DealDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<DealDetailDto> GetDetailAsync(Guid tenantId, Guid id);
+
+        /// <summary>
+        /// 107-update. The dashboard's deal numbers, counted over every deal
+        /// this person can see (GET api/deals/summary). Null dates = all time.
+        /// Throws on failure.
+        /// </summary>
+        Task<DealSummaryDto> GetSummaryAsync(DateTime? fromUtc, DateTime? toUtcExclusive);
         Task<DealDto> CreateAsync(CreateDealDto dto);
         Task UpdateAsync(Guid tenantId, Guid id, UpdateDealDto dto);
         Task DeleteAsync(Guid tenantId, Guid id);
@@ -115,6 +122,16 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
                 _logger.LogError(ex, "Error getting deals for tenant {TenantId}", tenantId);
                 throw;
             }
+        }
+
+        public async Task<DealSummaryDto> GetSummaryAsync(DateTime? fromUtc, DateTime? toUtcExclusive)
+        {
+            var url = "api/deals/summary";
+            var parts = new List<string>();
+            if (fromUtc.HasValue)        parts.Add("fromUtc=" + Uri.EscapeDataString(fromUtc.Value.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)));
+            if (toUtcExclusive.HasValue) parts.Add("toUtcExclusive=" + Uri.EscapeDataString(toUtcExclusive.Value.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)));
+            if (parts.Count > 0) url += "?" + string.Join("&", parts);
+            return await _api.GetAsync<DealSummaryDto>(url);
         }
 
         public async Task<DealDto> GetByIdAsync(Guid tenantId, Guid id)
