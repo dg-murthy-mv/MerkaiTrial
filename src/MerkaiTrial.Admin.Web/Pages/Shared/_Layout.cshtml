@@ -1083,8 +1083,10 @@
         .btn-outline-warning   { --bs-btn-color: #92400e; }
         .btn-outline-info      { --bs-btn-color: #087990; }
         .nav { --bs-nav-link-color: #0a58ca; --bs-nav-link-hover-color: #084298; }
-        /* Light bars carry dark text. */
-        .progress-bar.bg-info, .progress-bar.bg-warning, .progress-bar.bg-light { color: #000; }
+        /* Light bars and badges carry dark text (white on Bootstrap's cyan
+           is 1.95:1, on its yellow 1.6:1). */
+        .progress-bar.bg-info, .progress-bar.bg-warning, .progress-bar.bg-light,
+        .badge.bg-info, .badge.bg-warning, .badge.bg-light { color: #000 !important; }
         /* A greyed-out button that only says WHY something can't be done
            ("Issued — can't be deleted") is a message: keep it readable. */
         .btn.disabled.pe-none { opacity: 1; color: #5c636a; background-color: #f1f3f5; border-color: #ced4da; }
