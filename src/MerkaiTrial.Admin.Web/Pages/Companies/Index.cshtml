@@ -185,7 +185,7 @@
                         var companyBarClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.TotalCompanies, Model.MaxCompanies);
                     }
                     <div class="progress" style="height:8px;">
-                        <div class="progress-bar @companyBarClass" role="progressbar"
+                        <div class="progress-bar @companyBarClass" role="progressbar" aria-label="Companies used, of your plan's limit"
                              style="width:@companyPct%"
                              aria-valuenow="@Model.Stats.TotalCompanies"
                              aria-valuemin="0" aria-valuemax="@Model.MaxCompanies"></div>

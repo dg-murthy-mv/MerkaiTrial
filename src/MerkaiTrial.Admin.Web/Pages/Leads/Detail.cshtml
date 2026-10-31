@@ -59,7 +59,7 @@
                         <form method="post" asp-page-handler="ChangeStatus"
                               asp-route-id="@Model.Lead.Id"
                               id="statusChangeForm" class="d-inline">
-                            <select name="status"
+                            <select name="status" aria-label="Lead status"
                                     class="form-select form-select-sm d-inline-block w-auto"
                                     onchange="this.form.submit()"
                                     @((!Model.IsEditableState || !Model.CanUpdate) ? "disabled" : "")>

@@ -88,12 +88,12 @@
                                      box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone, #4f46e5) 22%, transparent); }
     .pc-stage input:focus-visible + span { outline: 2px solid #4f46e5; outline-offset: 2px; }
     .pc-stage .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--tone, #94a3b8); }
-    .pc-stage .pct { font-weight: 500; color: #94a3b8; font-size: .78rem; }
+    .pc-stage .pct { font-weight: 500; color: #5f6c7f; font-size: .78rem; }
 
     .pc-prob { display: flex; align-items: center; gap: 1rem; }
     .pc-prob .v { font-size: 1.6rem; font-weight: 700; color: #4f46e5; min-width: 68px; text-align: right; }
 
-    .pc-hint { font-size: .76rem; color: #6366f1; margin-top: .25rem; display: none; }
+    .pc-hint { font-size: .76rem; color: #4f46e5; margin-top: .25rem; display: none; }
     .pc-hint.on { display: block; }
     /* 108 — the search box above a long drop-down (record-search.js) */
     .rs-box { margin-bottom: .35rem; }
@@ -178,7 +178,7 @@
             <div class="bd">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label asp-for="Input.ContactId" class="form-label small text-muted mb-1">
+                        <label for="pcContact" class="form-label small text-muted mb-1">
                             Contact <span class="text-danger">*</span>
                         </label>
                         @* 108 — searches every contact in the workspace; the list
@@ -202,7 +202,7 @@
                     </div>
 
                     <div class="col-md-6">
-                        <label asp-for="Input.CompanyId" class="form-label small text-muted mb-1">
+                        <label for="pcCompany" class="form-label small text-muted mb-1">
                             Company <span class="text-muted">(optional)</span>
                         </label>
                         <input type="search" class="form-control form-control-sm rs-box" id="pcCompanySearch"

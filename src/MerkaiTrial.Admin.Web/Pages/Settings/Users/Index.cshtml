@@ -107,7 +107,7 @@
                     var barClass = AuthorizedPageModel.QuotaBarClass(Model.Stats.TotalUsers, Model.MaxUsers);
                 }
                 <div class="progress" style="height:8px;">
-                    <div class="progress-bar @barClass" role="progressbar" style="width:@pct%"
+                    <div class="progress-bar @barClass" role="progressbar" aria-label="People used, of your plan's limit" style="width:@pct%"
                          aria-valuenow="@Model.Stats.TotalUsers" aria-valuemin="0"
                          aria-valuemax="@Model.MaxUsers"></div>
                 </div>

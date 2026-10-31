@@ -148,11 +148,11 @@
             --sidebar-text: #94a3b8;
             --sidebar-text-hov: #e2e8f0;
             --sidebar-text-act: #fff;
-            --sidebar-section: #475569;
+            --sidebar-section: #94a3b8;   /* 110: was #475569 — 2.4:1 on the sidebar, now 7:1 */
             --topbar-h: 56px;
             --topbar-bg: #fff;
             --topbar-border: #e2e8f0;
-            --accent: #6366f1;
+            --accent: #4f46e5;            /* 110: was #6366f1 — white text on it was 4.46:1, just under 4.5 */
             --accent-soft: #eef2ff;
             --body-bg: #f8fafc;
             --font-body: 'Inter', system-ui, sans-serif;
@@ -615,7 +615,7 @@
         .lf-notif-head a {
             font-size: 12px;
             font-weight: 500;
-            color: #6366f1;
+            color: #4f46e5;
             text-decoration: none;
         }
 
@@ -658,7 +658,7 @@
 
         .lf-notif-row .m {
             font-size: 11px;
-            color: #94a3b8;
+            color: #5f6c7f;
             margin: 2px 0 0;
         }
 
@@ -666,7 +666,7 @@
             padding: 26px 14px;
             text-align: center;
             font-size: 13px;
-            color: #94a3b8;
+            color: #5f6c7f;
         }
 
         .lf-notif-foot {
@@ -753,7 +753,7 @@
 
         .lf-user-role {
             font-size: 11px;
-            color: #94a3b8;
+            color: #5f6c7f;
         }
 
         .lf-hamburger {
@@ -973,8 +973,8 @@
         }
 
             .btn-primary:hover {
-                background: #4f46e5;
-                border-color: #4f46e5;
+                background: #4338ca;
+                border-color: #4338ca;
             }
 
         .badge.bg-primary {
@@ -986,7 +986,7 @@
         }
 
             a:hover {
-                color: #4f46e5;
+                color: #4338ca;
             }
 
         ::-webkit-scrollbar {
@@ -1064,6 +1064,30 @@
             color: #374151;
             margin-bottom: 5px;
         }
+
+        /* ── 110: accessibility — text contrast (WCAG AA, 4.5:1) ─────
+           Bootstrap's own colours are a shade too light for text on this
+           layout's #f8fafc page background (the blue is 4.3:1, the grey
+           4.48:1, the yellow 1.6:1). These are the same colours one step
+           darker, for TEXT only — fills, borders and hover states are
+           unchanged. */
+        .text-primary   { color: #0a58ca !important; }
+        .text-success   { color: #146c43 !important; }
+        .text-danger    { color: #b02a37 !important; }
+        .text-warning   { color: #92400e !important; }
+        .text-info      { color: #087990 !important; }
+        .btn-outline-primary   { --bs-btn-color: #0a58ca; }
+        .btn-outline-secondary { --bs-btn-color: #5c636a; }
+        .btn-outline-success   { --bs-btn-color: #146c43; }
+        .btn-outline-danger    { --bs-btn-color: #b02a37; }
+        .btn-outline-warning   { --bs-btn-color: #92400e; }
+        .btn-outline-info      { --bs-btn-color: #087990; }
+        .nav { --bs-nav-link-color: #0a58ca; --bs-nav-link-hover-color: #084298; }
+        /* Light bars carry dark text. */
+        .progress-bar.bg-info, .progress-bar.bg-warning, .progress-bar.bg-light { color: #000; }
+        /* A greyed-out button that only says WHY something can't be done
+           ("Issued — can't be deleted") is a message: keep it readable. */
+        .btn.disabled.pe-none { opacity: 1; color: #5c636a; background-color: #f1f3f5; border-color: #ced4da; }
     </style>
 </head>
 @* ✅ Tenant culture published to the client so JS money formatting matches the

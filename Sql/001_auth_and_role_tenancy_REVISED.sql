@@ -207,7 +207,12 @@ BEGIN TRY
            SET IsDeleted = 1, UpdatedAtUtc = SYSUTCDATETIME(), UpdatedBy = 'migration-001'
          WHERE Id IN (SELECT DISTINCT OldRoleId FROM @map);
 
-        PRINT 'Step 5 OK — split ' + CAST((SELECT COUNT(*) FROM @map) AS varchar(10))
+        -- 110: PRINT can't hold a subquery (Msg 1046), and a compile error
+        -- stops the whole batch — even on a database where step 5 has nothing
+        -- to do. Count first, then print. (001_step5_role_split_FIXED.sql was
+        -- the one-off repair for this; it's now in Sql\Tools.)
+        DECLARE @splitCount int = (SELECT COUNT(*) FROM @map);
+        PRINT 'Step 5 OK — split ' + CAST(@splitCount AS varchar(10))
               + ' tenant-specific role copies.';
     END
     ELSE

@@ -112,7 +112,7 @@
 
     .kpi-sub {
         font-size: 12px;
-        color: #94a3b8;
+        color: #5f6c7f;
         margin-top: 2px;
     }
 
@@ -213,7 +213,7 @@
 
     .deal-company {
         font-size: 11px;
-        color: #94a3b8;
+        color: #5f6c7f;
     }
 
     .deal-value {
@@ -490,7 +490,7 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
     <div class="col-6 col-md-3">
         <div class="kpi-card">
             <div class="d-flex align-items-start gap-3">
-                <div class="kpi-icon" style="background:#eff6ff;color:#3b82f6;">
+                <div class="kpi-icon" style="background:#eff6ff;color:#1d4ed8;">
                     <i class="bi bi-people-fill"></i>
                 </div>
                 <div class="flex-grow-1 min-width-0">
@@ -510,7 +510,7 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
                 </div>
             </div>
             <div class="mt-3">
-                <div class="d-flex justify-content-between" style="font-size:11px;color:#94a3b8;margin-bottom:4px;">
+                <div class="d-flex justify-content-between" style="font-size:11px;color:#5f6c7f;margin-bottom:4px;">
                     <span>New @Model.NewLeads</span>
                     <span>Working @Model.WorkingLeads</span>
                     <span>Qualified @Model.QualifiedLeads</span>
@@ -525,10 +525,10 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
                         <div class="lead-seg" style="width:@Model.ConvertedPct%;background:#16a34a;"></div>
                     </div>
                     <div class="d-flex justify-content-between mt-1" style="font-size:10px;color:#cbd5e1;">
-                        <span style="color:#94a3b8;">New</span>
-                        <span style="color:#3b82f6;">Working</span>
-                        <span style="color:#0ea5e9;">Qualified</span>
-                        <span style="color:#16a34a;">Converted</span>
+                        <span style="color:#5f6c7f;">New</span>
+                        <span style="color:#1d4ed8;">Working</span>
+                        <span style="color:#0369a1;">Qualified</span>
+                        <span style="color:#15803d;">Converted</span>
                     </div>
                 }
             </div>
@@ -538,7 +538,7 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
     <div class="col-6 col-md-3">
         <div class="kpi-card">
             <div class="d-flex align-items-start gap-3">
-                <div class="kpi-icon" style="background:#eef2ff;color:#6366f1;">
+                <div class="kpi-icon" style="background:#eef2ff;color:#4f46e5;">
                     <i class="bi bi-kanban-fill"></i>
                 </div>
                 <div>
@@ -558,7 +558,7 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
     <div class="col-6 col-md-3">
         <div class="kpi-card">
             <div class="d-flex align-items-start gap-3">
-                <div class="kpi-icon" style="background:#f0fdf4;color:#16a34a;">
+                <div class="kpi-icon" style="background:#f0fdf4;color:#15803d;">
                     <i class="bi bi-file-earmark-check-fill"></i>
                 </div>
                 <div>
@@ -607,28 +607,28 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #6366f1;">
             <div class="kpi-label">Pipeline Value @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
-            <div class="kpi-value" style="font-size:1.4rem;color:#6366f1;">@Model.FormatCurrency(Model.PipelineValue)</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#4f46e5;">@Model.FormatCurrency(Model.PipelineValue)</div>
             <div class="kpi-sub">Active deals expected</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #16a34a;">
             <div class="kpi-label">Closed Deal Value @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
-            <div class="kpi-value" style="font-size:1.4rem;color:#16a34a;">@Model.FormatCurrency(Model.WonValue)</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#15803d;">@Model.FormatCurrency(Model.WonValue)</div>
             <div class="kpi-sub">Expected value at close · @Model.DealsWon deals</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #0ea5e9;">
             <div class="kpi-label">Total Invoiced @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
-            <div class="kpi-value" style="font-size:1.4rem;color:#0ea5e9;">@Model.FormatCurrency(Model.TotalInvoiced)</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#0369a1;">@Model.FormatCurrency(Model.TotalInvoiced)</div>
             <div class="kpi-sub">@Model.FormatCurrency(Model.PaidAmount) actually collected</div>
         </div>
     </div>
     <div class="col-sm-6 col-md-3">
         <div class="kpi-card" style="border-left:3px solid #f59e0b;">
             <div class="kpi-label">Outstanding @if (Model.HasPeriod) { <span class="scope-chip">@Model.SelectedPeriodShort</span> }</div>
-            <div class="kpi-value" style="font-size:1.4rem;color:#f59e0b;">@Model.FormatCurrency(Model.UnpaidAmount)</div>
+            <div class="kpi-value" style="font-size:1.4rem;color:#b45309;">@Model.FormatCurrency(Model.UnpaidAmount)</div>
             <div class="kpi-sub">Pending collection</div>
         </div>
     </div>
@@ -705,7 +705,7 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
                         <div class="quote-row">
                             <div class="flex-grow-1 min-width-0">
                                 <div style="font-size:13px;font-weight:500;color:#0f172a;">@q.Number</div>
-                                <div style="font-size:11px;color:#94a3b8;">@q.CompanyName · @Model.GetRelativeTime(q.IssueDateUtc)</div>
+                                <div style="font-size:11px;color:#5f6c7f;">@q.CompanyName · @Model.GetRelativeTime(q.IssueDateUtc)</div>
                             </div>
                             <div class="text-end flex-shrink-0">
                                 <div style="font-size:13px;font-weight:600;color:#4f46e5;">@Model.FormatCurrency(q.GrandTotal)</div>
@@ -730,14 +730,14 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
             </div>
             <div class="dash-card-body">
                 <div class="activity-row">
-                    <div class="kpi-icon" style="width:36px;height:36px;background:#f0fdf4;color:#16a34a;border-radius:8px;font-size:1rem;">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#f0fdf4;color:#15803d;border-radius:8px;font-size:1rem;">
                         <i class="bi bi-arrow-repeat"></i>
                     </div>
                     <div class="flex-grow-1">
                         <div style="font-size:13px;font-weight:500;color:#0f172a;">Lead conversion</div>
-                        <div style="font-size:11px;color:#94a3b8;">@Model.ConvertedLeads of @Model.TotalLeads leads</div>
+                        <div style="font-size:11px;color:#5f6c7f;">@Model.ConvertedLeads of @Model.TotalLeads leads</div>
                     </div>
-                    <div style="font-size:16px;font-weight:700;color:#16a34a;">@Model.ConversionRate</div>
+                    <div style="font-size:16px;font-weight:700;color:#15803d;">@Model.ConversionRate</div>
                 </div>
                 <div class="activity-row">
                     <div class="kpi-icon" style="width:36px;height:36px;background:#fff7ed;color:#ea580c;border-radius:8px;font-size:1rem;">
@@ -745,31 +745,31 @@ else if (Model.UndatedDeals > 0 || Model.GhostStageDeals > 0)
                     </div>
                     <div class="flex-grow-1">
                         <div style="font-size:13px;font-weight:500;color:#0f172a;">Overdue reminders</div>
-                        <div style="font-size:11px;color:#94a3b8;">Requires attention</div>
+                        <div style="font-size:11px;color:#5f6c7f;">Requires attention</div>
                     </div>
                     <div style="font-size:16px;font-weight:700;color:@(Model.OverdueReminders > 0 ? "#ea580c" : "#16a34a");">
                         @Model.OverdueReminders
                     </div>
                 </div>
                 <div class="activity-row">
-                    <div class="kpi-icon" style="width:36px;height:36px;background:#eff6ff;color:#3b82f6;border-radius:8px;font-size:1rem;">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#eff6ff;color:#1d4ed8;border-radius:8px;font-size:1rem;">
                         <i class="bi bi-calendar-check"></i>
                     </div>
                     <div class="flex-grow-1">
                         <div style="font-size:13px;font-weight:500;color:#0f172a;">Today's activities</div>
-                        <div style="font-size:11px;color:#94a3b8;">Scheduled for today</div>
+                        <div style="font-size:11px;color:#5f6c7f;">Scheduled for today</div>
                     </div>
-                    <div style="font-size:16px;font-weight:700;color:#3b82f6;">@Model.TodayActivities</div>
+                    <div style="font-size:16px;font-weight:700;color:#1d4ed8;">@Model.TodayActivities</div>
                 </div>
                 <div class="activity-row">
-                    <div class="kpi-icon" style="width:36px;height:36px;background:#eef2ff;color:#6366f1;border-radius:8px;font-size:1rem;">
+                    <div class="kpi-icon" style="width:36px;height:36px;background:#eef2ff;color:#4f46e5;border-radius:8px;font-size:1rem;">
                         <i class="bi bi-trophy-fill"></i>
                     </div>
                     <div class="flex-grow-1">
                         <div style="font-size:13px;font-weight:500;color:#0f172a;">Win rate</div>
-                        <div style="font-size:11px;color:#94a3b8;">@Model.DealsWon won · @Model.DealsLost lost</div>
+                        <div style="font-size:11px;color:#5f6c7f;">@Model.DealsWon won · @Model.DealsLost lost</div>
                     </div>
-                    <div style="font-size:16px;font-weight:700;color:#6366f1;">@Model.WinRate</div>
+                    <div style="font-size:16px;font-weight:700;color:#4f46e5;">@Model.WinRate</div>
                 </div>
             </div>
         </div>

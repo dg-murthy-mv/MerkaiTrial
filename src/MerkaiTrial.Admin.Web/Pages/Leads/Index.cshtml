@@ -119,7 +119,7 @@
     .lx-sub { font-size: .84rem; color: #64748b; margin: .25rem 0 0; display: flex;
               align-items: center; gap: .5rem; flex-wrap: wrap; }
     .lx-plan { font-size: .7rem; font-weight: 650; padding: .15rem .5rem; border-radius: 20px; }
-    .lx-quota { font-size: .78rem; color: #94a3b8; }
+    .lx-quota { font-size: .78rem; color: #5f6c7f; }
     .lx-quota.tight { color: #b45309; font-weight: 600; }
 
     /* Only drawn when the quota is close. */
@@ -163,7 +163,7 @@
     .lx-table tbody tr:hover { background: #fcfdfe; }
     .lx-table tbody tr:last-child td { border-bottom: 0; }
     .lx-table .n { text-align: right; white-space: nowrap; }
-    .lx-table .d { white-space: nowrap; color: #94a3b8; font-size: .8rem; }
+    .lx-table .d { white-space: nowrap; color: #5f6c7f; font-size: .8rem; }
 
     .lx-who { display: flex; align-items: center; gap: .55rem; min-width: 0; }
     .lx-av { width: 30px; height: 30px; border-radius: 50%; background: #eef2ff; color: #4f46e5;
@@ -172,7 +172,7 @@
     .lx-nm { font-weight: 650; color: #0f172a; text-decoration: none; display: block;
              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
     .lx-nm:hover { color: #4f46e5; }
-    .lx-own { font-size: .74rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis;
+    .lx-own { font-size: .74rem; color: #5f6c7f; overflow: hidden; text-overflow: ellipsis;
               white-space: nowrap; max-width: 210px; }
 
     /* Email and phone on ONE line. They had a line each, with an icon each,
@@ -203,7 +203,7 @@
     .lx-cf { max-width: 12rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .lx-cf-head i { opacity: .55; }
 
-    .lx-empty { text-align: center; padding: 3rem 1rem; color: #94a3b8; }
+    .lx-empty { text-align: center; padding: 3rem 1rem; color: #5f6c7f; }
     .lx-empty i.big { font-size: 2.4rem; color: #d7dde3; display: block; margin-bottom: .6rem; }
 
     .lx-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -312,7 +312,7 @@
             <span><strong>@Model.Stats.QuotaUsed of @Model.MaxLeads leads used</strong> on your plan.</span>
             <div class="bar">
                 <div class="progress" style="height:6px;">
-                    <div class="progress-bar @barClass" role="progressbar" style="width:@quotaPct%"
+                    <div class="progress-bar @barClass" role="progressbar" aria-label="Leads used, of your plan's limit" style="width:@quotaPct%"
                          aria-valuenow="@Model.Stats.QuotaUsed" aria-valuemin="0"
                          aria-valuemax="@Model.MaxLeads"></div>
                 </div>

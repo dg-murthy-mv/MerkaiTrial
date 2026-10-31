@@ -79,6 +79,17 @@ BEGIN
     THROW 51056, 'dbo.TaxRates not found. Nothing was changed.', 1;
 END
 
+-- 110: ALREADY DONE? Then stop here, quietly. The sweep below exists to
+-- protect the ALTER; once TenantId allows NULL and no row holds Guid.Empty
+-- there is no ALTER to protect — and an index added on TenantId after
+-- 056 ran made a second run THROW instead of simply doing nothing.
+IF COLUMNPROPERTY(@TaxRates, 'TenantId', 'AllowsNull') = 1
+   AND NOT EXISTS (SELECT 1 FROM dbo.TaxRates WHERE TenantId = '00000000-0000-0000-0000-000000000000')
+BEGIN
+    PRINT '056 already applied: TaxRates.TenantId allows NULL and no row holds Guid.Empty. Nothing to do.';
+    RETURN;
+END
+
 -- 0a. Indexes on TenantId
 SET @blocked = NULL;
 SELECT @blocked = ISNULL(@blocked + N', ', N'') + i.name

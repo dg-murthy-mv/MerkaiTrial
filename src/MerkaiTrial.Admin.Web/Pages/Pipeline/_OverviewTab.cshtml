@@ -45,7 +45,7 @@
                     <strong>@Model.Deal.Probability%</strong>
                     <div class="progress mt-1" style="height: 8px;">
                         <div class="progress-bar @Model.GetStageBadgeClass(Model.Deal.Stage)"
-                             role="progressbar"
+                             role="progressbar" aria-label="Probability of closing"
                              style="width: @Model.Deal.Probability%"
                              aria-valuenow="@Model.Deal.Probability"
                              aria-valuemin="0" aria-valuemax="100">

@@ -131,7 +131,7 @@
 
     /* ── facts ──────────────────────────────────────────────────── */
     .qd-facts { display: grid; grid-template-columns: auto 1fr; gap: .4rem .9rem; font-size: .86rem; }
-    .qd-facts dt { color: #94a3b8; font-weight: 500; }
+    .qd-facts dt { color: #5f6c7f; font-weight: 500; }
     .qd-facts dd { margin: 0; color: #0f172a; min-width: 0; overflow-wrap: anywhere; }
 
     /* ── line items ─────────────────────────────────────────────── */
@@ -145,7 +145,7 @@
     .qd-items .c { text-align: center; white-space: nowrap; }
     .qd-items .nm { font-weight: 600; color: #0f172a; }
     .qd-items .ds { color: #64748b; font-size: .8rem; margin-top: .15rem; }
-    .qd-items .muted { color: #94a3b8; }
+    .qd-items .muted { color: #5f6c7f; }
 
     /* ── totals ─────────────────────────────────────────────────── */
     .qd-tot { display: grid; grid-template-columns: 1fr auto; gap: .35rem .9rem; font-size: .88rem; }
@@ -153,7 +153,7 @@
     .qd-tot .amt { text-align: right; font-weight: 600; white-space: nowrap; }
     .qd-tot .rule { grid-column: 1 / -1; border-top: 1px solid #e5e8ec; margin: .35rem 0 .1rem; }
     .qd-tot .big { font-size: 1.2rem; font-weight: 700; color: #0f172a; }
-    .qd-fx { font-size: .74rem; color: #94a3b8; margin-top: .5rem; }
+    .qd-fx { font-size: .74rem; color: #5f6c7f; margin-top: .5rem; }
 
     /* ── customer link ──────────────────────────────────────────── */
     .qd-link code { display: block; background: #f1f5f9; color: #1e40af; border-radius: 6px;
@@ -163,13 +163,13 @@
     .qd-att { display: flex; align-items: center; gap: .6rem; padding: .6rem 1rem;
               border-bottom: 1px solid #f4f6f8; }
     .qd-att:last-child { border-bottom: 0; }
-    .qd-att .ico { font-size: 1.3rem; color: #94a3b8; flex: 0 0 auto; }
+    .qd-att .ico { font-size: 1.3rem; color: #5f6c7f; flex: 0 0 auto; }
     .qd-att .nm { font-weight: 600; font-size: .84rem; color: #0f172a; }
-    .qd-att .mt { font-size: .74rem; color: #94a3b8; }
+    .qd-att .mt { font-size: .74rem; color: #5f6c7f; }
     .qd-att .btns { margin-left: auto; display: flex; gap: .25rem; flex: 0 0 auto; }
     .qd-att .btns .btn { --bs-btn-padding-y: .15rem; --bs-btn-padding-x: .45rem; }
 
-    .qd-empty { padding: 1.4rem 1rem; text-align: center; color: #94a3b8; font-size: .84rem; }
+    .qd-empty { padding: 1.4rem 1rem; text-align: center; color: #5f6c7f; font-size: .84rem; }
 
     @@media (max-width: 767.98px) {
         .qd-num { font-size: 1.25rem; }
@@ -732,9 +732,11 @@ else
                               enctype="multipart/form-data">
                             <div class="input-group input-group-sm">
                                 <input type="file" name="file" class="form-control" required
+                                       aria-label="Choose a file to attach to this quote"
                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt,.csv" />
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-upload"></i>
+                                <button type="submit" class="btn btn-primary" title="Upload the file"
+                                        aria-label="Upload the file">
+                                    <i class="bi bi-upload" aria-hidden="true"></i>
                                 </button>
                             </div>
                             <div class="text-muted mt-1" style="font-size:.74rem;">

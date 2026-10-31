@@ -35,7 +35,7 @@
             <div class="d-flex align-items-center gap-2">
                 <div class="progress flex-grow-1" style="height: 20px;">
                     <div class="progress-bar @Model.GetScoreColor(Model.Lead.Score)" 
-                         role="progressbar" 
+                         role="progressbar" aria-label="Lead score" 
                          style="width: @Model.Lead.Score%"
                          aria-valuenow="@Model.Lead.Score" 
                          aria-valuemin="0" 

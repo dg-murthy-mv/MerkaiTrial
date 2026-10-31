@@ -56,7 +56,7 @@
     .cf-head { display:flex; align-items:flex-start; gap:1rem; flex-wrap:wrap; margin-bottom:1.25rem; }
 
     .cf-tabs .nav-link { display:flex; align-items:center; gap:.4rem; }
-    .cf-tabs .nav-link.disabled { color:#94a3b8; }
+    .cf-tabs .nav-link.disabled { color:#5f6c7f; }
 
     .cf-row { border:1px solid #e5e8ec; border-radius:10px; background:#fff; padding:.7rem .9rem; margin-bottom:.55rem; }
     .cf-row.inactive { background:#fbfcfd; }
@@ -66,10 +66,10 @@
     .cf-ico { width:2.3rem; height:2.3rem; border-radius:9px; flex-shrink:0;
               display:flex; align-items:center; justify-content:center;
               background:#eef2ff; color:#4f46e5; font-size:1.05rem; }
-    .cf-row.inactive .cf-ico { background:#f1f5f9; color:#94a3b8; }
+    .cf-row.inactive .cf-ico { background:#f1f5f9; color:#5f6c7f; }
 
     .cf-name { font-weight:600; }
-    .cf-meta { font-size:.78rem; color:#94a3b8; }
+    .cf-meta { font-size:.78rem; color:#5f6c7f; }
 
     .cf-ord { --bs-btn-padding-y:.1rem; --bs-btn-padding-x:.35rem; line-height:1; }
 
@@ -89,7 +89,7 @@
     .cf-opt .form-control { flex:1 1 auto; }
     .cf-opt label { white-space:nowrap; }
 
-    .cf-empty { padding:2rem 1rem; text-align:center; color:#94a3b8; }
+    .cf-empty { padding:2rem 1rem; text-align:center; color:#5f6c7f; }
     .cf-empty i { font-size:2rem; color:#d7dde3; display:block; margin-bottom:.5rem; }
 
     .cf-aside { background:#f8fafc; border:1px solid #e5e8ec; border-radius:10px; padding:1rem 1.1rem; }
@@ -521,7 +521,7 @@
                     var pct = AuthorizedPageModel.QuotaPercent(Model.Fields.Count, Model.MaxFields);
                     var bar = AuthorizedPageModel.QuotaBarClass(Model.Fields.Count, Model.MaxFields);
                 }
-                <div class="progress mb-2" style="height:6px;" role="progressbar"
+                <div class="progress mb-2" style="height:6px;" role="progressbar" aria-label="Custom fields used, of your plan's limit"
                      aria-valuenow="@Model.Fields.Count" aria-valuemin="0" aria-valuemax="@Model.MaxFields">
                     <div class="progress-bar @bar" style="width:@pct%"></div>
                 </div>
