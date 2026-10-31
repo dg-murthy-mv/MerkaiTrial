@@ -443,7 +443,7 @@ else
                                     @* NEW. The totals show a Discount line; without this
                                        column the money came off with no explanation. *@
                                     <th class="n">Discount</th>
-                                    <th class="n">Tax</th>
+                                    <th class="n">@Model.TaxLabel</th>
                                     <th class="n">Line total</th>
                                 </tr>
                             </thead>
@@ -534,7 +534,7 @@ else
                                     @(q.DiscountTotal > 0 ? "−" + Model.Money(q.DiscountTotal) : Model.Money(0))
                                 </div>
 
-                                <div class="lbl">Tax</div>
+                                <div class="lbl">@Model.TaxLabel</div>
                                 <div class="amt">@Model.Money(q.TaxTotal)</div>
 
                                 <div class="rule"></div>

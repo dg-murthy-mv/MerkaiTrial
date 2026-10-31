@@ -37,6 +37,13 @@
 // trial the entitlement test changes), each built the first time its test
 // asks, the same way. Neither is shared with any other test.
 //
+// 109: workspaces PH (Philippines / PHP / Asia/Manila) and AE (UAE / AED /
+// Asia/Dubai), admin only, for MarketTests — built the first time that
+// test asks (EnsureMarketWorkspaceAsync). Thailand is workspace C, as before.
+// The workspace's Country is now what the country drop-down actually
+// showed when it was chosen ("UAE" or "United Arab Emirates", whichever
+// the Countries table says), so Add lead later picks the same one.
+//
 // 107: the PERFORMANCE workspace (EnsurePerfWorkspaceAsync). Unlike every
 // other workspace it is NOT made fresh each run: it has a fixed name
 // ("E2E Performance") and fixed people (perf-admin, perf-rep01…09 at
@@ -279,6 +286,44 @@ public sealed class WorldBuilder
         }
     }
 
+    private static readonly SemaphoreSlim MarketGate = new(1, 1);
+    private static readonly Dictionary<string, Exception> MarketFailures = new();
+
+    /// <summary>
+    /// 109. The workspace for a market, built the first time it is asked
+    /// for: "TH" is workspace C (Thailand, as since 088); "PH" and "AE" are
+    /// new, admin only. A failed build is remembered, like C and D's.
+    /// </summary>
+    public static async Task<TestTenant> EnsureMarketWorkspaceAsync(string market)
+    {
+        if (market == "TH") return await EnsureWorkspaceCAsync();
+
+        await MarketGate.WaitAsync();
+        try
+        {
+            var existing = market switch { "PH" => World.PH, "AE" => World.AE, _ => throw new ArgumentException(market) };
+            if (existing is not null) return existing;
+            if (MarketFailures.TryGetValue(market, out var first)) throw Earlier(market, first);
+
+            try
+            {
+                var built = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db).BuildExtraWorkspaceAsync(
+                    market, market == "PH" ? Philippines : Uae, Array.Empty<(string, string, string)>());
+                if (market == "PH") World.PH = built; else World.AE = built;
+                return built;
+            }
+            catch (Exception ex)
+            {
+                MarketFailures[market] = ex;
+                throw;
+            }
+        }
+        finally
+        {
+            MarketGate.Release();
+        }
+    }
+
     /// <summary>
     /// A workspace provisioned by the super admin, its admin's invite
     /// accepted, and the given people added by that admin — each of whom
@@ -409,10 +454,17 @@ public sealed class WorldBuilder
     // =================================================================
 
     /// <summary>What Admin → Tenants → Create is asked for, per market.</summary>
-    private sealed record Market(string Country, string Currency, string TimeZoneNeedle, TimeSpan Offset, string Phone);
+    /// <param name="CountryPattern">109 — a regular expression for the country drop-down when its wording varies (UAE).</param>
+    private sealed record Market(string Country, string Currency, string TimeZoneNeedle, TimeSpan Offset, string Phone,
+        string? CountryPattern = null);
 
     private static readonly Market India    = new("India",    "INR", "Kolkata", TimeSpan.FromHours(5.5), "+919800000000");
     private static readonly Market Thailand = new("Thailand", "THB", "Bangkok", TimeSpan.FromHours(7),   "+66812345678");
+
+    // 109 — the other two markets.
+    private static readonly Market Philippines = new("Philippines", "PHP", "Manila", TimeSpan.FromHours(8), "+639171234567");
+    private static readonly Market Uae = new("UAE", "AED", "Dubai", TimeSpan.FromHours(4), "+971501234567",
+        CountryPattern: @"United Arab Emirates|\bUAE\b");
 
     // 103 — an Indian business on New York time ("Eastern Time (US)" on the
     // Create page). The offset is winter's; it changes with the clocks.
@@ -431,7 +483,10 @@ public sealed class WorldBuilder
 
         // One of the four markets that matter. The market's own time zone
         // if the list has it; the country's default is fine otherwise.
-        await Ui.SelectByTextAsync(page.Locator("#Input_CountryId"), market.Country);
+        // 109 — the option's own wording is kept as the workspace's Country.
+        var countryShown = market.CountryPattern is null
+            ? await Ui.SelectByTextAsync(page.Locator("#Input_CountryId"), market.Country)
+            : await Ui.SelectByPatternAsync(page.Locator("#Input_CountryId"), market.CountryPattern);
         await Ui.SelectByTextAsync(page.Locator("#Input_DefaultCurrency"), market.Currency);
         await Ui.SelectByTextAsync(page.Locator("#Input_TimeZone"), market.TimeZoneNeedle, required: false);
 
@@ -507,7 +562,7 @@ public sealed class WorldBuilder
             Key = key,
             Name = name,
             Admin = admin,
-            Country = market.Country,
+            Country = countryShown ?? market.Country,
             Currency = market.Currency,
             UtcOffset = market.Offset,
             SamplePhone = market.Phone,

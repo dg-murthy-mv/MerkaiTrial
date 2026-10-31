@@ -1,6 +1,12 @@
 // =====================================================================
 // FILE: MerkaiTrial.Admin.Web/Pages/Admin/Tenants/Create.cshtml.cs
 //
+// 109: CHOOSING THE COUNTRY NOW FILLS IN ITS CURRENCY AND TIME ZONE
+// (CountryDefaultsJson → the view's script). Before, the time zone stayed
+// on the page's default — Bangkok — whatever country was chosen, and
+// Manila was not in the list at all, so the Philippines market test found
+// its new workspace on Bangkok time. Both can still be changed by hand.
+//
 // 087: THE NEW ADMINISTRATOR'S INVITE IS EMAILED. Every other invite has
 // been emailed since 086; this one was only shown on the Result page for
 // you to pass on by hand. Now, right after provisioning, IAccountEmails
@@ -61,6 +67,9 @@ public class CreateModel : PageModel
     public List<SelectListItem> TimezoneOptions { get; set; } = new();
     public List<SelectListItem> CurrencyOptions { get; set; } = new();
     public List<SelectListItem> PlanOptions { get; set; } = new();
+
+    /// <summary>109. { "&lt;country id&gt;": { "currency": "PHP", "timezone": "Asia/Manila" } } for the view's script.</summary>
+    public string CountryDefaultsJson { get; private set; } = "{}";
 
     /// <summary>Live plan data — the view renders the limits panel from
     /// this rather than the hardcoded card the old page had, which claimed
@@ -246,6 +255,12 @@ public class CreateModel : PageModel
             Selected = Input.CountryId == c.Id
         }).ToList();
         CountryOptions.Insert(0, new SelectListItem("-- Select country --", "", Input.CountryId == null));
+
+        // 109 — what choosing each country fills in.
+        CountryDefaultsJson = System.Text.Json.JsonSerializer.Serialize(
+            countries.ToDictionary(
+                c => c.Id.ToString(),
+                c => new { currency = (c.CurrencyCode ?? "").Trim().ToUpperInvariant(), timezone = c.Timezone ?? "" }));
 
         var timezones = await _tenantService.GetTimezonesAsync(commonOnly: true);
         TimezoneOptions = timezones.Select(tz => new SelectListItem

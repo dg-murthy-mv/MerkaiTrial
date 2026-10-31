@@ -287,4 +287,29 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        // 109 — choosing a country fills in its currency and time zone
+        // (when the lists have them). Either can still be changed by hand.
+        (function () {
+            var defaults = @Html.Raw(Model.CountryDefaultsJson);
+            var country = document.getElementById('Input_CountryId');
+            var currency = document.getElementById('Input_DefaultCurrency');
+            var zone = document.getElementById('Input_TimeZone');
+            if (!country) return;
+
+            function pick(select, value) {
+                if (!select || !value) return;
+                for (var i = 0; i < select.options.length; i++) {
+                    if (select.options[i].value === value) { select.value = value; return; }
+                }
+            }
+
+            country.addEventListener('change', function () {
+                var d = defaults[this.value];
+                if (!d) return;
+                pick(currency, d.currency);
+                pick(zone, d.timezone);
+            });
+        })();
+    </script>
 }

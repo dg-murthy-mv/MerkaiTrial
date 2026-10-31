@@ -79,6 +79,9 @@
 
 <style>
     .qc { max-width: 1180px; margin: 0 auto; }
+    /* 108 — the search box above the deal drop-down (record-search.js) */
+    .rs-box { margin-bottom: .35rem; }
+    .rs-status { font-size: .74rem; color: #6c757d; min-height: 1em; margin-top: .2rem; }
     .qc-back { font-size: .82rem; color: #64748b; text-decoration: none; }
     .qc-back:hover { color: #334155; }
     .qc-head { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin: .35rem 0 1rem; }
@@ -155,14 +158,19 @@
             @if (Model.AvailableDeals.Any())
             {
                 <p class="text-muted" style="font-size:.86rem;">
-                    Deals in <strong>Discovery</strong>, <strong>Qualification</strong> or
-                    <strong>Proposal</strong> can be quoted. Creating the quote moves the deal
-                    on to <strong>Proposal</strong>.
+                    Any open deal can be quoted — one that isn't won or lost yet.
+                    The list shows the newest; search to find any other.
                 </p>
 
                 <form method="post" asp-page-handler="SelectDeal" class="row g-2 align-items-end">
                     <div class="col-md-9">
                         <label asp-for="SelectedDealId" class="form-label small text-muted mb-1">Deal</label>
+                        @* 108 — searches every open deal; the list starts with the newest 20. *@
+                        <input type="search" class="form-control form-control-sm rs-box" id="SelectedDealSearch"
+                               placeholder="Search open deals by title or company…"
+                               autocomplete="off" aria-label="Search deals"
+                               data-record-search="SelectedDealId"
+                               data-url="@Url.Page("/Quotes/Create", "FindDeals")" />
                         <select asp-for="SelectedDealId" class="form-select" required>
                             <option value="">Choose a deal…</option>
                             @foreach (var d in Model.AvailableDeals)
@@ -170,6 +178,7 @@
                                 <option value="@d.Value">@d.Text</option>
                             }
                         </select>
+                        <div class="rs-status" data-record-search-status="SelectedDealId" aria-live="polite"></div>
                     </div>
                     <div class="col-md-3">
                         <button type="submit" class="btn btn-primary w-100">
@@ -192,8 +201,7 @@
                     <i class="bi bi-briefcase d-block mb-2" style="font-size:2.2rem;color:#d7dde3;"></i>
                     <div class="fw-semibold mb-1">Nothing to quote yet</div>
                     <p class="text-muted mb-3" style="font-size:.86rem;">
-                        A quote needs a deal in <strong>Discovery</strong>,
-                        <strong>Qualification</strong> or <strong>Proposal</strong>.
+                        A quote needs an open deal — one that isn't won or lost yet.
                     </p>
                     <a asp-page="/Pipeline/Index" class="btn btn-sm btn-primary">
                         <i class="bi bi-kanban me-1"></i>Open the pipeline
@@ -292,6 +300,7 @@
     }
 </div>
 
+<script src="~/js/record-search.js" asp-append-version="true"></script>
 <script>
     (function () {
         'use strict';

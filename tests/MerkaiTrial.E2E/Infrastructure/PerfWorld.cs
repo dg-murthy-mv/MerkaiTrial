@@ -62,6 +62,13 @@ public static class PerfWorld
             {
                 (P, TenantId) = await WorldBuilder.EnsurePerfWorkspaceAsync(Data);
                 await SeedIfNeededAsync();
+
+                // 108 — what earlier runs left behind (the load test's leads
+                // that reps could not delete, the save test's contacts) is
+                // put away, so the workspace stays the same size run after run.
+                var cleared = await Data.ClearLeftoversAsync(TenantId);
+                if (cleared > 0) Log($"Put away {cleared:N0} records left by earlier runs.");
+
                 Samples = await Data.SamplesAsync(TenantId, Size);
 
                 var rows = await Data.RowCountsAsync(TenantId);

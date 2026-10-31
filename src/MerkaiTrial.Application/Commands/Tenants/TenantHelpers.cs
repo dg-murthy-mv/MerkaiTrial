@@ -34,7 +34,8 @@ namespace MerkaiTrial.Application.Commands.Tenants
                             c.Id,
                             c.Name,
                             c.Code,
-                            c.CurrencyCode
+                            c.CurrencyCode,
+                            c.Timezone                  // 109 — the Create Workspace page preselects it
                         ))
                         .ToListAsync(cancellationToken);
 
@@ -132,6 +133,10 @@ namespace MerkaiTrial.Application.Commands.Tenants
                 new TimezoneDto("Asia/Dubai", "Dubai (UAE)"),
                 new TimezoneDto("Asia/Kolkata", "Kolkata (India)"),
                 new TimezoneDto("Asia/Bangkok", "Bangkok (Thailand)"),
+                // 109 — was missing: one of the four markets. A Philippine
+                // workspace could not be put on Manila time, and was quietly
+                // created on the page's default, Bangkok (an hour behind).
+                new TimezoneDto("Asia/Manila", "Manila (Philippines)"),
                 new TimezoneDto("Asia/Singapore", "Singapore"),
                 new TimezoneDto("Asia/Tokyo", "Tokyo (Japan)"),
                 new TimezoneDto("Australia/Sydney", "Sydney (Australia)")

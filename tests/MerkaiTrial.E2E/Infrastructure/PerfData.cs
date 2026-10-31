@@ -130,6 +130,30 @@ public sealed class PerfData
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// 108. Soft-deletes what the performance tests themselves added and
+    /// earlier runs could not take away: the load test's "Perf Load Lead"s
+    /// (reps were not allowed to delete them) and leftover "Perf Save"
+    /// leads, plus the save test's "Perf / Save Contact" contacts. Never
+    /// touches the seeded copies ("Perf Lead …", "Perf Contact …").
+    /// Returns how many rows it put away.
+    /// </summary>
+    public async Task<int> ClearLeftoversAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"UPDATE Leads SET IsDeleted = 1
+              WHERE TenantId = @t AND IsDeleted = 0
+                AND (FullName LIKE 'Perf Load Lead %' OR FullName LIKE 'Perf Save Lead %');
+              DECLARE @n int = @@ROWCOUNT;
+              UPDATE Contacts SET IsDeleted = 1
+              WHERE TenantId = @t AND IsDeleted = 0
+                AND FirstName = 'Perf' AND LastName LIKE 'Save Contact %';
+              SELECT @n + @@ROWCOUNT;", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
     // ── Seeding ─────────────────────────────────────────────────────────
 
     /// <summary>How many of the copied leads are there? 0 = not seeded yet.</summary>

@@ -211,12 +211,16 @@ namespace MerkaiTrial.WebApi.Controllers
         [HttpGet("companies-lookup")]
         [Authorize(Policy = Policies.ContactsRead)]
         [ProducesResponseType(typeof(List<CompanyListItem>), 200)]
-        public async Task<IActionResult> GetCompaniesLookup(CancellationToken cancellationToken = default)
+        public async Task<IActionResult> GetCompaniesLookup(
+            [FromQuery] string? q = null,                 // 108 — type-ahead: name contains
+            [FromQuery] int? take = null,                 // 108 — 1–50; none = every company (old answer)
+            [FromQuery] Guid? id = null,                  // 108 — just the one already chosen
+            CancellationToken cancellationToken = default)
         {
             try
             {
                 var tenantId = _currentUserService.GetCurrentTenantId();
-                var query = new GetCompaniesLookupQuery { TenantId = tenantId };
+                var query = new GetCompaniesLookupQuery { TenantId = tenantId, Search = q, Take = take, Id = id };
                 var companies = await _getCompaniesLookup.Handle(query, cancellationToken);
                 return Ok(companies);
             }

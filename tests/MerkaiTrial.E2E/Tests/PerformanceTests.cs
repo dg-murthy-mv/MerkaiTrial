@@ -418,6 +418,12 @@ public class PerformanceTests : E2ETest
         var s = PerfWorld.Samples;
         var seconds = int.TryParse(Environment.GetEnvironmentVariable("E2E_PERF_LOAD_SECONDS"), out var sec) && sec > 0 ? sec : 120;
 
+        // 108 — the admin takes away the leads the load adds. Reps may not
+        // delete leads (leads.delete), so each rep's own delete was refused
+        // and about 170 leads were left behind every run.
+        var cleaner = await Api.AsAsync(PerfWorld.P.Admin);
+        cleaner.WaitWhenPaced = true;
+
         // Ten people, two tabs each.
         var workers = new List<(TestUser Who, WebSession Web, ApiCaller Api, bool IsAdmin)>();
         await Step("Ten people sign in twice each (20 sessions)", async () =>
@@ -458,7 +464,12 @@ public class PerformanceTests : E2ETest
                             }));
                             samples.Add(("API — add a lead", t.Ms));
                             if (!t.Response.IsSuccess) errors.Add($"{w.Who.Key}: adding a lead answered {t.Response}");
-                            else await w.Api.DeleteAsync($"/api/leads/{ApiIds.IdOf(t.Response)}");
+                            else
+                            {
+                                // 108 — by the admin (see above), and a refusal is reported.
+                                var gone = await cleaner.DeleteAsync($"/api/leads/{ApiIds.IdOf(t.Response)}");
+                                if (!gone.IsSuccess) errors.Add($"admin: taking away the load test's lead answered {gone}");
+                            }
                         }
                         else
                         {

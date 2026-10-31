@@ -1659,4 +1659,53 @@ public sealed class TestDatabase
         var delete = await Attempt("DELETE FROM dbo.AuditLogs WHERE Id = @id");
         return (update, delete);
     }
+
+    // ── 109: markets (MarketTests) and other browsers (CrossBrowserTests) ──
+
+    /// <summary>A workspace's money, tax and clock settings: its own, and its country's (Countries).</summary>
+    public sealed record MarketSetup(
+        string? Country, string? CurrencyCode, string? CurrencySymbol, int CurrencyDecimals,
+        string? TaxLabel, decimal? DefaultTaxRate, string? NumberFormat, string? DateFormat, string? TimeFormat,
+        string? CountryTimezone, string? WorkspaceCurrency, string? WorkspaceTimezone);
+
+    public async Task<MarketSetup> MarketSetupAsync(Guid tenantId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            @"SELECT c.Name, c.CurrencyCode, c.CurrencySymbol, c.CurrencyDecimals, c.TaxLabel, c.DefaultTaxRate,
+                     c.NumberFormat, c.DateFormat, c.TimeFormat, c.Timezone, t.DefaultCurrency, t.Timezone
+              FROM Tenants t LEFT JOIN Countries c ON c.Id = t.CountryId
+              WHERE t.Id = @t", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) throw new InvalidOperationException($"No workspace {tenantId}.");
+
+        string? S(int i) => r.IsDBNull(i) ? null : Convert.ToString(r.GetValue(i));
+        return new MarketSetup(
+            S(0), S(1), S(2), r.IsDBNull(3) ? 2 : Convert.ToInt32(r.GetValue(3)),
+            S(4), r.IsDBNull(5) ? null : Convert.ToDecimal(r.GetValue(5)), S(6), S(7), S(8), S(9), S(10), S(11));
+    }
+
+    /// <summary>The deal's expected close date as stored (UTC), or null.</summary>
+    public async Task<DateTime?> DealCloseDateAsync(Guid dealId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT ExpectedCloseDateUtc FROM Deals WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", dealId);
+        var v = await cmd.ExecuteScalarAsync();
+        return v is DateTime d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null;
+    }
+
+    /// <summary>The keys of the workspace's OPEN stages (Category 0 = Open; Won and Lost are not).</summary>
+    public async Task<HashSet<string>> OpenStageKeysAsync(Guid tenantId)
+    {
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT [Key] FROM PipelineStages WHERE TenantId = @t AND Category = 0", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync()) keys.Add(r.GetString(0));
+        return keys;
+    }
 }

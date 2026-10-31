@@ -3,6 +3,26 @@
 //
 // COMPLETE FILE — replaces the 017 version.
 //
+// CHANGES (108 — choosing the deal)
+//
+//   1. ONLY THE NEWEST 500 DEALS COULD BE QUOTED. The deal drop-down
+//      loaded 500 deals and kept those in Discovery, Qualification or
+//      Proposal. In a workspace with more deals than that, older open
+//      deals could not be chosen here at all.
+//
+//   2. THE STAGES WERE HARD-CODED NAMES. Since 104 each workspace names
+//      its own stages; a workspace whose open stages are, say, "Prospect"
+//      and "Demo" saw "Nothing to quote yet" with open deals in the
+//      pipeline. A deal can be quoted whenever its stage is an OPEN one
+//      (not Won or Lost), which the API now answers directly
+//      (GET /api/deals?openOnly=true).
+//
+//   The drop-down starts with the 20 newest open deals and has a search
+//   box (FindDeals below, JSON for wwwroot/js/record-search.js) that looks
+//   through every open deal. The sentence about moving the deal to
+//   "Proposal" is gone too: since 036 that move happens only if the
+//   workspace set one up in its pipeline rules.
+//
 // CHANGES (081 — custom fields on quotes)
 //
 //   1. The workspace's Quote custom fields, through the shared
@@ -610,25 +630,20 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             _logger.LogInformation("Deal loaded: {Title}, Currency: {Currency}", Deal.Title, Currency);
         }
 
-        // ✅ Qualification included — creating a quote promotes the deal to Proposal
+        // 108 — every OPEN deal can be quoted (the workspace's own stages,
+        // not three hard-coded names). The newest 20 to start with; the
+        // search box reaches the rest (FindDeals).
         private async Task LoadAvailableDealsAsync(Guid tenantId)
         {
             try
             {
-                var allDeals = await _dealService.GetAllAsync(tenantId, pageSize: 500);
+                var newest = await _dealService.GetAllAsync(tenantId, pageSize: RecordSearch.Take,
+                                                            sort: "created", dir: "desc", openOnly: true);
 
-                var quotableDeals = allDeals.Items
-                    .Where(d =>
-                        string.Equals(d.Stage, "Discovery", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(d.Stage, "Qualification", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(d.Stage, "Proposal", StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(d => d.ExpectedCloseDateUtc)
-                    .ToList();
-
-                AvailableDeals = quotableDeals.Select(d => new SelectListItem
+                AvailableDeals = newest.Items.Select(d => new SelectListItem
                 {
                     Value = d.Id.ToString(),
-                    Text  = $"{d.Title} — {d.CompanyName} ({d.Stage})"
+                    Text  = DealText(d)
                 }).ToList();
 
                 // 081: no TempData message here. This runs on a page that
@@ -640,6 +655,35 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
             {
                 _logger.LogError(ex, "Failed to load deals");
                 AvailableDeals = new();
+            }
+        }
+
+        /// <summary>108. "Metro line — Acme Ltd (Proposal)".</summary>
+        private static string DealText(DealListItem d) =>
+            string.IsNullOrWhiteSpace(d.CompanyName) ? $"{d.Title} ({d.Stage})" : $"{d.Title} — {d.CompanyName} ({d.Stage})";
+
+        /// <summary>
+        /// 108. GET ?handler=FindDeals&amp;q=… — open deals whose title or
+        /// company matches, from the whole workspace (the API applies the
+        /// person's record visibility). JSON for record-search.js.
+        /// </summary>
+        public async Task<IActionResult> OnGetFindDealsAsync(string? q)
+        {
+            if (!await CanCreateAsync()) return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 403 };
+            var term = RecordSearch.Clean(q);
+            if (term is null) return new JsonResult(Array.Empty<RecordSearchItem>());
+
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                var found = await _dealService.GetAllAsync(tenantId, search: term, pageSize: RecordSearch.Take,
+                                                           sort: "created", dir: "desc", openOnly: true);
+                return new JsonResult(found.Items.Select(d => new RecordSearchItem(d.Id.ToString(), DealText(d))).ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Deal search on the New Quote page failed");
+                return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 500 };
             }
         }
 

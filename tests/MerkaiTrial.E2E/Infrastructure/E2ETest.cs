@@ -23,18 +23,18 @@ public abstract class E2ETest
 
     /// <summary>A fresh, signed-out browser session.</summary>
     protected async Task<IPage> NewPageAsync(string label = "anonymous", ViewportSize? viewport = null,
-        string? networkAddress = null)
+        string? networkAddress = null, IBrowser? browser = null)   // 109 — browser: Firefox / WebKit for CrossBrowserTests
     {
         var name = $"{TestContext.CurrentContext.Test.Name}-{label}";
-        var session = await BrowserSession.StartAsync(GlobalSetup.Browser, name, viewport, networkAddress);
+        var session = await BrowserSession.StartAsync(browser ?? GlobalSetup.Browser, name, viewport, networkAddress);
         _sessions.Add(session);
         return session.Page;
     }
 
     /// <summary>A fresh session, signed in as <paramref name="user"/>.</summary>
-    protected async Task<IPage> SignedInAsync(TestUser user, ViewportSize? viewport = null)
+    protected async Task<IPage> SignedInAsync(TestUser user, ViewportSize? viewport = null, IBrowser? browser = null)
     {
-        var page = await NewPageAsync(user.Key, viewport);
+        var page = await NewPageAsync(user.Key, viewport, browser: browser);
         await Ui.SignInAsync(page, user, superAdmin: ReferenceEquals(user, World.SuperAdmin));
         return page;
     }
@@ -60,9 +60,16 @@ public abstract class E2ETest
     }
 
     [TearDown]
-    public async Task CloseSessionsAsync()
+    public Task CloseSessionsAsync() =>
+        CloseSessionsNowAsync(TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed);
+
+    /// <summary>
+    /// 109-update. Closes this test's sessions now — for a test that must
+    /// close its browser before it ends (CrossBrowserTests). A session of a
+    /// test that did not succeed keeps its trace, as at teardown.
+    /// </summary>
+    protected async Task CloseSessionsNowAsync(bool passed)
     {
-        var passed = TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
         foreach (var s in _sessions)
         {
             if (passed) s.Succeeded();

@@ -172,6 +172,26 @@ public static class Ui
     public static Task<string[]> OptionTextsAsync(ILocator select) =>
         select.EvaluateAsync<string[]>("el => [...el.options].map(o => o.text.trim())");
 
+    /// <summary>
+    /// 108. A drop-down with a search box above it (record-search.js): it
+    /// starts with only the newest 20, so type <paramref name="text"/> into
+    /// the box, wait for a matching option to arrive from the server, and
+    /// choose it. Returns the chosen option's text.
+    /// </summary>
+    public static async Task<string> SearchAndSelectAsync(IPage page, string selectId, string text)
+    {
+        var select = page.Locator("#" + selectId);
+        var box = page.Locator($"[data-record-search='{selectId}']");
+        Assert.That(await box.CountAsync(), Is.EqualTo(1), $"The drop-down #{selectId} has no search box above it.");
+
+        await box.FillAsync(text);
+        await WaitUntilAsync(page,
+            async () => (await OptionTextsAsync(select)).Any(t => t.Contains(text, StringComparison.OrdinalIgnoreCase)),
+            $"Searching '{text}' above #{selectId} did not bring it into the list (the line under the drop-down says why).");
+
+        return (await SelectByTextAsync(select, text))!;
+    }
+
     // ── Roles (Settings → Users → Add person) ─────────────────────────
 
     /// <summary>Loose patterns for the three seeded roles, whatever this

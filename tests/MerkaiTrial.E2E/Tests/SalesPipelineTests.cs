@@ -51,9 +51,9 @@ public class SalesPipelineTests : E2ETest
             await admin.Locator("#Input_ExpectedCloseDate").FillAsync(
                 DateTime.Today.AddDays(30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
 
-            // A stage a quote can be raised from (Quotes → New only lists
-            // Discovery, Qualification and Proposal deals); the first stage
-            // if this workspace calls them something else.
+            // A stage a quote can be raised from. (108: Quotes → New now
+            // lists every OPEN deal; this still picks Discovery,
+            // Qualification or Proposal when the workspace has them.)
             var stage = admin.Locator("label.lc-stage", new() { HasTextRegex = new(@"discovery|qualification|proposal", RegexOptions.IgnoreCase) });
             if (await stage.CountAsync() == 0) stage = admin.Locator("label.lc-stage");
             await stage.First.ClickAsync();
@@ -67,7 +67,7 @@ public class SalesPipelineTests : E2ETest
         await Step("Create a quote for the deal and send it", async () =>
         {
             await admin.GotoAsync("/Quotes/Create");
-            await Ui.SelectByTextAsync(admin.Locator("#SelectedDealId"), dealTitle);
+            await Ui.SearchAndSelectAsync(admin, "SelectedDealId", dealTitle);   // 108 — the list starts with the newest 20
             await admin.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
 
             // The editor opens with one empty line already there. Wait for

@@ -42,7 +42,14 @@ public class Tenant
 
     // ── Contact / Domain ──────────────────────────────────────────────
     public string? Domain { get; set; }
-    public string? FromEmail { get; set; }
+    /// <summary>
+    /// The workspace's sending address. Required: the workspace forms ask for
+    /// it, the configuration says IsRequired, and since 108 the database
+    /// column is NOT NULL too (Sql/108_Tenants_FromEmail_NotNull.sql). It
+    /// was "string?" here and NULL-able there, so the schema check warned
+    /// that a NULL row would break the screens that read it.
+    /// </summary>
+    public string FromEmail { get; set; } = string.Empty;
     public string? ReplyToEmail { get; set; }
     public string? Phone { get; set; }
 

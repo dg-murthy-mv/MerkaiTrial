@@ -550,6 +550,15 @@ namespace MerkaiTrial.Application.Commands.Contacts
     public class GetCompaniesLookupQuery : ICommandHandler
     {
         public Guid TenantId { get; set; }
+
+        /// <summary>108 — only companies whose name contains this (type-ahead). Null = all.</summary>
+        public string? Search { get; set; }
+
+        /// <summary>108 — at most this many (clamped to 1–50). Null = the old ceiling, MaxRows.</summary>
+        public int? Take { get; set; }
+
+        /// <summary>108 — just this one company (the one already chosen on a form).</summary>
+        public Guid? Id { get; set; }
     }
 
     public class GetCompaniesLookupHandler : ICommandHandler
@@ -572,12 +581,29 @@ namespace MerkaiTrial.Application.Commands.Contacts
         {
             try
             {
-                var companies = await _context.Companies
+                var query = _context.Companies
                     .AsNoTracking()
-                    .Where(c => c.TenantId == request.TenantId && !c.IsDeleted)
+                    .Where(c => c.TenantId == request.TenantId && !c.IsDeleted);
+
+                // 108 — the type-ahead on the contact forms. With no
+                // parameters this is exactly the old answer (every company,
+                // up to MaxRows), so existing callers are unchanged.
+                if (request.Id is Guid one)
+                    query = query.Where(c => c.Id == one);
+
+                if (!string.IsNullOrWhiteSpace(request.Search))
+                {
+                    var s = request.Search.Trim().ToLower();
+                    if (s.Length > 100) s = s[..100];   // a name is at most 200; a search needs far less
+                    query = query.Where(c => c.Name.ToLower().Contains(s));
+                }
+
+                var take = request.Take is int t ? Math.Clamp(t, 1, 50) : MaxRows;
+
+                var companies = await query
                     .OrderBy(c => c.Name)
                     .ThenBy(c => c.Id)
-                    .Take(MaxRows)                      // 096 — a safety net, like /api/companies/lookup
+                    .Take(take)                         // 096 — a safety net, like /api/companies/lookup
                     .Select(c => new CompanyListItem
                     {
                         Id           = c.Id,

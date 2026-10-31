@@ -36,6 +36,7 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <!-- PasswordHasher only, the same one Merkai's PasswordService uses. -->
     <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="8.0.8" />
+    <PackageReference Include="PdfPig" Version="0.1.9" />
     <!-- 100: tokens for calling the WebApi directly as a given person,
          made exactly the way Admin.Web's ApiTokenService makes them.
          6.35.0: the version Microsoft.Data.SqlClient 5.2.2 already brings,

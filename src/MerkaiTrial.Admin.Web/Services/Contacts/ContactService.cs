@@ -49,6 +49,15 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
         // ✅ BUG 1 + BUG 6: dedicated company lookup for Create/Edit Contact dropdown
         Task<List<CompanyListItem>> GetCompaniesLookupAsync(Guid tenantId);
 
+        /// <summary>
+        /// 108 — the type-ahead on the contact forms: companies whose name
+        /// contains <paramref name="search"/> (or the first ones by name when
+        /// it is empty), at most <paramref name="take"/>. With
+        /// <paramref name="id"/>: just that company, for the one already chosen.
+        /// Same permission as GetCompaniesLookupAsync (contacts.read).
+        /// </summary>
+        Task<List<CompanyListItem>> FindCompaniesAsync(string? search, int take = 20, Guid? id = null);
+
         Task<ContactDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<List<ContactListItem>> GetByCompanyAsync(Guid tenantId, Guid companyId);
         Task<ContactDto> CreateAsync(CreateContactDto dto);
@@ -161,6 +170,16 @@ namespace MerkaiTrial.Admin.Web.Services.Contacts
                 _logger.LogError(ex, "Error getting companies lookup for tenant {TenantId}", tenantId);
                 throw;
             }
+        }
+
+        // ── 108: COMPANIES TYPE-AHEAD ─────────────────────────────────────────
+
+        public async Task<List<CompanyListItem>> FindCompaniesAsync(string? search, int take = 20, Guid? id = null)
+        {
+            var url = $"/api/contacts/companies-lookup?take={Math.Clamp(take, 1, 50)}";
+            if (!string.IsNullOrWhiteSpace(search)) url += $"&q={Uri.EscapeDataString(search.Trim())}";
+            if (id is Guid one) url += $"&id={one}";
+            return await _api.GetAsync<List<CompanyListItem>>(url) ?? new List<CompanyListItem>();
         }
 
         // ── GET BY ID ─────────────────────────────────────────────────────────

@@ -182,6 +182,7 @@ namespace MerkaiTrial.WebApi.Controllers
             [FromQuery(Name = "cf")] string[]? cf = null,          // 077
             [FromQuery] string? sort = null,                       // 096
             [FromQuery] string? dir = null,                        // 096
+            [FromQuery] bool openOnly = false,                     // 108 — New Quote's deal picker
             CancellationToken cancellationToken = default)   // ✅ ADDED
         {
             var tenantId = _currentUserService.GetCurrentTenantId().ToString();
@@ -202,7 +203,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
                 var result = await _getDealsHandler.HandleAsync(
                     new GetDealsRequest(tenantId, stage, search, ownerUserId, page, pageSize, customFilters,
-                                        Sort: sort, Dir: dir));   // 096
+                                        Sort: sort, Dir: dir, OpenOnly: openOnly));   // 096, 108
 
                 return Ok(result);
             }

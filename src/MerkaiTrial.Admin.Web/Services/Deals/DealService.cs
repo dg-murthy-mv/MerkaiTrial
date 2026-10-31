@@ -39,7 +39,8 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
         Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
             string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
             IReadOnlyList<CustomFieldFilter>? customFilters = null,   // 077
-            string? sort = null, string? dir = null);                 // 096
+            string? sort = null, string? dir = null,                  // 096
+            bool openOnly = false);                                   // 108 — open stages only
         Task<DealDto> GetByIdAsync(Guid tenantId, Guid id);
         Task<DealDetailDto> GetDetailAsync(Guid tenantId, Guid id);
 
@@ -98,7 +99,8 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
         public async Task<GetDealsResponse> GetAllAsync(Guid tenantId, string? stage = null,
             string? search = null, string? ownerUserId = null, int page = 1, int pageSize = 20,
             IReadOnlyList<CustomFieldFilter>? customFilters = null,
-            string? sort = null, string? dir = null)
+            string? sort = null, string? dir = null,
+            bool openOnly = false)
         {
             try
             {
@@ -114,6 +116,7 @@ namespace MerkaiTrial.Admin.Web.Services.Deals
                 // 096 — note 10.
                 if (!string.IsNullOrWhiteSpace(sort)) query += $"&sort={Uri.EscapeDataString(sort)}";
                 if (!string.IsNullOrWhiteSpace(dir))  query += $"&dir={Uri.EscapeDataString(dir)}";
+                if (openOnly) query += "&openOnly=true";   // 108
 
                 return await _api.GetAsync<GetDealsResponse>(query);
             }

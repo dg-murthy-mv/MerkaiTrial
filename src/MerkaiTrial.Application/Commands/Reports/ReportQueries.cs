@@ -316,8 +316,14 @@ namespace MerkaiTrial.Application.Commands.Reports
                 .Select(d => d.OwnerUserId!)
                 .Distinct().ToList();
 
+            var ownerGuids = ownerIds
+                .Select(o => Guid.TryParse(o, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct().ToList();
+
             var ownerMap = await _db.Users
-                .Where(u => ownerIds.Contains(u.Id.ToString()))
+                // 109: match Guid to Guid so SQL can use the key (no CONVERT scan).
+                .Where(u => ownerGuids.Contains(u.Id))
                 .Select(u => new { Id = u.Id.ToString(), Name = $"{u.FirstName} {u.LastName}".Trim() })
                 // 105: SQL Server writes a Guid in CAPITALS and OwnerUserId is
                 // stored in lower case, so an exact-case lookup missed every
@@ -607,8 +613,14 @@ namespace MerkaiTrial.Application.Commands.Reports
             var ownerIds = deals.Where(d => !string.IsNullOrEmpty(d.OwnerUserId))
                 .Select(d => d.OwnerUserId!).Distinct().ToList();
 
+            var ownerGuids = ownerIds
+                .Select(o => Guid.TryParse(o, out var g) ? g : Guid.Empty)
+                .Where(g => g != Guid.Empty)
+                .Distinct().ToList();
+
             var ownerMap = await _db.Users
-                .Where(u => ownerIds.Contains(u.Id.ToString()))
+                // 109: match Guid to Guid so SQL can use the key (no CONVERT scan).
+                .Where(u => ownerGuids.Contains(u.Id))
                 .Select(u => new { Id = u.Id.ToString(), Name = $"{u.FirstName} {u.LastName}".Trim() })
                 // 105: SQL Server writes a Guid in CAPITALS and OwnerUserId is
                 // stored in lower case, so an exact-case lookup missed every

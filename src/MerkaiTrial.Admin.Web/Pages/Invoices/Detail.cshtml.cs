@@ -155,6 +155,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode { get; private set; } = string.Empty;
 
+        // 109: the workspace's own word for the tax — "GST" in India, "VAT" in
+        // Thailand, the Philippines and the UAE. The page said "Tax" everywhere.
+        public string TaxLabel { get; private set; } = "Tax";
+
         [TempData] public string? SuccessMessage { get; set; }
         [TempData] public string? ErrorMessage { get; set; }
 
@@ -300,6 +304,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Invoices
 
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
                 TenantCurrencyCode = _tenantService.GetCurrencyCode();
+                TaxLabel = _tenantService.GetTaxLabel();
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
                 Invoice = await _invoiceService.GetByIdAsync(tenantId, Id);

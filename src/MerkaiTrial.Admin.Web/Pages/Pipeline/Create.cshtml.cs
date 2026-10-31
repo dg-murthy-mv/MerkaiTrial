@@ -3,6 +3,20 @@
 //
 // COMPLETE FILE — replaces the existing one.
 //
+// CHANGES (108 — contacts and companies in a big workspace)
+//
+//   The Contact drop-down showed the first 10 contacts — the paged list's
+//   default page size — so in any workspace with more than 10 contacts
+//   most could not be chosen for a new deal. The Company drop-down loaded
+//   every company (up to 5,000) into the page.
+//
+//   Both now start with the newest 20 (plus the one already chosen, after
+//   a refused save) and have a search box above them that looks through
+//   the whole workspace: FindContacts and FindCompanies below, JSON for
+//   wwwroot/js/record-search.js, behind the same "create deals" check as
+//   the page. A contact's company comes from the contact list itself now
+//   (it carries CompanyName), not from a list of every company.
+//
 // CHANGES (077 — custom fields on deals)
 //
 //   1. The workspace's active Deal custom fields render in an "Additional
@@ -269,17 +283,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 if (leadId.HasValue)
                     Input.LeadId = leadId;
 
-                // Load all dropdowns in parallel
-                var contactsTask  = _contactService.GetAllAsync(tenantId);
-                var companiesTask = _companyService.GetLookupAsync(tenantId);
+                // Load all dropdowns in parallel.
+                // 108 — contacts and companies: the newest 20 to start with;
+                // the search boxes reach the rest (FindContacts / FindCompanies).
+                var contactsTask  = _contactService.GetAllAsync(tenantId, pageNumber: 1, pageSize: RecordSearch.Take,
+                                                                sort: "created", dir: "desc");
+                var companiesTask = _companyService.GetAllAsync(tenantId, pageNumber: 1, pageSize: RecordSearch.Take,
+                                                                sort: "created", dir: "desc");
                 var sourcesTask   = _dealService.GetSourcesAsync(tenantId);
                 var usersTask     = _userService.GetLookupAsync(tenantId);
                 var stagesTask    = _stageService.GetAsync(activeOnly: true);
 
                 await Task.WhenAll(contactsTask, companiesTask, sourcesTask, usersTask, stagesTask);
 
-                var contacts  = await contactsTask;
-                var companies = await companiesTask;
+                var contacts  = (await contactsTask).Items.ToList();
+                var companies = (await companiesTask).Items.ToList();
                 var sources   = await sourcesTask;
                 var users     = await usersTask;
                 // 104 — open stages only: a new deal can't START as Won or Lost.
@@ -297,21 +315,36 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     }
                 }
 
-                // ✅ Build company lookup for enriching contact items
-                var companyLookup = companies.ToDictionary(
-                    c => c.Id.ToString(),
-                    c => c.Name);
-
-                // ✅ Rich ContactDropdownItem — CompanyId + CompanyName for JS auto-fill
-                ContactItems = contacts.Items.Select(c => new ContactDropdownItem
+                // ✅ Rich ContactDropdownItem — CompanyId + CompanyName for JS auto-fill.
+                // 108 — the contact list carries its company's name itself.
+                ContactItems = contacts.Select(c => new ContactDropdownItem
                 {
                     Id          = c.Id.ToString(),
-                    Text        = $"{c.FullName} ({c.Email})",
-                    CompanyId   = c.CompanyId.HasValue ? c.CompanyId.Value.ToString() : null,
-                    CompanyName = c.CompanyId.HasValue && companyLookup.TryGetValue(
-                                      c.CompanyId.Value.ToString(), out var name)
-                                  ? name : null
+                    Text        = RecordSearch.ContactText(c.FullName, c.Email),
+                    CompanyId   = c.CompanyId?.ToString(),
+                    CompanyName = c.CompanyName
                 }).ToList();
+
+                // 108 — after a refused save, the contact already chosen must
+                // still be in the list (it may not be among the newest 20).
+                if (Input.ContactId != Guid.Empty && ContactItems.All(i => i.Id != Input.ContactId.ToString()))
+                {
+                    try
+                    {
+                        var chosen = await _contactService.GetByIdAsync(tenantId, Input.ContactId);
+                        ContactItems.Insert(0, new ContactDropdownItem
+                        {
+                            Id          = chosen.Id.ToString(),
+                            Text        = RecordSearch.ContactText($"{chosen.FirstName} {chosen.LastName}".Trim(), chosen.Email),
+                            CompanyId   = chosen.CompanyId?.ToString(),
+                            CompanyName = chosen.CompanyName
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "The chosen contact {ContactId} could not be loaded back into the form", Input.ContactId);
+                    }
+                }
 
                 Companies = companies.Select(c => new SelectListItem
                 {
@@ -319,6 +352,21 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                     Text     = c.Name,
                     Selected = Input.CompanyId.HasValue && c.Id == Input.CompanyId.Value
                 }).ToList();
+
+                // 108 — likewise the company already chosen.
+                if (Input.CompanyId is Guid chosenCompany && chosenCompany != Guid.Empty
+                    && Companies.All(i => i.Value != chosenCompany.ToString()))
+                {
+                    try
+                    {
+                        var chosenCo = await _companyService.GetByIdAsync(tenantId, chosenCompany);
+                        Companies.Insert(0, new SelectListItem { Value = chosenCo.Id.ToString(), Text = chosenCo.Name, Selected = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "The chosen company {CompanyId} could not be loaded back into the form", chosenCompany);
+                    }
+                }
 
                 Sources = sources.Select(s => new SelectListItem
                 {
@@ -443,6 +491,60 @@ namespace MerkaiTrial.Admin.Web.Pages.Pipeline
                 ModelState.AddModelError(string.Empty, "Failed to create deal. Please try again.");
                 await OnGetAsync();
                 return Page();
+            }
+        }
+
+        // ── 108: the search boxes ─────────────────────────────────────
+
+        /// <summary>
+        /// GET ?handler=FindContacts&amp;q=… — contacts whose name, email,
+        /// phone or company matches, from the whole workspace (the API
+        /// applies the person's record visibility). JSON for record-search.js.
+        /// </summary>
+        public async Task<IActionResult> OnGetFindContactsAsync(string? q)
+        {
+            if (!await CanCreateAsync()) return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 403 };
+            var term = RecordSearch.Clean(q);
+            if (term is null) return new JsonResult(Array.Empty<RecordSearchItem>());
+
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                var found = await _contactService.GetAllAsync(tenantId, pageNumber: 1, pageSize: RecordSearch.Take, searchTerm: term);
+                return new JsonResult(found.Items.Select(c => new RecordSearchItem(
+                    c.Id.ToString(),
+                    RecordSearch.ContactText(c.FullName, c.Email),
+                    new Dictionary<string, string?>
+                    {
+                        ["company-id"]   = c.CompanyId?.ToString(),
+                        ["company-name"] = c.CompanyName
+                    })).ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Contact search on the New Deal form failed");
+                return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 500 };
+            }
+        }
+
+        /// <summary>GET ?handler=FindCompanies&amp;q=… — companies by name, from the whole workspace.</summary>
+        public async Task<IActionResult> OnGetFindCompaniesAsync(string? q)
+        {
+            if (!await CanCreateAsync()) return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 403 };
+            var term = RecordSearch.Clean(q);
+            if (term is null) return new JsonResult(Array.Empty<RecordSearchItem>());
+
+            try
+            {
+                var tenantId = _currentUserService.GetCurrentTenantId();
+                var found = await _companyService.GetAllAsync(tenantId, pageNumber: 1, pageSize: RecordSearch.Take,
+                                                              searchTerm: term, sort: "name", dir: "asc");
+                return new JsonResult(found.Items.Select(c => new RecordSearchItem(c.Id.ToString(), c.Name)).ToList());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Company search on the New Deal form failed");
+                return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 500 };
             }
         }
 

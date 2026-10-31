@@ -86,7 +86,8 @@ namespace MerkaiTrial.Application.DTOs
         int PageSize = 20,
         List<CustomFieldFilter>? CustomFilters = null,     // 077 — ANDed; null = none
         string? Sort = null,                               // 096 — GetDealsHandler.SortKeys; null = newest first
-        string? Dir = null                                 // 096 — "asc" | "desc"
+        string? Dir = null,                                // 096 — "asc" | "desc"
+        bool OpenOnly = false                              // 108 — only deals in an OPEN stage (not Won/Lost)
     );
 
     public record GetDealsResponse(

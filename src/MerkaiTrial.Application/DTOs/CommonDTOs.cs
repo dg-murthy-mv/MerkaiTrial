@@ -38,7 +38,8 @@ namespace MerkaiTrial.Application.DTOs
     public record LeadSourceDto(Guid Id, string Name);
 
     // ✅ NEW: Country and Currency DTOs for dropdowns
-    public record CountryDropdownDto(Guid Id, string Name, string Code, string CurrencyCode);
+    /// <summary>109: Timezone (IANA, Countries.Timezone) — trailing and optional, so every existing caller is unchanged.</summary>
+    public record CountryDropdownDto(Guid Id, string Name, string Code, string CurrencyCode, string? Timezone = null);
     public record CurrencyDropdownDto(string Code);
 
     // Extended LeadListItem with all fields for detail view

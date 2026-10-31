@@ -229,7 +229,7 @@ public static class Flows
     public static async Task FillQuoteAsync(IPage page, string dealTitle, QuoteLine line)
     {
         await page.GotoAsync("/Quotes/Create");
-        await Ui.SelectByTextAsync(page.Locator("#SelectedDealId"), dealTitle);
+        await Ui.SearchAndSelectAsync(page, "SelectedDealId", dealTitle);   // 108 — the list starts with the newest 20
         await page.GetByRole(AriaRole.Button, new() { Name = "Continue" }).ClickAsync();
 
         // Wait for the editor to finish drawing before looking for the

@@ -95,6 +95,9 @@
 
     .pc-hint { font-size: .76rem; color: #6366f1; margin-top: .25rem; display: none; }
     .pc-hint.on { display: block; }
+    /* 108 — the search box above a long drop-down (record-search.js) */
+    .rs-box { margin-bottom: .35rem; }
+    .rs-status { font-size: .74rem; color: #6c757d; min-height: 1em; margin-top: .2rem; }
 
     .pc-bar { display: flex; gap: .5rem; justify-content: space-between; flex-wrap: wrap;
               border-top: 1px solid #e9ecef; padding-top: 1rem; margin-top: 1rem; }
@@ -178,6 +181,13 @@
                         <label asp-for="Input.ContactId" class="form-label small text-muted mb-1">
                             Contact <span class="text-danger">*</span>
                         </label>
+                        @* 108 — searches every contact in the workspace; the list
+                           below starts with the newest 20. *@
+                        <input type="search" class="form-control form-control-sm rs-box" id="pcContactSearch"
+                               placeholder="Search all contacts by name, email, phone or company…"
+                               autocomplete="off" aria-label="Search contacts"
+                               data-record-search="pcContact"
+                               data-url="@Url.Page("/Pipeline/Create", "FindContacts")" />
                         <select asp-for="Input.ContactId" class="form-select" id="pcContact" required>
                             <option value="">Choose a contact…</option>
                             @foreach (var c in Model.ContactItems)
@@ -187,6 +197,7 @@
                                         data-company-name="@(c.CompanyName ?? "")">@c.Text</option>
                             }
                         </select>
+                        <div class="rs-status" data-record-search-status="pcContact" aria-live="polite"></div>
                         <span asp-validation-for="Input.ContactId" class="text-danger small"></span>
                     </div>
 
@@ -194,6 +205,11 @@
                         <label asp-for="Input.CompanyId" class="form-label small text-muted mb-1">
                             Company <span class="text-muted">(optional)</span>
                         </label>
+                        <input type="search" class="form-control form-control-sm rs-box" id="pcCompanySearch"
+                               placeholder="Search all companies by name…"
+                               autocomplete="off" aria-label="Search companies"
+                               data-record-search="pcCompany"
+                               data-url="@Url.Page("/Pipeline/Create", "FindCompanies")" />
                         <select asp-for="Input.CompanyId" class="form-select" id="pcCompany">
                             <option value="">Choose a company…</option>
                             @foreach (var c in Model.Companies)
@@ -201,6 +217,7 @@
                                 <option value="@c.Value" selected="@c.Selected">@c.Text</option>
                             }
                         </select>
+                        <div class="rs-status" data-record-search-status="pcCompany" aria-live="polite"></div>
                         <div class="pc-hint" id="pcCompanyHint">
                             <i class="bi bi-magic me-1"></i>Filled in from the contact — change it if that's wrong
                         </div>
@@ -382,6 +399,7 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script src="~/js/record-search.js" asp-append-version="true"></script>
     <script>
         (function () {
             'use strict';

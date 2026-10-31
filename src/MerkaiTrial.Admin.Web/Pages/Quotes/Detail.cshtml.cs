@@ -288,6 +288,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
         public string TenantCurrencySymbol { get; private set; } = string.Empty;
         public string TenantCurrencyCode   { get; private set; } = string.Empty;
 
+        // 109: the workspace's own word for the tax ("GST", "VAT"), as the editor uses.
+        public string TaxLabel             { get; private set; } = "Tax";
+
         // ── 081: custom fields ────────────────────────────────────────
 
         /// <summary>Every Quote field, switched-off ones included (a retired field still shows its value).</summary>
@@ -348,6 +351,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Quotes
                 // ✅ Load tenant context
                 TenantCurrencySymbol = _tenantService.GetCurrencySymbol();
                 TenantCurrencyCode   = _tenantService.GetCurrencyCode();
+                TaxLabel             = _tenantService.GetTaxLabel();
 
                 var tenantId = _currentUserService.GetCurrentTenantId();
 

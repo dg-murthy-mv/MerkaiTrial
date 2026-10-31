@@ -298,14 +298,24 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             await LoadCustomFieldsAsync();
         }
 
+        /// <summary>
+        /// 108 — the first 20 companies by name, plus the one already chosen;
+        /// the search box above the drop-down reaches every company
+        /// (OnGetFindCompaniesAsync). This used to load every company in
+        /// the workspace — up to 5,000 — into the page, and a company past
+        /// the 5,000th could not be chosen at all.
+        /// </summary>
         private async Task LoadCompaniesAsync()
         {
             try
             {
-                var tenantId  = CurrentUserService.GetCurrentTenantId();
-                var companies = await _contactService.GetCompaniesLookupAsync(tenantId);
+                var companies = await _contactService.FindCompaniesAsync(null, RecordSearch.Take);
+
+                if (Input.CompanyId is Guid chosen && chosen != Guid.Empty && companies.All(c => c.Id != chosen))
+                    companies.InsertRange(0, await _contactService.FindCompaniesAsync(null, 1, chosen));
+
                 CompanyOptions = new SelectList(
-                    companies.OrderBy(c => c.Name),
+                    companies,
                     nameof(CompanyListItem.Id),
                     nameof(CompanyListItem.Name),
                     Input.CompanyId);
@@ -314,6 +324,28 @@ namespace MerkaiTrial.Admin.Web.Pages.Contacts
             {
                 Logger.LogError(ex, "Failed to load companies dropdown");
                 CompanyOptions = new SelectList(Enumerable.Empty<SelectListItem>());
+            }
+        }
+
+        /// <summary>
+        /// 108. GET ?handler=FindCompanies&amp;q=… — companies by name, from the
+        /// whole workspace. JSON for wwwroot/js/record-search.js.
+        /// </summary>
+        public async Task<IActionResult> OnGetFindCompaniesAsync(string? q)
+        {
+            if (!await CanUpdateAsync()) return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 403 };
+            var term = RecordSearch.Clean(q);
+            if (term is null) return new JsonResult(Array.Empty<RecordSearchItem>());
+
+            try
+            {
+                var found = await _contactService.FindCompaniesAsync(term, RecordSearch.Take);
+                return new JsonResult(found.Select(c => new RecordSearchItem(c.Id.ToString(), c.Name)).ToList());
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Company search on the contact form failed");
+                return new JsonResult(Array.Empty<RecordSearchItem>()) { StatusCode = 500 };
             }
         }
 

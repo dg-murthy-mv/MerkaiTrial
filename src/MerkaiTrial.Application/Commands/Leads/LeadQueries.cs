@@ -686,7 +686,8 @@ namespace MerkaiTrial.Application.Commands.Leads
                         c.Id,
                         c.Name,
                         (c.Code ?? "").Trim().ToUpper(),
-                        (c.CurrencyCode ?? "").Trim().ToUpper()
+                        (c.CurrencyCode ?? "").Trim().ToUpper(),
+                        c.Timezone          // 109 — named here: a query cannot leave an optional argument out
                     ))
                     .ToListAsync(cancellationToken);
             }

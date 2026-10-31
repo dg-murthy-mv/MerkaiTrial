@@ -435,6 +435,20 @@ namespace MerkaiTrial.Application.Commands.Deals
             if (!string.IsNullOrEmpty(request.Stage))
                 query = query.Where(d => d.Stage == request.Stage);
 
+            // 108 — the New Quote deal picker: open deals only. "Open" is the
+            // workspace's own stage categories, the dashboard's rule: a deal
+            // is open unless its stage is a Won or Lost one (a deal in a
+            // stage that no longer exists counts as open, as there).
+            if (request.OpenOnly)
+            {
+                var closedKeys = await _db.PipelineStages.AsNoTracking()
+                    .Where(s => s.TenantId == tenantId && s.Category != StageCategory.Open)
+                    .Select(s => s.Key)
+                    .ToListAsync();
+                if (closedKeys.Count > 0)
+                    query = query.Where(d => !closedKeys.Contains(d.Stage));
+            }
+
             // 077 — the ACTIVE custom fields for deals: search, filters, columns.
             var defs = await CustomFieldListQuery.ActiveDefinitionsAsync(
                 _db, tenantId, CustomFieldEntityTypes.Deal);
@@ -781,10 +795,13 @@ namespace MerkaiTrial.Application.Commands.Deals
 
             // Owner — resolve separately
             string? ownerName = null, ownerInitials = null;
-            if (!string.IsNullOrEmpty(row.Deal.OwnerUserId))
+            // 109: compare Guid to Guid. "u.Id.ToString() == owner" became
+            // CONVERT(varchar(36), Id) in SQL, which reads every user row and
+            // timed out under load, so the deal page returned 500.
+            if (Guid.TryParse(row.Deal.OwnerUserId, out var ownerGuid))
             {
                 var owner = await _db.Users
-                    .Where(u => u.Id.ToString() == row.Deal.OwnerUserId)
+                    .Where(u => u.Id == ownerGuid)
                     .Select(u => new { u.FirstName, u.LastName })
                     .FirstOrDefaultAsync();
 

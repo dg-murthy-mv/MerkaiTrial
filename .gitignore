@@ -13,3 +13,10 @@ obj/
 [Bb]uild/
 [Ll]og/
 TestResult*/
+
+# Server logs, test outputs, uploads, packages
+**/logs/
+**/uploads/
+tests/MerkaiTrial.E2E/e2e-logs/
+tests/MerkaiTrial.E2E/**/e2e-artifacts/
+*.zip

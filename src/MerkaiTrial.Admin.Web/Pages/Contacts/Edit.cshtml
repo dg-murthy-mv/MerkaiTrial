@@ -79,11 +79,19 @@
                         <!-- Company -->
                         <div class="col-md-12">
                             <label asp-for="Input.CompanyId" class="form-label">Company (Optional)</label>
+                            @* 108 — searches every company; the list starts with the first 20 by name. *@
+                            <input type="search" class="form-control form-control-sm mb-1" id="CompanySearch"
+                                   placeholder="Search all companies by name…"
+                                   autocomplete="off" aria-label="Search companies"
+                                   data-record-search="Input_CompanyId"
+                                   data-url="@Url.Page("/Contacts/Edit", "FindCompanies")" />
                             <select asp-for="Input.CompanyId"
                                     asp-items="Model.CompanyOptions"
                                     class="form-select">
                                 <option value="">-- No Company --</option>
                             </select>
+                            <div class="small text-muted mt-1" style="min-height:1em;"
+                                 data-record-search-status="Input_CompanyId" aria-live="polite"></div>
                             <span asp-validation-for="Input.CompanyId" class="text-danger"></span>
                         </div>
 
@@ -239,4 +247,5 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script src="~/js/record-search.js" asp-append-version="true"></script>
 }

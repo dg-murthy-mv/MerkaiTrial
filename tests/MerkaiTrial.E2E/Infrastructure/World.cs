@@ -93,6 +93,12 @@ public static class World
     /// <summary>103. Null until EntitlementTests builds it: India / INR, an admin and one rep — its limits and trial are changed by that test.</summary>
     public static TestTenant? E { get; set; }
 
+    /// <summary>109. Null until MarketTests builds it: Philippines / PHP / Asia/Manila, admin only.</summary>
+    public static TestTenant? PH { get; set; }
+
+    /// <summary>109. Null until MarketTests builds it: UAE / AED / Asia/Dubai, admin only.</summary>
+    public static TestTenant? AE { get; set; }
+
     /// <summary>A unique address under a per-run domain. example.com is
     /// reserved, so even a misrouted email can never reach a real person.</summary>
     public static string EmailFor(string tenantKey, string who) =>
