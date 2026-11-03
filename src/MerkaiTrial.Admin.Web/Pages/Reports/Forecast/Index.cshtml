@@ -1,0 +1,67 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.Forecast.IndexModel
+@{ ViewData["Title"] = "Revenue Forecast"; }
+@* =====================================================================
+   FILE: Pages/Reports/Forecast/Index.cshtml                         (Round 112)
+   Open deals by the month they are expected to close
+   ===================================================================== *@
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary" aria-label="Back to reports"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-graph-up-arrow me-2 text-primary" aria-hidden="true"></i>Revenue Forecast</h2>
+            <p class="text-muted mb-0 small">Open deals by the month they are expected to close</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4" id="forecastTotals">
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="weighted">@Model.FormatCurrency(d.WeightedValue)</div><div class="text-muted small">Weighted forecast</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="total-value">@Model.FormatCurrency(d.TotalValue)</div><div class="text-muted small">Open pipeline (@d.OpenDeals deals)</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="won-month">@Model.FormatCurrency(d.WonThisMonth)</div><div class="text-muted small">Won so far this month</div></div></div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-semibold">By expected close month (next @d.Months months)</div>
+            <div class="card-body p-0">
+                <table class="table table-sm align-middle mb-0" id="forecastBuckets">
+                    <thead class="table-light"><tr><th scope="col">When</th><th scope="col" class="text-end">Deals</th><th scope="col" class="text-end">Value</th><th scope="col" class="text-end">Weighted</th></tr></thead>
+                    <tbody>
+                        @foreach (var b in d.Buckets)
+                        {
+                            <tr data-bucket="@b.Key" class="@(b.Key == "overdue" && b.Count > 0 ? "table-warning" : "")">
+                                <td>@b.Label</td><td class="text-end" data-col="count">@b.Count</td>
+                                <td class="text-end">@Model.FormatCurrency(b.Value)</td><td class="text-end" data-col="weighted">@Model.FormatCurrency(b.Weighted)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        @if (d.ByOwner.Count > 0)
+        {
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white fw-semibold">By owner</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th scope="col">Owner</th><th scope="col" class="text-end">Deals</th><th scope="col" class="text-end">Value</th><th scope="col" class="text-end">Weighted</th></tr></thead>
+                        <tbody>
+                            @foreach (var o in d.ByOwner)
+                            {
+                                <tr><td>@o.OwnerName</td><td class="text-end">@o.Count</td><td class="text-end">@Model.FormatCurrency(o.Value)</td><td class="text-end">@Model.FormatCurrency(o.Weighted)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    }
+</div>

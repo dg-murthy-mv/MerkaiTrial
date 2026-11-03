@@ -1,0 +1,95 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.QuotePerformance.IndexModel
+@{ ViewData["Title"] = "Quote Performance"; }
+@* =====================================================================
+   FILE: Pages/Reports/QuotePerformance/Index.cshtml                         (Round 112)
+   How many quotes are sent, accepted, rejected and left to expire
+   ===================================================================== *@
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary" aria-label="Back to reports"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-file-earmark-text me-2 text-primary" aria-hidden="true"></i>Quote Performance</h2>
+            <p class="text-muted mb-0 small">How many quotes are sent, accepted, rejected and left to expire</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4" id="quoteTotals">
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="sent">@d.SentQuotes</div><div class="text-muted small">Sent to customers</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="acceptance">@d.AcceptanceRate%</div><div class="text-muted small">Acceptance rate</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="accepted-value">@Model.FormatCurrency(d.AcceptedValue)</div><div class="text-muted small">Accepted value</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="open">@d.Open · @Model.FormatCurrency(d.OpenValue)</div><div class="text-muted small">With customers now</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="discount">@d.AvgDiscountPct%</div><div class="text-muted small">Average discount</div></div></div>
+        </div>
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="quoted-value">@Model.FormatCurrency(d.QuotedValue)</div><div class="text-muted small">Value sent</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="rejected">@d.Rejected</div><div class="text-muted small">Rejected</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="expired">@d.Expired</div><div class="text-muted small">Expired</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="expiring">@d.ExpiringSoon</div><div class="text-muted small">Expiring in 7 days</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="past-expiry">@d.PastExpiry</div><div class="text-muted small">Past expiry, still open</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="not-sent">@d.NotSent</div><div class="text-muted small">Not sent yet</div></div></div>
+        </div>
+
+        @if (d.NeedsAttention.Count > 0)
+        {
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white fw-semibold">Needs attention</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0" id="quotesAttention">
+                        <thead class="table-light"><tr><th scope="col">Quote</th><th scope="col">Deal</th><th scope="col">Status</th><th scope="col" class="text-end">Value</th><th scope="col">Expires</th><th scope="col">Why</th></tr></thead>
+                        <tbody>
+                            @foreach (var x in d.NeedsAttention)
+                            {
+                                <tr><td><a asp-page="/Quotes/Detail" asp-route-id="@x.QuoteId">@x.Number</a></td><td>@x.DealTitle</td><td>@x.Status</td>
+                                    <td class="text-end">@Model.FormatCurrency(x.Value)</td><td>@x.ExpiresAtUtc.ToString("dd MMM yyyy")</td><td>@x.Reason</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+
+        <div class="row g-3">
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-semibold">By status</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0" id="quoteStatuses">
+                            <thead class="table-light"><tr><th scope="col">Status</th><th scope="col" class="text-end">Quotes</th><th scope="col" class="text-end">Value</th></tr></thead>
+                            <tbody>
+                                @foreach (var x in d.ByStatus)
+                                {
+                                    <tr data-status="@x.Status"><td>@x.Status</td><td class="text-end" data-col="count">@x.Count</td><td class="text-end">@Model.FormatCurrency(x.Value)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-semibold">By owner (sent quotes)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th scope="col">Owner</th><th scope="col" class="text-end">Sent</th><th scope="col" class="text-end">Accepted</th><th scope="col" class="text-end">Rate</th><th scope="col" class="text-end">Accepted value</th></tr></thead>
+                            <tbody>
+                                @foreach (var o in d.ByOwner)
+                                {
+                                    <tr><td>@o.OwnerName</td><td class="text-end">@o.Sent</td><td class="text-end">@o.Accepted</td><td class="text-end">@o.AcceptanceRate%</td><td class="text-end">@Model.FormatCurrency(o.AcceptedValue)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>

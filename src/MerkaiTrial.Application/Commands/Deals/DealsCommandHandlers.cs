@@ -1018,7 +1018,8 @@ namespace MerkaiTrial.Application.Commands.Deals
                 Description = dto.Description,
                 Stage = stage,
                 ExpectedValue = dto.ExpectedValue,
-                Currency = dto.Currency,
+                // 111: always the workspace's currency (WorkspaceCurrency).
+                Currency = await WorkspaceCurrency.ForAsync(_db, tenantGuid, dto.Currency),
                 VerticalId = dto.VerticalId,
                 SourceId = dto.SourceId,
                 Source = dto.Source,
@@ -1221,7 +1222,7 @@ namespace MerkaiTrial.Application.Commands.Deals
             deal.Title = dto.Title;
             deal.Description = dto.Description;
             deal.ExpectedValue = dto.ExpectedValue;
-            deal.Currency = dto.Currency;
+            deal.Currency = await WorkspaceCurrency.ForAsync(_db, tenantGuid, dto.Currency);   // 111
             deal.ExpectedCloseDateUtc = dto.ExpectedCloseDateUtc;
             deal.Probability = dto.Probability;
             deal.Tags = dto.Tags;

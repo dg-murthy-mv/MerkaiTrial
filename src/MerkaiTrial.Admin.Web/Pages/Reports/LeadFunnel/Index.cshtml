@@ -1,0 +1,84 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Reports.LeadFunnel.IndexModel
+@{ ViewData["Title"] = "Lead Funnel & Conversion"; }
+@* =====================================================================
+   FILE: Pages/Reports/LeadFunnel/Index.cshtml                         (Round 112)
+   Where the leads are now, how many convert, and how fast
+   ===================================================================== *@
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary" aria-label="Back to reports"><i class="bi bi-arrow-left" aria-hidden="true"></i></a>
+        <div>
+            <h2 class="mb-0"><i class="bi bi-funnel me-2 text-primary" aria-hidden="true"></i>Lead Funnel &amp; Conversion</h2>
+            <p class="text-muted mb-0 small">Where the leads are now, how many convert, and how fast</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
+    <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }
+
+    @if (Model.Data != null)
+    {
+        var d = Model.Data;
+        <div class="row g-3 mb-4" id="leadFunnelTotals">
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="leads">@d.TotalLeads</div><div class="text-muted small">Leads received</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="qualified">@d.QualifiedOrBetter (@d.QualifiedRate%)</div><div class="text-muted small">Qualified or better</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="converted">@d.Converted (@d.ConversionRate%)</div><div class="text-muted small">Converted</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="days-to-convert">@d.AvgDaysToConvert d</div><div class="text-muted small">Average days to convert</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center h-100"><div class="fw-bold fs-4" data-figure="disqualified">@d.Disqualified</div><div class="text-muted small">Disqualified</div></div></div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-semibold">Where they are now</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0" id="leadStatuses">
+                            <thead class="table-light"><tr><th scope="col">Status</th><th scope="col">Type</th><th scope="col" class="text-end">Leads</th><th scope="col" class="text-end">Share</th></tr></thead>
+                            <tbody>
+                                @foreach (var x in d.ByStatus)
+                                {
+                                    <tr data-status="@x.Key"><td>@x.Name</td><td>@x.Category</td><td class="text-end" data-col="count">@x.Count</td><td class="text-end">@x.Percent%</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-semibold">Month by month (month received)</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th scope="col">Month</th><th scope="col" class="text-end">Received</th><th scope="col" class="text-end">Converted</th><th scope="col" class="text-end">Rate</th></tr></thead>
+                            <tbody>
+                                @foreach (var x in d.ByMonth)
+                                {
+                                    <tr><td>@x.Label</td><td class="text-end">@x.Created</td><td class="text-end">@x.Converted</td><td class="text-end">@x.ConversionRate%</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white fw-semibold">By owner</div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th scope="col">Owner</th><th scope="col" class="text-end">Leads</th><th scope="col" class="text-end">Qualified or better</th><th scope="col" class="text-end">Converted</th><th scope="col" class="text-end">Rate</th></tr></thead>
+                            <tbody>
+                                @foreach (var o in d.ByOwner)
+                                {
+                                    <tr><td>@o.OwnerName</td><td class="text-end">@o.Leads</td><td class="text-end">@o.Qualified</td><td class="text-end">@o.Converted</td><td class="text-end">@o.ConversionRate%</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>

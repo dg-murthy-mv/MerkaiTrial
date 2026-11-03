@@ -1,6 +1,13 @@
 // =====================================================================
 // ReportsController.cs
 // Location: MerkaiTrial.WebApi/Controllers/ReportsController.cs
+//
+// 113 — every endpoint needs reports.read (it had no permission check at
+// all: any signed-in person could call it). The Revenue & Finance ones —
+// revenue-by-period, outstanding-invoices (and their exports),
+// quote-performance, invoice-collections — need financereports.read as
+// well. Workspace admins bypass, as everywhere. What a person may see
+// INSIDE a report is still their record scope (own / team / all).
 // =====================================================================
 
 using MerkaiTrial.Application.Commands.Reports;
@@ -8,6 +15,8 @@ using MerkaiTrial.Application.Common;
 using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using MerkaiTrial.Domain.Entities;
+using MerkaiTrial.Application.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OfficeOpenXml;
 using OfficeOpenXml.Style;
@@ -17,6 +26,7 @@ namespace MerkaiTrial.WebApi.Controllers
 {
     [ApiController]
     [Route("api/reports")]
+    [Authorize(Policy = Policies.ReportsRead)]   // 113
     public class ReportsController : ControllerBase
     {
         private readonly GetSalesFunnelHandler        _salesFunnel;
@@ -29,6 +39,12 @@ namespace MerkaiTrial.WebApi.Controllers
         private readonly GetLeadSourceHandler _leadSource;
         private readonly GetDealVelocityHandler _dealVelocity;
         private readonly GetActivityLeaderboardHandler _activityLeaderboard;
+        // 112 — the priority reports
+        private readonly GetStalledDealsHandler        _stalledDeals;
+        private readonly GetLeadFunnelHandler          _leadFunnel;
+        private readonly GetQuotePerformanceHandler    _quotePerformance;
+        private readonly GetInvoiceCollectionsHandler  _invoiceCollections;
+        private readonly GetRevenueForecastHandler     _revenueForecast;
         private readonly ICurrentUserService          _currentUserService;
         private readonly ILogger<ReportsController>   _logger;
 
@@ -43,6 +59,11 @@ namespace MerkaiTrial.WebApi.Controllers
             GetLeadSourceHandler leadSource,
             GetDealVelocityHandler dealVelocity,
             GetActivityLeaderboardHandler activityLeaderboard,
+            GetStalledDealsHandler stalledDeals,
+            GetLeadFunnelHandler leadFunnel,
+            GetQuotePerformanceHandler quotePerformance,
+            GetInvoiceCollectionsHandler invoiceCollections,
+            GetRevenueForecastHandler revenueForecast,
             ICurrentUserService          currentUserService,
             ILogger<ReportsController>   logger)
         {
@@ -56,6 +77,11 @@ namespace MerkaiTrial.WebApi.Controllers
             _leadSource = leadSource;
             _dealVelocity = dealVelocity;
             _activityLeaderboard = activityLeaderboard;
+            _stalledDeals = stalledDeals;
+            _leadFunnel = leadFunnel;
+            _quotePerformance = quotePerformance;
+            _invoiceCollections = invoiceCollections;
+            _revenueForecast = revenueForecast;
             _currentUserService = currentUserService;
             _logger             = logger;
         }
@@ -117,6 +143,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── 3. Revenue by Period ──────────────────────────────────────
 
         [HttpGet("revenue-by-period")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
         public async Task<IActionResult> GetRevenueByPeriod(
             [FromQuery] DateTime? from,
             [FromQuery] DateTime? to,
@@ -159,6 +186,7 @@ namespace MerkaiTrial.WebApi.Controllers
         // ── 5. Outstanding Invoices ───────────────────────────────────
 
         [HttpGet("outstanding-invoices")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
         public async Task<IActionResult> GetOutstandingInvoices(
             [FromQuery] DateTime? from,
             [FromQuery] DateTime? to,
@@ -188,25 +216,30 @@ namespace MerkaiTrial.WebApi.Controllers
             using var pkg = new ExcelPackage();
             var ws = pkg.Workbook.Worksheets.Add("Pipeline Summary");
 
+            // 111: the stage's NAME and what it means (open today / won or
+            // lost in the period), in the workspace's order.
             ws.Cells[1, 1].Value = "Stage";
-            ws.Cells[1, 2].Value = "Deal Count";
-            ws.Cells[1, 3].Value = "Total Value";
-            ws.Cells[1, 4].Value = "Avg Probability %";
-            StyleHeader(ws, 1, 4);
+            ws.Cells[1, 2].Value = "Type";
+            ws.Cells[1, 3].Value = "Deal Count";
+            ws.Cells[1, 4].Value = $"Total Value ({data.Currency})";
+            ws.Cells[1, 5].Value = "Avg Probability %";
+            StyleHeader(ws, 1, 5);
 
             for (int i = 0; i < data.Stages.Count; i++)
             {
                 var s = data.Stages[i];
-                ws.Cells[i + 2, 1].Value = s.Stage;
-                ws.Cells[i + 2, 2].Value = s.Count;
-                ws.Cells[i + 2, 3].Value = s.TotalValue;
-                ws.Cells[i + 2, 4].Value = s.AvgProbability;
+                ws.Cells[i + 2, 1].Value = string.IsNullOrEmpty(s.StageName) ? s.Stage : s.StageName;
+                ws.Cells[i + 2, 2].Value = s.Category == "Open" ? "Open (today)" : s.Category + " (in period)";
+                ws.Cells[i + 2, 3].Value = s.Count;
+                ws.Cells[i + 2, 4].Value = s.TotalValue;
+                ws.Cells[i + 2, 5].Value = s.AvgProbability;
             }
             ws.Cells.AutoFitColumns();
             return ExcelFile(pkg, "PipelineSummary");
         }
 
         [HttpGet("revenue-by-period/export")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
         public async Task<IActionResult> ExportRevenue(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -261,6 +294,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("outstanding-invoices/export")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
         public async Task<IActionResult> ExportOutstanding(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -464,6 +498,68 @@ namespace MerkaiTrial.WebApi.Controllers
         {
             try { return Ok(await _activityLeaderboard.HandleAsync(BuildFilter(from, to, vertical), ct)); }
             catch (Exception ex) { _logger.LogError(ex, "Error getting activity leaderboard"); return StatusCode(500, new { error = "Failed" }); }
+        }
+
+        // ── 112: the priority reports ─────────────────────────────────
+
+        // 11. Stalled Deals — open deals today; days = stalled after (default 30)
+        [HttpGet("stalled-deals")]
+        public async Task<IActionResult> GetStalledDeals(
+            [FromQuery] string? vertical, [FromQuery] int? days, CancellationToken ct)
+        {
+            try
+            {
+                var f = BuildFilter(null, null, vertical);
+                f.Days = days;
+                return Ok(await _stalledDeals.HandleAsync(f, ct));
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Error getting stalled deals"); return StatusCode(500, new { error = "Failed" }); }
+        }
+
+        // 12. Lead Funnel & Conversion — leads received in the period
+        [HttpGet("lead-funnel")]
+        public async Task<IActionResult> GetLeadFunnel(
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+            [FromQuery] string? vertical, CancellationToken ct)
+        {
+            try { return Ok(await _leadFunnel.HandleAsync(BuildFilter(from, to, vertical), ct)); }
+            catch (Exception ex) { _logger.LogError(ex, "Error getting lead funnel"); return StatusCode(500, new { error = "Failed" }); }
+        }
+
+        // 13. Quote Performance — quotes issued in the period
+        [HttpGet("quote-performance")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
+        public async Task<IActionResult> GetQuotePerformance(
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+            [FromQuery] string? vertical, CancellationToken ct)
+        {
+            try { return Ok(await _quotePerformance.HandleAsync(BuildFilter(from, to, vertical), ct)); }
+            catch (Exception ex) { _logger.LogError(ex, "Error getting quote performance"); return StatusCode(500, new { error = "Failed" }); }
+        }
+
+        // 14. Invoice & Collections — issued / paid in the period; overdue today
+        [HttpGet("invoice-collections")]
+        [Authorize(Policy = Policies.FinanceReportsRead)]   // 113
+        public async Task<IActionResult> GetInvoiceCollections(
+            [FromQuery] DateTime? from, [FromQuery] DateTime? to,
+            [FromQuery] string? vertical, CancellationToken ct)
+        {
+            try { return Ok(await _invoiceCollections.HandleAsync(BuildFilter(from, to, vertical), ct)); }
+            catch (Exception ex) { _logger.LogError(ex, "Error getting invoice collections"); return StatusCode(500, new { error = "Failed" }); }
+        }
+
+        // 15. Revenue Forecast — open deals today by expected close month; months ahead (default 6)
+        [HttpGet("revenue-forecast")]
+        public async Task<IActionResult> GetRevenueForecast(
+            [FromQuery] string? vertical, [FromQuery] int? months, CancellationToken ct)
+        {
+            try
+            {
+                var f = BuildFilter(null, null, vertical);
+                f.Months = months;
+                return Ok(await _revenueForecast.HandleAsync(f, ct));
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Error getting revenue forecast"); return StatusCode(500, new { error = "Failed" }); }
         }
 
         // ── HELPERS ───────────────────────────────────────────────────

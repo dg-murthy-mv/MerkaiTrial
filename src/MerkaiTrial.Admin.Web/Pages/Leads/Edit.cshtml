@@ -149,13 +149,16 @@
 
                                 <!-- Currency -->
                                 <div class="col-md-6">
-                                    <label asp-for="Input.CurrencyId" class="form-label">
-                                        Currency <span class="text-danger">*</span>
-                                    </label>
-                                    <select asp-for="Input.CurrencyId" class="form-select" asp-items="Model.CurrencyOptions">
-                                        <option value="">-- Select Currency --</option>
-                                    </select>
-                                    <span asp-validation-for="Input.CurrencyId" class="text-danger"></span>
+                                    @* 111 — one currency per workspace. No picker: the lead is in
+                                       the workspace's currency, and the server stores that whatever
+                                       is posted. The country above is still the lead's own (address,
+                                       phone code); it no longer changes the currency. *@
+                                    <span class="form-label d-block">Currency</span>
+                                    <div class="form-control-plaintext fw-semibold py-1" id="leadCurrency">
+                                        @Model.TenantCurrency
+                                    </div>
+                                    <input type="hidden" name="Input.CurrencyId" value="@Model.TenantCurrency" />
+                                    <div class="form-text">Every lead, deal, quote and invoice in this workspace is in @Model.TenantCurrency.</div>
                                 </div>
                             </div>
                         </div>
@@ -220,7 +223,7 @@
                                            the id and works. The comment above it claimed the symbol
                                            was "based on lead's currency"; it was the workspace
                                            symbol. It now starts from the lead's currency. *@
-                                        <span class="input-group-text" id="currency-symbol">@Model.CurrencySymbolFor(Model.Input.CurrencyId)</span>
+                                        <span class="input-group-text" id="currency-symbol">@Model.CurrencySymbolFor(Model.TenantCurrency)</span>
                                         <input asp-for="Input.EstimatedValue" type="number" step="0.01"
                                                class="form-control" />
                                     </div>

@@ -1,0 +1,25 @@
+@* =====================================================================
+   _ReportNote.cshtml                                         (Round 111)
+   Location: MerkaiTrial.Admin.Web/Pages/Reports/Shared/_ReportNote.cshtml
+
+   Under the filter on every report: which currency the money is in, and
+   — when there are any — how many records in ANOTHER currency were left
+   out of the sums. They are never added in: ₱ and ฿ can't be added.
+   Usage: @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }
+   ===================================================================== *@
+@model MerkaiTrial.Application.DTOs.ReportBaseDto
+
+@if (Model.ExcludedOtherCurrency > 0)
+{
+    <div class="alert alert-warning py-2 small mb-3" role="status" id="reportCurrencyNote">
+        <i class="bi bi-currency-exchange me-1" aria-hidden="true"></i>
+        Amounts are in @Model.Currency.
+        @Model.ExcludedOtherCurrency @(Model.ExcludedOtherCurrency == 1 ? "record" : "records")
+        in @string.Join(", ", Model.ExcludedCurrencies)
+        @(Model.ExcludedOtherCurrency == 1 ? "is" : "are") not included in the totals.
+    </div>
+}
+else if (!string.IsNullOrEmpty(Model.Currency))
+{
+    <div class="small text-muted mb-3" id="reportCurrencyNote">Amounts are in @Model.Currency.</div>
+}

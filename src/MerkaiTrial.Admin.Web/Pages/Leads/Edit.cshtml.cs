@@ -316,9 +316,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                     CompanyName = lead.CompanyName,
                     Address = lead.Address,
                     CountryId = lead.CountryId,
-                    CurrencyId = !string.IsNullOrEmpty(lead.Currency)
-                                       ? lead.Currency
-                                       : TenantCurrency,
+                    CurrencyId = TenantCurrency,   // 111: always the workspace's currency
                     ChannelId = lead.ChannelId,
                     SourceId = lead.SourceId,
                     // ✅ FIX: was never set — Edit form always showed

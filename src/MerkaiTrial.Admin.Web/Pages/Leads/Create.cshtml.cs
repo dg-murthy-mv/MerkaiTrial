@@ -232,7 +232,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Leads
                 await LoadDropdownsAsync();
                 await LoadCustomFieldsAsync();      // 092
 
-                // Set tenant defaults on the form — user can override
+                // 111: the workspace's currency — not something to choose.
                 Input.CurrencyId = TenantCurrency;
                 // CountryId will be selected via dropdown match on TenantCountryCode
 

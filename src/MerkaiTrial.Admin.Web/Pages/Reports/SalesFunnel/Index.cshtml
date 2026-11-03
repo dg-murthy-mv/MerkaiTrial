@@ -19,6 +19,7 @@
     }
 
     <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }   @* 111 *@
 
     @if (Model.Data != null)
     {

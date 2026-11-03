@@ -19,14 +19,18 @@
     </div>
     @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
     <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }   @* 111 *@
 
     @if (Model.Data != null)
     {
         var d = Model.Data;
-        <div class="row g-3 mb-4">
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-primary">@d.DealsAnalyzed</div><div class="text-muted small">Closed Deals Analysed</div></div></div>
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-warning">@d.AvgDaysDealToClose d</div><div class="text-muted small">Avg Days Deal → Close</div></div></div>
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-success">@d.Stages.Count</div><div class="text-muted small">Stage Transitions</div></div></div>
+        @* 111 — lead → deal and lead → close are worked out now (they were 0). *@
+        <div class="row g-3 mb-4" id="velocityTotals">
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-primary" data-figure="deals">@d.DealsAnalyzed</div><div class="text-muted small">Closed deals analysed</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4" data-figure="lead-to-deal">@d.AvgDaysLeadToDeal d</div><div class="text-muted small">Avg days lead → deal</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-warning" data-figure="deal-to-close">@d.AvgDaysDealToClose d</div><div class="text-muted small">Avg days deal → close</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4" data-figure="lead-to-close">@d.AvgDaysLeadToClose d</div><div class="text-muted small">Avg days lead → close</div></div></div>
+            <div class="col-6 col-md"><div class="card border-0 shadow-sm p-3 text-center"><div class="fw-bold fs-4 text-success">@d.Stages.Count</div><div class="text-muted small">Stage transitions</div></div></div>
         </div>
         <div class="row g-3">
             <div class="col-lg-7">

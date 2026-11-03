@@ -96,8 +96,11 @@ public static class Flows
         // Country first: choosing it fills the currency on this page.
         if (await Ui.SelectByTextAsync(page.Locator("#Input_CountryId"), country, required: false) is null)
             await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_CountryId"));
-        if (await Ui.SelectByTextAsync(page.Locator("#Input_CurrencyId"), currency, required: false) is null)
-            await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_CurrencyId"));
+        // 111: the lead form has no currency picker any more (one currency per
+        // workspace). Older builds still have one; choose in it if it is there.
+        if (await page.Locator("select#Input_CurrencyId").CountAsync() > 0
+            && await Ui.SelectByTextAsync(page.Locator("select#Input_CurrencyId"), currency, required: false) is null)
+            await Ui.SelectFirstIfEmptyAsync(page.Locator("select#Input_CurrencyId"));
         await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_ChannelId"));
 
         await page.Locator("#Input_EstimatedValue").FillAsync(value.ToString(CultureInfo.InvariantCulture));

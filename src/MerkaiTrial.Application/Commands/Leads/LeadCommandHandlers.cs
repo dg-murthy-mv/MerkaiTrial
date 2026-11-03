@@ -210,10 +210,10 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
-                // FIX 1: Currency from tenant if not provided in DTO
-                var currency = !string.IsNullOrWhiteSpace(dto.Currency)
-                    ? dto.Currency.Trim().ToUpperInvariant()
-                    : _tenantService.GetCurrencyCode();
+                // 111: always the workspace's currency, whatever was sent
+                // (one currency per workspace — WorkspaceCurrency).
+                var currency = await WorkspaceCurrency.ForAsync(
+                    _context, dto.TenantId, dto.Currency ?? _tenantService.GetCurrencyCode(), cancellationToken);
 
                 // ── Plan quota (103: PlanQuota) ──────────────────────────────────
                 // Held until the lead is saved, so two saves at the same
@@ -439,10 +439,10 @@ namespace MerkaiTrial.Application.Commands.Leads
 
                 var currentUserId = _currentUserService.GetCurrentUserId();
 
-                // FIX 1: Currency from tenant if not provided
-                var currency = !string.IsNullOrWhiteSpace(dto.Currency)
-                    ? dto.Currency.Trim().ToUpperInvariant()
-                    : _tenantService.GetCurrencyCode();
+                // 111: always the workspace's currency, whatever was sent
+                // (one currency per workspace — WorkspaceCurrency).
+                var currency = await WorkspaceCurrency.ForAsync(
+                    _context, dto.TenantId, dto.Currency ?? _tenantService.GetCurrencyCode(), cancellationToken);
 
                 // ✅ AUDIT — snapshot BEFORE anything is assigned.
                 // Plain locals rather than an anonymous type: the fields below

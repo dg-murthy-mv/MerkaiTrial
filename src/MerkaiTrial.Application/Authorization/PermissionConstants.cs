@@ -49,6 +49,11 @@
 // purpose: a rule can reassign leads and message people, which is a
 // different power from shaping the pipeline.
 //
+// ROUND 113: "reports" is now ENFORCED (it only hid the menu link before —
+// every report page and api/reports endpoint opened for anyone signed in),
+// and a "financereports" module is added for the Revenue & Finance
+// reports. Both read-only. Workspace admins bypass, as for every module.
+//
 // ALSO ADDED: Modules.Audit. ModuleCatalog has enforced an "audit" module
 // since it was written, and this file never had the constant — so every
 // call site had to spell the string by hand, which is precisely how the
@@ -71,6 +76,14 @@ namespace MerkaiTrial.Application.Authorization
         public const string Audit = "audit";        // ← 024: existed in ModuleCatalog, not here
         public const string Tenants = "tenants";
         public const string Reports = "reports";
+
+        /// <summary>
+        /// 113. The money reports — the "Revenue &amp; Finance" category:
+        /// Invoiced &amp; Collected, Outstanding Invoices, Quote Performance,
+        /// Invoice &amp; Collections. Needed ON TOP of "reports". A Sales Rep
+        /// has reports (their own deals) but not this.
+        /// </summary>
+        public const string FinanceReports = "financereports";
 
         /// <summary>
         /// How the pipeline is shaped — stages, the sales process, lead
@@ -137,6 +150,9 @@ namespace MerkaiTrial.Application.Authorization
         // READ ONLY — was missing entirely, while ReportsCreate and
         // ReportsDelete existed and were never used.
         public const string ReportsRead = "reports.read";
+
+        // 113 — the Revenue & Finance reports (needed as well as ReportsRead).
+        public const string FinanceReportsRead = "financereports.read";
 
         public const string UsersRead = "users.read";
         public const string UsersCreate = "users.create";

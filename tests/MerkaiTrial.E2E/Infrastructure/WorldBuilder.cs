@@ -286,6 +286,68 @@ public sealed class WorldBuilder
         }
     }
 
+    private static readonly SemaphoreSlim WorkspaceRGate = new(1, 1);
+    private static Exception? _workspaceRFailure;
+
+    /// <summary>
+    /// 111. Workspace R — India / INR, an admin and one rep ("Ravi"). Only
+    /// ReportTests uses it, so every deal, invoice and payment in it is one
+    /// that test made, and its reports can be checked figure by figure.
+    /// </summary>
+    public static async Task<TestTenant> EnsureWorkspaceRAsync()
+    {
+        await WorkspaceRGate.WaitAsync();
+        try
+        {
+            if (World.R is not null) return World.R;
+            if (_workspaceRFailure is not null) throw Earlier("R", _workspaceRFailure);
+            try
+            {
+                World.R = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db)
+                    .BuildExtraWorkspaceAsync("R", India, new[] { ("rep", "Ravi", Ui.RolePatterns.Rep) });
+            }
+            catch (Exception ex)
+            {
+                _workspaceRFailure = ex;
+                throw;
+            }
+            return World.R;
+        }
+        finally
+        {
+            WorkspaceRGate.Release();
+        }
+    }
+
+    private static readonly SemaphoreSlim WorkspaceSGate = new(1, 1);
+    private static Exception? _workspaceSFailure;
+
+    /// <summary>112. Workspace S — India / INR, admin only. PriorityReportTests only.</summary>
+    public static async Task<TestTenant> EnsureWorkspaceSAsync()
+    {
+        await WorkspaceSGate.WaitAsync();
+        try
+        {
+            if (World.S is not null) return World.S;
+            if (_workspaceSFailure is not null) throw Earlier("S", _workspaceSFailure);
+            try
+            {
+                World.S = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db)
+                    .BuildExtraWorkspaceAsync("S", India, Array.Empty<(string, string, string)>());
+            }
+            catch (Exception ex)
+            {
+                _workspaceSFailure = ex;
+                throw;
+            }
+            return World.S;
+        }
+        finally
+        {
+            WorkspaceSGate.Release();
+        }
+    }
+
     private static readonly SemaphoreSlim MarketGate = new(1, 1);
     private static readonly Dictionary<string, Exception> MarketFailures = new();
 
@@ -470,6 +532,9 @@ public sealed class WorldBuilder
     // Create page). The offset is winter's; it changes with the clocks.
     private static readonly Market IndiaOnNewYorkTime = new("India", "INR", "Eastern Time", TimeSpan.FromHours(-5), "+919800000000");
 
+    /// <summary>112-update1: press "Create workspace" without waiting for the next page (the caller waits, longer).</summary>
+    private static readonly LocatorClickOptions CreateClick = new() { NoWaitAfter = true, Timeout = 30_000 };
+
     private async Task<(TestTenant Tenant, string InviteLink)> ProvisionAsync(IPage page, string key, Market market,
         string? fixedName = null, TestUser? fixedAdmin = null)
     {
@@ -500,14 +565,18 @@ public sealed class WorldBuilder
         await page.Locator("#Input_AdminLastName").FillAsync(admin.LastName);
         await page.Locator("#Input_AdminEmail").FillAsync(admin.Email);
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Create workspace" }).ClickAsync();
+        // 112-update1: the click only presses the button. Waiting for the
+        // next page is the loop below (90 s), not the click's own 20 s —
+        // a run on 3 Nov failed here when SQL Server spent 22 s reading
+        // from disk (PAGEIOLATCH) while saving the new workspace.
+        await page.GetByRole(AriaRole.Button, new() { Name = "Create workspace" }).ClickAsync(CreateClick);
 
         // Either the Result page, or — when an earlier workspace looks
         // similar (an earlier test run) — the "This may be a repeat trial"
         // warning with its confirmation box. Tick it and submit again.
         var confirm = page.Locator("#Input_ConfirmDespiteWarnings");
         var confirmed = false;
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = DateTime.UtcNow.AddSeconds(90);
 
         while (!PathIs(page, "/Admin/Tenants/Result"))
         {
@@ -515,7 +584,7 @@ public sealed class WorldBuilder
             {
                 confirmed = true;
                 await confirm.CheckAsync();
-                await page.GetByRole(AriaRole.Button, new() { Name = "Create workspace" }).ClickAsync();
+                await page.GetByRole(AriaRole.Button, new() { Name = "Create workspace" }).ClickAsync(CreateClick);
             }
             else if (DateTime.UtcNow > deadline)
             {

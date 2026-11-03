@@ -335,8 +335,11 @@ public class EntitlementTests : E2ETest
         await page.Locator("#Input_CompanyName").FillAsync(name + " Pvt Ltd");
         if (await Ui.SelectByTextAsync(page.Locator("#Input_CountryId"), e.Country, required: false) is null)
             await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_CountryId"));
-        if (await Ui.SelectByTextAsync(page.Locator("#Input_CurrencyId"), e.Currency, required: false) is null)
-            await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_CurrencyId"));
+        // 111: the lead form has no currency picker any more (one currency per
+        // workspace). Older builds still have one; choose in it if it is there.
+        if (await page.Locator("select#Input_CurrencyId").CountAsync() > 0
+            && await Ui.SelectByTextAsync(page.Locator("select#Input_CurrencyId"), e.Currency, required: false) is null)
+            await Ui.SelectFirstIfEmptyAsync(page.Locator("select#Input_CurrencyId"));
         await Ui.SelectFirstIfEmptyAsync(page.Locator("#Input_ChannelId"));
         await page.Locator("#Input_EstimatedValue").FillAsync("1000");
         await page.GetByRole(AriaRole.Button, new() { Name = "Create Lead" }).ClickAsync();

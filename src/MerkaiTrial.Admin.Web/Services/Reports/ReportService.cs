@@ -20,6 +20,12 @@ namespace MerkaiTrial.Admin.Web.Services.Reports
         Task<LeadSourceReportDto> GetLeadSourcesAsync(DateTime? from, DateTime? to, string? vertical);
         Task<DealVelocityReportDto> GetDealVelocityAsync(DateTime? from, DateTime? to, string? vertical);
         Task<ActivityLeaderboardReportDto> GetActivityLeaderboardAsync(DateTime? from, DateTime? to, string? vertical);
+        // 112 — the priority reports
+        Task<StalledDealsReportDto>        GetStalledDealsAsync(string? vertical, int? days);
+        Task<LeadFunnelReportDto>          GetLeadFunnelAsync(DateTime? from, DateTime? to, string? vertical);
+        Task<QuotePerformanceReportDto>    GetQuotePerformanceAsync(DateTime? from, DateTime? to, string? vertical);
+        Task<InvoiceCollectionsReportDto>  GetInvoiceCollectionsAsync(DateTime? from, DateTime? to, string? vertical);
+        Task<RevenueForecastReportDto>     GetRevenueForecastAsync(string? vertical, int? months);
         Task<byte[]> ExportPipelineAsync(DateTime? from, DateTime? to, string? vertical);
         Task<byte[]> ExportRevenueAsync(DateTime? from, DateTime? to, string? vertical);
         Task<byte[]> ExportWinLossAsync(DateTime? from, DateTime? to, string? vertical);
@@ -170,6 +176,29 @@ namespace MerkaiTrial.Admin.Web.Services.Reports
             }
             catch (Exception ex) { _logger.LogError(ex, "Error getting activity leaderboard"); throw; }
         }
+        // ── 112: the priority reports ─────────────────────────────────
+
+        public Task<StalledDealsReportDto> GetStalledDealsAsync(string? vertical, int? days) =>
+            _api.GetAsync<StalledDealsReportDto>(
+                $"/api/reports/stalled-deals{Extra(BuildQuery(null, null, vertical), "days", days)}");
+
+        public Task<LeadFunnelReportDto> GetLeadFunnelAsync(DateTime? from, DateTime? to, string? vertical) =>
+            _api.GetAsync<LeadFunnelReportDto>($"/api/reports/lead-funnel{BuildQuery(from, to, vertical)}");
+
+        public Task<QuotePerformanceReportDto> GetQuotePerformanceAsync(DateTime? from, DateTime? to, string? vertical) =>
+            _api.GetAsync<QuotePerformanceReportDto>($"/api/reports/quote-performance{BuildQuery(from, to, vertical)}");
+
+        public Task<InvoiceCollectionsReportDto> GetInvoiceCollectionsAsync(DateTime? from, DateTime? to, string? vertical) =>
+            _api.GetAsync<InvoiceCollectionsReportDto>($"/api/reports/invoice-collections{BuildQuery(from, to, vertical)}");
+
+        public Task<RevenueForecastReportDto> GetRevenueForecastAsync(string? vertical, int? months) =>
+            _api.GetAsync<RevenueForecastReportDto>(
+                $"/api/reports/revenue-forecast{Extra(BuildQuery(null, null, vertical), "months", months)}");
+
+        /// <summary>Adds one more query value to a query string from BuildQuery ("" or "?a=b").</summary>
+        private static string Extra(string query, string name, int? value) =>
+            value is null ? query : (query.Length == 0 ? "?" : query + "&") + $"{name}={value.Value}";
+
         public async Task<byte[]> ExportPipelineAsync(DateTime? from, DateTime? to, string? vertical)
             => await _api.GetBytesAsync($"/api/reports/pipeline-summary/export{BuildQuery(from, to, vertical)}");
 

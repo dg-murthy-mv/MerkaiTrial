@@ -156,6 +156,7 @@ public class CurrentUserService : ICurrentUserService
             ["Roles"] = allActions,
             ["Tenants"] = allActions,
             ["Reports"] = new List<string> { "read" },
+            ["FinanceReports"] = new List<string> { "read" },   // 113
             ["Settings"] = new List<string> { "read", "update" },
         };
     }

@@ -339,9 +339,9 @@ namespace MerkaiTrial.Application.Commands.Leads
                 int probability = chosen.Probability;
 
 
-                var currency = !string.IsNullOrEmpty(dto.Currency)
-                    ? dto.Currency
-                    : lead.Currency ?? string.Empty;
+                // 111: always the workspace's currency (WorkspaceCurrency).
+                var currency = await WorkspaceCurrency.ForAsync(
+                    _db, dto.TenantId, !string.IsNullOrEmpty(dto.Currency) ? dto.Currency : lead.Currency);
 
                 var deal = new Deal
                 {

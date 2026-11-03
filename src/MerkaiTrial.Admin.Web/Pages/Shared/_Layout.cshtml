@@ -1271,66 +1271,42 @@
                     {
                         var activeReport = ViewData["ActiveReport"]?.ToString() ?? "";
                         <div class="lf-subnav">
-
-                            @* Core reports — available to all plans with reports feature *@
-                            <div class="lf-subnav-label">Core</div>
-                            <a class="lf-subnav-item @(activeReport == "funnel" ? "active" : "")" asp-page="/Reports/SalesFunnel/Index">
-                                <i class="bi bi-funnel" style="font-size:13px;width:14px;"></i>Sales Funnel
-                            </a>
-                            <a class="lf-subnav-item @(activeReport == "pipeline" ? "active" : "")" asp-page="/Reports/Pipeline/Index">
-                                <i class="bi bi-kanban" style="font-size:13px;width:14px;"></i>Pipeline
-                            </a>
-                            <a class="lf-subnav-item @(activeReport == "revenue" ? "active" : "")" asp-page="/Reports/Revenue/Index">
-                                <i class="bi bi-cash-stack" style="font-size:13px;width:14px;"></i>Revenue
-                            </a>
-                            <a class="lf-subnav-item @(activeReport == "winloss" ? "active" : "")" asp-page="/Reports/WinLoss/Index">
-                                <i class="bi bi-trophy" style="font-size:13px;width:14px;"></i>Win / Loss
-                            </a>
-                            <a class="lf-subnav-item @(activeReport == "outstanding" ? "active" : "")" asp-page="/Reports/Outstanding/Index">
-                                <i class="bi bi-receipt-cutoff" style="font-size:13px;width:14px;"></i>Outstanding
-                            </a>
-                            <a class="lf-subnav-item @(activeReport == "vertical" ? "active" : "")" asp-page="/Reports/ByVertical/Index">
-                                <i class="bi bi-grid" style="font-size:13px;width:14px;"></i>By Vertical
-                            </a>
-
-                            @* ✅ Advanced reports — Professional and Enterprise only *@
-                            @if (Ui.HasFeature("advanced_reports"))
+                            @* 111 — the five report categories (ReportCatalog, shared with
+                               the Reports page). Advanced reports need the plan's
+                               advanced_reports feature; without it they show locked. *@
+                            @{ var hasAdvancedReports = Ui.HasFeature("advanced_reports"); var firstCategory = true; }
+                            @* 113 — only the categories this person may open (Revenue &
+                               Finance needs Finance Reports as well as Reports). *@
+                            @foreach (var category in MerkaiTrial.Admin.Web.Pages.Reports.ReportCatalog.VisibleTo(Context.User))
                             {
-                                <div class="lf-subnav-label" style="margin-top:4px;">Advanced</div>
-                                <a class="lf-subnav-item @(activeReport == "repperformance" ? "active" : "")" asp-page="/Reports/RepPerformance/Index">
-                                    <i class="bi bi-person-check" style="font-size:13px;width:14px;"></i>Rep Performance
-                                </a>
-                                <a class="lf-subnav-item @(activeReport == "leadsources" ? "active" : "")" asp-page="/Reports/LeadSources/Index">
-                                    <i class="bi bi-megaphone" style="font-size:13px;width:14px;"></i>Lead Sources
-                                </a>
-                                <a class="lf-subnav-item @(activeReport == "dealvelocity" ? "active" : "")" asp-page="/Reports/DealVelocity/Index">
-                                    <i class="bi bi-speedometer2" style="font-size:13px;width:14px;"></i>Deal Velocity
-                                </a>
-                                <a class="lf-subnav-item @(activeReport == "activityleaderboard" ? "active" : "")" asp-page="/Reports/ActivityLeaderboard/Index">
-                                    <i class="bi bi-list-check" style="font-size:13px;width:14px;"></i>Activities
-                                </a>
+                                <div class="lf-subnav-label" style="@(firstCategory ? "" : "margin-top:4px;")">@category.Name</div>
+                                firstCategory = false;
+                                foreach (var r in category.Reports)
+                                {
+                                    if (r.Advanced && !hasAdvancedReports)
+                                    {
+                                        <div class="lf-nav-item-locked" title="Upgrade to Professional to unlock this report">
+                                            <i class="bi @r.Icon" style="font-size:13px;width:14px;" aria-hidden="true"></i>
+                                            <span style="font-size:12px;">@r.Title</span>
+                                            <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true"></i>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <a class="lf-subnav-item @(activeReport == r.Key ? "active" : "")" asp-page="@r.Page">
+                                            <i class="bi @r.Icon" style="font-size:13px;width:14px;" aria-hidden="true"></i>@r.Title
+                                        </a>
+                                    }
+                                }
                             }
-                            else
+                            @if (!hasAdvancedReports)
                             {
-                                @* ✅ Starter plan — show Advanced as locked with upgrade prompt *@
-                                <div class="lf-subnav-label" style="margin-top:4px;">Advanced</div>
-                                <div class="lf-nav-item-locked" title="Upgrade to Professional to unlock advanced reports">
-                                    <i class="bi bi-bar-chart-steps" style="font-size:13px;width:14px;"></i>
-                                    <span style="font-size:12px;">Rep Performance</span>
-                                    <i class="bi bi-lock-fill lf-lock-icon"></i>
-                                </div>
-                                <div class="lf-nav-item-locked" title="Upgrade to Professional to unlock advanced reports">
-                                    <i class="bi bi-megaphone" style="font-size:13px;width:14px;"></i>
-                                    <span style="font-size:12px;">Lead Sources</span>
-                                    <i class="bi bi-lock-fill lf-lock-icon"></i>
-                                </div>
                                 <div class="lf-subnav-item" style="padding-left:16px;">
                                     <a href="/pricing" class="btn btn-outline-warning btn-sm w-100" style="font-size:10px;padding:2px 6px;">
-                                        <i class="bi bi-arrow-up-circle me-1"></i>Upgrade to Pro
+                                        <i class="bi bi-arrow-up-circle me-1" aria-hidden="true"></i>Upgrade to Pro
                                     </a>
                                 </div>
                             }
-
                         </div>
                     }
                 }

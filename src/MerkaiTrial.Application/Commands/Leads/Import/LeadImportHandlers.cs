@@ -566,13 +566,17 @@ internal static class ImportValidator
             var value = LeadFileParser.ParseDecimal(Get(row, ImportFields.EstimatedValue));
             if (value is < 0) value = null;
 
-            var currency = Get(row, ImportFields.Currency)?.ToUpperInvariant();
-            if (currency != null && currency.Length != 3)
+            // 111: one currency per workspace. A file's own currency column is
+            // read only to say so when it differs; the lead is saved in the
+            // workspace's currency (ctx.DefaultCurrency) either way.
+            var currency = Get(row, ImportFields.Currency)?.Trim().ToUpperInvariant();
+            if (!string.IsNullOrEmpty(currency) &&
+                !string.Equals(currency, ctx.DefaultCurrency, StringComparison.OrdinalIgnoreCase))
             {
-                messages.Add($"Currency \"{currency}\" isn't a 3-letter code — using {ctx.DefaultCurrency}");
-                currency = null;
+                messages.Add($"Currency \"{currency}\" — every lead in this workspace is in {ctx.DefaultCurrency}, so it is saved in {ctx.DefaultCurrency}");
                 if (verdict == RowVerdict.Ok) verdict = RowVerdict.Warning;
             }
+            currency = null;
 
             // ── Custom fields (092) ───────────────────────────────────
             // Would this row CREATE a lead? Only then can a required field

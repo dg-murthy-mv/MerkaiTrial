@@ -463,7 +463,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 Number = InvoiceNumbering.NewDraftNumber(),   // real INV-nnnn on issue
                 IssueDateUtc = dto.IssueDateUtc,
                 DueDateUtc = dto.DueDateUtc,
-                Currency = dto.Currency,
+                Currency = await WorkspaceCurrency.ForAsync(_db, dto.TenantId, dto.Currency),   // 111
                 Status = InvoiceStatus.Draft,
                 Subtotal = subtotal,
                 DiscountTotal = discountTotal,
@@ -1563,7 +1563,7 @@ namespace MerkaiTrial.Application.Commands.Invoices
                 TenantId = dto.TenantId,
                 InvoiceId = dto.InvoiceId,
                 Amount = dto.Amount,
-                Currency = string.IsNullOrWhiteSpace(dto.Currency) ? invoice.Currency : dto.Currency,
+                Currency = invoice.Currency,   // 111: a payment is in its invoice's currency
                 Method = dto.Method,
                 Status = PaymentStatusNames.Captured,
                 PaidAtUtc = dto.PaidAtUtc,

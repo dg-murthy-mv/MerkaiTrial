@@ -731,7 +731,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
                 Number        = quoteNumber,
                 IssueDateUtc  = dto.IssueDateUtc,
                 ExpiresAtUtc  = dto.ExpiresAtUtc,
-                Currency      = dto.Currency,
+                Currency      = await WorkspaceCurrency.ForAsync(_db, dto.TenantId, dto.Currency),   // 111
                 Status        = QuoteStatus.Draft,
                 Subtotal      = subtotal,
                 DiscountTotal = discountTotal,
@@ -1442,7 +1442,7 @@ namespace MerkaiTrial.Application.Commands.Quotes
 
             quote.IssueDateUtc = dto.IssueDateUtc;
             quote.ExpiresAtUtc = dto.ExpiresAtUtc;
-            quote.Currency     = dto.Currency;
+            quote.Currency     = await WorkspaceCurrency.ForAsync(_db, quote.TenantId, dto.Currency);   // 111
             quote.UpdatedAtUtc = now;
             quote.UpdatedBy    = userName;
 

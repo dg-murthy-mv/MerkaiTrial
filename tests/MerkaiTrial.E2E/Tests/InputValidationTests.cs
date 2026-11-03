@@ -103,8 +103,11 @@ public class InputValidationTests : E2ETest
         await admin.Locator("#Input_CompanyName").FillAsync(name + " Pvt Ltd");
         if (await Ui.SelectByTextAsync(admin.Locator("#Input_CountryId"), "India", required: false) is null)
             await Ui.SelectFirstIfEmptyAsync(admin.Locator("#Input_CountryId"));
-        if (await Ui.SelectByTextAsync(admin.Locator("#Input_CurrencyId"), "INR", required: false) is null)
-            await Ui.SelectFirstIfEmptyAsync(admin.Locator("#Input_CurrencyId"));
+        // 111: the lead form has no currency picker any more (one currency per
+        // workspace). Older builds still have one; choose in it if it is there.
+        if (await admin.Locator("select#Input_CurrencyId").CountAsync() > 0
+            && await Ui.SelectByTextAsync(admin.Locator("select#Input_CurrencyId"), "INR", required: false) is null)
+            await Ui.SelectFirstIfEmptyAsync(admin.Locator("select#Input_CurrencyId"));
         await Ui.SelectFirstIfEmptyAsync(admin.Locator("#Input_ChannelId"));
 
         await Step("The browser stops a negative value and a number too short to be one", async () =>

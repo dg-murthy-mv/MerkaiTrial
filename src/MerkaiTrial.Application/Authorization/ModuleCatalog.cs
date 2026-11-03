@@ -72,6 +72,11 @@ public static class ModuleCatalog
         // none of which any call site checked.
         new("reports",   "Reports",   "bi-bar-chart",          "Reports", 30, ReadOnly),
 
+        // 113. The Revenue & Finance reports — invoiced, collected, owed,
+        // quotes. Needed as well as "reports". Lets a workspace give its
+        // reps the sales reports (on their own deals) without the money.
+        new("financereports", "Finance Reports", "bi-cash-coin", "Reports", 31, ReadOnly),
+
         // ── Workspace administration ─────────────────────────────────
         // Grantable by a tenant admin to their own people.
 

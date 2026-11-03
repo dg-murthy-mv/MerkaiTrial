@@ -99,6 +99,12 @@ public static class World
     /// <summary>109. Null until MarketTests builds it: UAE / AED / Asia/Dubai, admin only.</summary>
     public static TestTenant? AE { get; set; }
 
+    /// <summary>111. Null until ReportTests builds it: India / INR, an admin and one rep — nothing else touches it, so its report figures are exact.</summary>
+    public static TestTenant? R { get; set; }
+
+    /// <summary>112. Null until PriorityReportTests builds it: India / INR, admin only — its report figures are exact.</summary>
+    public static TestTenant? S { get; set; }
+
     /// <summary>A unique address under a per-run domain. example.com is
     /// reserved, so even a misrouted email can never reach a real person.</summary>
     public static string EmailFor(string tenantKey, string who) =>

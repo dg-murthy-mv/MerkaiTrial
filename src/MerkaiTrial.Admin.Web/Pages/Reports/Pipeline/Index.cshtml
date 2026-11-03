@@ -10,7 +10,7 @@
         <a asp-page="/Reports/Index" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
         <div>
             <h2 class="mb-0"><i class="bi bi-kanban-fill me-2 text-primary"></i>Pipeline Summary</h2>
-            <p class="text-muted mb-0 small">Deals by stage with value and probability</p>
+            <p class="text-muted mb-0 small">Open deals by stage today, and what was won and lost in the period</p>
         </div>
         @if (Model.Data != null)
         {
@@ -26,23 +26,63 @@
 
     @if (!string.IsNullOrEmpty(Model.ErrorMessage)) { <div class="alert alert-danger">@Model.ErrorMessage</div> }
     <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+    @if (Model.Data != null) { <partial name="Shared/_ReportNote" model="Model.Data" /> }   @* 111 *@
 
     @if (Model.Data != null)
     {
         var d = Model.Data;
-        <div class="row g-3 mb-4">
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
-                <div class="fw-bold fs-4 text-primary">@d.TotalActiveDeals</div><div class="text-muted small">Active Deals</div>
+        @* 111 — open pipeline is every open deal today; won and lost are the
+           deals closed in the period. Stages show their names, in the
+           workspace's order, and won/lost come from each stage's category. *@
+        <div class="row g-3 mb-4" id="pipelineTotals">
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-primary" data-figure="open-count">@d.TotalActiveDeals</div><div class="text-muted small">Open deals</div>
             </div></div>
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
-                <div class="fw-bold fs-4 text-success">@Model.FormatCurrency(d.TotalPipelineValue)</div><div class="text-muted small">Pipeline Value</div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4 text-success" data-figure="open-value">@Model.FormatCurrency(d.TotalPipelineValue)</div><div class="text-muted small">Open pipeline value</div>
             </div></div>
-            <div class="col-md-4"><div class="card border-0 shadow-sm p-3 text-center">
-                <div class="fw-bold fs-4 text-warning">@Model.FormatCurrency(d.AvgDealSize)</div><div class="text-muted small">Avg Deal Size</div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4" data-figure="weighted-value">@Model.FormatCurrency(d.WeightedPipelineValue)</div><div class="text-muted small">Weighted (value × probability)</div>
+            </div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm p-3 text-center">
+                <div class="fw-bold fs-4" data-figure="won">@d.WonCount won · @d.LostCount lost</div>
+                <div class="text-muted small">Closed in the period · won <span data-figure="won-value">@Model.FormatCurrency(d.WonValue)</span></div>
             </div></div>
         </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0" id="pipelineStages">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Stage</th>
+                                <th scope="col">Type</th>
+                                <th scope="col" class="text-end">Deals</th>
+                                <th scope="col" class="text-end">Value</th>
+                                <th scope="col" class="text-end">Avg probability</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var st in d.Stages)
+                            {
+                                var badge = st.Category switch { "Won" => "bg-success", "Lost" => "bg-danger", _ => "bg-secondary" };
+                                <tr data-stage="@st.Stage">
+                                    <td class="fw-semibold">@(string.IsNullOrEmpty(st.StageName) ? st.Stage : st.StageName)</td>
+                                    <td><span class="badge @badge">@(st.Category == "Open" ? "Open" : st.Category + " (in period)")</span></td>
+                                    <td class="text-end" data-col="count">@st.Count</td>
+                                    <td class="text-end" data-col="value">@Model.FormatCurrency(st.TotalValue)</td>
+                                    <td class="text-end">@st.AvgProbability%</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <div class="card border-0 shadow-sm">
-            <div class="card-body"><canvas id="chart" height="100"></canvas></div>
+            <div class="card-body"><canvas id="chart" height="100" role="img" aria-label="Deals and value by stage"></canvas></div>
         </div>
     }
     else { <div class="text-center py-5 text-muted"><i class="bi bi-kanban fs-1 d-block mb-3"></i>No data for selected filters.</div> }
@@ -53,13 +93,14 @@
 <script>
 const d = @Html.Raw(Model.DataJson);
 if (d) {
-    const colors = { 'Discovery':'#94a3b8','Qualification':'#3b82f6','Proposal':'#0ea5e9','Negotiation':'#f59e0b','ClosedWon':'#16a34a','ClosedLost':'#dc2626' };
+    // 111: coloured by what the stage MEANS, labelled with its name.
+    const byCategory = { 'Open': '#3b82f6', 'Won': '#16a34a', 'Lost': '#dc2626' };
     new Chart(document.getElementById('chart'), {
         type: 'bar',
         data: {
-            labels: d.stages.map(s => s.stage),
+            labels: d.stages.map(s => s.stageName || s.stage),
             datasets: [
-                { label: 'Deal Count', data: d.stages.map(s => s.count), backgroundColor: d.stages.map(s => colors[s.stage] || '#94a3b8'), borderRadius: 4, yAxisID: 'y' },
+                { label: 'Deal Count', data: d.stages.map(s => s.count), backgroundColor: d.stages.map(s => byCategory[s.category] || '#64748b'), borderRadius: 4, yAxisID: 'y' },
                 { label: 'Total Value', data: d.stages.map(s => s.totalValue), type: 'line', borderColor: '#6366f1', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y1' }
             ]
         },

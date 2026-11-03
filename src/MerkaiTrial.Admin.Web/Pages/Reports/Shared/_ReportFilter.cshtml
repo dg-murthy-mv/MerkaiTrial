@@ -3,41 +3,108 @@
    Location: MerkaiTrial.Admin.Web/Pages/Reports/Shared/_ReportFilter.cshtml
    Shared filter bar used by every report page.
    Usage: <partial name="Shared/_ReportFilter" model="@Model.Filter" />
+
+   111 — each report now says what its dates MEAN (they don't mean the
+   same thing everywhere: open pipeline is "today", won deals are "closed
+   in the period", money collected is "paid in the period"). The page's
+   report key (ViewData["ActiveReport"], set by ReportBaseModel.InitAsync)
+   picks the sentence. The Vertical filter is hidden where it can't apply
+   (the activity leaderboard — notes and tasks have no vertical).
    ===================================================================== *@
 
 @model MerkaiTrial.Admin.Web.Pages.Reports.ReportFilterViewModel
+@{
+    var key = ViewData["ActiveReport"] as string ?? "";
+    var showVertical = key != "activityleaderboard";
+    // 112 — two reports are about NOW, not a period: Stalled Deals asks how
+    // many days make a deal stalled; Revenue Forecast asks how many months ahead.
+    var showDates = key is not ("stalled" or "forecast");
+    var stalledDays = Model.Days ?? 30;
+    var forecastMonths = Model.Months ?? 6;
+    var hint = key switch
+    {
+        "pipeline"            => "Open deals: every open deal, as of today. Won and lost: deals closed between these dates.",
+        "funnel"              => "Leads, deals and quotes created, and invoices issued, between these dates.",
+        "revenue"             => "Invoiced: by the invoice's issue date. Collected: by the date the payment arrived.",
+        "winloss"             => "Deals won or lost between these dates (the date the deal was closed).",
+        "outstanding"         => "Everything still owed today — the dates don't change what is owed.",
+        "vertical"            => "Pipeline: every open deal today. Won: closed between these dates. Invoiced: issued between these dates.",
+        "repperformance"      => "Active: each person's open deals today. Won and lost: closed between these dates. Leads: received between these dates.",
+        "leadsources"         => "Leads received between these dates.",
+        "dealvelocity"        => "Deals closed between these dates.",
+        "activityleaderboard" => "Notes, activities and tasks logged between these dates.",
+        "stalled"             => $"Open deals today that have been in one stage for {stalledDays}+ days, have had nothing logged for {stalledDays}+ days, or are past their close date.",
+        "leadfunnel"          => "Leads received between these dates, and where they are now.",
+        "quoteperformance"    => "Quotes issued between these dates. Acceptance rate = accepted ÷ quotes sent to the customer.",
+        "collections"         => "Invoiced: issued between these dates. Collected: payments that arrived between these dates. Overdue: as of today.",
+        "forecast"            => "Every open deal today, by the month it is expected to close. Weighted = value × the deal's probability.",
+        _                     => "",
+    };
+}
 
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-3">
         <form method="get" class="row g-3 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">From Date</label>
-                <input type="date" name="FromDate" class="form-control"
-                       value="@Model.FromDate?.ToString("yyyy-MM-dd")" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">To Date</label>
-                <input type="date" name="ToDate" class="form-control"
-                       value="@Model.ToDate?.ToString("yyyy-MM-dd")" />
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small fw-semibold">Vertical</label>
-                <select name="Vertical" class="form-select">
-                    <option value="">All Verticals</option>
-                    @foreach (var v in Model.Verticals)
-                    {
-                        <option value="@v.Name"
-                                selected="@(v.Name == Model.SelectedVertical)">
-                            @v.Name
-                        </option>
-                    }
-                </select>
-            </div>
+            @if (showDates)
+            {
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold" for="rfFrom">From Date</label>
+                    <input type="date" name="FromDate" id="rfFrom" class="form-control"
+                           value="@Model.FromDate?.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold" for="rfTo">To Date</label>
+                    <input type="date" name="ToDate" id="rfTo" class="form-control"
+                           value="@Model.ToDate?.ToString("yyyy-MM-dd")" />
+                </div>
+            }
+            @if (key == "stalled")
+            {
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold" for="rfDays">Stalled after (days)</label>
+                    <input type="number" name="Days" id="rfDays" class="form-control" min="1" max="365"
+                           value="@stalledDays" />
+                </div>
+            }
+            @if (key == "forecast")
+            {
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold" for="rfMonths">Months ahead</label>
+                    <select name="Months" id="rfMonths" class="form-select">
+                        @foreach (var n in new[] { 3, 6, 9, 12 })
+                        {
+                            <option value="@n" selected="@(n == forecastMonths)">@n months</option>
+                        }
+                    </select>
+                </div>
+            }
+            @if (showVertical)
+            {
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold" for="rfVertical">Vertical</label>
+                    <select name="Vertical" id="rfVertical" class="form-select">
+                        <option value="">All Verticals</option>
+                        @foreach (var v in Model.Verticals)
+                        {
+                            <option value="@v.Name"
+                                    selected="@(v.Name == Model.SelectedVertical)">
+                                @v.Name
+                            </option>
+                        }
+                    </select>
+                </div>
+            }
             <div class="col-md-3">
                 <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-funnel me-1"></i>Apply Filter
+                    <i class="bi bi-funnel me-1" aria-hidden="true"></i>Apply Filter
                 </button>
             </div>
         </form>
+        @if (hint.Length > 0)
+        {
+            <div class="small text-muted mt-2" id="reportPeriodHint">
+                <i class="bi bi-info-circle me-1" aria-hidden="true"></i>@hint
+            </div>
+        }
     </div>
 </div>

@@ -1,7 +1,8 @@
 // =====================================================================
 // FILE: tests/MerkaiTrial.E2E/Tests/AccessibilityTests.cs
 //
-// NEW (110). Can someone who can't use a mouse, or can't see the screen
+// NEW (110). CHANGED (112): the five new report pages are scanned too.
+// Can someone who can't use a mouse, or can't see the screen
 // well, use Merkai?
 //
 // For each main page (signed in as workspace A's admin; the sign-in page
@@ -48,6 +49,9 @@ public class AccessibilityTests : E2ETest
         "/Invoices", "an invoice",
         "/Contacts", "/Companies",
         "/Tasks", "/Reports", "/Settings/Users",
+        // 112 — the five new reports
+        "/Reports/StalledDeals", "/Reports/LeadFunnel", "/Reports/QuotePerformance",
+        "/Reports/InvoiceCollections", "/Reports/Forecast",
         "the customer's quote page",
     };
 
