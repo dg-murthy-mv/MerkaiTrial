@@ -136,7 +136,11 @@ namespace MerkaiTrial.Application.Commands.Contacts
                 // ── 1. SEARCH ────────────────────────────────────────────
                 if (!string.IsNullOrWhiteSpace(request.SearchTerm))
                 {
-                    var search = request.SearchTerm.Trim().ToLower();
+                    // 116 — compared as typed: the database ignores upper and
+                    // lower case (Sql/116 checks its collation), so LOWER() on
+                    // six columns of every contact was work for nothing.
+                    var term   = request.SearchTerm.Trim();
+                    var search = term.ToLower();   // for the custom-field and dropdown matching below
 
                     // 096 — the search's digits for a formatting-blind phone
                     // match. "" (never null in the query) when there are
@@ -151,43 +155,42 @@ namespace MerkaiTrial.Application.Commands.Contacts
                     // list SQL finds once. The search used to join every
                     // contact to its company first, which needed a large
                     // block of SQL Server memory and went past 30 s.
-                    var matchingCompanies = _context.Companies
-                        .Where(co => co.TenantId == tenantId && co.Name.ToLower().Contains(search))
-                        .Select(co => (Guid?)co.Id);
+                    //
+                    // 116 — and now read into a list FIRST (one quick query),
+                    // so the contact search below compares each row with a
+                    // fixed list (sent as one parameter, like the page's ids
+                    // further down) instead of running a subquery inside an
+                    // OR for every contact.
+                    var matchingCompanies = await _context.Companies
+                        .Where(co => co.TenantId == tenantId && !co.IsDeleted && co.Name.Contains(term))
+                        .Select(co => (Guid?)co.Id)
+                        .ToListAsync(cancellationToken);
 
                     if (cfMatches is null)
                     {
                         query = query.Where(c =>
-                            c.FirstName.ToLower().Contains(search) ||
-                            (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
-                            (c.Email     != null && c.Email.ToLower().Contains(search)) ||
-                            (c.Phone     != null && c.Phone.Contains(search)) ||
-                            (c.Mobile    != null && c.Mobile.Contains(search)) ||
-                            (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
+                            c.FirstName.Contains(term) ||
+                            (c.LastName  != null && c.LastName.Contains(term)) ||
+                            (c.Email     != null && c.Email.Contains(term)) ||
+                            (c.Phone     != null && c.Phone.Contains(term)) ||
+                            (c.Mobile    != null && c.Mobile.Contains(term)) ||
+                            (c.JobTitle  != null && c.JobTitle.Contains(term)) ||
                             (c.CompanyId != null && matchingCompanies.Contains(c.CompanyId)) ||
-                            (digits != "" && c.Phone != null &&
-                             c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                    .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
-                            (digits != "" && c.Mobile != null &&
-                             c.Mobile.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)));
+                            (digits != "" && c.PhoneDigits  != null && c.PhoneDigits.Contains(digits)) ||
+                            (digits != "" && c.MobileDigits != null && c.MobileDigits.Contains(digits)));
                     }
                     else
                     {
                         query = query.Where(c =>
-                            c.FirstName.ToLower().Contains(search) ||
-                            (c.LastName  != null && c.LastName.ToLower().Contains(search)) ||
-                            (c.Email     != null && c.Email.ToLower().Contains(search)) ||
-                            (c.Phone     != null && c.Phone.Contains(search)) ||
-                            (c.Mobile    != null && c.Mobile.Contains(search)) ||
-                            (c.JobTitle  != null && c.JobTitle.ToLower().Contains(search)) ||
+                            c.FirstName.Contains(term) ||
+                            (c.LastName  != null && c.LastName.Contains(term)) ||
+                            (c.Email     != null && c.Email.Contains(term)) ||
+                            (c.Phone     != null && c.Phone.Contains(term)) ||
+                            (c.Mobile    != null && c.Mobile.Contains(term)) ||
+                            (c.JobTitle  != null && c.JobTitle.Contains(term)) ||
                             (c.CompanyId != null && matchingCompanies.Contains(c.CompanyId)) ||
-                            (digits != "" && c.Phone != null &&
-                             c.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                    .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
-                            (digits != "" && c.Mobile != null &&
-                             c.Mobile.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                     .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
+                            (digits != "" && c.PhoneDigits  != null && c.PhoneDigits.Contains(digits)) ||
+                            (digits != "" && c.MobileDigits != null && c.MobileDigits.Contains(digits)) ||
                             cfMatches.Contains(c.Id));
                     }
                 }

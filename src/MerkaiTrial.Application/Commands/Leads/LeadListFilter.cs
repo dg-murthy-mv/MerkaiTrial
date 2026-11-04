@@ -23,6 +23,11 @@
 //   stored phone with spaces, dashes, dots, brackets and "+" removed.
 //   Everything else the search matched, it still matches.
 //
+// 116 — FASTER: no LOWER() per row (the database ignores case) and the
+//   phone's digits come from the stored column Leads.PhoneDigits
+//   (Sql/116_Indexes_And_Search.sql) instead of six REPLACE()s per row.
+//   Same results.
+//
 // RECORD VISIBILITY is NOT applied here. Each caller applies
 // .VisibleTo(access) to its own base query first, where it is plainly
 // visible in the handler — a filter helper that quietly also decided who
@@ -63,7 +68,13 @@ namespace MerkaiTrial.Application.Commands.Leads
         {
             if (!string.IsNullOrWhiteSpace(search))
             {
-                var s = search.Trim().ToLower();
+                // 116 — compared as typed: the database ignores upper and
+                // lower case (Sql/116 checks its collation), so LOWER() on
+                // every lead was work for nothing; and the phone's digits
+                // are a stored column (Leads.PhoneDigits) instead of six
+                // REPLACE()s on every lead, every search.
+                var term = search.Trim();
+                var s    = term.ToLower();   // for custom-field and dropdown matching
 
                 // 096 — the search's digits, matched against the phone with
                 // its separators stripped. "" (never null inside the query)
@@ -77,24 +88,20 @@ namespace MerkaiTrial.Application.Commands.Leads
                 if (cfMatches is null)
                 {
                     leads = leads.Where(l =>
-                        l.FullName.ToLower().Contains(s) ||
-                        (l.Email != null && l.Email.ToLower().Contains(s)) ||
-                        (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
-                        (digits != "" && l.Phone != null &&
-                         l.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
-                        (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)));
+                        l.FullName.Contains(term) ||
+                        (l.Email != null && l.Email.Contains(term)) ||
+                        (l.Phone != null && l.Phone.Contains(term)) ||
+                        (digits != "" && l.PhoneDigits != null && l.PhoneDigits.Contains(digits)) ||
+                        (l.CompanyName != null && l.CompanyName.Contains(term)));
                 }
                 else
                 {
                     leads = leads.Where(l =>
-                        l.FullName.ToLower().Contains(s) ||
-                        (l.Email != null && l.Email.ToLower().Contains(s)) ||
-                        (l.Phone != null && l.Phone.ToLower().Contains(s)) ||
-                        (digits != "" && l.Phone != null &&
-                         l.Phone.Replace(" ", "").Replace("-", "").Replace(".", "")
-                                .Replace("(", "").Replace(")", "").Replace("+", "").Contains(digits)) ||
-                        (l.CompanyName != null && l.CompanyName.ToLower().Contains(s)) ||
+                        l.FullName.Contains(term) ||
+                        (l.Email != null && l.Email.Contains(term)) ||
+                        (l.Phone != null && l.Phone.Contains(term)) ||
+                        (digits != "" && l.PhoneDigits != null && l.PhoneDigits.Contains(digits)) ||
+                        (l.CompanyName != null && l.CompanyName.Contains(term)) ||
                         cfMatches.Contains(l.Id));
                 }
             }

@@ -16,6 +16,12 @@ namespace MerkaiTrial.Domain.Entities
         public string? Phone { get; set; }
         public string? Mobile { get; set; }
 
+        // 116 — Phone and Mobile with only their digits ("+91 98450-12345"
+        // → "919845012345"), for searching by number. Computed and stored
+        // by SQL Server (Sql/116_Indexes_And_Search.sql); the app only reads them.
+        public string? PhoneDigits { get; private set; }
+        public string? MobileDigits { get; private set; }
+
         // Address
         public string? Address { get; set; }
         public string? City { get; set; }

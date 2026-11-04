@@ -22,6 +22,12 @@ namespace MerkaiTrial.Infrastructure.Persistence.Configurations
             builder.Property(c => c.Email).HasMaxLength(320);
             builder.Property(c => c.Phone).HasMaxLength(32);
             builder.Property(c => c.Mobile).HasMaxLength(32);
+            // 116 — digits-only copies, computed and stored by SQL Server
+            // (Sql/116_Indexes_And_Search.sql). Never written by the app.
+            builder.Property(c => c.PhoneDigits).HasMaxLength(32)
+                .HasComputedColumnSql("CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([Phone], N' ', N''), N'-', N''), N'.', N''), N'(', N''), N')', N''), N'+', N'') AS nvarchar(32))", stored: true);
+            builder.Property(c => c.MobileDigits).HasMaxLength(32)
+                .HasComputedColumnSql("CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([Mobile], N' ', N''), N'-', N''), N'.', N''), N'(', N''), N')', N''), N'+', N'') AS nvarchar(32))", stored: true);
             builder.Property(c => c.Address).HasMaxLength(500);
             builder.Property(c => c.City).HasMaxLength(100);
             builder.Property(c => c.Country).HasMaxLength(100);

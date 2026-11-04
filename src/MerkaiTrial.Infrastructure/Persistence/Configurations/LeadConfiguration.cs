@@ -30,6 +30,10 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
         entity.Property(l => l.FullName).HasMaxLength(200).IsRequired();
         entity.Property(l => l.Email).HasMaxLength(200);
         entity.Property(l => l.Phone).HasMaxLength(50);
+        // 116 — digits-only copy, computed and stored by SQL Server
+        // (Sql/116_Indexes_And_Search.sql). Never written by the app.
+        entity.Property(l => l.PhoneDigits).HasMaxLength(50)
+            .HasComputedColumnSql("CAST(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE([Phone], N' ', N''), N'-', N''), N'.', N''), N'(', N''), N')', N''), N'+', N'') AS nvarchar(50))", stored: true);
         entity.Property(l => l.CompanyName).HasMaxLength(200);
         entity.Property(l => l.Address).HasMaxLength(500);
         entity.Property(l => l.OwnerUserId).HasMaxLength(100);

@@ -11,6 +11,10 @@ namespace MerkaiTrial.Domain.Entities
         public string FullName { get; set; } = string.Empty;
         public string? Email { get; set; }
         public string? Phone { get; set; }
+
+        // 116 — Phone with only its digits, for searching by number. Computed
+        // and stored by SQL Server (Sql/116_Indexes_And_Search.sql); read only.
+        public string? PhoneDigits { get; private set; }
         public string? CompanyName { get; set; }
 
         // ✅ NEW: Address Information

@@ -1264,6 +1264,8 @@ public sealed class TestDatabase
         // 106
         ("Quotes", "PublicLinkToken"), ("Invoices", "PublicLinkToken"),
         ("Users", "LockoutEndUtc"), ("Users", "FailedLoginCount"), ("Users", "SecurityStamp"),
+        // 116 — the digits-only phone columns (Sql/116_Indexes_And_Search.sql)
+        ("Contacts", "PhoneDigits"), ("Contacts", "MobileDigits"), ("Leads", "PhoneDigits"),
     };
 
     /// <summary>One column of one row, as text ("" for NULL, null for no such row). Only the pairs above.</summary>
