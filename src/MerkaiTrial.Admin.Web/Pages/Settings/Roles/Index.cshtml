@@ -36,9 +36,23 @@
     </div>
     @if (Model.CanCreate)
     {
-        <a asp-page="./Create" class="btn btn-primary">
-            <i class="bi bi-plus-circle me-1"></i> New role
-        </a>
+        @* 114 — creating a role is the plan's custom_roles feature; editing
+           the roles you have is in every plan. Without it the button stays,
+           locked, and leads to the "Not in your plan" page. *@
+        @if (Model.HasFeature("custom_roles"))
+        {
+            <a asp-page="./Create" class="btn btn-primary" id="newRoleButton" data-locked="false">
+                <i class="bi bi-plus-circle me-1"></i> New role
+            </a>
+        }
+        else
+        {
+            <a asp-page="./Create" class="btn btn-outline-primary" id="newRoleButton" data-locked="true"
+               title="Creating new roles isn't in your plan">
+                <i class="bi bi-lock me-1" aria-hidden="true"></i> New role
+                <span class="visually-hidden">(not in your plan)</span>
+            </a>
+        }
         <a asp-page="/Settings/Visibility/Index" class="btn btn-outline-secondary me-2">
             <i class="bi bi-eye me-1"></i> Record visibility
         </a>

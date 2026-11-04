@@ -48,8 +48,11 @@ using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.Pipeline;
+
+[RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114 — not in every plan
 
 public class IndexModel : AuthorizedPageModel
 {

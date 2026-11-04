@@ -1,0 +1,42 @@
+@* =====================================================================
+   FILE: MerkaiTrial.Admin.Web/Pages/Upgrade.cshtml
+
+   NEW (114). "Not in your plan" — for a page the workspace's plan does
+   not include. The normal layout, because nothing else is affected.
+   #upgradeFeature (data-feature) and #upgradePlans are read by the tests.
+   ===================================================================== *@
+@page
+@model MerkaiTrial.Admin.Web.Pages.UpgradeModel
+@{
+    ViewData["Title"] = "Not in your plan";
+}
+
+<div class="container py-5" style="max-width: 42rem;">
+    <h1 class="h3 mb-3" id="upgradeFeature" data-feature="@Model.FeatureKey">
+        <i class="bi bi-lock me-2 text-warning" aria-hidden="true"></i>@Model.FeatureLabel isn't in your plan
+    </h1>
+
+    <p class="text-muted">
+        <strong>@Model.TenantName</strong> is on the <strong>@Model.PlanName</strong> plan.
+    </p>
+
+    @if (!string.IsNullOrEmpty(Model.WhatItDoes))
+    {
+        <p>@Model.WhatItDoes</p>
+    }
+
+    @if (Model.IncludedIn.Count > 0)
+    {
+        <div class="alert alert-info" id="upgradePlans">
+            <strong>Included in:</strong> @string.Join(", ", Model.IncludedIn)
+        </div>
+    }
+
+    <p>
+        To change your plan, contact your MadeeVision account contact.
+        Everything you have entered stays as it is, and the feature works
+        as soon as the plan changes.
+    </p>
+
+    <a class="btn btn-primary" asp-page="/Dashboard/Index">Back to dashboard</a>
+</div>

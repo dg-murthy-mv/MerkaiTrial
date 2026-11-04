@@ -70,9 +70,11 @@ using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;          // 042: the three dropdowns
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.PipelineRules
 {
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114 — not in every plan
     public class IndexModel : AuthorizedPageModel
     {
         private readonly IPipelineRuleService _ruleService;

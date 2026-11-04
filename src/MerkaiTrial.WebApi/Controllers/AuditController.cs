@@ -11,12 +11,14 @@ using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers;
 
 [ApiController]
 [Authorize]
 [Route("api/audit")]
+[RequiresPlanFeature(PlanFeatureKeys.AuditLogs)]   // 114
 public class AuditController : ControllerBase
 {
     private readonly GetAuditLogsHandler _getLogs;

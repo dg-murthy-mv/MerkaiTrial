@@ -348,6 +348,45 @@ public sealed class WorldBuilder
         }
     }
 
+    private static readonly SemaphoreSlim WorkspaceFGate = new(1, 1);
+    private static Exception? _workspaceFFailure;
+
+    /// <summary>
+    /// 114. Workspace F — India / INR, admin only, on the STARTER plan.
+    /// (114-update1: was "P", which the performance tests' workspace
+    /// already uses — the two had the same office address, and the second
+    /// was refused as a duplicate.) Built
+    /// like every workspace (the biggest plan), then moved to Starter in the
+    /// database: the plan's name, features and storage limit, exactly what
+    /// Admin → Tenants → change plan writes. PlanFeatureTests only.
+    /// </summary>
+    public static async Task<TestTenant> EnsureWorkspaceFAsync()
+    {
+        await WorkspaceFGate.WaitAsync();
+        try
+        {
+            if (World.F is not null) return World.F;
+            if (_workspaceFFailure is not null) throw Earlier("F", _workspaceFFailure);
+            try
+            {
+                var f = await new WorldBuilder(GlobalSetup.Browser, GlobalSetup.Db)
+                    .BuildExtraWorkspaceAsync("F", India, Array.Empty<(string, string, string)>());
+                await PlanData.MoveToPlanAsync(await GlobalSetup.Db.TenantIdAsync(f.Name), "starter");
+                World.F = f;
+            }
+            catch (Exception ex)
+            {
+                _workspaceFFailure = ex;
+                throw;
+            }
+            return World.F;
+        }
+        finally
+        {
+            WorkspaceFGate.Release();
+        }
+    }
+
     private static readonly SemaphoreSlim MarketGate = new(1, 1);
     private static readonly Dictionary<string, Exception> MarketFailures = new();
 
@@ -588,7 +627,11 @@ public sealed class WorldBuilder
             }
             else if (DateTime.UtcNow > deadline)
             {
-                var errors = await Ui.TextOrEmptyAsync(page.Locator(".alert-danger, .text-danger:not(:empty)"));
+                // 114-update1: the form's own messages first. ".text-danger"
+                // alone matched the menu's "Sign out" link, which is what the
+                // last failure reported instead of the real reason.
+                var errors = await Ui.TextOrEmptyAsync(page.Locator(
+                    ".validation-summary-errors, .alert-danger, form .field-validation-error:not(:empty)"));
                 throw new AssertionException(
                     $"Creating workspace {key} did not reach the Result page (still on {page.Url}). {errors}");
             }

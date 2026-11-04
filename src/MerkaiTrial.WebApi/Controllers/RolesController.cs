@@ -23,6 +23,7 @@ using MerkaiTrial.Application.Queries;
 using MerkaiTrial.Application.Security;   // 104 — AccessChangeGuard
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
@@ -140,6 +141,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// <summary>Create a new role. It is stamped with the caller's tenant.</summary>
         [HttpPost]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomRoles)]   // 114
         [Authorize(Policy = Policies.RolesCreate)]
         public async Task<ActionResult<RoleDto>> Create([FromBody] CreateRoleCommand command)
         {

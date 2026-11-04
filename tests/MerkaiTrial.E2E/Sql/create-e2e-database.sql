@@ -15,7 +15,14 @@
    round that has a SQL script (run that round's script on the copy too,
    or just remake the copy from your updated development database).
 
+   115: the script switches itself to master first. A window connected to
+   the _E2E database (the toolbar dropdown) could not drop or restore it —
+   "in use by this session" — and it stops at the first failure instead of
+   saying "Done".
+
    ── Change these two lines if yours differ ──────────────────────────── */
+USE master;
+
 DECLARE @SourceDb sysname = N'MerkaiTrial';        -- your development database
 DECLARE @TargetDb sysname = N'MerkaiTrial_E2E';    -- must end in _E2E
 /* ───────────────────────────────────────────────────────────────────── */
@@ -72,8 +79,27 @@ FROM @Files;
 IF DB_ID(@TargetDb) IS NOT NULL
 BEGIN
     PRINT N'2/3  Dropping the old ' + @TargetDb;
-    EXEC (N'ALTER DATABASE ' + QUOTENAME(@TargetDb) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE');
-    EXEC (N'DROP DATABASE ' + QUOTENAME(@TargetDb));
+    -- 115: EXEC ( ... ) accepts only text and variables, not QUOTENAME(...),
+    -- so the statements are built in a variable first. (This branch only
+    -- runs when the _E2E database already exists, which is why it was
+    -- never hit before.)
+    DECLARE @Drop nvarchar(max) =
+        N'ALTER DATABASE ' + QUOTENAME(@TargetDb) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; ' +
+        N'DROP DATABASE ' + QUOTENAME(@TargetDb) + N';';
+    BEGIN TRY
+        EXEC (@Drop);
+    END TRY
+    BEGIN CATCH
+        PRINT N'Could not drop it: ' + ERROR_MESSAGE();
+        -- Never leave it single-user (that would lock the apps out).
+        BEGIN TRY
+            DECLARE @Multi nvarchar(max) = N'ALTER DATABASE ' + QUOTENAME(@TargetDb) + N' SET MULTI_USER;';
+            EXEC (@Multi);
+        END TRY
+        BEGIN CATCH END CATCH
+        RAISERROR(N'Stopped: close every window and program using the test database (the apps, other SSMS tabs on it), then run this again.', 16, 1);
+        RETURN;
+    END CATCH
 END
 ELSE
     PRINT N'2/3  No old ' + @TargetDb + N' to drop';
@@ -81,7 +107,14 @@ ELSE
 PRINT N'3/3  Restoring the copy as ' + @TargetDb;
 DECLARE @Restore nvarchar(max) =
     N'RESTORE DATABASE ' + QUOTENAME(@TargetDb) + N' FROM DISK = N''' + @BackupFile + N''' WITH RECOVERY, REPLACE' + @Move;
-EXEC (@Restore);
+BEGIN TRY
+    EXEC (@Restore);
+END TRY
+BEGIN CATCH
+    DECLARE @Why nvarchar(2048) = ERROR_MESSAGE();
+    RAISERROR(N'Stopped: the restore failed: %s', 16, 1, @Why);
+    RETURN;
+END CATCH
 
 -- Anything your development outbox had queued is copied too. Mark it
 -- Cancelled so the test WebApi doesn't spend its time retrying it. (It

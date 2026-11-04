@@ -30,9 +30,11 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.Admin.Web.Pages.Emails
 {
+    [RequiresPlanFeature(PlanFeatureKeys.EmailIntegration)]   // 114 — not in every plan
     public class ViewModel : AuthorizedPageModel
     {
         private readonly IInboundEmailService _emails;

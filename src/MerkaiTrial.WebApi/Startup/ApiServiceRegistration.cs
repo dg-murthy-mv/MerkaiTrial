@@ -132,6 +132,9 @@ public static class ApiServiceRegistration
             // 105 — page sizes and page numbers inside sane bounds on every
             // list, whatever its handler does (Filters/ListBoundsFilter.cs).
             options.Filters.Add<ListBoundsFilter>();
+            // 114 — the plan's features and storage limit, before the body
+            // is read (Filters/PlanFeatureFilter.cs).
+            options.Filters.Add<PlanFeatureFilter>();
         })
         .AddJsonOptions(o =>
         {

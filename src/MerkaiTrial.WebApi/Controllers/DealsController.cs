@@ -80,6 +80,7 @@ using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.WebApi.Filters;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
@@ -917,6 +918,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// POST /api/deals/{id}/attachments - Upload attachment to deal
         /// </summary>
         [HttpPost("{id:guid}/attachments")]
+        [CountsTowardStorage]   // 114
         [Authorize(Policy = Policies.DealsUpdate)]
         [RequestSizeLimit(10 * 1024 * 1024)]
         [ProducesResponseType(200)]

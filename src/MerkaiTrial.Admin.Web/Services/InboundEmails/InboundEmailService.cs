@@ -23,10 +23,19 @@
 //     Emails tab shows both directions. It lives here rather than in
 //     SentEmailService so the three detail pages, which already hand
 //     this service to RecordEmailsVm.LoadAsync, need no change at all.
+//
+// CHANGES (114)
+//   Received email is the plan's "email_integration" feature, and the API
+//   refuses it without. On a plan without it, a record's Emails tab shows
+//   the quote and invoice emails we sent (every plan) and asks the API
+//   nothing about received ones — so the tab shows no "could not be
+//   loaded" note — and the menu badge is 0.
 // =====================================================================
 
 using MerkaiTrial.Admin.Web.Services.Core;
+using MerkaiTrial.Application.Configuration;
 using MerkaiTrial.Application.DTOs;
+using MerkaiTrial.Application.Services.Tenants;
 
 namespace MerkaiTrial.Admin.Web.Services.InboundEmails
 {
@@ -55,11 +64,20 @@ namespace MerkaiTrial.Admin.Web.Services.InboundEmails
     {
         private readonly IApiService _api;
         private readonly ILogger<InboundEmailService> _logger;
+        private readonly ICurrentTenantService _tenant;
 
-        public InboundEmailService(IApiService api, ILogger<InboundEmailService> logger)
+        public InboundEmailService(IApiService api, ILogger<InboundEmailService> logger, ICurrentTenantService tenant)
         {
             _api = api;
             _logger = logger;
+            _tenant = tenant;
+        }
+
+        /// <summary>114. Received email is in this workspace's plan.</summary>
+        private bool InPlan()
+        {
+            try { return _tenant.HasFeature(PlanFeatureKeys.EmailIntegration); }
+            catch { return true; }   // unknown: let the API decide, as before
         }
 
         public async Task<InboundEmailPageDto> GetInboxAsync(string? status, string? search, int skip, int take)
@@ -75,6 +93,7 @@ namespace MerkaiTrial.Admin.Web.Services.InboundEmails
         /// <summary>For the menu badge. Never throws — a missing badge is not worth an error.</summary>
         public async Task<int> GetUnmatchedCountAsync()
         {
+            if (!InPlan()) return 0;   // 114
             try
             {
                 return (await _api.GetAsync<InboundCountDto>("api/inbound-emails/count"))?.Unmatched ?? 0;
@@ -91,7 +110,9 @@ namespace MerkaiTrial.Admin.Web.Services.InboundEmails
                ?? throw new KeyNotFoundException("That email could not be found.");
 
         public async Task<RecordEmailsDto> GetForRecordAsync(string entityType, Guid entityId)
-            => await Read(() => _api.GetAsync<RecordEmailsDto>(
+            => !InPlan()
+               ? new RecordEmailsDto(new(), null, false)   // 114 — not in the plan: no received emails to show
+               : await Read(() => _api.GetAsync<RecordEmailsDto>(
                    $"api/inbound-emails/for/{Uri.EscapeDataString(entityType)}/{entityId}"), "a record's emails")
                ?? new RecordEmailsDto(new(), null, false);
 

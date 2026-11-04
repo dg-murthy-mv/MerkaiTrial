@@ -122,6 +122,14 @@
             string.Equals(c.Value, needed, StringComparison.OrdinalIgnoreCase));
     }
 
+    // 114 — the plan includes this feature (PlanFeatureKeys). Locked menu
+    // items stay visible with a lock: the page explains (/Upgrade).
+    bool InPlan(string feature)
+    {
+        try { return Ui.HasFeature(feature); }
+        catch { return true; }
+    }
+
     // ✅ Feature helper — reads from TenantSettings.FeatureFlags via ICurrentTenantService
     // Injected as Ui in page scope — accessible here
 }
@@ -133,9 +141,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>@ViewData["Title"] — Merkai CRM</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+    <link href="~/lib/bootstrap-5.3.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="~/lib/bootstrap-icons-1.11.3/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="~/lib/fonts/fonts.css" rel="stylesheet">
 
     <style>
         /* ── Variables ───────────────────────────────────────────── */
@@ -1195,6 +1203,7 @@
                         <a class="lf-nav-item @(IsActive("/Inbox") || IsActive("/Emails") ? "active" : "")"
                            asp-page="/Inbox/Index">
                             <i class="bi bi-inbox"></i> Inbox
+                            @if (!InPlan("email_integration")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                             <span class="lf-badge" id="lfInboxCount" hidden></span>
                         </a>
                     }
@@ -1345,14 +1354,17 @@
                         <a class="lf-nav-item @(IsActive("/Settings/LeadStatuses") ? "active" : "")"
                            asp-page="/Settings/LeadStatuses/Index">
                             <i class="bi bi-funnel"></i> Lead Statuses
+                            @if (!InPlan("deal_pipeline_custom")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
                         <a class="lf-nav-item @(IsActive("/Settings/Pipeline") ? "active" : "")"
                            asp-page="/Settings/Pipeline/Index">
                             <i class="bi bi-kanban"></i> Pipeline Stages
+                            @if (!InPlan("deal_pipeline_custom")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
                         <a class="lf-nav-item @(IsActive("/Settings/PipelineRules") ? "active" : "")"
                            asp-page="/Settings/PipelineRules/Index">
                             <i class="bi bi-diagram-3"></i> Sales Process
+                            @if (!InPlan("deal_pipeline_custom")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
 
                         @* 058. Tax Rates — the workspace's own %, and what the
@@ -1398,6 +1410,7 @@
                         <a class="lf-nav-item @(IsActive("/Settings/CustomFields") ? "active" : "")"
                            asp-page="/Settings/CustomFields/Index">
                             <i class="bi bi-ui-checks-grid"></i> Custom Fields
+                            @if (!InPlan("custom_fields")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
 
                         @* 038a. This copy is for ADMINS — they are the ones
@@ -1420,6 +1433,7 @@
                         <a class="lf-nav-item @(IsActive("/Settings/InboundEmail") ? "active" : "")"
                            asp-page="/Settings/InboundEmail/Index">
                             <i class="bi bi-envelope-arrow-down"></i> Inbound Email
+                            @if (!InPlan("email_integration")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
                     }
 
@@ -1456,6 +1470,7 @@
                         <a class="lf-nav-item @(IsActive("/Settings/AuditLogs") ? "active" : "")"
                            asp-page="/Settings/AuditLogs/Index">
                             <i class="bi bi-clock-history"></i> Activity Log
+                            @if (!InPlan("audit_logs")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
                         </a>
                     }
                 }
@@ -1735,7 +1750,7 @@
 
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/lib/bootstrap-5.3.3/js/bootstrap.bundle.min.js"></script>
     <script>
         // 094 (6): the open state is on the button for screen readers, and
         // the page behind the menu stops scrolling while it is open.

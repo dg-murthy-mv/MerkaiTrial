@@ -7,6 +7,11 @@
 // only existed inside CreateEditModel, so the Detail page had no way to
 // show anything but the raw keys. Anywhere a feature key needs a label
 // or icon, it should come from here.
+//
+// 114 — labels say what the feature actually unlocks, now that the app
+// enforces it (PlanFeatureKeys): "Create New Roles" (editing roles is in
+// every plan), "Email Inbox" (sending quotes and invoices by email is in
+// every plan), "Custom Pipeline & Process", "Activity Log".
 // =====================================================================
 
 namespace MerkaiTrial.Application.Configuration;
@@ -25,14 +30,14 @@ public static class FeatureCatalog
         new("notes",               "Notes",            "journal-text"),
         new("basic_reports",       "Basic Reports",    "bar-chart"),
         new("advanced_reports",    "Adv. Reports",     "graph-up"),
-        new("email_integration",   "Email",            "envelope"),
+        new("email_integration",   "Email Inbox",      "envelope"),
         new("api_access",          "API Access",       "braces"),
         new("custom_fields",       "Custom Fields",    "sliders"),
         new("lead_scoring",        "Lead Scoring",     "star"),
-        new("deal_pipeline_custom","Custom Pipeline",  "diagram-3"),
-        new("custom_roles",        "Custom Roles",     "shield-check"),
+        new("deal_pipeline_custom","Custom Pipeline & Process", "diagram-3"),
+        new("custom_roles",        "Create New Roles", "shield-check"),
         new("sso",                 "SSO",              "key"),
-        new("audit_logs",          "Audit Logs",       "clock-history"),
+        new("audit_logs",          "Activity Log",     "clock-history"),
         new("webhooks",            "Webhooks",         "plugin"),
         new("white_label",         "White Label",      "brush"),
         new("dedicated_support",   "Priority Support", "headset"),

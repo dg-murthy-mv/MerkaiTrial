@@ -28,8 +28,11 @@ using MerkaiTrial.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.AuditLogs;
+
+[RequiresPlanFeature(PlanFeatureKeys.AuditLogs)]   // 114 — not in every plan
 
 public class IndexModel : AuthorizedPageModel
 {

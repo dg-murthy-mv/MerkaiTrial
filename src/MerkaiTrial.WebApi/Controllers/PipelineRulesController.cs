@@ -39,6 +39,7 @@ using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
@@ -97,6 +98,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// would, on a partial failure, have no idea which half took.
         /// </summary>
         [HttpPut]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
         [Authorize(Policy = Policies.SettingsUpdate)]
         [ProducesResponseType(204)]
         [ProducesResponseType(400)]

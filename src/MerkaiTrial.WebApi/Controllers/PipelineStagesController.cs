@@ -46,6 +46,7 @@ using MerkaiTrial.Application.Commands.PipelineStages;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers;
 
@@ -107,6 +108,7 @@ public class PipelineStagesController : ControllerBase
         }, "reading pipeline stages");
 
     [HttpPost]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Create([FromBody] CreatePipelineStageDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -115,6 +117,7 @@ public class PipelineStagesController : ControllerBase
         }, "creating pipeline stage");
 
     [HttpPut("{id:guid}")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Update(Guid id, [FromBody] UpdatePipelineStageDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -124,6 +127,7 @@ public class PipelineStagesController : ControllerBase
         }, "updating pipeline stage");
 
     [HttpPost("reorder")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Reorder([FromBody] ReorderPipelineStagesDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -133,6 +137,7 @@ public class PipelineStagesController : ControllerBase
         }, "reordering pipeline stages");
 
     [HttpPost("{id:guid}/default")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> SetDefault(Guid id, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -150,6 +155,7 @@ public class PipelineStagesController : ControllerBase
     /// is done by the time this responds.
     /// </summary>
     [HttpPost("{id:guid}/move-deals")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> MoveDeals(Guid id, [FromBody] MoveStageDealsDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -160,6 +166,7 @@ public class PipelineStagesController : ControllerBase
         }, "moving deals between pipeline stages");
 
     [HttpDelete("{id:guid}")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Delete(Guid id, CancellationToken ct)
         => Run(Policies.SettingsDelete, async () =>
         {

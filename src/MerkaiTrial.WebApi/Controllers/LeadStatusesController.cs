@@ -25,6 +25,7 @@ using MerkaiTrial.Application.Commands.LeadStatuses;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers;
 
@@ -91,6 +92,7 @@ public class LeadStatusesController : ControllerBase
         }, "reading lead statuses");
 
     [HttpPost]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Create([FromBody] CreateLeadStatusDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -99,6 +101,7 @@ public class LeadStatusesController : ControllerBase
         }, "creating lead status");
 
     [HttpPut("{id:guid}")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Update(Guid id, [FromBody] UpdateLeadStatusDefDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -108,6 +111,7 @@ public class LeadStatusesController : ControllerBase
         }, "updating lead status");
 
     [HttpPost("reorder")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Reorder([FromBody] ReorderLeadStatusesDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -117,6 +121,7 @@ public class LeadStatusesController : ControllerBase
         }, "reordering lead statuses");
 
     [HttpPost("{id:guid}/default")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> SetDefault(Guid id, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -136,6 +141,7 @@ public class LeadStatusesController : ControllerBase
     /// could not empty a status in order to do so.
     /// </summary>
     [HttpPost("{id:guid}/move-leads")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> MoveLeads(Guid id, [FromBody] MoveStatusLeadsDto dto, CancellationToken ct)
         => Run(Policies.SettingsUpdate, async () =>
         {
@@ -146,6 +152,7 @@ public class LeadStatusesController : ControllerBase
         }, "moving leads between statuses");
 
     [HttpDelete("{id:guid}")]
+    [RequiresPlanFeature(PlanFeatureKeys.CustomPipeline)]   // 114
     public Task<IActionResult> Delete(Guid id, CancellationToken ct)
         => Run(Policies.SettingsDelete, async () =>
         {

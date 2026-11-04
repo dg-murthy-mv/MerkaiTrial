@@ -39,6 +39,7 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.WebApi.Filters;
 
 namespace MerkaiTrial.WebApi.Controllers;
 
@@ -409,6 +410,7 @@ public class QuotesController : ControllerBase
     // POST api/quotes/{id}/attachments?tenantId={guid}
     // Content-Type: multipart/form-data  field: "file"
     [HttpPost("{id:guid}/attachments")]
+    [CountsTowardStorage]   // 114
     [Authorize(Policy = "Quotes.Update")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadAttachment(

@@ -98,6 +98,8 @@ public static class AdminWebServiceRegistration
             // Super admins stay on the admin side unless in ViewAs;
             // MustChangePassword is enforced; expired trials go read-only.
             options.Filters.Add<AccountStatePageFilter>();
+            // 114 — pages marked [RequiresPlanFeature] need it in the plan.
+            options.Filters.Add<PlanFeaturePageFilter>();
         });
 
         services.Configure<JsonOptions>(o =>

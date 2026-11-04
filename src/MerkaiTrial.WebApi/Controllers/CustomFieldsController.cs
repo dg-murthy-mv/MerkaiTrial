@@ -123,6 +123,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPost]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomFields)]   // 114
         [Authorize(Policy = Policies.SettingsCreate)]
         public async Task<ActionResult<CustomFieldDefinitionDto>> Create(
             [FromBody] SaveCustomFieldDefinitionDto dto,
@@ -146,6 +147,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomFields)]   // 114
         [Authorize(Policy = Policies.SettingsUpdate)]
         public async Task<ActionResult<CustomFieldDefinitionDto>> Update(
             Guid id,
@@ -180,6 +182,7 @@ namespace MerkaiTrial.WebApi.Controllers
         /// where anything goes, so there is no body.
         /// </summary>
         [HttpDelete("{id:guid}")]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomFields)]   // 114
         [Authorize(Policy = Policies.SettingsDelete)]
         public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
         {
@@ -206,6 +209,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPut("order")]
+        [RequiresPlanFeature(PlanFeatureKeys.CustomFields)]   // 114
         [Authorize(Policy = Policies.SettingsUpdate)]
         public async Task<IActionResult> Reorder(
             [FromBody] ReorderCustomFieldsDto dto,

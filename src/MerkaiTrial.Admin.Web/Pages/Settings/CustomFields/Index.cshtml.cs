@@ -81,6 +81,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace MerkaiTrial.Admin.Web.Pages.Settings.CustomFields
 {
+    [RequiresPlanFeature(PlanFeatureKeys.CustomFields)]   // 114 — not in every plan
     public class IndexModel : AuthorizedPageModel
     {
         private readonly ICustomFieldService _fields;

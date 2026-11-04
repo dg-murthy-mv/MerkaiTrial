@@ -22,6 +22,7 @@ namespace MerkaiTrial.Admin.Web.Pages.Settings.Roles;
 //   - Checkbox reading/saving moved to RolePermissionForm (shared with
 //     Edit and Detail). BuildPermissionsJson keeps its signature.
 // =====================================================================
+[RequiresPlanFeature(PlanFeatureKeys.CustomRoles)]   // 114 — not in every plan
 public class CreateModel : AuthorizedPageModel
 {
     /// <summary>Shared by Create and Edit so the rule cannot drift.</summary>

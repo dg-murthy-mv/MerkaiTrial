@@ -105,6 +105,9 @@ public static class World
     /// <summary>112. Null until PriorityReportTests builds it: India / INR, admin only — its report figures are exact.</summary>
     public static TestTenant? S { get; set; }
 
+    /// <summary>114. Null until PlanFeatureTests builds it: India / INR, admin only, moved to the STARTER plan. (Key "F" — "P" is the performance tests' workspace.)</summary>
+    public static TestTenant? F { get; set; }
+
     /// <summary>A unique address under a per-run domain. example.com is
     /// reserved, so even a misrouted email can never reach a real person.</summary>
     public static string EmailFor(string tenantKey, string who) =>

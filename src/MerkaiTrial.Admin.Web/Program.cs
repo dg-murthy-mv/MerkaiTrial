@@ -102,7 +102,20 @@ app.UseSecurityHeaders();
 
 // wwwroot only. Tenant attachments are NOT served from disk here — they
 // need an authenticated endpoint.
-app.UseStaticFiles();
+//
+// 115 — wwwroot/lib holds Bootstrap, its icons, Chart.js, jQuery and the
+// fonts (no CDN any more). Each library sits in a folder named for its
+// version (lib/bootstrap-5.3.3/…), so a file there never changes: the
+// browser may keep it for a year without asking. A new version is a new
+// folder, so it is fetched fresh.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        if (ctx.Context.Request.Path.StartsWithSegments("/lib"))
+            ctx.Context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    }
+});
 
 // 107 — test servers only (Development + Diagnostics:RequestCost): counts
 // each page's database queries and WebApi calls, for the performance

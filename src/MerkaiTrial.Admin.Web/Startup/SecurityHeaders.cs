@@ -19,9 +19,12 @@
 //   Permissions-Policy
 //       camera, microphone, location, payment and USB off — the
 //       app uses none of them, so nothing injected into a page can either.
-//   Content-Security-Policy (agreed in 106)
-//       Scripts, styles and fonts only from this site and the CDNs the
-//       pages use (cdnjs, jsDelivr, code.jquery.com, Google Fonts); no
+//   Content-Security-Policy (agreed in 106; 115 — this site only)
+//       Scripts, styles and fonts only from THIS site. Until 115 they also
+//       came from cdnjs, jsDelivr, code.jquery.com and Google Fonts; since
+//       115 Bootstrap, its icons, Chart.js, jQuery (+ validation) and the
+//       two fonts are served from wwwroot/lib, so the CDNs are gone from
+//       the policy too — a page cannot load a script from anywhere else. No
 //       plugins (object-src 'none'); forms post only to this site; <base>
 //       only this site; fetch/XHR only to this site.
 //       Inline scripts are still allowed ('unsafe-inline') because 76 pages
@@ -43,9 +46,9 @@ public static class SecurityHeaders
 {
     public const string ContentSecurityPolicy =
         "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://code.jquery.com; " +
-        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://fonts.googleapis.com; " +
-        "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "font-src 'self' data:; " +
         "img-src 'self' data: blob: https:; " +
         "connect-src 'self'; " +
         "frame-src 'self' blob:; " +

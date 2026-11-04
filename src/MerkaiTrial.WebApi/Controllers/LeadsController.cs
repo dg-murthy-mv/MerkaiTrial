@@ -64,6 +64,7 @@ using MerkaiTrial.Application.Exceptions;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.WebApi.Filters;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
@@ -706,6 +707,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         /// POST /api/leads/{leadId}/attachments
         [HttpPost("{leadId:guid}/attachments")]
+        [CountsTowardStorage]   // 114
         [Authorize(Policy = Policies.LeadsUpdate)]
         [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
         public async Task<IActionResult> UploadAttachment(

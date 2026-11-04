@@ -39,12 +39,14 @@ using MerkaiTrial.Application.DTOs;
 using MerkaiTrial.Application.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
     [ApiController]
     [Route("api/inbound-emails")]
     [Authorize]
+    [RequiresPlanFeature(PlanFeatureKeys.EmailIntegration)]   // 114
     public class InboundEmailsController : ControllerBase
     {
         private readonly GetInboundEmailsHandler _list;

@@ -21,12 +21,14 @@ using Microsoft.AspNetCore.Mvc;
 using OfficeOpenXml;
 using OfficeOpenXml.Style;
 using System.Drawing;
+using MerkaiTrial.Application.Configuration;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
     [ApiController]
     [Route("api/reports")]
     [Authorize(Policy = Policies.ReportsRead)]   // 113
+    [RequiresPlanFeature(PlanFeatureKeys.BasicReports, PlanFeatureKeys.AdvancedReports)]   // 114
     public class ReportsController : ControllerBase
     {
         private readonly GetSalesFunnelHandler        _salesFunnel;
@@ -392,6 +394,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ── 7. Sales Rep Performance ──────────────────────────────────
         [HttpGet("rep-performance")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetRepPerformance(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -401,6 +404,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("rep-performance/export")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> ExportRepPerformance(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -427,6 +431,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ── 8. Lead Source Analysis ───────────────────────────────────
         [HttpGet("lead-sources")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetLeadSources(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -436,6 +441,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("lead-sources/export")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> ExportLeadSources(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -459,6 +465,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ── 9. Deal Velocity ──────────────────────────────────────────
         [HttpGet("deal-velocity")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetDealVelocity(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -468,6 +475,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpGet("deal-velocity/export")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> ExportDealVelocity(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -492,6 +500,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ── 10. Activity Leaderboard ──────────────────────────────────
         [HttpGet("activity-leaderboard")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetActivityLeaderboard(
             [FromQuery] DateTime? from, [FromQuery] DateTime? to,
             [FromQuery] string? vertical, CancellationToken ct)
@@ -504,6 +513,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // 11. Stalled Deals — open deals today; days = stalled after (default 30)
         [HttpGet("stalled-deals")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetStalledDeals(
             [FromQuery] string? vertical, [FromQuery] int? days, CancellationToken ct)
         {
@@ -550,6 +560,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // 15. Revenue Forecast — open deals today by expected close month; months ahead (default 6)
         [HttpGet("revenue-forecast")]
+        [RequiresPlanFeature(PlanFeatureKeys.AdvancedReports)]   // 114
         public async Task<IActionResult> GetRevenueForecast(
             [FromQuery] string? vertical, [FromQuery] int? months, CancellationToken ct)
         {

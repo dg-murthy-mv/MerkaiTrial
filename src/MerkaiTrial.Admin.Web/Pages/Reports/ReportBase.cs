@@ -12,14 +12,17 @@
 //   • reports.read                      — every report
 //   • the category's own permission     — Revenue & Finance needs
 //                                          financereports.read as well
-//   • the plan                          — an Advanced report needs the
-//                                          advanced_reports feature
+//   • the plan                          — reports need basic_reports or
+//                                          advanced_reports; an Advanced
+//                                          report needs advanced_reports
+//                                          (114: refused → /Upgrade)
 // Until 113 only the sidebar link was hidden; the pages opened for anyone
 // signed in who typed the address. Refused → the Access Denied page (or,
-// for the plan, back to the Reports page, which shows it locked).
+// for the plan, the "Not in your plan" page, /Upgrade).
 // =====================================================================
 
 using MerkaiTrial.Application.Authorization;
+using MerkaiTrial.Application.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -174,6 +177,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Reports
             if (!(await auth.AuthorizeAsync(user, Policies.ReportsRead)).Succeeded)
                 return new RedirectToPageResult("/AccessDenied");
 
+            // 114 — the plan must include reports at all.
+            if (!tenant.HasFeature(PlanFeatureKeys.BasicReports) && !tenant.HasFeature(PlanFeatureKeys.AdvancedReports))
+                return new RedirectToPageResult("/Upgrade", new { feature = PlanFeatureKeys.BasicReports });
+
             var found = ReportCatalog.Find(pagePath);
             if (found is null) return null;   // the landing page: reports.read is enough
 
@@ -182,8 +189,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Reports
                 !(await auth.AuthorizeAsync(user, $"{category.Permission}.read")).Succeeded)
                 return new RedirectToPageResult("/AccessDenied");
 
-            if (link.Advanced && !tenant.HasFeature("advanced_reports"))
-                return new RedirectToPageResult("/Reports/Index");
+            // 114 — the "Not in your plan" page (it was back to the Reports page).
+            if (link.Advanced && !tenant.HasFeature(PlanFeatureKeys.AdvancedReports))
+                return new RedirectToPageResult("/Upgrade", new { feature = PlanFeatureKeys.AdvancedReports });
 
             return null;
         }
