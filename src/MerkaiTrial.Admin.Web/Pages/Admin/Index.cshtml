@@ -126,38 +126,39 @@
             <div class="card-body">
                 <div class="d-flex align-items-start mb-3">
                     <div class="icon-wrapper me-3" style="width: 56px; height: 56px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);">
-                        <i class="bi bi-calculator-fill text-white" style="font-size: 1.75rem;"></i>
+                        <i class="bi bi-shield-check text-white" style="font-size: 1.75rem;" aria-hidden="true"></i>
                     </div>
                     <div class="flex-grow-1">
-                        <h5 class="card-title mb-1">Tax Rates</h5>
-                        <p class="text-muted small mb-0">Per-tenant configuration</p>
+                        @* 117: was "Tax Rates" — those now live on each country's page *@
+                        <h5 class="card-title mb-1">Starting Roles</h5>
+                        <p class="text-muted small mb-0">What a new workspace starts with</p>
                     </div>
                 </div>
                 
-                <p class="text-muted small mb-3">Configure country-specific tax rates for each tenant with support for multiple rates per country.</p>
+                <p class="text-muted small mb-3">The roles every new workspace is given — Sales Manager, Sales Rep, Viewer — and what each may do. A country's tax rates are on its page under Countries.</p>
                 
                 <ul class="list-unstyled small mb-3">
                     <li class="mb-2">
                         <i class="bi bi-check-circle-fill text-success me-2"></i>
-                        <span>Set country-specific rates</span>
+                        <span>Permissions for each starting role</span>
                     </li>
                     <li class="mb-2">
                         <i class="bi bi-check-circle-fill text-success me-2"></i>
-                        <span>Multiple rates per country</span>
+                        <span>Add a starting role, or stop giving one</span>
                     </li>
                     <li class="mb-2">
                         <i class="bi bi-check-circle-fill text-success me-2"></i>
-                        <span>Default rate selection</span>
+                        <span>Existing workspaces keep their own roles</span>
                     </li>
                 </ul>
                 
-                <a href="/Admin/TaxRates" class="btn btn-warning w-100">
-                    <i class="bi bi-arrow-right-circle me-2"></i>Manage Tax Rates
+                <a asp-page="/Admin/StartingRoles/Index" class="btn btn-warning w-100">
+                    <i class="bi bi-arrow-right-circle me-2" aria-hidden="true"></i>Manage Starting Roles
                 </a>
             </div>
             <div class="card-footer bg-light border-0">
                 <small class="text-muted">
-                    <i class="bi bi-info-circle me-1"></i>Tenant-specific settings
+                    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>Applies to workspaces created from now on
                 </small>
             </div>
         </div>

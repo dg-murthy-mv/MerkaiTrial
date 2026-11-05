@@ -1,5 +1,13 @@
 @* =====================================================================
-   TENANTS INDEX - Mobile Optimized with Uniform Design
+   TENANTS INDEX
+   Location: Pages/Admin/Tenants/Index.cshtml
+
+   120 — search (also by a person's email), status, plan, order, and the
+   shared pager; every link keeps every filter. Success / error messages
+   come from _SuperAdminLayout (this page showed them a second time).
+   Test hooks: #tenantFilters, #tSearch, #tStatus, #tPlan, #tSort,
+   #tenantsTable, tr[data-tenant="<name>"], [data-col=plan|users|leads|status],
+   #tenantsEmpty, #tenantCount.
    ===================================================================== *@
 @page "/Admin/Tenants"
 @model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.IndexModel
@@ -8,339 +16,178 @@
 }
 
 <div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div>
-            <h2 class="mb-1"><i class="bi bi-building text-primary"></i> Tenant Management</h2>
-            <p class="text-muted mb-0">Manage tenant organizations</p>
+            <h1 class="h3 mb-1"><i class="bi bi-building text-primary" aria-hidden="true"></i> Workspaces</h1>
+            <p class="text-muted mb-0">Every customer workspace on the platform.</p>
         </div>
-        <div>
-            <a asp-page="./Create" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> <span class="d-none d-sm-inline">Create New Tenant</span>
-            </a>
-        </div>
+        <a asp-page="./Create" class="btn btn-primary">
+            <i class="bi bi-plus-circle" aria-hidden="true"></i> <span>New workspace</span>
+        </a>
     </div>
 
-    <!-- Alerts -->
-    @if (TempData["Success"] != null)
+    @if (Model.LoadError is not null)
     {
-        <div class="alert alert-success alert-dismissible fade show">
-            <i class="bi bi-check-circle me-2"></i>@TempData["Success"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
-    @if (TempData["Error"] != null)
-    {
-        <div class="alert alert-danger alert-dismissible fade show">
-            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["Error"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
     }
 
-    <!-- Statistics Cards -->
     <div class="row g-3 mb-4">
-        <div class="col-xl-3 col-md-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body text-center">
-                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 12px;">
-                        <i class="bi bi-building text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
-                    </div>
-                    <h3 class="mb-1">@Model.Tenants.TotalCount</h3>
-                    <p class="text-muted mb-0 small fw-semibold">Total Tenants</p>
-                </div>
-            </div>
+        <div class="col-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-1">@Model.AllWorkspaces</div>
+                <div class="text-muted small fw-semibold">All workspaces</div>
+            </div></div>
         </div>
-        <div class="col-xl-3 col-md-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body text-center">
-                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 12px;">
-                        <i class="bi bi-check-circle text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
-                    </div>
-                    <h3 class="mb-1">@Model.Stats.ActiveUsers</h3>
-                    <p class="text-muted mb-0 small fw-semibold">Active Tenants</p>
-                </div>
-            </div>
+        <div class="col-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-1 text-success">@Model.Stats.ActiveUsers</div>
+                <div class="text-muted small fw-semibold">Active</div>
+            </div></div>
         </div>
-        <div class="col-xl-3 col-md-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body text-center">
-                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 12px;">
-                        <i class="bi bi-pause-circle text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
-                    </div>
-                    <h3 class="mb-1">@Model.Stats.InactiveUsers</h3>
-                    <p class="text-muted mb-0 small fw-semibold">Inactive Tenants</p>
-                </div>
-            </div>
+        <div class="col-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-1 text-warning">@Model.Stats.InactiveUsers</div>
+                <div class="text-muted small fw-semibold">Switched off</div>
+            </div></div>
         </div>
-        <div class="col-xl-3 col-md-6">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body text-center">
-                    <div class="avatar-icon mb-3 mx-auto" style="width: 60px; height: 60px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 12px;">
-                        <i class="bi bi-funnel text-white" style="font-size: 1.75rem; line-height: 60px;"></i>
-                    </div>
-                    <h3 class="mb-1">@Model.Stats.TotalLeads</h3>
-                    <p class="text-muted mb-0 small fw-semibold">Total Leads</p>
-                </div>
-            </div>
+        <div class="col-6 col-xl-3">
+            <div class="card border-0 shadow-sm h-100"><div class="card-body text-center">
+                <div class="h3 mb-1">@Model.Stats.TotalLeads.ToString("N0")</div>
+                <div class="text-muted small fw-semibold">Leads, all workspaces</div>
+            </div></div>
         </div>
     </div>
 
-    <!-- Search & Filter -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body">
-            <form method="get" class="row g-3">
-                <input type="hidden" name="PageSize" value="@Model.PageSize" />
-                <div class="col-md-6">
-                    <label class="form-label"><i class="bi bi-search"></i> Search</label>
-                    <input type="text" name="SearchTerm" value="@Model.SearchTerm" 
-                           class="form-control" placeholder="Search by name or email...">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label"><i class="bi bi-funnel"></i> Status</label>
-                    <select name="IsActive" class="form-select">
-                        <option value="">All Status</option>
-                        <option value="true" selected="@(Model.IsActive == true)">Active</option>
-                        <option value="false" selected="@(Model.IsActive == false)">Inactive</option>
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex align-items-end gap-2">
-                    <button type="submit" class="btn btn-primary flex-fill">
-                        <i class="bi bi-search"></i> <span class="d-none d-sm-inline">Search</span>
-                    </button>
-                    <a href="?PageSize=@Model.PageSize" class="btn btn-outline-secondary flex-fill">
-                        <i class="bi bi-x-circle"></i> <span class="d-none d-sm-inline">Clear</span>
+    <form method="get" id="tenantFilters" class="card border-0 shadow-sm mb-3" role="search">
+        <div class="card-body row g-2 align-items-end">
+            <input type="hidden" name="PageSize" value="@Model.PageSize" />
+            <div class="col-12 col-lg-4">
+                <label for="tSearch" class="form-label small mb-1">Search</label>
+                <input type="search" id="tSearch" name="SearchTerm" value="@Model.SearchTerm" maxlength="100"
+                       class="form-control" placeholder="Workspace name or email, or anyone's email in it" />
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <label for="tStatus" class="form-label small mb-1">Status</label>
+                <select id="tStatus" name="IsActive" class="form-select">
+                    <option value="">Any</option>
+                    <option value="true" selected="@(Model.IsActive == true ? "selected" : null)">Active</option>
+                    <option value="false" selected="@(Model.IsActive == false ? "selected" : null)">Switched off</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <label for="tPlan" class="form-label small mb-1">Plan</label>
+                <select id="tPlan" name="Plan" class="form-select">
+                    <option value="">Any</option>
+                    @foreach (var p in Model.Plans)
+                    {
+                        <option value="@p" selected="@(string.Equals(p, Model.Plan, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@p</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <label for="tSort" class="form-label small mb-1">Order</label>
+                <select id="tSort" name="Sort" class="form-select">
+                    @foreach (var (value, label) in MerkaiTrial.Admin.Web.Pages.Admin.Tenants.IndexModel.Sorts)
+                    {
+                        <option value="@value" selected="@(value == Model.Sort ? "selected" : null)">@label</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary flex-fill" id="tApply"><i class="bi bi-search" aria-hidden="true"></i> Show</button>
+                @if (Model.Filtered)
+                {
+                    <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-outline-secondary" title="Clear the filters">
+                        <i class="bi bi-x-circle" aria-hidden="true"></i><span class="visually-hidden">Clear the filters</span>
                     </a>
-                </div>
-            </form>
+                }
+            </div>
         </div>
-    </div>
+    </form>
 
-    <!-- Tenants List -->
     <div class="card border-0 shadow-sm">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                <i class="bi bi-list"></i> Tenants List
-                <span class="badge bg-light text-dark ms-2">@Model.Tenants.TotalCount</span>
-            </h5>
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h2 class="h6 mb-0">Workspaces <span class="badge bg-secondary ms-1" id="tenantCount">@Model.Tenants.TotalCount</span></h2>
             @if (Model.Tenants.TotalPages > 1)
             {
-                <span class="badge bg-light text-dark">Page @Model.Page of @Model.Tenants.TotalPages</span>
+                <span class="small text-muted">Page @Model.PageNumber of @Model.Tenants.TotalPages</span>
             }
         </div>
 
-        @if (!Model.Tenants.Items.Any())
+        @if (Model.Tenants.Items.Count == 0)
         {
-            <div class="card-body text-center py-5">
-                <i class="bi bi-inbox display-1 text-muted"></i>
-                <p class="text-muted mt-3 mb-0">No tenants found</p>
-                @if (!string.IsNullOrEmpty(Model.SearchTerm) || Model.IsActive.HasValue)
+            <div class="card-body text-center py-5" id="tenantsEmpty">
+                <i class="bi bi-inbox display-4 text-muted" aria-hidden="true"></i>
+                @if (Model.Filtered)
                 {
-                    <p class="text-muted small">Try adjusting your search or filters</p>
-                    <a href="?PageSize=@Model.PageSize" class="btn btn-outline-primary mt-2">Clear Filters</a>
+                    <p class="text-muted mt-3 mb-2">No workspace matches these filters.</p>
+                    <a asp-page="./Index" asp-route-PageSize="@Model.PageSize" class="btn btn-outline-primary btn-sm">Clear the filters</a>
                 }
                 else
                 {
-                    <a asp-page="./Create" class="btn btn-primary mt-2">
-                        <i class="bi bi-plus-circle"></i> Create First Tenant
-                    </a>
+                    <p class="text-muted mt-3 mb-2">No workspaces yet.</p>
+                    <a asp-page="./Create" class="btn btn-primary btn-sm">Create the first one</a>
                 }
             </div>
         }
         else
         {
-            <!-- DESKTOP VIEW: Table -->
-            <div class="d-none d-md-block">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Tenant</th>
-                                <th>Contact</th>
-                                <th>Currency</th>
-                                <th>Country</th>
-                                <th class="text-center">Users</th>
-                                <th class="text-center">Leads</th>
-                                <th class="text-center">Status</th>
-                                <th class="text-end">Actions</th>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="tenantsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Workspace</th>
+                            <th scope="col" class="d-none d-lg-table-cell">Country</th>
+                            <th scope="col">Plan</th>
+                            <th scope="col" class="text-end">People</th>
+                            <th scope="col" class="text-end d-none d-md-table-cell">Leads</th>
+                            <th scope="col">Status</th>
+                            <th scope="col" class="text-end"><span class="visually-hidden">Open</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var t in Model.Tenants.Items)
+                        {
+                            <tr data-tenant="@t.Name">
+                                <td>
+                                    <a asp-page="./Detail" asp-route-id="@t.Id" class="fw-semibold text-decoration-none">@t.Name</a>
+                                    <div class="small text-muted text-break">@t.FromEmail</div>
+                                    <div class="small text-muted">Since @t.CreatedAtUtc.ToString("d MMM yyyy")</div>
+                                </td>
+                                <td class="d-none d-lg-table-cell small">
+                                    @(string.IsNullOrEmpty(t.CountryName) ? "—" : t.CountryName)
+                                    @if (!string.IsNullOrEmpty(t.DefaultCurrency))
+                                    {
+                                        <div class="text-muted">@t.DefaultCurrency</div>
+                                    }
+                                </td>
+                                <td data-col="plan"><span class="badge bg-light text-dark border">@(t.Plan ?? "—")</span></td>
+                                <td data-col="users" class="text-end">@t.UserCount</td>
+                                <td data-col="leads" class="text-end d-none d-md-table-cell">@t.LeadCount.ToString("N0")</td>
+                                <td data-col="status">
+                                    @if (t.IsActive)
+                                    {
+                                        <span class="badge bg-success">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Switched off</span>
+                                    }
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <a asp-page="./Detail" asp-route-id="@t.Id" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye" aria-hidden="true"></i><span class="d-none d-sm-inline"> Open</span><span class="visually-hidden"> @t.Name</span>
+                                    </a>
+                                    <a asp-page="./People" asp-route-id="@t.Id" class="btn btn-sm btn-outline-secondary" title="People">
+                                        <i class="bi bi-people" aria-hidden="true"></i><span class="visually-hidden">People in @t.Name</span>
+                                    </a>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var tenant in Model.Tenants.Items)
-                            {
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="avatar-sm me-2">@tenant.Name[0]</div>
-                                            <div>
-                                                <div class="fw-semibold">@tenant.Name</div>
-                                                <small class="text-muted">@tenant.CreatedAtUtc.ToString("MMM dd, yyyy")</small>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <i class="bi bi-envelope text-muted"></i>
-                                        <a href="mailto:@tenant.FromEmail">@tenant.FromEmail</a>
-                                    </td>
-                                    <td>
-                                        @if (!string.IsNullOrEmpty(tenant.DefaultCurrency))
-                                        {
-                                            <span class="badge bg-light text-dark">@tenant.DefaultCurrency</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="text-muted">-</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        @if (!string.IsNullOrEmpty(tenant.CountryName))
-                                        {
-                                            <div>@tenant.CountryName</div>
-                                            @if (!string.IsNullOrEmpty(tenant.CountryCode))
-                                            {
-                                                <small class="text-muted">@tenant.CountryCode</small>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            <span class="text-muted">-</span>
-                                        }
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-info">
-                                            <i class="bi bi-people"></i> @tenant.UserCount
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-primary">
-                                            <i class="bi bi-funnel"></i> @tenant.LeadCount
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        @if (tenant.IsActive)
-                                        {
-                                            <span class="badge bg-success">Active</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="badge bg-danger">Inactive</span>
-                                        }
-                                    </td>
-                                    <td class="text-end">
-                                        <a asp-page="./Detail" asp-route-id="@tenant.Id" 
-                                           class="btn btn-sm btn-outline-primary" title="View"><i class="bi bi-eye"></i></a>
-                                        <a asp-page="./Edit" asp-route-id="@tenant.Id" 
-                                           class="btn btn-sm btn-outline-warning" title="Edit"><i class="bi bi-pencil"></i></a>
-                                        <a asp-page="./Settings" asp-route-id="@tenant.Id" 
-                                           class="btn btn-sm btn-outline-info" title="Settings"><i class="bi bi-gear"></i></a>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                        }
+                    </tbody>
+                </table>
             </div>
-
-            <!-- MOBILE VIEW: Cards -->
-            <div class="d-md-none">
-                @foreach (var tenant in Model.Tenants.Items)
-                {
-                    <div class="card m-3 border">
-                        <div class="card-body">
-                            <div class="d-flex align-items-start mb-3">
-                                <div class="avatar-md me-3">@tenant.Name[0]</div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">@tenant.Name</h6>
-                                    <small class="text-muted d-block mb-2">@tenant.CreatedAtUtc.ToString("MMM dd, yyyy")</small>
-                                    <div>
-                                        @if (tenant.IsActive)
-                                        {
-                                            <span class="badge bg-success">Active</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="badge bg-danger">Inactive</span>
-                                        }
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="small mb-2">
-                                <i class="bi bi-envelope text-muted"></i> @tenant.FromEmail
-                            </div>
-                            @if (!string.IsNullOrEmpty(tenant.CountryName))
-                            {
-                                <div class="small mb-2">
-                                    <i class="bi bi-geo-alt text-muted"></i> 
-                                    @tenant.CountryName @(tenant.CountryCode != null ? $"({tenant.CountryCode})" : "")
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(tenant.DefaultCurrency))
-                            {
-                                <div class="small mb-2">
-                                    <i class="bi bi-currency-exchange text-muted"></i> @tenant.DefaultCurrency
-                                </div>
-                            }
-                            <div class="small mb-3">
-                                <span class="badge bg-info me-1">
-                                    <i class="bi bi-people"></i> @tenant.UserCount users
-                                </span>
-                                <span class="badge bg-primary">
-                                    <i class="bi bi-funnel"></i> @tenant.LeadCount leads
-                                </span>
-                            </div>
-
-                            <div class="d-grid gap-2">
-                                <a asp-page="./Detail" asp-route-id="@tenant.Id" 
-                                   class="btn btn-sm btn-primary">
-                                    <i class="bi bi-eye"></i> View Details
-                                </a>
-                                <div class="d-flex gap-2">
-                                    <a asp-page="./Edit" asp-route-id="@tenant.Id" 
-                                       class="btn btn-sm btn-outline-warning flex-fill">
-                                        <i class="bi bi-pencil"></i> Edit
-                                    </a>
-                                    <a asp-page="./Settings" asp-route-id="@tenant.Id" 
-                                       class="btn btn-sm btn-outline-info flex-fill">
-                                        <i class="bi bi-gear"></i> Settings
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
-
-            <!-- Shared Pagination Component -->
-            <partial name="_Pagination" model="Model.Tenants" />
         }
+        <partial name="_Pager" model="Model.Pager" />
     </div>
 </div>
-
-<style>
-    /* Avatar Styles */
-    .avatar-sm {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-        color: white;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
-
-    .avatar-md {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #3b82f6, #2563eb);
-        color: white;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 1.25rem;
-    }
-</style>

@@ -72,10 +72,12 @@ namespace MerkaiTrial.Application.DTOs
 
         // E.g., "+66" — optional
         [StringLength(10)]
+        [RegularExpression(@"^\+\d{1,4}$", ErrorMessage = "The dial code looks like +66.")]   // 120
         public string? DialCode { get; set; }
 
         // ISO 4217 like "USD", "THB" — optional in your code path
         [StringLength(3)]
+        [RegularExpression(@"^[A-Za-z]{3}$", ErrorMessage = "The currency is a 3-letter code like THB.")]   // 120
         public string? CurrencyCode { get; set; }
 
         // E.g., "VAT", "GST", "Sales Tax" — optional
@@ -93,6 +95,7 @@ namespace MerkaiTrial.Application.DTOs
     {
         // ISO 3166 country code (e.g., "TH", "US"). Adjust length if you use alpha-3.
         [Required, StringLength(3, MinimumLength = 2)]
+        [RegularExpression(@"^[A-Za-z]{2,3}$", ErrorMessage = "The code is 2 or 3 letters, like TH.")]   // 120
         public string Code { get; set; } = default!;
 
         [Required, StringLength(100)]
@@ -100,10 +103,12 @@ namespace MerkaiTrial.Application.DTOs
 
         // E.g., "+66"
         [StringLength(10)]
+        [RegularExpression(@"^\+\d{1,4}$", ErrorMessage = "The dial code looks like +66.")]   // 120
         public string? DialCode { get; set; }
 
         // ISO 4217 currency code (e.g., "THB", "USD")
         [StringLength(3)]
+        [RegularExpression(@"^[A-Za-z]{3}$", ErrorMessage = "The currency is a 3-letter code like THB.")]   // 120
         public string? CurrencyCode { get; set; }
 
         // E.g., "VAT", "GST", "Sales Tax"
@@ -145,9 +150,16 @@ namespace MerkaiTrial.Application.DTOs
     public class CreateCompanyVerticalDto
     {
         public Guid TenantId { get; set; }
+        [Required(ErrorMessage = "Give the vertical a name.")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "The name is 2 to 100 characters.")]
         public string Name { get; set; } = string.Empty;
+        [StringLength(500, ErrorMessage = "The description can be up to 500 characters.")]
         public string? Description { get; set; }
+        // 120 — a Bootstrap icon name and colour name only: both end up in a
+        // class attribute on every page that shows the vertical.
+        [RegularExpression(@"^[a-z0-9-]{1,40}$", ErrorMessage = "The icon must be an icon name like 'building'.")]
         public string? Icon { get; set; }
+        [RegularExpression(@"^(primary|secondary|success|danger|warning|info|dark)$", ErrorMessage = "Pick one of the colours offered.")]
         public string? Color { get; set; }
         public string CreatedBy { get; set; } = string.Empty;
     }
@@ -156,9 +168,16 @@ namespace MerkaiTrial.Application.DTOs
     {
         public Guid Id { get; set; }
         public Guid TenantId { get; set; }
+        [Required(ErrorMessage = "Give the vertical a name.")]
+        [StringLength(100, MinimumLength = 2, ErrorMessage = "The name is 2 to 100 characters.")]
         public string Name { get; set; } = string.Empty;
+        [StringLength(500, ErrorMessage = "The description can be up to 500 characters.")]
         public string? Description { get; set; }
+        // 120 — a Bootstrap icon name and colour name only: both end up in a
+        // class attribute on every page that shows the vertical.
+        [RegularExpression(@"^[a-z0-9-]{1,40}$", ErrorMessage = "The icon must be an icon name like 'building'.")]
         public string? Icon { get; set; }
+        [RegularExpression(@"^(primary|secondary|success|danger|warning|info|dark)$", ErrorMessage = "Pick one of the colours offered.")]
         public string? Color { get; set; }
         public string UpdatedBy { get; set; } = string.Empty;
     }

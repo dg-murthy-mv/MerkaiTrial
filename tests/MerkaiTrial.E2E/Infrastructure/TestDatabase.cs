@@ -1268,6 +1268,18 @@ public sealed class TestDatabase
         ("Contacts", "PhoneDigits"), ("Contacts", "MobileDigits"), ("Leads", "PhoneDigits"),
     };
 
+    /// <summary>118. Locks someone out as wrong passwords would (Support → Unlock is tested against it).</summary>
+    public async Task SetLockoutAsync(Guid userId, DateTime? untilUtc, int failedCount)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.Users SET LockoutEndUtc = @u, FailedLoginCount = @f WHERE Id = @id", conn);
+        cmd.Parameters.Add(new SqlParameter("@u", System.Data.SqlDbType.DateTime2) { Value = (object?)untilUtc ?? DBNull.Value });
+        cmd.Parameters.AddWithValue("@f", failedCount);
+        cmd.Parameters.AddWithValue("@id", userId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     /// <summary>One column of one row, as text ("" for NULL, null for no such row). Only the pairs above.</summary>
     public async Task<string?> ValueAsync(string table, string column, Guid id)
     {

@@ -11,7 +11,8 @@ namespace MerkaiTrial.Admin.Web.Services.Tenants
 {
     public interface ITenantService
     {
-        Task<PaginatedTenantsResponse> GetPaginatedAsync(int page, int pageSize, string? search, bool? isActive);
+        Task<PaginatedTenantsResponse> GetPaginatedAsync(int page, int pageSize, string? search, bool? isActive,
+            string? plan = null, string? sort = null);   // 120 — plan filter and order
         Task<TenantDto> GetByIdAsync(Guid tenantId);
         Task<TenantDto> CreateAsync(CreateTenantCommand command);
         Task UpdateAsync(UpdateTenantCommand command);
@@ -51,13 +52,17 @@ namespace MerkaiTrial.Admin.Web.Services.Tenants
 
         // ==================== GET PAGINATED TENANTS ====================
         public Task<PaginatedTenantsResponse> GetPaginatedAsync(
-            int page, int pageSize, string? search, bool? isActive)
+            int page, int pageSize, string? search, bool? isActive, string? plan = null, string? sort = null)
         {
             var url = $"api/tenants/paginated?page={page}&pageSize={pageSize}";
             if (!string.IsNullOrWhiteSpace(search))
                 url += $"&search={Uri.EscapeDataString(search)}";
             if (isActive.HasValue)
                 url += $"&isActive={isActive.Value}";
+            if (!string.IsNullOrWhiteSpace(plan))
+                url += $"&plan={Uri.EscapeDataString(plan)}";
+            if (!string.IsNullOrWhiteSpace(sort))
+                url += $"&sort={Uri.EscapeDataString(sort)}";
 
             return _api.GetAsync<PaginatedTenantsResponse>(url);
         }

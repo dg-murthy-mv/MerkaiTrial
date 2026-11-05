@@ -1,178 +1,273 @@
 {
-  "audit.far": {
-    "ms": 110,
+  "admin.audit": {
+    "ms": 17,
+    "queries": 11,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.audit.search": {
+    "ms": 27,
+    "queries": 11,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.audit.viewas": {
+    "ms": 23,
+    "queries": 11,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.audit.workspace": {
+    "ms": 15,
+    "queries": 11,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.audit.year": {
+    "ms": 20,
+    "queries": 11,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.countries": {
+    "ms": 14,
+    "queries": 12,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.country": {
+    "ms": 13,
     "queries": 10,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.home": {
+    "ms": 5,
+    "queries": 5,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.plans": {
+    "ms": 8,
+    "queries": 9,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.startingroles": {
+    "ms": 13,
+    "queries": 9,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.team": {
+    "ms": 9,
+    "queries": 6,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenant.detail": {
+    "ms": 17,
+    "queries": 16,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenant.people": {
+    "ms": 10,
+    "queries": 9,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenant.settings": {
+    "ms": 12,
+    "queries": 10,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenants": {
+    "ms": 16,
+    "queries": 14,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenants.leads": {
+    "ms": 14,
+    "queries": 14,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.tenants.person": {
+    "ms": 18,
+    "queries": 14,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.verticals": {
+    "ms": 18,
+    "queries": 15,
+    "recorded": "2026-11-05 09:11"
+  },
+  "admin.viewas": {
+    "ms": 7,
+    "queries": 6,
+    "recorded": "2026-11-05 09:11"
+  },
+  "audit.far": {
+    "ms": 15,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "audit.first": {
-    "ms": 103,
-    "queries": 10,
-    "recorded": "2026-10-29 13:26"
+    "ms": 16,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "audit.search": {
-    "ms": 631,
-    "queries": 10,
-    "recorded": "2026-10-29 13:26"
+    "ms": 481,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "audit.year": {
-    "ms": 101,
-    "queries": 10,
-    "recorded": "2026-10-29 13:26"
+    "ms": 15,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "browser.contacts": {
-    "ms": 1543,
+    "ms": 868,
     "queries": null,
-    "recorded": "2026-10-29 13:29"
+    "recorded": "2026-11-05 09:09"
   },
   "browser.dashboard": {
-    "ms": 1855,
+    "ms": 929,
     "queries": null,
-    "recorded": "2026-10-29 13:29"
+    "recorded": "2026-11-05 09:09"
   },
   "browser.leads": {
-    "ms": 1730,
+    "ms": 837,
     "queries": null,
-    "recorded": "2026-10-29 13:29"
+    "recorded": "2026-11-05 09:09"
   },
   "browser.pipeline": {
-    "ms": 1589,
+    "ms": 1063,
     "queries": null,
-    "recorded": "2026-10-29 13:29"
+    "recorded": "2026-11-05 09:09"
   },
   "browser.quotes": {
-    "ms": 2332,
+    "ms": 1579,
     "queries": null,
-    "recorded": "2026-10-29 13:29"
+    "recorded": "2026-11-05 09:09"
   },
   "companies.far": {
-    "ms": 791,
+    "ms": 196,
     "queries": 21,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "companies.first": {
-    "ms": 569,
+    "ms": 140,
     "queries": 21,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "companies.search": {
-    "ms": 810,
+    "ms": 243,
     "queries": 21,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "companies.sort": {
-    "ms": 1694,
+    "ms": 867,
     "queries": 21,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "contacts.far": {
-    "ms": 484,
+    "ms": 108,
     "queries": 19,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "contacts.first": {
-    "ms": 597,
+    "ms": 117,
     "queries": 19,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "contacts.search": {
-    "ms": 1966,
-    "queries": 19,
-    "recorded": "2026-10-29 16:10"
+    "ms": 1301,
+    "queries": 20,
+    "recorded": "2026-11-05 09:09"
   },
   "contacts.sort": {
-    "ms": 948,
+    "ms": 379,
     "queries": 19,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "dashboard.admin": {
-    "ms": 1039,
+    "ms": 762,
     "queries": 42,
-    "recorded": "2026-10-29 13:22"
+    "recorded": "2026-11-05 09:08"
   },
   "dashboard.rep": {
-    "ms": 697,
+    "ms": 82,
     "queries": 52,
-    "recorded": "2026-10-29 13:22"
+    "recorded": "2026-11-05 09:08"
   },
   "detail.company": {
-    "ms": 271,
+    "ms": 24,
     "queries": 20,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "detail.contact": {
-    "ms": 582,
-    "queries": 27,
-    "recorded": "2026-10-29 13:26"
+    "ms": 64,
+    "queries": 28,
+    "recorded": "2026-11-05 09:09"
   },
   "detail.deal": {
-    "ms": 724,
-    "queries": 59,
-    "recorded": "2026-10-29 13:26"
+    "ms": 96,
+    "queries": 60,
+    "recorded": "2026-11-05 09:09"
   },
   "detail.invoice": {
-    "ms": 876,
+    "ms": 29,
     "queries": 28,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "detail.lead": {
-    "ms": 497,
-    "queries": 53,
-    "recorded": "2026-10-29 13:26"
+    "ms": 93,
+    "queries": 54,
+    "recorded": "2026-11-05 09:09"
   },
   "detail.quote": {
-    "ms": 847,
+    "ms": 48,
     "queries": 48,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "inbox": {
-    "ms": 98,
-    "queries": 11,
-    "recorded": "2026-10-29 13:26"
+    "ms": 11,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "invoices.far": {
-    "ms": 408,
+    "ms": 58,
     "queries": 16,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "invoices.first": {
-    "ms": 346,
+    "ms": 47,
     "queries": 16,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "invoices.search": {
-    "ms": 1072,
+    "ms": 475,
     "queries": 16,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "invoices.sort": {
-    "ms": 371,
+    "ms": 52,
     "queries": 16,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "leads.far": {
-    "ms": 634,
-    "queries": 34,
-    "recorded": "2026-10-29 13:26"
+    "ms": 224,
+    "queries": 35,
+    "recorded": "2026-11-05 09:09"
   },
   "leads.first": {
-    "ms": 705,
-    "queries": 34,
-    "recorded": "2026-10-29 13:26"
+    "ms": 525,
+    "queries": 35,
+    "recorded": "2026-11-05 09:09"
   },
   "leads.rep": {
-    "ms": 635,
-    "queries": 40,
-    "recorded": "2026-10-29 13:26"
+    "ms": 77,
+    "queries": 41,
+    "recorded": "2026-11-05 09:09"
   },
   "leads.search": {
-    "ms": 1438,
+    "ms": 2124,
     "queries": 35,
-    "recorded": "2026-10-29 16:10"
+    "recorded": "2026-11-05 09:09"
   },
   "leads.sort": {
-    "ms": 184,
+    "ms": 261,
     "queries": 35,
-    "recorded": "2026-10-29 16:10"
+    "recorded": "2026-11-05 09:09"
   },
   "load.median": {
     "ms": 150,
@@ -185,98 +280,98 @@
     "recorded": "2026-10-29 16:13"
   },
   "pipeline.board": {
-    "ms": 481,
+    "ms": 71,
     "queries": 41,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "pipeline.far": {
-    "ms": 351,
+    "ms": 55,
     "queries": 41,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "pipeline.rep": {
-    "ms": 454,
+    "ms": 68,
     "queries": 47,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "pipeline.search": {
-    "ms": 1482,
+    "ms": 603,
     "queries": 41,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "pipeline.sort": {
-    "ms": 455,
+    "ms": 90,
     "queries": 41,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "pipeline.table": {
-    "ms": 491,
+    "ms": 70,
     "queries": 41,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "quotes.board": {
-    "ms": 473,
+    "ms": 110,
     "queries": 19,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "quotes.list": {
-    "ms": 486,
+    "ms": 92,
     "queries": 19,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   },
   "save.contact.add": {
-    "ms": 42,
+    "ms": 16,
     "queries": 12,
-    "recorded": "2026-10-29 16:11"
+    "recorded": "2026-11-05 09:09"
   },
   "save.deal.add": {
-    "ms": 29,
-    "queries": 15,
-    "recorded": "2026-10-29 13:28"
+    "ms": 22,
+    "queries": 16,
+    "recorded": "2026-11-05 09:09"
   },
   "save.deal.delete": {
-    "ms": 191,
+    "ms": 9,
     "queries": 13,
-    "recorded": "2026-10-29 13:28"
+    "recorded": "2026-11-05 09:09"
   },
   "save.deal.edit": {
-    "ms": 16,
-    "queries": 11,
-    "recorded": "2026-10-29 13:28"
+    "ms": 7,
+    "queries": 12,
+    "recorded": "2026-11-05 09:09"
   },
   "save.deal.move": {
-    "ms": 27,
+    "ms": 13,
     "queries": 16,
-    "recorded": "2026-10-29 13:28"
+    "recorded": "2026-11-05 09:09"
   },
   "save.lead.add": {
-    "ms": 210,
-    "queries": 17,
-    "recorded": "2026-10-29 13:28"
+    "ms": 25,
+    "queries": 18,
+    "recorded": "2026-11-05 09:09"
   },
   "save.lead.delete": {
-    "ms": 204,
+    "ms": 8,
     "queries": 9,
-    "recorded": "2026-10-29 13:28"
+    "recorded": "2026-11-05 09:09"
   },
   "save.lead.edit": {
-    "ms": 161,
-    "queries": 17,
-    "recorded": "2026-10-29 13:28"
+    "ms": 12,
+    "queries": 18,
+    "recorded": "2026-11-05 09:09"
   },
   "save.quote.add": {
-    "ms": 287,
-    "queries": 15,
-    "recorded": "2026-10-29 13:28"
+    "ms": 15,
+    "queries": 16,
+    "recorded": "2026-11-05 09:09"
   },
   "save.quote.delete": {
-    "ms": 198,
+    "ms": 10,
     "queries": 13,
-    "recorded": "2026-10-29 13:28"
+    "recorded": "2026-11-05 09:09"
   },
   "tasks": {
-    "ms": 44,
+    "ms": 10,
     "queries": 11,
-    "recorded": "2026-10-29 13:26"
+    "recorded": "2026-11-05 09:09"
   }
 }

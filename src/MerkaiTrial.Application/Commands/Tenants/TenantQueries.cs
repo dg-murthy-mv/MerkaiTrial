@@ -26,13 +26,35 @@ namespace MerkaiTrial.Application.Commands.Tenants
 
        
 
+        /// <summary>120 — the orders Admin → Tenants offers.</summary>
+        public static readonly string[] Sorts = { "newest", "oldest", "name", "users", "leads" };
+
         public async Task<PaginatedTenantsResponse> Handle(
             int page,
             int pageSize,
             string? search,
             bool? isActive,
             CancellationToken cancellationToken = default)
+            => await Handle(page, pageSize, search, isActive, plan: null, sort: null, cancellationToken);
+
+        /// <summary>
+        /// 120. page is at least 1 and pageSize 1–100 (a page 0 used to be a
+        /// negative Skip — a 500). The search also finds the workspace a
+        /// PERSON is in, by their email: "which workspace is priya@… in?" is
+        /// the first question support asks. plan filters by plan name; sort
+        /// is one of <see cref="Sorts"/> (newest when anything else).
+        /// </summary>
+        public async Task<PaginatedTenantsResponse> Handle(
+            int page,
+            int pageSize,
+            string? search,
+            bool? isActive,
+            string? plan,
+            string? sort,
+            CancellationToken cancellationToken = default)
             {
+                page = Math.Max(1, page);
+                pageSize = Math.Clamp(pageSize, 1, 100);
                 try
                 {
                     var query = _context.Tenants
@@ -43,9 +65,19 @@ namespace MerkaiTrial.Application.Commands.Tenants
                     if (!string.IsNullOrWhiteSpace(search))
                     {
                         var term = search.Trim();
+                        if (term.Length > 100) term = term[..100];
+                        // 120 — LIKE's own wildcards in what was typed are matched as themselves.
+                        var like = "%" + term.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%";
                         query = query.Where(t =>
-                            EF.Functions.Like(t.Name, $"%{term}%") ||
-                            EF.Functions.Like(t.FromEmail, $"%{term}%"));
+                            EF.Functions.Like(t.Name, like) ||
+                            EF.Functions.Like(t.FromEmail, like) ||
+                            _context.Users.Any(u => u.TenantId == t.Id && !u.IsDeleted && EF.Functions.Like(u.Email, like)));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(plan))
+                    {
+                        var p = plan.Trim();
+                        query = query.Where(t => t.Plan == p);
                     }
 
                     // Status filter
@@ -57,10 +89,7 @@ namespace MerkaiTrial.Application.Commands.Tenants
                     var totalCount = await query.CountAsync(cancellationToken);
 
                     // Page slice with country info via navigation, and counts as scalar subqueries
-                    var pageItems = await query
-                        .OrderByDescending(t => t.CreatedAtUtc ?? DateTime.MinValue)
-                        .ThenBy(t => t.Name)
-                        .Select(t => new
+                    var shaped = query.Select(t => new
                         {
                             t.Id,
                             t.Name,
@@ -71,9 +100,22 @@ namespace MerkaiTrial.Application.Commands.Tenants
                             CountryCode = t.Country != null ? t.Country.Code : null,
                             CountryName = t.Country != null ? t.Country.Name : null,
 
+                            t.Plan,
                             UserCount = _context.Users.Count(u => u.TenantId == t.Id && !u.IsDeleted),
                             LeadCount = _context.Leads.Count(l => l.TenantId == t.Id && !l.IsDeleted)
-                        })
+                        });
+
+                    // 120 — the order chosen on the page; the name breaks ties so pages never overlap.
+                    var ordered = (sort ?? "newest").ToLowerInvariant() switch
+                    {
+                        "oldest" => shaped.OrderBy(x => x.CreatedAtUtc ?? DateTime.MinValue).ThenBy(x => x.Name),
+                        "name" => shaped.OrderBy(x => x.Name).ThenBy(x => x.Id),
+                        "users" => shaped.OrderByDescending(x => x.UserCount).ThenBy(x => x.Name),
+                        "leads" => shaped.OrderByDescending(x => x.LeadCount).ThenBy(x => x.Name),
+                        _ => shaped.OrderByDescending(x => x.CreatedAtUtc ?? DateTime.MinValue).ThenBy(x => x.Name),
+                    };
+
+                    var pageItems = await ordered
                         .Skip((page - 1) * pageSize)
                         .Take(pageSize)
                         .ToListAsync(cancellationToken);
@@ -89,7 +131,8 @@ namespace MerkaiTrial.Application.Commands.Tenants
                         IsActive: x.IsActive,
                         UserCount: x.UserCount,
                         LeadCount: x.LeadCount,
-                        CreatedAtUtc: x.CreatedAtUtc ?? DateTime.UtcNow
+                        CreatedAtUtc: x.CreatedAtUtc ?? DateTime.UtcNow,
+                        Plan: x.Plan
                     )).ToList();
 
                     var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);

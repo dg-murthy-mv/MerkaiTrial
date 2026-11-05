@@ -150,9 +150,22 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
             }
         }
 
+        // 119 — MadeeVision's own workspace: switching it off or deleting it
+        // would lock every super admin out. Refused here and in the API.
+        public bool IsOwnWorkspace =>
+            Guid.TryParse(User.FindFirst(MerkaiTrial.Application.Security.SignInService.ClaimTenantId)?.Value, out var mine) && mine == Id;
+
+        private bool IsMine(Guid id) =>
+            Guid.TryParse(User.FindFirst(MerkaiTrial.Application.Security.SignInService.ClaimTenantId)?.Value, out var mine) && mine == id;
+
         // ==================== TOGGLE STATUS ====================
         public async Task<IActionResult> OnPostToggleStatusAsync(Guid id, bool isActive)
         {
+            if (!isActive && IsMine(id))
+            {
+                TempData["ErrorMessage"] = "This is MadeeVision's own workspace. Switching it off would lock every super admin out.";
+                return RedirectToPage(new { id });
+            }
             try
             {
                 await _tenantService.UpdateStatusAsync(id, isActive);
@@ -169,12 +182,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Tenants
         }
 
         // ==================== DELETE TENANT ====================
-        public async Task<IActionResult> OnPostDeleteAsync(Guid id)
+        // 119 — the workspace's NAME must be typed to delete it, checked here
+        // on the server (a browser confirm() can be clicked through, or
+        // skipped by sending the form by hand).
+        public async Task<IActionResult> OnPostDeleteAsync(Guid id, string? confirmName)
         {
+            if (IsMine(id))
+            {
+                TempData["ErrorMessage"] = "This is MadeeVision's own workspace. It can't be deleted.";
+                return RedirectToPage(new { id });
+            }
             try
             {
+                var tenant = await _tenantService.GetByIdAsync(id);
+                if (!string.Equals((confirmName ?? "").Trim(), (tenant.Name ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    TempData["ErrorMessage"] = $"Nothing was deleted. To delete this workspace, type its name exactly: {tenant.Name}";
+                    return RedirectToPage(new { id });
+                }
+
                 await _tenantService.DeleteAsync(id);
-                TempData["SuccessMessage"] = "Tenant deleted successfully!";
+                TempData["SuccessMessage"] = $"Workspace '{tenant.Name}' deleted. Its people can no longer sign in.";
                 return RedirectToPage("./Index");
             }
             catch (Exception ex)

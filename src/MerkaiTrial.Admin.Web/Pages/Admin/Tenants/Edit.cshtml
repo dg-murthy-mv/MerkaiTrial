@@ -28,13 +28,6 @@
         </div>
     </div>
     <!-- Success Alert (from TempData) -->
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
     <!-- Error Alert -->
     @if (!string.IsNullOrEmpty(Model.ErrorMessage))
     {

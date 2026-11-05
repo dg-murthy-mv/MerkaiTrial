@@ -141,8 +141,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 {
                     TenantId = ActingTenantId ?? Guid.Empty,
                     CountryCode = countryCode,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize,
+                    PageNumber = Math.Max(1, pageNumber),          // 120 — page 0 was a negative skip (a 500)
+                    PageSize = Math.Clamp(pageSize, 1, 1000),   // 120 — dropdowns ask for up to 1,000
                     SearchTerm = searchTerm,
                     IncludeInactive = includeInactive     // 057
                 };

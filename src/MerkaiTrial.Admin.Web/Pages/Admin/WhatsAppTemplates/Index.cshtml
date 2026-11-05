@@ -131,20 +131,6 @@
     }
 
     <!-- ── Alerts ───────────────────────────────────────────────── -->
-    @if (TempData["Success"] != null)
-    {
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle me-2"></i>@TempData["Success"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
-    @if (TempData["Error"] != null)
-    {
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["Error"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
 
     @* 097 — what is left to get through Meta, at a glance. *@
     @if (Model.Status is { DirectoryReachable: true })
@@ -483,7 +469,8 @@
     @foreach (var item in Model.Data.Items)
     {
         var key = item.Id == Guid.Empty ? "e" + (int)item.EventType : item.Id.ToString();   // 097
-        <form method="post" asp-page-handler="Test" id="testForm-@key" class="d-none">
+        <form method="post" asp-page-handler="Test" id="testForm-@key" class="d-none"
+              data-confirm="Send a real WhatsApp test message from MadeeVision's number?">
             <input type="hidden" name="templateId" value="@item.Id" />
         </form>
     }

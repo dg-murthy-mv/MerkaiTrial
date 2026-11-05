@@ -6,10 +6,17 @@
 using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using MerkaiTrial.Application.Commands.Countries;
+using MerkaiTrial.WebApi.Authorization;   // 119 — [PlatformAdminOnly]
+using Microsoft.AspNetCore.Authorization;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
+    // 119 — [Authorize]: was missing. Reading the country list needs a
+    // signed-in person (every workspace's forms use it); CHANGING a country
+    // is platform administration ([PlatformAdminOnly] on Create / Update).
+    // Until now any signed-in person could add or change a country.
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class CountriesController : ControllerBase
     {
@@ -53,8 +60,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 var query = new GetCountriesQuery
                 {
                     ActiveOnly = activeOnly,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize,
+                    PageNumber = Math.Max(1, pageNumber),          // 120 — page 0 was a negative skip (a 500)
+                    PageSize = Math.Clamp(pageSize, 1, 1000),   // 120 — dropdowns ask for up to 1,000
                     SearchTerm = searchTerm,
                     CurrencyFilter = currencyFilter,
                     ShowInactiveOnly = showInactiveOnly
@@ -112,6 +119,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ==================== CREATE COUNTRY ====================
         [HttpPost]
+        [PlatformAdminOnly]   // 119
         [ProducesResponseType(typeof(CountryDto), 201)]
         [ProducesResponseType(400)]
         public async Task<IActionResult> Create([FromBody] CreateCountryDto dto, CancellationToken cancellationToken = default)
@@ -147,6 +155,7 @@ namespace MerkaiTrial.WebApi.Controllers
 
         // ==================== UPDATE COUNTRY ====================
         [HttpPut("{code}")]
+        [PlatformAdminOnly]   // 119
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> Update(string code, [FromBody] UpdateCountryDto dto, CancellationToken cancellationToken = default)

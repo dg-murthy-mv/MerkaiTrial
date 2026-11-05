@@ -1,0 +1,107 @@
+@page "{id:guid?}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.StartingRoles.EditModel
+@using MerkaiTrial.Admin.Web.Pages.Settings.Roles
+@* =====================================================================
+   FILE: Pages/Admin/StartingRoles/Edit.cshtml
+
+   NEW (117). Add or change a starting role. The permission grid is the
+   one workspace admins use (Settings/Roles/_RolePermissionsGrid).
+   Test hooks: #Input_Name, #Input_DisplayName, #Input_IsActive,
+   #startingRoleError, button#saveStartingRole.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = Model.IsNew ? "Add a starting role" : "Edit starting role";
+}
+
+<div class="container-fluid py-4" style="max-width: 72rem;">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1">@(Model.IsNew ? "Add a starting role" : Model.Input.DisplayName)</h1>
+            <p class="text-muted mb-0">
+                @if (Model.IsNew)
+                {
+                    <text>Every workspace created from now on will be given this role.</text>
+                }
+                else
+                {
+                    <text>
+                        <code>@Model.Key</code> &middot;
+                        @Model.WorkspacesWithIt workspace@(Model.WorkspacesWithIt == 1 ? "" : "s") have this role today and keep their own copy &mdash;
+                        saving here changes what <strong>new</strong> workspaces get.
+                    </text>
+                }
+            </p>
+        </div>
+        <a asp-page="./Index" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Back to Starting Roles
+        </a>
+    </div>
+
+    @if (Model.ErrorMessage is not null)
+    {
+        <div class="alert alert-danger" role="alert" id="startingRoleError">
+            <i class="bi bi-exclamation-triangle me-2" aria-hidden="true"></i>@Model.ErrorMessage
+        </div>
+    }
+
+    <form method="post" data-confirm-off="#Input_IsActive"
+          data-confirm-off-text="Stop giving this role to new workspaces? Workspaces that already have it keep it.">
+        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body row g-3">
+                @if (Model.IsNew)
+                {
+                    <div class="col-md-4">
+                        <label asp-for="Input.Name" class="form-label">Key</label>
+                        <input asp-for="Input.Name" class="form-control" placeholder="support_agent" autocomplete="off" />
+                        <div class="form-text">Lower-case letters, digits and _. It can't be changed later.</div>
+                        <span asp-validation-for="Input.Name" class="text-danger small"></span>
+                    </div>
+                }
+                <div class="@(Model.IsNew ? "col-md-8" : "col-md-12")">
+                    <label asp-for="Input.DisplayName" class="form-label">Name</label>
+                    <input asp-for="Input.DisplayName" class="form-control" placeholder="Support Agent" />
+                    <span asp-validation-for="Input.DisplayName" class="text-danger small"></span>
+                </div>
+                <div class="col-12">
+                    <label asp-for="Input.Description" class="form-label">Description <span class="text-muted small">(optional)</span></label>
+                    <input asp-for="Input.Description" class="form-control" placeholder="What people in this role do" />
+                    <span asp-validation-for="Input.Description" class="text-danger small"></span>
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="Input.SortOrder" class="form-label">Order in lists</label>
+                    <input asp-for="Input.SortOrder" class="form-control" type="number" min="0" max="1000" />
+                    <span asp-validation-for="Input.SortOrder" class="text-danger small"></span>
+                </div>
+                <div class="col-md-8 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                        <input asp-for="Input.IsActive" class="form-check-input" type="checkbox" role="switch" />
+                        <label asp-for="Input.IsActive" class="form-check-label">New workspaces get this role</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h2 class="h6 mb-0">What people in this role may do</h2>
+            </div>
+            <div class="card-body">
+                <partial name="/Pages/Settings/Roles/_RolePermissionsGrid.cshtml"
+                         model="new RolePermissionsGridVm(Model.Modules, Model.Selected)" />
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary" id="saveStartingRole">
+                <i class="bi bi-check-circle me-1" aria-hidden="true"></i>@(Model.IsNew ? "Add starting role" : "Save")
+            </button>
+            <a asp-page="./Index" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

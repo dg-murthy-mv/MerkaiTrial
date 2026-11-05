@@ -59,6 +59,7 @@ using MerkaiTrial.Admin.Web.Services.Tenants;
 using MerkaiTrial.Admin.Web.Services.UserManagement;
 using MerkaiTrial.Admin.Web.Services.Users;
 using MerkaiTrial.Admin.Web.Services.Verticals;
+using MerkaiTrial.Admin.Web.Services.RoleTemplates;   // 117
 using MerkaiTrial.Application.Authorization;
 using MerkaiTrial.Application.Commands.Notifications;   // 045 — WhatsApp templates
 using MerkaiTrial.Application.Commands.Plans;
@@ -100,6 +101,8 @@ public static class AdminWebServiceRegistration
             options.Filters.Add<AccountStatePageFilter>();
             // 114 — pages marked [RequiresPlanFeature] need it in the plan.
             options.Filters.Add<PlanFeaturePageFilter>();
+            // 119 — /Admin: not while viewing as, and every form sent is recorded.
+            options.Filters.Add<SuperAdminPageFilter>();
         });
 
         services.Configure<JsonOptions>(o =>
@@ -282,6 +285,7 @@ public static class AdminWebServiceRegistration
         // Workspace settings
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IRoleService, RoleService>();
+        services.AddScoped<IRoleTemplateService, RoleTemplateService>();   // 117 — Starting Roles (super admin)
         services.AddScoped<IRecordVisibilityService, RecordVisibilityService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<IReportService, ReportService>();
@@ -340,6 +344,16 @@ public static class AdminWebServiceRegistration
         // lives in Admin.Web. Without this line ForgotPassword throws
         // "Unable to resolve service for type 'IAccountEmails'".
         services.AddScoped<IAccountEmails, AccountEmails>();
+
+        // 118 — what MadeeVision support may do for a workspace's people
+        // (Admin → Tenants → People) and for its own staff (Admin →
+        // MadeeVision Team). Registered by hand: they need IAccountEmails
+        // (above), which the WebApi does not have.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
+            .TryAddScoped<CreateUserHandler>(services);
+        services.AddScoped<MerkaiTrial.Application.Commands.Platform.WorkspacePeopleService>();
+        services.AddScoped<MerkaiTrial.Application.Commands.Platform.PlatformTeamService>();
+        services.AddScoped<MerkaiTrial.Application.Commands.Platform.PlatformAuditLogHandler>();   // 119 — Admin → Audit Log
 
         return services;
     }

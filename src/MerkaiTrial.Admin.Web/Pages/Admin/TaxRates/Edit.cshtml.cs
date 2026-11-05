@@ -228,7 +228,9 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.TaxRates
                 await _taxRateService.UpdateAsync(Id, dto);
 
                 TempData["SuccessMessage"] = $"Tax rate '{Input.Name}' updated successfully!";
-                return RedirectToPage("./Index");
+                // 117: back to the country the rate belongs to.
+                var saved = await _taxRateService.GetByIdAsync(Id);
+                return RedirectToPage("/Admin/Countries/Detail", new { code = saved.CountryCode, tab = "tax" });
             }
             catch (KeyNotFoundException)
             {

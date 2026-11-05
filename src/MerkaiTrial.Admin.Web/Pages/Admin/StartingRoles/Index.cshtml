@@ -1,0 +1,131 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Admin.StartingRoles.IndexModel
+@* =====================================================================
+   FILE: Pages/Admin/StartingRoles/Index.cshtml
+
+   NEW (117). The roles every NEW workspace is given, and the system roles
+   (read only). Test hooks: #startingRoles, tr[data-role="<key>"],
+   [data-col=status], [data-col=workspaces], #systemRoles, #addStartingRole.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "Starting Roles";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-shield-check me-2" aria-hidden="true"></i>Starting Roles</h1>
+            <p class="text-muted mb-0">
+                The roles every <strong>new</strong> workspace is given, and what each may do.
+                Workspaces that already exist keep their own copy &mdash; a change here never changes them.
+            </p>
+        </div>
+        <a asp-page="./Edit" class="btn btn-primary" id="addStartingRole">
+            <i class="bi bi-plus-circle me-1" aria-hidden="true"></i> Add a starting role
+        </a>
+    </div>
+
+    @* 117-update1: "saved" / "added" is shown by _SuperAdminLayout; showing it here too made two. *@
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
+    }
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            @if (Model.Data.Templates.Count == 0 && Model.LoadError is null)
+            {
+                <div class="text-center text-muted py-5">No starting roles yet. New workspaces would get only their admin.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="startingRoles">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Role</th>
+                                <th scope="col">May do</th>
+                                <th scope="col">New workspaces</th>
+                                <th scope="col" class="text-end">Workspaces with it</th>
+                                <th scope="col"><span class="visually-hidden">Edit</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var t in Model.Data.Templates)
+                            {
+                                var summary = MerkaiTrial.Admin.Web.Pages.Admin.StartingRoles.IndexModel.Summary(t.Permissions);
+                                <tr data-role="@t.Name">
+                                    <td>
+                                        <div class="fw-semibold">@t.DisplayName</div>
+                                        <div class="small text-muted"><code>@t.Name</code></div>
+                                        @if (!string.IsNullOrWhiteSpace(t.Description))
+                                        {
+                                            <div class="small text-muted">@t.Description</div>
+                                        }
+                                    </td>
+                                    <td class="small" style="max-width: 32rem;">
+                                        @if (summary.Count == 0)
+                                        {
+                                            <span class="text-muted">Nothing</span>
+                                        }
+                                        else
+                                        {
+                                            @string.Join(" · ", summary)
+                                        }
+                                    </td>
+                                    <td data-col="status">
+                                        @if (t.IsActive)
+                                        {
+                                            <span class="badge bg-success">Given</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Not given</span>
+                                        }
+                                    </td>
+                                    <td class="text-end" data-col="workspaces">@t.WorkspacesWithIt</td>
+                                    <td class="text-end">
+                                        <a asp-page="./Edit" asp-route-id="@t.Id" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-pencil" aria-hidden="true"></i> Edit<span class="visually-hidden"> @t.DisplayName</span>
+                                        </a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm" id="systemRoles">
+        <div class="card-header bg-white">
+            <h2 class="h6 mb-0"><i class="bi bi-lock me-1" aria-hidden="true"></i> System roles (read only)</h2>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted">
+                Shared by every workspace and built into the product &mdash; the workspace admin can do everything in
+                their own workspace. They are shown here so the picture is complete; they are not changed from this console.
+            </p>
+            @if (Model.Data.SystemRoles.Count == 0)
+            {
+                <div class="text-muted small">None.</div>
+            }
+            else
+            {
+                <ul class="list-unstyled mb-0">
+                    @foreach (var s in Model.Data.SystemRoles)
+                    {
+                        <li class="mb-1" data-system-role="@s.Name">
+                            <span class="fw-semibold">@s.DisplayName</span> <code class="small">@s.Name</code>
+                            @if (!string.IsNullOrWhiteSpace(s.Description))
+                            {
+                                <span class="small text-muted">&middot; @s.Description</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+</div>

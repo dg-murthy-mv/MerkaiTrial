@@ -21,6 +21,12 @@
 //            each): no errors, and the slowest 5% of answers stay quick.
 //   PERF-07  SQL Server's own list of indexes it wished it had — a report
 //            to read, never a failure.
+//   PERF-08  (121) The super admin console, with the performance workspace
+//            (50,000 leads, 200,000 audit rows) among the workspaces: the
+//            workspace list (and its search by a person's email, and its
+//            "most leads" order, which counts every workspace's leads), the
+//            performance workspace's own page and People, the platform
+//            Audit Log over a year, and the other console lists.
 //
 // How a measurement is judged (fixed limits + the baseline file) is in
 // Infrastructure/PerfMeter.cs. Every number goes to
@@ -586,6 +592,51 @@ public class PerformanceTests : E2ETest
     }
 
     // =================================================================
+
+    // =================================================================
+    // PERF-08 (121) — the super admin console
+    // =================================================================
+
+    [Test, Order(8)]
+    public async Task The_super_admin_console_stays_quick_with_a_big_workspace_on_the_platform()
+    {
+        await ReadyAsync();
+        var metrics = new List<PerfMetric>();
+        var problems = new List<string>();
+        var perfTenant = await Db.TenantIdAsync(PerfWorld.P.Name);
+        var repEmail = PerfWorld.P["rep01"].Email;
+
+        var pages = new (string Key, string Label, string Path)[]
+        {
+            ("admin.home",            "Console — home",                                "/Admin"),
+            ("admin.tenants",         "Workspaces — first page",                       "/Admin/Tenants"),
+            ("admin.tenants.person",  "Workspaces — search by a person's email",        $"/Admin/Tenants?SearchTerm={Q(repEmail)}"),
+            ("admin.tenants.leads",   "Workspaces — ordered by most leads",            "/Admin/Tenants?Sort=leads"),
+            ("admin.tenant.detail",   "The performance workspace's page",              $"/Admin/Tenants/Detail/{perfTenant}"),
+            ("admin.tenant.people",   "The performance workspace's People",            $"/Admin/Tenants/People/{perfTenant}"),
+            ("admin.tenant.settings", "The performance workspace's limits",            $"/Admin/Tenants/Settings/{perfTenant}"),
+            ("admin.audit",           "Audit Log — last 30 days",                      "/Admin/AuditLog"),
+            ("admin.audit.year",      "Audit Log — last year",                         "/Admin/AuditLog?Days=365"),
+            ("admin.audit.search",    "Audit Log — a year, searched",                  "/Admin/AuditLog?Days=365&Search=Workspace"),
+            ("admin.audit.workspace", "Audit Log — a year, the performance workspace", $"/Admin/AuditLog?Days=365&Workspace={perfTenant}"),
+            ("admin.audit.viewas",    "Audit Log — a year, View As",                   "/Admin/AuditLog?Days=365&Kind=viewas"),
+            ("admin.plans",           "Plans",                                         "/Admin/Plans"),
+            ("admin.countries",       "Countries",                                     "/Admin/Countries"),
+            ("admin.country",         "A country, with its tax rates",                 "/Admin/Countries/Detail/IN?tab=tax"),
+            ("admin.verticals",       "Verticals",                                     "/Admin/Verticals"),
+            ("admin.startingroles",   "Starting Roles (counts every workspace's roles)", "/Admin/StartingRoles"),
+            ("admin.team",            "MadeeVision Team",                              "/Admin/Team"),
+            ("admin.viewas",          "View As — the picker",                          "/Admin/ViewAs"),
+        };
+
+        using (var super = await WebSession.SignedInAsync(World.SuperAdmin))
+        {
+            foreach (var (key, label, path) in pages)
+                await MeasureAsync(super, key, label, path, metrics, problems);
+        }
+
+        Finish("PERF-08 Super admin console", metrics, problems);
+    }
 
     private static async Task MeasureAsync(WebSession session, string key, string label, string path,
         List<PerfMetric> metrics, List<string> problems, double ceilingMs = PerfLimits.PageMs)

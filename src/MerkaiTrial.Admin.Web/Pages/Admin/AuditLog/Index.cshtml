@@ -1,0 +1,170 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Admin.AuditLog.IndexModel
+@using MerkaiTrial.Admin.Web.Pages.Admin.AuditLog
+@* =====================================================================
+   FILE: Pages/Admin/AuditLog/Index.cshtml
+
+   NEW (119). Everything MadeeVision's own people did. Read only.
+   Test hooks: #auditFilters, #platformAudit, tr[data-action], [data-col=outcome],
+   [data-col=what], [data-col=workspace], #auditEmpty.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "Audit Log";
+}
+
+<div class="container-fluid py-4">
+    <div class="mb-3">
+        <h1 class="h3 mb-1"><i class="bi bi-journal-text me-2" aria-hidden="true"></i>Audit Log</h1>
+        <p class="text-muted mb-0">
+            Everything MadeeVision's own people did: changes in this console (and whether they went through),
+            help given in customers' workspaces, View As, and sign-ins. Nobody can edit or remove these rows.
+        </p>
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
+    }
+
+    <form method="get" id="auditFilters" class="card border-0 shadow-sm mb-3">
+        <div class="card-body row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+                <label for="fDays" class="form-label small mb-1">When</label>
+                <select id="fDays" name="Days" class="form-select form-select-sm">
+                    @foreach (var d in MerkaiTrial.Application.Commands.Platform.PlatformAuditLogHandler.DayChoices)
+                    {
+                        <option value="@d" selected="@(d == Model.Days ? "selected" : null)">@(d == 1 ? "Last 24 hours" : $"Last {d} days")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label for="fKind" class="form-label small mb-1">What</label>
+                <select id="fKind" name="Kind" class="form-select form-select-sm">
+                    @foreach (var (value, label) in IndexModel.Kinds)
+                    {
+                        <option value="@value" selected="@(value == (Model.Kind ?? "all") ? "selected" : null)">@label</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label for="fWho" class="form-label small mb-1">Who</label>
+                <select id="fWho" name="Who" class="form-select form-select-sm">
+                    <option value="">Anyone</option>
+                    @foreach (var (id, name) in Model.Data.Staff)
+                    {
+                        <option value="@id" selected="@(id == Model.Who ? "selected" : null)">@name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label for="fWorkspace" class="form-label small mb-1">Workspace</label>
+                <select id="fWorkspace" name="Workspace" class="form-select form-select-sm">
+                    <option value="">Any</option>
+                    @foreach (var (id, name) in Model.Data.Workspaces)
+                    {
+                        <option value="@id" selected="@(id == Model.Workspace ? "selected" : null)">@name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label for="fSearch" class="form-label small mb-1">Search</label>
+                <div class="input-group input-group-sm">
+                    <input type="search" id="fSearch" name="Search" value="@Model.Search" class="form-control" maxlength="100"
+                           placeholder="A name, email, page or value" />
+                    <button type="submit" class="btn btn-primary" id="auditApply">Show</button>
+                </div>
+            </div>
+            <input type="hidden" name="PageSize" value="@Model.PageSize" />
+            @if (Model.Filtered)
+            {
+                <div class="col-12"><a asp-page="./Index" class="small">Clear the filters</a></div>
+            }
+        </div>
+    </form>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            @if (Model.Data.Rows.Count == 0)
+            {
+                <div class="text-center text-muted py-5" id="auditEmpty">Nothing recorded for these filters.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0 small" id="platformAudit">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col" class="text-nowrap">When (UTC)</th>
+                                <th scope="col">Who</th>
+                                <th scope="col">What</th>
+                                <th scope="col">Workspace</th>
+                                <th scope="col">Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in Model.Data.Rows)
+                            {
+                                var outcome = IndexModel.OutcomeOf(r);
+                                var sent = IndexModel.Sent(r.Data);
+                                <tr data-action="@r.Action">
+                                    <td class="text-nowrap">@r.CreatedAtUtc.ToString("d MMM yyyy HH:mm:ss")</td>
+                                    <td class="text-break">
+                                        @r.By
+                                        @if (!string.IsNullOrEmpty(r.IpAddress))
+                                        {
+                                            <div class="text-muted">@r.IpAddress</div>
+                                        }
+                                    </td>
+                                    <td data-col="what" class="text-break" style="min-width: 16rem;">
+                                        @IndexModel.Describe(r)
+                                        @if (sent.Count > 0 || !string.IsNullOrEmpty(r.Data))
+                                        {
+                                            <details class="mt-1">
+                                                <summary class="text-muted">Details</summary>
+                                                @if (sent.Count > 0)
+                                                {
+                                                    <div class="text-muted mt-1">Sent:</div>
+                                                    <ul class="mb-1 ps-3">
+                                                        @foreach (var line in sent)
+                                                        {
+                                                            <li class="text-break">@line</li>
+                                                        }
+                                                    </ul>
+                                                }
+                                                <code class="d-block text-break small" style="white-space: pre-wrap;">@r.Data</code>
+                                            </details>
+                                        }
+                                    </td>
+                                    <td data-col="workspace">
+                                        @if (r.InOwnWorkspace)
+                                        {
+                                            <span class="text-muted">MadeeVision</span>
+                                        }
+                                        else if (!string.IsNullOrEmpty(r.WorkspaceName))
+                                        {
+                                            @r.WorkspaceName
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">&mdash;</span>
+                                        }
+                                    </td>
+                                    <td data-col="outcome">
+                                        @switch (outcome)
+                                        {
+                                            case "done": <span class="badge bg-success">Done</span> break;
+                                            case "refused": <span class="badge bg-warning text-dark">Refused</span> break;
+                                            case "failed": <span class="badge bg-danger">Failed</span> break;
+                                            default: <span class="text-muted">&mdash;</span> break;
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <partial name="_Pager" model="Model.Pager" />
+        </div>
+    </div>
+</div>

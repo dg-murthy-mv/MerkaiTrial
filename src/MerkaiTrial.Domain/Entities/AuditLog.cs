@@ -18,6 +18,23 @@ namespace MerkaiTrial.Domain.Entities
         public const string ResetIssued = "ResetIssued";
         public const string PermissionChanged = "PermissionChanged";
 
+        // ── MadeeVision support (118) ─────────────────────────────────
+        /// <summary>A wrong-password lockout cleared by MadeeVision support. Data: { person, summary }.</summary>
+        public const string AccountUnlocked = "AccountUnlocked";
+        /// <summary>A member of MadeeVision staff (a super admin) added by invite.</summary>
+        public const string StaffAdded = "StaffAdded";
+        public const string StaffSwitchedOff = "StaffSwitchedOff";
+        public const string StaffSwitchedOn = "StaffSwitchedOn";
+
+        /// <summary>
+        /// 119. Anything a super admin changed in the console (/Admin): which
+        /// page and button, what it was about, the values sent, and whether it
+        /// was done, refused or failed. Written by SuperAdminPageFilter for
+        /// every form sent on an /Admin page that does not record itself.
+        /// Data: { area, page, handler, outcome, message, target, workspaceId, sent }.
+        /// </summary>
+        public const string PlatformChange = "PlatformChange";
+
         // ── Tenant lifecycle (existing) ───────────────────────────────
         public const string TrialProvisioned = "TrialProvisioned";
         public const string TrialExtended = "TrialExtended";

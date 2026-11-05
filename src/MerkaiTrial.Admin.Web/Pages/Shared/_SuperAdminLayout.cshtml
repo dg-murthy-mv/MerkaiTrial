@@ -36,7 +36,8 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    @* 121 — no maximum-scale: people must be able to zoom (the workspace layout dropped it in 094). *@
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] — MadeeVision Admin</title>
 
     <link href="~/lib/bootstrap-5.3.3/css/bootstrap.min.css" rel="stylesheet">
@@ -306,6 +307,35 @@
             .sa-hamburger { display: flex; }
         }
 
+        /* 121 — phones. The top bar keeps the menu button, the title and the
+           avatar (the Workspaces page has its own search); the
+           content gets the width back; form boxes are 16px so Safari does
+           not zoom the page when one is tapped; long words wrap. */
+        @@media (max-width: 575.98px) {
+            .sa-search { display: none; }
+            .sa-user-btn > div:not(.sa-avatar), .sa-user-btn > .bi-chevron-down { display: none; }
+            .sa-topbar-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+            .sa-main { padding: 16px 12px; }
+            .sa-main .form-control, .sa-main .form-select { font-size: 16px; }
+            .sa-main .container-fluid { padding-left: 0; padding-right: 0; }
+            /* Page headers (a title, then buttons) and button groups wrap
+               onto the next line instead of pushing the page sideways. */
+            .sa-main .d-flex.justify-content-between { flex-wrap: wrap; gap: .5rem; }
+            .sa-main .btn-group { flex-wrap: wrap; }
+            .sa-main .nav-tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+            .sa-main .nav-tabs .nav-link { white-space: nowrap; }
+        }
+        .sa-main { overflow-wrap: anywhere; }
+        /* 121-update1 — a table's box that scrolls sideways must also hold
+           what is positioned inside it. Screen-reader-only text
+           (.visually-hidden: position absolute) was placed against the
+           CARD, outside the scroll box, so text at the far right of a wide
+           table widened the whole page on a phone (Tenants, People,
+           Starting Roles, Team: 423–537px on a 375px screen). */
+        .sa-main .table-responsive { position: relative; }
+        .sa-main img { max-width: 100%; height: auto; }
+        .sa-hamburger:focus-visible, .sa-icon-btn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
         /* ── Cards & content in dark theme ───────────────────────── */
         .sa-main .card {
             background: var(--card-bg);
@@ -353,7 +383,9 @@
         }
         .sa-main h1, .sa-main h2, .sa-main h3,
         .sa-main h4, .sa-main h5 { color: #f1f5f9; }
-        .sa-main .text-muted { color: #475569 !important; }
+        /* 121 — was #475569 on the dark cards: about 2.4:1, hard to read on a
+           phone in daylight. #94a3b8 is about 6:1. */
+        .sa-main .text-muted { color: #94a3b8 !important; }
         .sa-main .alert-info {
             background: rgba(34,211,238,.08);
             border-color: rgba(34,211,238,.2);
@@ -407,7 +439,7 @@
 
             <!-- Configuration -->
             <div class="sa-nav-section">Configuration</div>
-            <a class="sa-nav-item @(IsActive("/Admin/Countries") ? "active" : "")"
+            <a class="sa-nav-item @(IsActive("/Admin/Countries") || IsActive("/Admin/TaxRates") ? "active" : "")"
                asp-page="/Admin/Countries/Index">
                 <i class="bi bi-globe-asia-australia"></i> Countries
             </a>
@@ -415,20 +447,24 @@
                asp-page="/Admin/Verticals/Index">
                 <i class="bi bi-diagram-3"></i> Company Verticals
             </a>
-            <a class="sa-nav-item @(IsActive("/Admin/TaxRates") ? "active" : "")"
-               asp-page="/Admin/TaxRates/Index">
-                <i class="bi bi-calculator"></i> Tax Rates
-            </a>
+            @* 117 — Tax Rates moved into each country's page (Countries → a
+               country → Tax Settings). The Countries item stays lit on the
+               tax rate pages too. *@
 
             <!-- Access Control -->
             <div class="sa-nav-section">Access Control</div>
-            <a class="sa-nav-item @(IsActive("/Admin/Roles") ? "active" : "")"
-               asp-page="/Admin/Roles/Index">
-                <i class="bi bi-shield-check"></i> Roles
+            @* 117 — "Roles" edited the SYSTEM roles every workspace shares. It is
+               replaced by Starting Roles: the roles a NEW workspace is given. *@
+            <a class="sa-nav-item @(IsActive("/Admin/StartingRoles") ? "active" : "")"
+               asp-page="/Admin/StartingRoles/Index">
+                <i class="bi bi-shield-check"></i> Starting Roles
             </a>
-            <a class="sa-nav-item @(IsActive("/Admin/Users") ? "active" : "")"
-               asp-page="/Admin/Users/Index">
-                <i class="bi bi-people"></i> Users
+            @* 118 — "Users" created, edited and deleted anyone in any workspace.
+               Workspace admins do that themselves now; support helps people
+               from Tenants → a workspace → People. This is MadeeVision's own staff. *@
+            <a class="sa-nav-item @(IsActive("/Admin/Team") ? "active" : "")"
+               asp-page="/Admin/Team/Index">
+                <i class="bi bi-person-badge"></i> MadeeVision Team
             </a>
 
             <!-- System -->
@@ -441,15 +477,12 @@
                asp-page="/Admin/WhatsAppTemplates/Index">
                 <i class="bi bi-whatsapp"></i> WhatsApp Templates
             </a>
-            <a class="sa-nav-item @(IsActive("/Admin/Settings") ? "active" : "")"
-               asp-page="/Admin/Settings">
-                <i class="bi bi-gear"></i> Settings
+            @* 119 — everything MadeeVision's own people did. *@
+            <a class="sa-nav-item @(IsActive("/Admin/AuditLog") ? "active" : "")"
+               asp-page="/Admin/AuditLog/Index">
+                <i class="bi bi-journal-text"></i> Audit Log
             </a>
-            <a class="sa-nav-item @(IsActive("/Admin/AuditLogs") ? "active" : "")"
-               asp-page="/Admin/AuditLogs/Index">
-                <i class="bi bi-journal-text"></i> Audit Logs
-                <span class="sa-badge">Soon</span>
-            </a>
+            @* 117 — "Settings" (it did nothing) is gone. *@
 
         </nav>
 
@@ -465,8 +498,9 @@
 
     <!-- ── TOPBAR ──────────────────────────────────────────────────── -->
     <header class="sa-topbar">
-        <button class="sa-hamburger" id="saHamburger" onclick="openSidebar()" aria-label="Open menu">
-            <i class="bi bi-list"></i>
+        <button class="sa-hamburger" id="saHamburger" type="button" onclick="openSidebar()"
+                aria-label="Open menu" aria-controls="saSidebar" aria-expanded="false">
+            <i class="bi bi-list" aria-hidden="true"></i>
         </button>
 
         <div class="sa-topbar-title">
@@ -474,21 +508,22 @@
             @(ViewData["Title"]?.ToString() ?? "Admin")
         </div>
 
-        <div class="sa-search">
-            <i class="bi bi-search sa-search-icon"></i>
-            <input type="search" placeholder="Search tenants, plans, settings..." />
-        </div>
+        @* 121 — the search box did nothing. It now finds a workspace — by
+           its name or email, or anyone's email in it (Workspaces' search). *@
+        <form class="sa-search" method="get" action="/Admin/Tenants" role="search">
+            <i class="bi bi-search sa-search-icon" aria-hidden="true"></i>
+            <label for="saSearchBox" class="visually-hidden">Find a workspace</label>
+            <input type="search" id="saSearchBox" name="SearchTerm" maxlength="100"
+                   placeholder="Find a workspace, or anyone's email" />
+        </form>
 
         <div class="sa-topbar-actions">
 
-            <!-- Notifications -->
-            <button class="sa-icon-btn" aria-label="Notifications">
-                <i class="bi bi-bell"></i>
-            </button>
+            @* 121 — the bell did nothing (no platform notifications exist); removed. *@
 
             <!-- User menu -->
             <div class="dropdown">
-                <button class="sa-user-btn" data-bs-toggle="dropdown">
+                <button class="sa-user-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Your account: @displayName">
                     <div class="sa-avatar">@userInitials</div>
                     <div>
                         <div class="sa-user-name">@displayName</div>
@@ -522,8 +557,10 @@
     <!-- ── MAIN CONTENT ────────────────────────────────────────────── -->
     <main class="sa-main">
 
-        @* Flash messages *@
-        @if (TempData["SuccessMessage"] is string successMsg)
+        @* Flash messages. 120 — the ONLY place they are shown: pages that
+           showed their own copy as well are cleaned up, and the older
+           "Success" / "Error" keys some pages set are shown here too. *@
+        @if ((TempData["SuccessMessage"] ?? TempData["Success"]) is string successMsg)
         {
             <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
                 <i class="bi bi-check-circle-fill"></i>
@@ -531,7 +568,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         }
-        @if (TempData["ErrorMessage"] is string errorMsg)
+        @if ((TempData["ErrorMessage"] ?? TempData["Error"]) is string errorMsg)
         {
             <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-3" role="alert">
                 <i class="bi bi-exclamation-circle-fill"></i>
@@ -547,11 +584,51 @@
 
 <script src="~/lib/bootstrap-5.3.3/js/bootstrap.bundle.min.js"></script>
 <script>
-    function openSidebar()  { document.getElementById('saSidebar').classList.add('open'); document.getElementById('saOverlay').classList.add('open'); }
-    function closeSidebar() { document.getElementById('saSidebar').classList.remove('open'); document.getElementById('saOverlay').classList.remove('open'); }
+    // 121 — the menu button says whether the menu is open; Escape closes it.
+    function openSidebar() {
+        document.getElementById('saSidebar').classList.add('open');
+        document.getElementById('saOverlay').classList.add('open');
+        document.getElementById('saHamburger').setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar() {
+        document.getElementById('saSidebar').classList.remove('open');
+        document.getElementById('saOverlay').classList.remove('open');
+        document.getElementById('saHamburger').setAttribute('aria-expanded', 'false');
+    }
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && document.getElementById('saSidebar').classList.contains('open')) {
+            closeSidebar();
+            document.getElementById('saHamburger').focus();
+        }
+    });
     document.querySelectorAll('.sa-nav-item').forEach(el => {
         el.addEventListener('click', () => { if (window.innerWidth < 992) closeSidebar(); });
     });
+
+    // 119 — confirmations. A form with data-confirm="…" asks first. A form
+    // with data-confirm-off="#Box" asks only when that switch was ON when
+    // the page opened and is now OFF (switching something off). Runs after
+    // the form checker (which listens earlier), so a form that can't be
+    // sent is never asked about. The server checks the dangerous ones
+    // again on its own (a workspace is deleted only with its name typed).
+    (function () {
+        var startedOn = new Map();
+        document.querySelectorAll('form[data-confirm-off]').forEach(function (f) {
+            var box = f.querySelector(f.getAttribute('data-confirm-off'));
+            if (box) startedOn.set(f, box.checked);
+        });
+        document.addEventListener('submit', function (e) {
+            var f = e.target;
+            if (!(f instanceof HTMLFormElement) || e.defaultPrevented) return;
+            var ask = f.getAttribute('data-confirm');
+            if (!ask && f.hasAttribute('data-confirm-off')) {
+                var box = f.querySelector(f.getAttribute('data-confirm-off'));
+                if (box && startedOn.get(f) === true && !box.checked)
+                    ask = f.getAttribute('data-confirm-off-text') || 'Switch this off?';
+            }
+            if (ask && !window.confirm(ask)) e.preventDefault();
+        });
+    })();
 </script>
 
 @* ✅ Page-level styles and scripts *@

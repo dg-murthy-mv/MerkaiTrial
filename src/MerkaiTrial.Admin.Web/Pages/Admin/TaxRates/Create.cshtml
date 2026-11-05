@@ -76,9 +76,19 @@
             <p class="tr-subtitle">A SYSTEM rate — every tenant in this country will see it</p>
         </div>
         <div>
-            <a asp-page="./Index" class="btn btn-outline-secondary">
+            @* 117: back to the country's page when opened from one, else the Countries list *@
+            @if (!string.IsNullOrEmpty(Model.ForCountry))
+            {
+                <a asp-page="/Admin/Countries/Detail" asp-route-code="@Model.ForCountry" asp-route-tab="tax" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
+                </a>
+            }
+            else
+            {
+            <a asp-page="/Admin/Countries/Index" class="btn btn-outline-secondary">
                 <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline">Back</span>
             </a>
+            }
         </div>
     </div>
 
@@ -189,7 +199,7 @@
                             <button type="submit" class="btn btn-primary">
                                 <i class="bi bi-check-circle"></i> Create Tax Rate
                             </button>
-                            <a asp-page="./Index" class="btn btn-outline-secondary">
+                            <a asp-page="/Admin/Countries/Index" class="btn btn-outline-secondary">
                                 <i class="bi bi-x-circle"></i> Cancel
                             </a>
                         </div>

@@ -6,10 +6,17 @@
 using MerkaiTrial.Application.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using MerkaiTrial.Application.Commands.Verticals;
+using MerkaiTrial.WebApi.Authorization;   // 119 — [PlatformAdminOnly]
+using Microsoft.AspNetCore.Authorization;
 
 namespace MerkaiTrial.WebApi.Controllers
 {
+    // 119 — [Authorize] added, and adding / changing / deleting a vertical is
+    // platform administration ([PlatformAdminOnly]). Until now any signed-in
+    // person could do all three — and Create took the workspace from the
+    // request body, so they could add one to SOMEONE ELSE's workspace.
     [ApiController]
+    [Authorize]
     [Route("api/company-verticals")]
     public class CompanyVerticalsController : ControllerBase
     {
@@ -38,6 +45,10 @@ namespace MerkaiTrial.WebApi.Controllers
             _getStats = getStats;  // ✅ NEW
             _logger = logger;
         }
+
+        /// <summary>120 — who is doing this, from the sign-in (was taken from the request body).</summary>
+        private string Who =>
+            User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.Identity?.Name ?? "super admin";
 
         // ==================== GET STATISTICS (NEW!) ====================
         [HttpGet("stats")]
@@ -70,8 +81,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 {
                     TenantId = tenantId,
                     IncludeSystem = true,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize
+                    PageNumber = Math.Max(1, pageNumber),          // 120 — page 0 was a negative skip (a 500)
+                    PageSize = Math.Clamp(pageSize, 1, 1000)   // 120 — dropdowns ask for up to 1,000
                 };
 
                 var result = await _getVerticals.Handle(query, cancellationToken);
@@ -102,8 +113,8 @@ namespace MerkaiTrial.WebApi.Controllers
                 {
                     TenantId = tenantId,
                     IncludeSystem = tenantId.HasValue,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize,
+                    PageNumber = Math.Max(1, pageNumber),          // 120 — page 0 was a negative skip (a 500)
+                    PageSize = Math.Clamp(pageSize, 1, 1000),   // 120 — dropdowns ask for up to 1,000
                     SearchTerm = searchTerm,
                     ShowSystemOnly = showSystemOnly,
                     ShowCustomOnly = showCustomOnly,
@@ -143,6 +154,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPost]
+        [PlatformAdminOnly]   // 119
         [ProducesResponseType(typeof(CompanyVerticalDto), 201)]
         [ProducesResponseType(400)]
         public async Task<IActionResult> Create([FromBody] CreateCompanyVerticalDto dto, CancellationToken cancellationToken = default)
@@ -159,7 +171,7 @@ namespace MerkaiTrial.WebApi.Controllers
                     Description = dto.Description,
                     Icon = dto.Icon,
                     Color = dto.Color,
-                    CreatedBy = dto.CreatedBy
+                    CreatedBy = Who   // 120 — the signed-in person, not what the request says
                 };
 
                 var vertical = await _createVertical.Handle(command, cancellationToken);
@@ -177,6 +189,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpPut("{id}")]
+        [PlatformAdminOnly]   // 119
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateCompanyVerticalDto dto, CancellationToken cancellationToken = default)
@@ -193,7 +206,7 @@ namespace MerkaiTrial.WebApi.Controllers
                     Description = dto.Description,
                     Icon = dto.Icon,
                     Color = dto.Color,
-                    UpdatedBy = dto.UpdatedBy
+                    UpdatedBy = Who   // 120
                 };
 
                 await _updateVertical.Handle(command, cancellationToken);
@@ -211,6 +224,7 @@ namespace MerkaiTrial.WebApi.Controllers
         }
 
         [HttpDelete("{id}")]
+        [PlatformAdminOnly]   // 119
         [ProducesResponseType(204)]
         [ProducesResponseType(404)]
         [ProducesResponseType(400)]

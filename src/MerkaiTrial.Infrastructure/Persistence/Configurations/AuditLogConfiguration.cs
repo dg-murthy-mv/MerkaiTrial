@@ -32,6 +32,12 @@ public class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
          .HasDatabaseName("IX_AuditLogs_Tenant_Entity")
          .IncludeProperties(a => new { a.CreatedAtUtc, a.By });
 
+        // 119 — Admin → Audit Log: "everything a super admin did", newest
+        // first. Created by Sql/119_AuditLogs_ActorIndex.sql.
+        b.HasIndex(a => new { a.ActorUserId, a.CreatedAtUtc })
+         .HasDatabaseName("IX_AuditLogs_Actor_CreatedAt")
+         .IncludeProperties(a => new { a.TenantId, a.Action, a.EntityType, a.EntityId, a.By });
+
         // NO global query filter — see the exemption note in FlowDbContext.
         // Audit reads are SuperAdmin-only and legitimately cross-tenant;
         // the read endpoints scope by tenant explicitly.

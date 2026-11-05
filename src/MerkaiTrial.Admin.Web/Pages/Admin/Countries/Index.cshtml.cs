@@ -26,6 +26,27 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Countries
         public PaginatedResult<CountryListItem> PaginatedCountries { get; set; } = new();
         public CountryStatsDto Stats { get; set; } = null!;
 
+        /// <summary>120 — the shared pager; every link keeps the search and filters.</summary>
+        public MerkaiTrial.Admin.Web.Pages.Shared.PagerVm Pager
+        {
+            get
+            {
+                var route = new Dictionary<string, string>();
+                if (!string.IsNullOrWhiteSpace(SearchTerm)) route[nameof(SearchTerm)] = SearchTerm!;
+                if (ShowInactiveOnly) route[nameof(ShowInactiveOnly)] = "true";
+                if (!string.IsNullOrWhiteSpace(CurrencyFilter)) route[nameof(CurrencyFilter)] = CurrencyFilter!;
+                return new()
+                {
+                    Page = PageNumber,
+                    PageSize = PageSize,
+                    TotalCount = PaginatedCountries.TotalCount,
+                    TotalPages = Math.Max(1, PaginatedCountries.TotalPages),
+                    PageField = nameof(PageNumber),
+                    Route = route,
+                };
+            }
+        }
+
         // ✅ NEW: Wrapper for pagination component compatibility
         public dynamic PaginatedCountriesForView => new
         {
@@ -53,9 +74,10 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.Countries
 
         public async Task OnGetAsync()
         {
-            // Validate page size
-            if (PageSize < 5) PageSize = 5;
-            if (PageSize > 100) PageSize = 100;
+            // 120 — the pager's sizes only; page 1 at least; a short search.
+            if (!MerkaiTrial.Admin.Web.Pages.Shared.PagerVm.Sizes.Contains(PageSize)) PageSize = 25;
+            if (PageNumber < 1) PageNumber = 1;
+            if (SearchTerm?.Length > 100) SearchTerm = SearchTerm[..100];
 
             await LoadDataAsync();
         }

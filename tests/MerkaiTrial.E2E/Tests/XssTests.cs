@@ -174,15 +174,11 @@ public class XssTests : E2ETest
             {
                 var super = await SignedInAsync(World.SuperAdmin);
 
-                await super.GotoAsync($"/Admin/Tenants/Detail/{tenantId}");
+                // 118 — the workspace's people are their own page now.
+                await super.GotoAsync($"/Admin/Tenants/People/{tenantId}");
                 await Ui.WaitForDocumentAsync(super);
-                var tab = super.Locator("#users-tab");
-                if (await tab.CountAsync() > 0)
-                {
-                    await tab.ClickAsync();
-                    await Assertions.Expect(super.Locator("#usersTableBody")).ToContainTextAsync("Xena",
-                        new() { Timeout = E2ESettings.ActionTimeoutMs });
-                }
+                await Assertions.Expect(super.Locator("#workspacePeople")).ToContainTextAsync("Xena",
+                    new() { Timeout = E2ESettings.ActionTimeoutMs });
                 await super.WaitForTimeoutAsync(400);
                 await ExpectNotRunAsync(super, "Admin → Tenants → the workspace's People", problems);
 

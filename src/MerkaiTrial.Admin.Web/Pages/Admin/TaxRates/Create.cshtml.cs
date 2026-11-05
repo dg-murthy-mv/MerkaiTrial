@@ -103,8 +103,14 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.TaxRates
             public DateTime? EffectiveTo { get; set; }
         }
 
+        /// <summary>117: opened from a country's page — that country, already chosen.</summary>
+        [BindProperty(SupportsGet = true)]
+        public string? ForCountry { get; set; }
+
         public async Task OnGetAsync()
         {
+            if (!string.IsNullOrWhiteSpace(ForCountry))
+                Input.CountryCode = ForCountry.Trim().ToUpperInvariant();
             await LoadDropdownsAsync();
         }
 
@@ -174,7 +180,8 @@ namespace MerkaiTrial.Admin.Web.Pages.Admin.TaxRates
                 await _taxRateService.CreateAsync(dto);
 
                 TempData["SuccessMessage"] = $"Tax rate '{Input.Name}' created successfully!";
-                return RedirectToPage("./Index");
+                // 117: back to the country the rate belongs to.
+                return RedirectToPage("/Admin/Countries/Detail", new { code = Input.CountryCode, tab = "tax" });
             }
             catch (InvalidOperationException ex)
             {

@@ -205,7 +205,8 @@ namespace MerkaiTrial.Application.DTOs
         int LeadCount,
         DateTime CreatedAtUtc,
         string? CountryCode,
-        string? CountryName
+        string? CountryName,
+        string? Plan = null          // 120 — shown and filtered on Admin → Tenants
     );
 
     public record PaginatedTenantsResponse(

@@ -11,6 +11,8 @@
 //     element rather than from a screenshot. Things inside a box that
 //     scrolls on purpose (the pipeline board, a table-responsive) are
 //     left out: their content is meant to be wider than the screen.
+//     121-update1: when nothing else is named, absolutely positioned
+//     elements that escaped their scroll box are named instead.
 // =====================================================================
 
 namespace MerkaiTrial.E2E.Infrastructure;
@@ -65,6 +67,21 @@ public static class Phone
                 wide.push((p && p !== document.body ? name(p) + ' > ' : '') + name(el) +
                           ' is ' + Math.round(r.width) + 'px wide, right edge at ' + Math.round(r.right) + 'px');
                 if (wide.length >= 5) break;
+            }
+            // 121-update1 — nothing named? Then something absolutely positioned
+            // escaped its scroll box (its containing block is OUTSIDE the box,
+            // so the box does not clip it) — e.g. screen-reader-only text at
+            // the far end of a wide table. Name those.
+            if (wide.length === 0) {
+                for (const el of document.querySelectorAll('body *')) {
+                    const cs = getComputedStyle(el);
+                    if (cs.position !== 'absolute') continue;
+                    const r = el.getBoundingClientRect();
+                    if (r.right <= vw + 1) continue;
+                    wide.push(name(el) + ' (position: absolute, escapes its scroll box) — right edge at ' + Math.round(r.right) + 'px' +
+                              (el.textContent ? ', text ""' + el.textContent.trim().slice(0, 40) + '""' : ''));
+                    if (wide.length >= 5) break;
+                }
             }
             return ['The page is ' + pageWidth + 'px wide on a ' + vw + 'px screen.'].concat(wide);
         }");

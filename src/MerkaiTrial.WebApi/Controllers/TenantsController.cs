@@ -137,6 +137,13 @@ public class TenantsController : ControllerBase
     // =================================================================
     private bool IsSuperAdmin => User.HasClaim("IsSuperAdmin", "true");
 
+    /// <summary>119 — the super admin's OWN workspace (MadeeVision's): never switched off or deleted.</summary>
+    private bool IsCallersOwnWorkspace(Guid id)
+    {
+        var raw = User.FindFirst("RealTenantId")?.Value ?? User.FindFirst("TenantId")?.Value;
+        return Guid.TryParse(raw, out var mine) && mine == id;
+    }
+
     private IActionResult? RequireSuperAdmin(string operation)
     {
         if (IsSuperAdmin) return null;
@@ -162,14 +169,16 @@ public class TenantsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         [FromQuery] string? search = null,
-        [FromQuery] bool? isActive = null)
+        [FromQuery] bool? isActive = null,
+        [FromQuery] string? plan = null,     // 120
+        [FromQuery] string? sort = null)     // 120 — newest | oldest | name | users | leads
     {
         var denied = RequireSuperAdmin("tenants.list");
         if (denied is not null) return new ObjectResult(denied) { StatusCode = (denied as ObjectResult)?.StatusCode ?? 403 };
 
         try
         {
-            var result = await _getPaginatedHandler.Handle(page, pageSize, search, isActive);
+            var result = await _getPaginatedHandler.Handle(page, pageSize, search, isActive, plan, sort);
             return Ok(result);
         }
         catch (Exception ex)
@@ -263,6 +272,8 @@ public class TenantsController : ControllerBase
     {
         var denied = RequireSuperAdmin("tenants.status");
         if (denied is not null) return denied;
+        if (!isActive && IsCallersOwnWorkspace(id))   // 119
+            return BadRequest(new { error = "This is MadeeVision's own workspace. Switching it off would lock every super admin out." });
 
         try
         {
@@ -286,6 +297,8 @@ public class TenantsController : ControllerBase
     {
         var denied = RequireSuperAdmin("tenants.delete");
         if (denied is not null) return denied;
+        if (IsCallersOwnWorkspace(id))   // 119
+            return BadRequest(new { error = "This is MadeeVision's own workspace. It can't be deleted." });
 
         try
         {

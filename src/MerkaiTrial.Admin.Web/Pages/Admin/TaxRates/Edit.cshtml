@@ -99,7 +99,8 @@
         </div>
     }
 
-    <form method="post">
+    <form method="post" data-confirm-off="#Input_IsActive"
+          data-confirm-off-text="Switch this tax rate off? New quotes and invoices can no longer use it.">
         <input type="hidden" asp-for="Id" />
 
         <div class="row g-4">

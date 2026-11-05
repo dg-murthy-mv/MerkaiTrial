@@ -133,10 +133,10 @@ public class LocalAssetTests : E2ETest
         await Step("A super admin page with form checking: jQuery and validation from Merkai", async () =>
         {
             var sa = await SignedInAsync(World.SuperAdmin);
-            // 115-update1: the form belongs to a workspace — without ?tenantId it
-            // goes back to the list (which loads no jQuery), as it did in the
-            // first run.
-            await CheckAsync("super admin: new user", sa, $"/Admin/Users/Create?tenantId={tenantA}",
+            // 118: Admin → Users (and its Create form) is gone. Editing a
+            // workspace is the super admin page that loads jQuery and its
+            // validation now (most forms use Merkai's own small checker).
+            await CheckAsync("super admin: edit a workspace", sa, $"/Admin/Tenants/Edit/{tenantA}",
                 (Bootstrap, "Bootstrap's script"),
                 ("() => typeof window.jQuery !== 'undefined' && typeof window.jQuery.validator !== 'undefined'", "jQuery and its validation"));
         });

@@ -33,6 +33,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace MerkaiTrial.Admin.Web.Pages.Admin.ViewAs;
 
+[MerkaiTrial.Admin.Web.Filters.RecordsOwnAudit]   // 119 — ViewAsStart / ViewAsEnd are written by SignInService
 public class IndexModel : PageModel
 {
     private readonly FlowDbContext _db;

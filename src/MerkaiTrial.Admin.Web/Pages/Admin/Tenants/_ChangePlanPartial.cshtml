@@ -73,7 +73,8 @@
         <!-- Collapsible change plan form -->
         <div class="collapse mt-3" id="changePlanCollapse">
             <hr />
-            <form method="post" asp-page-handler="ChangePlan">
+            <form method="post" asp-page-handler="ChangePlan" id="changePlanForm"
+                  data-confirm="Change this workspace's plan? Its features and limits change straight away.">
                 <input type="hidden" name="tenantId" value="@Model.TenantId" />
 
                 <div class="mb-3">

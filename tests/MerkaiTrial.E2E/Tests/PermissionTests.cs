@@ -43,7 +43,7 @@ public class PermissionTests : E2ETest
     {
         var page = await SignedInAsync(World.A.Admin);
         await Ui.ExpectRefusedAsync(page, "/Admin/Tenants");
-        await Ui.ExpectRefusedAsync(page, "/Admin/Users");
+        await Ui.ExpectRefusedAsync(page, "/Admin/Team");   // 118 — was /Admin/Users, now gone
     }
 
     [Test]

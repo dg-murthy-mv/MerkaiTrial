@@ -243,9 +243,14 @@ public class IndexModel : AuthorizedPageModel
             AuditAction.SignIn           => "Signed in",
             AuditAction.SignInFailed     => "Sign-in failed",
             AuditAction.PasswordChanged  => "Password changed",
-            AuditAction.InviteIssued     => "Invite link issued",
-            AuditAction.ResetIssued      => "Password reset link issued",
-            AuditAction.PermissionChanged => "Permissions changed",
+            // 118 — "summary" says who it was for and that MadeeVision support did it.
+            AuditAction.InviteIssued     => "Invite link issued" + (S("summary") is { Length: > 0 } iv ? $" — {iv}" : ""),
+            AuditAction.ResetIssued      => "Password reset link issued" + (S("summary") is { Length: > 0 } rs ? $" — {rs}" : ""),
+            AuditAction.PermissionChanged => S("summary") is { Length: > 0 } pc ? pc : "Permissions changed",
+            AuditAction.AccountUnlocked  => "Sign-in unlocked" + (S("person") is { Length: > 0 } up ? $" for {up}" : "") + (S("summary") is { Length: > 0 } us ? $" {us}" : ""),
+            AuditAction.StaffAdded       => S("summary") is { Length: > 0 } sa ? sa : "Added to the MadeeVision team",
+            AuditAction.StaffSwitchedOff => S("summary") is { Length: > 0 } so ? so : "Team member switched off",
+            AuditAction.StaffSwitchedOn  => S("summary") is { Length: > 0 } sn ? sn : "Team member switched on",
             AuditAction.ViewAsStart      => "Started viewing as another user",
             AuditAction.ViewAsEnd        => "Stopped viewing as another user",
 

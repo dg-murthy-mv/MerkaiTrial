@@ -1,0 +1,60 @@
+@model MerkaiTrial.Admin.Web.Pages.Admin.IssuedLinkVm
+@* =====================================================================
+   FILE: Pages/Admin/_IssuedLinkCard.cshtml
+
+   NEW (118). A sign-in link shown once (moved here from the old
+   Admin/Users/Detail page). Test hooks: #issuedLinkCard, #issuedLink.
+   ===================================================================== *@
+<div class="card border-success mb-4" id="issuedLinkCard" data-kind="@Model.Kind">
+    <div class="card-header bg-success text-white">
+        <i class="bi bi-link-45deg" aria-hidden="true"></i>
+        @(Model.Kind == "invite" ? "New invite link" : "New password reset link") for @Model.Email
+    </div>
+    <div class="card-body">
+        <p class="mb-2 small">
+            @if (Model.Emailed)
+            {
+                <text>It has been emailed to them. Here it is as well, in case the email doesn't arrive.</text>
+            }
+            else
+            {
+                <text><strong>Not emailed.</strong> Send it to them yourself &mdash; WhatsApp, LINE or a chat they trust.</text>
+            }
+            It works once and expires in @Model.Lifetime.
+            @if (Model.Kind == "reset")
+            {
+                <text>Any older reset link has stopped working.</text>
+            }
+        </p>
+        <div class="input-group mb-2">
+            <label class="visually-hidden" for="issuedLink">The link</label>
+            <input type="text" id="issuedLink" class="form-control font-monospace" value="@Model.Url" readonly />
+            <button class="btn btn-primary" type="button" id="copyIssued">
+                <i class="bi bi-clipboard" aria-hidden="true"></i> Copy
+            </button>
+        </div>
+        <div id="copyConfirm" class="text-success small" role="status" style="display:none;">
+            <i class="bi bi-check-circle" aria-hidden="true"></i> Copied.
+        </div>
+        <div class="alert alert-warning small mt-3 mb-0">
+            <i class="bi bi-shield-lock me-1" aria-hidden="true"></i>
+            Anyone with this link can set this person's password. Send it only to them,
+            and don't paste it into a group chat. It is shown once and not stored.
+        </div>
+    </div>
+</div>
+<script>
+    (function () {
+        var box = document.getElementById('issuedLink');
+        var copy = document.getElementById('copyIssued');
+        if (!box || !copy) return;
+        box.addEventListener('click', function () { box.select(); });
+        copy.addEventListener('click', function () {
+            box.select();
+            var done = function () { document.getElementById('copyConfirm').style.display = 'block'; };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(box.value).then(done, function () { document.execCommand('copy'); done(); });
+            } else { document.execCommand('copy'); done(); }
+        });
+    })();
+</script>

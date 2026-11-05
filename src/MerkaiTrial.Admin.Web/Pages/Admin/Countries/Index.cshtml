@@ -22,20 +22,6 @@
     </div>
 
     <!-- Alerts -->
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="alert alert-success alert-dismissible fade show">
-            <i class="bi bi-check-circle me-2"></i>@TempData["SuccessMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
-    @if (TempData["ErrorMessage"] != null)
-    {
-        <div class="alert alert-danger alert-dismissible fade show">
-            <i class="bi bi-exclamation-triangle me-2"></i>@TempData["ErrorMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    }
 
     <!-- Statistics Cards -->
     <div class="row g-3 mb-4">
@@ -165,7 +151,7 @@
                         <tbody>
                             @foreach (var country in Model.PaginatedCountries.Items)
                             {
-                                <tr>
+                                <tr data-country="@country.Code">
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <div class="avatar-sm me-2">
@@ -294,7 +280,9 @@
             </div>
 
             <!-- Shared Pagination Component -->
-            <partial name="_Pagination" model="Model.PaginatedCountries" />
+            @* 120 — the shared pager. The old one sent "Page=2", which this page
+               never read (it reads PageNumber): every page link showed page 1. *@
+            <partial name="_Pager" model="Model.Pager" />
         }
     </div>
 </div>

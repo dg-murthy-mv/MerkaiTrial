@@ -1,0 +1,158 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Admin.Team.IndexModel
+@* =====================================================================
+   FILE: Pages/Admin/Team/Index.cshtml
+
+   NEW (118). MadeeVision's own staff (the super admins). Test hooks:
+   #teamMembers, tr[data-member="<email>"], [data-col=status],
+   button[data-action="<handler>"], #addMemberForm, #NewMember_FirstName /
+   _LastName / _Email, #addMemberError.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "MadeeVision Team";
+    string When(DateTime? utc) => utc is null ? "Never" : utc.Value.ToString("d MMM yyyy, HH:mm") + " UTC";
+}
+
+<div class="container-fluid py-4">
+    <div class="mb-3">
+        <h1 class="h3 mb-1"><i class="bi bi-person-badge me-2" aria-hidden="true"></i>MadeeVision Team</h1>
+        <p class="text-muted mb-0">
+            The people who run the platform. Each one can see and change <strong>every</strong> workspace,
+            so add only MadeeVision staff, and switch people off when they leave.
+        </p>
+    </div>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
+    }
+
+    @if (Model.Issued is not null)
+    {
+        <partial name="/Pages/Admin/_IssuedLinkCard.cshtml" model="Model.Issued" />
+    }
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="teamMembers">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">Person</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Last sign-in</th>
+                            <th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var m in Model.Team)
+                        {
+                            var isMe = m.Id == Model.MyUserId;
+                            <tr data-member="@m.Email">
+                                <td>
+                                    <div class="fw-semibold">@m.Name @if (isMe) { <span class="badge bg-info text-dark ms-1">You</span> }</div>
+                                    <div class="small text-muted text-break">@m.Email</div>
+                                </td>
+                                <td data-col="status">
+                                    @if (!m.IsActive)
+                                    {
+                                        <span class="badge bg-secondary">Switched off</span>
+                                    }
+                                    else if (m.IsLocked)
+                                    {
+                                        <span class="badge bg-danger">Locked out</span>
+                                    }
+                                    else if (!m.HasPassword)
+                                    {
+                                        <span class="badge bg-warning text-dark">Invited</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-success">Active</span>
+                                    }
+                                </td>
+                                <td class="small text-nowrap">@When(m.LastLoginUtc)</td>
+                                <td class="text-end">
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                                data-bs-toggle="dropdown" aria-expanded="false">
+                                            Actions<span class="visually-hidden"> for @m.Name</span>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            @if (m.IsActive)
+                                            {
+                                                if (!m.HasPassword)
+                                                {
+                                                    <li><form method="post" asp-page-handler="SendInvite">
+                                                        <input type="hidden" name="userId" value="@m.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="SendInvite"><i class="bi bi-envelope me-2" aria-hidden="true"></i>Send the invite again</button>
+                                                    </form></li>
+                                                }
+                                                <li><form method="post" asp-page-handler="SendReset">
+                                                    <input type="hidden" name="userId" value="@m.Id" />
+                                                    <button type="submit" class="dropdown-item" data-action="SendReset"><i class="bi bi-key me-2" aria-hidden="true"></i>Send reset email</button>
+                                                </form></li>
+                                                <li><form method="post" asp-page-handler="CopyResetLink">
+                                                    <input type="hidden" name="userId" value="@m.Id" />
+                                                    <button type="submit" class="dropdown-item" data-action="CopyResetLink"><i class="bi bi-link-45deg me-2" aria-hidden="true"></i>Get a reset link (not emailed)</button>
+                                                </form></li>
+                                                if (!isMe)
+                                                {
+                                                    <li><hr class="dropdown-divider" /></li>
+                                                    <li><form method="post" asp-page-handler="SwitchOff"
+                                                              onsubmit="return confirm('Switch this person off? They are signed out everywhere and can no longer run the platform.');">
+                                                        <input type="hidden" name="userId" value="@m.Id" />
+                                                        <button type="submit" class="dropdown-item text-danger" data-action="SwitchOff"><i class="bi bi-person-x me-2" aria-hidden="true"></i>Switch off</button>
+                                                    </form></li>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <li><form method="post" asp-page-handler="SwitchOn">
+                                                    <input type="hidden" name="userId" value="@m.Id" />
+                                                    <button type="submit" class="dropdown-item" data-action="SwitchOn"><i class="bi bi-person-check me-2" aria-hidden="true"></i>Switch on</button>
+                                                </form></li>
+                                            }
+                                        </ul>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white">
+            <h2 class="h6 mb-0"><i class="bi bi-person-plus me-1" aria-hidden="true"></i> Add a member of staff</h2>
+        </div>
+        <div class="card-body">
+            @if (Model.FormError is not null)
+            {
+                <div class="alert alert-danger" role="alert" id="addMemberError">@Model.FormError</div>
+            }
+            <form method="post" asp-page-handler="Add" id="addMemberForm" class="row g-3">
+                <div class="col-md-4">
+                    <label asp-for="NewMember.FirstName" class="form-label">First name</label>
+                    <input asp-for="NewMember.FirstName" class="form-control" maxlength="100" required autocomplete="off" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="NewMember.LastName" class="form-label">Last name <span class="text-muted small">(optional)</span></label>
+                    <input asp-for="NewMember.LastName" class="form-control" maxlength="100" autocomplete="off" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="NewMember.Email" class="form-label">Email</label>
+                    <input asp-for="NewMember.Email" type="email" class="form-control" maxlength="256" required autocomplete="off" />
+                </div>
+                <div class="col-12">
+                    <div class="form-text mb-2">They get an invite email to set their own password. Nobody, including you, ever sees it.</div>
+                    <button type="submit" class="btn btn-primary" id="addMemberButton">
+                        <i class="bi bi-send me-1" aria-hidden="true"></i> Add and send the invite
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

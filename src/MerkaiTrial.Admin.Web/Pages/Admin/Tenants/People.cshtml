@@ -1,0 +1,261 @@
+@page "/Admin/Tenants/People/{id:guid}"
+@model MerkaiTrial.Admin.Web.Pages.Admin.Tenants.PeopleModel
+@* =====================================================================
+   FILE: Pages/Admin/Tenants/People.cshtml
+
+   NEW (118). The people in one workspace, and what MadeeVision support may
+   do for them. Test hooks: #workspacePeople, tr[data-person="<email>"],
+   [data-col=status], [data-col=admin], button[data-action="<handler>"],
+   #addAdminForm, #NewAdmin_FirstName / _LastName / _Email, #addAdminError,
+   #peopleSearch.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = $"People — {Model.Data.WorkspaceName}";
+    string When(DateTime? utc) => utc is null ? "Never" : utc.Value.ToString("d MMM yyyy, HH:mm") + " UTC";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+        <div>
+            <h1 class="h3 mb-1"><i class="bi bi-people me-2" aria-hidden="true"></i>People</h1>
+            <p class="text-muted mb-0">
+                <a asp-page="./Detail" asp-route-id="@Model.Id" class="text-decoration-none">@Model.Data.WorkspaceName</a>
+                &middot; @Model.Data.TotalPeople @(Model.Data.TotalPeople == 1 ? "person" : "people")
+                &middot; @Model.Data.ActiveAdmins active admin@(Model.Data.ActiveAdmins == 1 ? "" : "s")
+                @if (!Model.Data.WorkspaceIsActive)
+                {
+                    <span class="badge bg-danger ms-1">Workspace switched off</span>
+                }
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-page="./Detail" asp-route-id="@Model.Id" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i> Back to workspace
+            </a>
+        </div>
+    </div>
+
+    <div class="alert alert-info small" role="note">
+        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+        Adding, editing and removing people is the workspace admin's job, in their own Settings &rarr; Users.
+        From here MadeeVision support can help someone get back in, and replace the workspace admin.
+        Everything you do here is shown in the workspace's own Activity Log.
+    </div>
+
+    @if (Model.IsOwnWorkspace)
+    {
+        <div class="alert alert-warning small">
+            This is MadeeVision's own workspace. Its staff are managed on
+            <a asp-page="/Admin/Team/Index">MadeeVision Team</a>.
+        </div>
+    }
+
+    @if (Model.Issued is not null)
+    {
+        <partial name="/Pages/Admin/_IssuedLinkCard.cshtml" model="Model.Issued" />
+    }
+
+    @if (Model.Data.ActiveAdmins == 0 && Model.Data.TotalPeople > 0)
+    {
+        <div class="alert alert-danger" role="alert" id="noActiveAdmin">
+            <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+            This workspace has <strong>no active admin</strong>. Make someone the admin, or add a new admin by invite below.
+        </div>
+    }
+
+    <form method="get" class="row g-2 mb-3" role="search">
+        <div class="col-sm-8 col-md-6 col-lg-4">
+            <label for="peopleSearch" class="visually-hidden">Search by name or email</label>
+            <input type="search" id="peopleSearch" name="search" value="@Model.Search" class="form-control"
+                   placeholder="Search by name or email" maxlength="100" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search" aria-hidden="true"></i> Search</button>
+            @if (!string.IsNullOrWhiteSpace(Model.Search))
+            {
+                <a asp-page="./People" asp-route-id="@Model.Id" class="btn btn-link">Clear</a>
+            }
+        </div>
+    </form>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            @if (Model.Data.People.Count == 0)
+            {
+                <div class="text-center text-muted py-5">
+                    @(string.IsNullOrWhiteSpace(Model.Search) ? "Nobody in this workspace yet." : "Nobody matches that search.")
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="workspacePeople">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Person</th>
+                                <th scope="col">Roles</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Last sign-in</th>
+                                <th scope="col" class="text-end"><span class="visually-hidden">Actions</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in Model.Data.People)
+                            {
+                                <tr data-person="@p.Email">
+                                    <td>
+                                        <div class="fw-semibold">@p.Name</div>
+                                        <div class="small text-muted text-break">@p.Email</div>
+                                    </td>
+                                    <td class="small" data-col="admin">
+                                        @if (p.IsTenantAdmin)
+                                        {
+                                            <span class="badge bg-primary">Workspace admin</span>
+                                        }
+                                        @foreach (var r in p.Roles)
+                                        {
+                                            <span class="badge bg-light text-dark border">@r</span>
+                                        }
+                                        @if (!p.IsTenantAdmin && p.Roles.Count == 0)
+                                        {
+                                            <span class="text-muted">No role</span>
+                                        }
+                                    </td>
+                                    <td data-col="status">
+                                        @if (!p.IsActive)
+                                        {
+                                            <span class="badge bg-secondary">Switched off</span>
+                                        }
+                                        else if (p.IsLocked)
+                                        {
+                                            <span class="badge bg-danger">Locked out</span>
+                                        }
+                                        else if (!p.HasPassword)
+                                        {
+                                            <span class="badge bg-warning text-dark">Invited</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                    </td>
+                                    <td class="small text-nowrap">@When(p.LastLoginUtc)</td>
+                                    <td class="text-end">
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                                    data-bs-toggle="dropdown" aria-expanded="false">
+                                                Help<span class="visually-hidden"> @p.Name</span>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                @if (p.IsActive)
+                                                {
+                                                    if (!p.HasPassword)
+                                                    {
+                                                        <li><form method="post" asp-page-handler="SendInvite" asp-route-id="@Model.Id" asp-route-search="@Model.Search">
+                                                            <input type="hidden" name="userId" value="@p.Id" />
+                                                            <button type="submit" class="dropdown-item" data-action="SendInvite"><i class="bi bi-envelope me-2" aria-hidden="true"></i>Send the invite again</button>
+                                                        </form></li>
+                                                    }
+                                                    <li><form method="post" asp-page-handler="SendReset" asp-route-id="@Model.Id" asp-route-search="@Model.Search">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="SendReset"><i class="bi bi-key me-2" aria-hidden="true"></i>Send reset email</button>
+                                                    </form></li>
+                                                    <li><form method="post" asp-page-handler="CopyResetLink" asp-route-id="@Model.Id" asp-route-search="@Model.Search">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="CopyResetLink"><i class="bi bi-link-45deg me-2" aria-hidden="true"></i>Get a reset link (not emailed)</button>
+                                                    </form></li>
+                                                }
+                                                @if (p.IsLocked || p.FailedLoginCount > 0)
+                                                {
+                                                    <li><form method="post" asp-page-handler="Unlock" asp-route-id="@Model.Id" asp-route-search="@Model.Search">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="Unlock"><i class="bi bi-unlock me-2" aria-hidden="true"></i>Unlock</button>
+                                                    </form></li>
+                                                }
+                                                <li><hr class="dropdown-divider" /></li>
+                                                @if (p.IsActive && !p.IsTenantAdmin)
+                                                {
+                                                    <li><form method="post" asp-page-handler="MakeAdmin" asp-route-id="@Model.Id" asp-route-search="@Model.Search"
+                                                              onsubmit="return confirm('Make this person a workspace admin? They will be able to change everything in this workspace.');">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="MakeAdmin"><i class="bi bi-shield-plus me-2" aria-hidden="true"></i>Make workspace admin</button>
+                                                    </form></li>
+                                                }
+                                                @if (p.IsTenantAdmin)
+                                                {
+                                                    <li><form method="post" asp-page-handler="RemoveAdmin" asp-route-id="@Model.Id" asp-route-search="@Model.Search"
+                                                              onsubmit="return confirm('Take workspace admin away from this person? They keep their other roles.');">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="RemoveAdmin"><i class="bi bi-shield-minus me-2" aria-hidden="true"></i>Remove workspace admin</button>
+                                                    </form></li>
+                                                }
+                                                @if (p.IsActive)
+                                                {
+                                                    <li><form method="post" asp-page-handler="SwitchOff" asp-route-id="@Model.Id" asp-route-search="@Model.Search"
+                                                              onsubmit="return confirm('Switch this person off? They are signed out everywhere and cannot sign in until switched on.');">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item text-danger" data-action="SwitchOff"><i class="bi bi-person-x me-2" aria-hidden="true"></i>Switch off</button>
+                                                    </form></li>
+                                                }
+                                                else
+                                                {
+                                                    <li><form method="post" asp-page-handler="SwitchOn" asp-route-id="@Model.Id" asp-route-search="@Model.Search">
+                                                        <input type="hidden" name="userId" value="@p.Id" />
+                                                        <button type="submit" class="dropdown-item" data-action="SwitchOn"><i class="bi bi-person-check me-2" aria-hidden="true"></i>Switch on</button>
+                                                    </form></li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Model.Data.People.Count >= MerkaiTrial.Application.Commands.Platform.SupportPeopleRules.ListLimit)
+                {
+                    <div class="small text-muted p-3 border-top">
+                        Showing the first @Model.Data.People.Count. Search by name or email to find someone else.
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <details class="card border-0 shadow-sm" id="addAdminCard" open="@(Model.ShowAddAdmin ? "open" : null)">
+        <summary class="card-header bg-white" style="cursor: pointer;">
+            <span class="h6"><i class="bi bi-person-plus me-1" aria-hidden="true"></i> Add a new workspace admin</span>
+            <span class="small text-muted d-block">Only when the admin has left and nobody in the workspace can take over.
+                Otherwise use "Make workspace admin" on someone already here.</span>
+        </summary>
+        <div class="card-body">
+            @if (Model.FormError is not null)
+            {
+                <div class="alert alert-danger" role="alert" id="addAdminError">@Model.FormError</div>
+            }
+            <form method="post" asp-page-handler="AddAdmin" asp-route-id="@Model.Id" id="addAdminForm" class="row g-3">
+                <div class="col-md-4">
+                    <label asp-for="NewAdmin.FirstName" class="form-label">First name</label>
+                    <input asp-for="NewAdmin.FirstName" class="form-control" maxlength="100" required autocomplete="off" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="NewAdmin.LastName" class="form-label">Last name <span class="text-muted small">(optional)</span></label>
+                    <input asp-for="NewAdmin.LastName" class="form-control" maxlength="100" autocomplete="off" />
+                </div>
+                <div class="col-md-4">
+                    <label asp-for="NewAdmin.Email" class="form-label">Email</label>
+                    <input asp-for="NewAdmin.Email" type="email" class="form-control" maxlength="256" required autocomplete="off" />
+                </div>
+                <div class="col-12">
+                    <div class="form-text mb-2">
+                        They get an invite email to set their password, and become an admin of this workspace.
+                        They count towards the plan's user limit like anyone else.
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="addAdminButton">
+                        <i class="bi bi-send me-1" aria-hidden="true"></i> Add and send the invite
+                    </button>
+                </div>
+            </form>
+        </div>
+    </details>
+</div>
