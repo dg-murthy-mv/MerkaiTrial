@@ -38,6 +38,7 @@ public static class FeatureCatalog
         new("custom_roles",        "Create New Roles", "shield-check"),
         new("sso",                 "SSO",              "key"),
         new("audit_logs",          "Activity Log",     "clock-history"),
+        new("ai_assistant",        "AI Assistant",     "stars"),          // 122
         new("webhooks",            "Webhooks",         "plugin"),
         new("white_label",         "White Label",      "brush"),
         new("dedicated_support",   "Priority Support", "headset"),

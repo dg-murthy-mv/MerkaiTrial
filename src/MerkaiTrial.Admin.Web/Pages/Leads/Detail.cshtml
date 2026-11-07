@@ -298,6 +298,8 @@
 
         <!-- Right Sidebar -->
         <div class="col-lg-4">
+            @* 124 — AI help for this lead (shown only when the assistant may look at records) *@
+            <partial name="_AiRecordHelper" model="@(new MerkaiTrial.Admin.Web.Pages.Shared.AiRecordHelperVm("lead", Model.Lead.Id))" />
             @await Html.PartialAsync("_RightSidebar", Model)
         </div>
     </div>

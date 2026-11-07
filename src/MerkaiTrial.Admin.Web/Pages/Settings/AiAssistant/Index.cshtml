@@ -1,0 +1,136 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Settings.AiAssistant.IndexModel
+@* =====================================================================
+   FILE: Pages/Settings/AiAssistant/Index.cshtml — NEW (122).
+   Test hooks: #aiState, #aiTurnOn, #aiTurnOff, #aiUsed, #aiLimit, #aiNotReady.
+   123: the second switch — #aiRecordsState, #aiRecordsOn, #aiRecordsOff.
+   125: the list says the assistant can PREPARE tasks, logs and notes, saved
+   only when the person confirms.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "AI Assistant";
+    var canChange = Model.CanUpdate;
+}
+
+<div class="container-fluid py-4" style="max-width: 52rem;">
+    <h1 class="h3 mb-1"><i class="bi bi-stars me-2" aria-hidden="true"></i>AI Assistant</h1>
+    <p class="text-muted mb-4">An assistant everyone in the workspace can ask, from "Ask Merkai" at the bottom right of every page.</p>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
+    }
+    else if (Model.Status is { } s)
+    {
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <div class="fw-semibold">
+                            The assistant is
+                            <span id="aiState" class="badge @(s.IsOn ? "bg-success" : "bg-secondary")">@(s.IsOn ? "On" : "Off")</span>
+                        </div>
+                        <div class="small text-muted mt-1">
+                            <span id="aiUsed">@s.UsedThisMonth</span> of <span id="aiLimit">@s.MonthlyLimit</span> questions used this month.
+                            They start again on the 1st.
+                        </div>
+                    </div>
+                    @if (canChange)
+                    {
+                        <form method="post" asp-page-handler="Set"
+                              data-confirm="@(s.IsOn ? "Turn the AI assistant off for everyone in this workspace?" : null)">
+                            <input type="hidden" name="on" value="@(s.IsOn ? "false" : "true")" />
+                            @if (s.IsOn)
+                            {
+                                <button type="submit" class="btn btn-outline-danger" id="aiTurnOff">Turn off</button>
+                            }
+                            else
+                            {
+                                <button type="submit" class="btn btn-primary" id="aiTurnOn"><i class="bi bi-stars me-1" aria-hidden="true"></i>Turn on</button>
+                            }
+                        </form>
+                    }
+                    else
+                    {
+                        <span class="small text-muted">Only a workspace admin can turn it on or off.</span>
+                    }
+                </div>
+                @if (!s.ProviderReady)
+                {
+                    <div class="alert alert-warning small mt-3 mb-0" id="aiNotReady">
+                        The assistant isn't set up on this server yet, so it can't answer even when it's on. Please contact MadeeVision.
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* 123 — the second switch: may the assistant look at records? *@
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                    <div>
+                        <div class="fw-semibold">
+                            Let the assistant look at records
+                            <span id="aiRecordsState" class="badge @(s.RecordsOn ? "bg-success" : "bg-secondary")">@(s.RecordsOn ? "On" : "Off")</span>
+                        </div>
+                        <div class="small text-muted mt-1" style="max-width: 32rem;">
+                            So people can ask things like "which of my deals close this month?" or "what's overdue for Acme?",
+                            and get AI help (summary, next step, drafts) on lead and deal pages.
+                            It only ever sees what the person asking is allowed to see, and it can't change anything.
+                        </div>
+                    </div>
+                    @if (canChange)
+                    {
+                        <form method="post" asp-page-handler="Records"
+                              data-confirm="@(s.RecordsOn ? null : "Let the assistant look at records? What it finds for a question is sent to the AI provider with that question.")">
+                            <input type="hidden" name="records" value="@(s.RecordsOn ? "false" : "true")" />
+                            @if (s.RecordsOn)
+                            {
+                                <button type="submit" class="btn btn-outline-secondary" id="aiRecordsOff">Stop looking at records</button>
+                            }
+                            else
+                            {
+                                <button type="submit" class="btn btn-outline-primary" id="aiRecordsOn"><i class="bi bi-search me-1" aria-hidden="true"></i>Allow</button>
+                            }
+                        </form>
+                    }
+                </div>
+                @if (s.RecordsOn && !s.IsOn)
+                {
+                    <div class="small text-muted mt-2">This takes effect when the assistant is turned on.</div>
+                }
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body small">
+                <h2 class="h6">What happens when someone asks a question</h2>
+                <ul class="mb-0">
+                    <li>The question, the last few messages of that conversation, the workspace's name and the person's first name are sent to the AI provider MadeeVision uses, to write the answer.</li>
+                    @if (s.RecordsOn)
+                    {
+                        <li>The assistant may <strong>look up records</strong> to answer — leads, deals, contacts, companies, quotes, invoices and tasks — but <strong>only the ones the person asking is allowed to see</strong>. What it finds (names, statuses, amounts, dates, owners) is sent with the question. Email addresses, phone numbers and street addresses are never sent.</li>
+                        <li>Lead and deal pages also show <strong>AI help</strong> — Summarise, Next step, Draft email, Draft message. Each click is one question.</li>
+                        <li>It can <strong>prepare</strong> a task, a logged call or meeting, or a note when someone asks it to — but <strong>nothing is saved until that person clicks Confirm</strong>, and only if their role lets them change that lead or deal. It never edits or deletes anything, and never sends messages. Drafts are only shown, for the person to copy and check.</li>
+                    }
+                    else
+                    {
+                        <li>The assistant <strong>can't see your records</strong> (leads, deals, contacts, quotes, invoices). Allow it above to let people ask about them.</li>
+                    }
+                    <li>Every question is recorded in your workspace's <a asp-page="/Settings/AuditLogs/Index">Activity Log</a>.</li>
+                    <li>Answers come from an AI and can be wrong. People should check before acting on them.</li>
+                    <li>Turning it off stops anything more being sent, straight away.</li>
+                </ul>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // A plain confirm() before turning it off (the console's data-confirm helper lives in another layout).
+        document.querySelectorAll('form[data-confirm]').forEach(function (f) {
+            f.addEventListener('submit', function (e) { if (!confirm(f.getAttribute('data-confirm'))) e.preventDefault(); });
+        });
+    </script>
+}

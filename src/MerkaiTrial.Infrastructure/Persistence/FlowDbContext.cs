@@ -135,6 +135,9 @@ public class FlowDbContext : DbContext
     /// </summary>
     private Guid CurrentTenantId => _tenantProvider.TenantId;
     public DbSet<RoleTemplate> RoleTemplates => Set<RoleTemplate>();
+    public DbSet<AiSetting> AiSettings => Set<AiSetting>();   // 122
+    public DbSet<AiUsage> AiUsage => Set<AiUsage>();          // 122
+    public DbSet<AiProposal> AiProposals => Set<AiProposal>(); // 125
 
     // ── DbSets ───────────────────────────────────────────────────────
     public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
@@ -609,6 +612,11 @@ public class FlowDbContext : DbContext
                                     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
         b.Entity<TenantNotificationDefault>()
                                     .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+
+        // 122 — the AI assistant's switch and usage: this workspace's only.
+        b.Entity<AiSetting>()       .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<AiUsage>()         .HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        b.Entity<AiProposal>()      .HasQueryFilter(e => e.TenantId == CurrentTenantId);   // 125
 
         // Automation (098). Strict, both — one workspace's rules and the
         // log of what they did to its records. See item 19 in the header.

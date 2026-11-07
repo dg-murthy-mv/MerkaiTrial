@@ -35,6 +35,15 @@ namespace MerkaiTrial.Domain.Entities
         /// </summary>
         public const string PlatformChange = "PlatformChange";
 
+        // ── AI assistant (122) ────────────────────────────────────────
+        /// <summary>Someone asked the assistant. Data: { question (cut short), outcome }.</summary>
+        public const string AiQuestion = "AiQuestion";
+        /// <summary>The workspace admin turned the assistant on or off. Data: { on }.</summary>
+        public const string AiSettingChanged = "AiSettingChanged";
+        /// <summary>125. Someone confirmed a change the assistant prepared (or saved an AI draft as a note).
+        /// Data: { kind, recordType, recordId, summary, source }.</summary>
+        public const string AiActionConfirmed = "AiActionConfirmed";
+
         // ── Tenant lifecycle (existing) ───────────────────────────────
         public const string TrialProvisioned = "TrialProvisioned";
         public const string TrialExtended = "TrialExtended";

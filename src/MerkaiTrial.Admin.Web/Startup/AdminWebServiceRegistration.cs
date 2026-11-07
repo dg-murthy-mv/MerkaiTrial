@@ -355,6 +355,10 @@ public static class AdminWebServiceRegistration
         services.AddScoped<MerkaiTrial.Application.Commands.Platform.PlatformTeamService>();
         services.AddScoped<MerkaiTrial.Application.Commands.Platform.PlatformAuditLogHandler>();   // 119 — Admin → Audit Log
 
+        // 122 — the AI assistant: Admin.Web only calls the WebApi (which holds the key).
+        services.AddScoped<MerkaiTrial.Admin.Web.Services.Ai.IAiAssistantApi, MerkaiTrial.Admin.Web.Services.Ai.AiAssistantApi>();
+        services.AddScoped<MerkaiTrial.Admin.Web.Services.Ai.AiPanelAvailability>();
+
         return services;
     }
 }

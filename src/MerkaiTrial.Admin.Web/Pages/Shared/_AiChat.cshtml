@@ -1,0 +1,36 @@
+@* =====================================================================
+   FILE: Pages/Shared/_AiChat.cshtml
+
+   NEW (122). The assistant's conversation and question box — used by the
+   "Ask Merkai" panel (_Layout) and the /Assistant page. Model: the id to
+   give the root element. Wired by wwwroot/js/ai-assistant.js.
+   123: the greeting is on one line (its indentation showed in the bubble).
+   Test hooks: .ai-log, .ai-msg[data-role=user|assistant], .ai-error, .ai-rich, .ai-link, .ai-looked,
+   textarea[name=question], button.ai-send, .ai-status.
+   ===================================================================== *@
+@model string
+<div class="ai-chat" id="@Model">
+    <form method="post" class="d-none">@Html.AntiForgeryToken()</form>
+    <div class="ai-log" role="log" aria-live="polite" aria-label="Conversation with the assistant">
+        <div class="ai-msg ai-assistant ai-hello" data-role="intro">
+            @* 123: one line — the bubble keeps line breaks, so the source's indentation showed. *@
+            <div class="ai-bubble">Hi! Ask me how to do something in Merkai, for sales advice, or to draft an email or message. If your workspace admin allows it, I can also look up your leads, deals, quotes, invoices and tasks.</div>
+        </div>
+    </div>
+    <form class="ai-form" autocomplete="off">
+        <label class="visually-hidden" for="@(Model)-q">Your question</label>
+        <textarea id="@(Model)-q" name="question" rows="2" maxlength="1000" class="form-control"
+                  placeholder="Ask a question… (Enter sends, Shift+Enter for a new line)"></textarea>
+        <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+            <div class="ai-status small text-muted" role="status"></div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="ai-count small text-muted">0 / 1000</span>
+                <button type="submit" class="btn btn-primary btn-sm ai-send"><i class="bi bi-send" aria-hidden="true"></i> Ask</button>
+            </div>
+        </div>
+    </form>
+    <p class="ai-note small text-muted mb-0 mt-2">
+        Answers come from an AI and can be wrong — check before you act on them. Your question is sent to the
+        AI provider MadeeVision uses, and is recorded in your workspace's Activity Log.
+    </p>
+</div>

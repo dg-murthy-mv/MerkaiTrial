@@ -241,6 +241,8 @@
 
         <!-- Right Sidebar -->
         <div class="col-lg-4">
+            @* 124 — AI help for this deal (shown only when the assistant may look at records) *@
+            <partial name="_AiRecordHelper" model="@(new MerkaiTrial.Admin.Web.Pages.Shared.AiRecordHelperVm("deal", Model.Deal.Id))" />
             <partial name="_RightSidebar" />
         </div>
     </div>

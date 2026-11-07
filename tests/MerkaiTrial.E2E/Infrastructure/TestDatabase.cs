@@ -1268,6 +1268,75 @@ public sealed class TestDatabase
         ("Contacts", "PhoneDigits"), ("Contacts", "MobileDigits"), ("Leads", "PhoneDigits"),
     };
 
+    /// <summary>122. A workspace's own monthly AI question limit (null = the plan's).</summary>
+    public async Task SetAiMonthlyLimitAsync(Guid tenantId, int? limit)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(@"
+            IF EXISTS (SELECT 1 FROM dbo.AiSettings WHERE TenantId = @t)
+                UPDATE dbo.AiSettings SET MonthlyLimit = @l WHERE TenantId = @t;
+            ELSE
+                INSERT dbo.AiSettings (TenantId, IsOn, MonthlyLimit) VALUES (@t, 0, @l);", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.Add(new SqlParameter("@l", System.Data.SqlDbType.Int) { Value = (object?)limit ?? DBNull.Value });
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>123. Who a lead or deal belongs to — set directly, so a test knows exactly whose it is.</summary>
+    public async Task SetOwnerAsync(string table, Guid id, Guid? ownerUserId)
+    {
+        if (table is not ("Leads" or "Deals")) throw new ArgumentException("Leads or Deals only.", nameof(table));
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand($"UPDATE dbo.[{table}] SET OwnerUserId = @o WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", id);
+        cmd.Parameters.Add(new SqlParameter("@o", System.Data.SqlDbType.NVarChar, 450)
+            { Value = ownerUserId is { } o ? o.ToString() : DBNull.Value });
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>122. AI questions recorded for a workspace since a time, with this outcome.</summary>
+    public async Task<int> CountAiUsageAsync(Guid tenantId, string outcome, DateTime sinceUtc)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM dbo.AiUsage WHERE TenantId = @t AND Outcome = @o AND CreatedAtUtc >= @s", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@o", outcome);
+        cmd.Parameters.AddWithValue("@s", sinceUtc);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>125. Notes on a lead whose text contains the text.</summary>
+    public async Task<int> CountLeadNotesAsync(Guid leadId, string contains)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "SELECT COUNT(*) FROM dbo.LeadNotes WHERE LeadId = @l AND IsDeleted = 0 AND Note LIKE '%' + @s + '%'", conn);
+        cmd.Parameters.AddWithValue("@l", leadId);
+        cmd.Parameters.AddWithValue("@s", contains);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
+    /// <summary>125. Makes a prepared change look 31 minutes old (expired).</summary>
+    public async Task ExpireAiProposalAsync(Guid proposalId)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.AiProposals SET ExpiresAtUtc = DATEADD(MINUTE, -1, SYSUTCDATETIME()) WHERE Id = @id", conn);
+        cmd.Parameters.AddWithValue("@id", proposalId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>125. Prepared changes in a workspace since a time.</summary>
+    public async Task<int> CountAiProposalsAsync(Guid tenantId, DateTime sinceUtc)
+    {
+        await using var conn = await OpenAsync();
+        await using var cmd = new SqlCommand("SELECT COUNT(*) FROM dbo.AiProposals WHERE TenantId = @t AND CreatedAtUtc >= @s", conn);
+        cmd.Parameters.AddWithValue("@t", tenantId);
+        cmd.Parameters.AddWithValue("@s", sinceUtc);
+        return (int)(await cmd.ExecuteScalarAsync() ?? 0);
+    }
+
     /// <summary>118. Locks someone out as wrong passwords would (Support → Unlock is tested against it).</summary>
     public async Task SetLockoutAsync(Guid userId, DateTime? untilUtc, int failedCount)
     {

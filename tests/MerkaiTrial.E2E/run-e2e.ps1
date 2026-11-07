@@ -234,6 +234,9 @@ function Start-App($proj, [string]$name, [string]$urls, [hashtable]$extra) {
         'Diagnostics__ShowErrorDetails' = 'false'   # 105: errors as production shows them
         'Diagnostics__FaultProbe'       = 'true'    # 105: /__e2e/fault, Development only
         'Diagnostics__RequestCost'      = 'true'    # 107: count each request's queries, Development only
+        'Ai__Provider'                  = 'Fake'    # 122: the AI assistant's stand-in; never a real provider
+        'Ai__ApiKey'                    = ' '       # 122: and never a key
+        'Ai__PerPersonPerHour'          = '1000'    # 123: the AI tests ask many questions as one person
     }
     foreach ($k in $extra.Keys) { $vars[$k] = $extra[$k] }
 

@@ -1,0 +1,68 @@
+@* =====================================================================
+   FILE: Pages/Shared/_AiRecordHelper.cshtml
+
+   NEW (124). The AI helpers on a lead's or deal's page (right column):
+   Summarise · Next step · Draft email · Draft message, with an optional
+   note for drafts and a Copy button. Shown only when the plan includes the
+   assistant AND the workspace admin has turned it on AND allowed it to
+   look at records. Each click is one question against the month.
+   Wired by wwwroot/js/ai-assistant.js (MerkaiAssistant.attachHelper),
+   which posts to /Assistant?handler=Help.
+
+   Test hooks: #aiHelper, button[data-kind=summary|next_step|draft_email|
+   draft_message], #aiHelperNote, #aiHelperOut (.ai-rich when answered,
+   .ai-error when not), #aiHelperCopy, #aiHelper[data-ai-ready='1'].
+   125: #aiHelperSave — "Save as note" (the answer shown, as a note on this
+   lead or deal; needs Leads/Deals → Update).
+   125-update1: Save as note and Copy start disabled — enabled once there
+   is an answer to save or copy.
+   ===================================================================== *@
+@model MerkaiTrial.Admin.Web.Pages.Shared.AiRecordHelperVm
+@inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService Ui
+@inject MerkaiTrial.Admin.Web.Services.Ai.AiPanelAvailability AiPanel
+@{
+    bool inPlan;
+    try { inPlan = Ui.HasFeature("ai_assistant"); } catch { inPlan = false; }
+    var show = inPlan && await AiPanel.RecordsOnAsync();
+    var what = Model.Type == "deal" ? "deal" : "lead";
+}
+@if (show)
+{
+    <div class="card shadow-sm mb-4 ai-helper" id="aiHelper" data-type="@what" data-id="@Model.Id">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="bi bi-stars me-2" aria-hidden="true"></i>AI help for this @what</h6>
+        </div>
+        <div class="card-body">
+            <form method="post" class="d-none">@Html.AntiForgeryToken()</form>
+            <div class="d-grid gap-2 ai-helper-buttons" style="grid-template-columns: 1fr 1fr;">
+                <button type="button" class="btn btn-sm btn-outline-primary" data-kind="summary"><i class="bi bi-card-text me-1" aria-hidden="true"></i>Summarise</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-kind="next_step"><i class="bi bi-signpost-2 me-1" aria-hidden="true"></i>Next step</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-kind="draft_email"><i class="bi bi-envelope me-1" aria-hidden="true"></i>Draft email</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-kind="draft_message"><i class="bi bi-chat-dots me-1" aria-hidden="true"></i>Draft message</button>
+            </div>
+            <label for="aiHelperNote" class="form-label small text-muted mt-3 mb-1">For drafts: what should it say? (optional)</label>
+            <input type="text" id="aiHelperNote" class="form-control form-control-sm" maxlength="300"
+                   placeholder="e.g. thank them for the meeting, offer a demo next week" autocomplete="off" />
+
+            <div class="ai-helper-result mt-3 d-none">
+                <div id="aiHelperOut" class="ai-bubble ai-help-out" role="status" aria-live="polite"></div>
+                <div class="d-flex flex-wrap justify-content-between align-items-center mt-2 gap-2">
+                    <span class="small text-muted ai-help-status" role="status"></span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="aiHelperSave" disabled title="Save this text as a note on the @what"><i class="bi bi-journal-plus me-1" aria-hidden="true"></i>Save as note</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="aiHelperCopy" disabled><i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy</button>
+                    </div>
+                </div>
+            </div>
+            <p class="small text-muted mb-0 mt-3">
+                Each click uses one of the workspace's AI questions. Answers come from an AI and can be wrong —
+                check a draft before you send it.
+            </p>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.MerkaiAssistant && MerkaiAssistant.attachHelper) MerkaiAssistant.attachHelper(document.getElementById('aiHelper'));
+        });
+    </script>
+}

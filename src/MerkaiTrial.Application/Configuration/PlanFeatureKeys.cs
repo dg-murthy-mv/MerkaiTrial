@@ -21,6 +21,7 @@
 //   custom_roles          CREATING a new role. Editing the roles a workspace
 //                         already has is in every plan.
 //   audit_logs            Settings → Activity Log
+//   ai_assistant          (122) the AI assistant: its panel, page, settings and API
 //
 // Not enforced, because nothing in the product does them yet: api_access,
 // sso, webhooks, white_label, dedicated_support. leads, deals, contacts,
@@ -45,6 +46,8 @@ public static class PlanFeatureKeys
     public const string CustomRoles        = "custom_roles";
     public const string AuditLogs          = "audit_logs";
     public const string LeadScoring        = "lead_scoring";
+    /// <summary>122 — the AI assistant (Professional, Enterprise and trial plans).</summary>
+    public const string AiAssistant        = "ai_assistant";
 }
 
 /// <summary>

@@ -1,0 +1,33 @@
+@page
+@model MerkaiTrial.Admin.Web.Pages.Assistant.IndexModel
+@* =====================================================================
+   FILE: Pages/Assistant/Index.cshtml — NEW (122). The assistant, full page.
+   ===================================================================== *@
+@{
+    ViewData["Title"] = "AI Assistant";
+}
+
+<div class="container-fluid py-3" style="max-width: 52rem;">
+    <h1 class="h4 mb-1"><i class="bi bi-stars me-1" aria-hidden="true"></i> AI Assistant</h1>
+    <p class="text-muted small mb-3">Ask how to do something in Merkai, for sales advice, or for a draft to review.</p>
+
+    @if (Model.LoadError is not null)
+    {
+        <div class="alert alert-danger" role="alert">@Model.LoadError</div>
+    }
+    else if (Model.Status is { CanAsk: false } s)
+    {
+        <div class="alert alert-warning" role="alert" id="aiUnavailable">@s.Reason</div>
+    }
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <partial name="_AiChat" model="@("aiPage")" />
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/ai-assistant.js" asp-append-version="true"></script>
+    <script>MerkaiAssistant.attach(document.getElementById('aiPage'));</script>
+}

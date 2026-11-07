@@ -85,6 +85,7 @@ builder.Services
     .AddApiDomainServices()                    // current user, resolvers, audit, PDFs, …
     .AddTaxAndPayments()                       // per-country tax + payment providers
     .AddApiEmail(builder.Configuration)        // 038 — Resend sender + options; 083 — receiving
+    .AddApiAiAssistant(builder.Configuration)  // 122 — the AI assistant (provider from Ai__Provider)
     .AddApiBackgroundServices()                // 038 — outbound worker; 083 — inbound worker
     .AddApiRateLimits(builder.Configuration);  // 105 — 1,200 calls a minute per person
 

@@ -43,6 +43,7 @@
 @using System.Linq
 @using MerkaiTrial.Admin.Web.Services
 @inject MerkaiTrial.Application.Services.Tenants.ICurrentTenantService Ui
+@inject MerkaiTrial.Admin.Web.Services.Ai.AiPanelAvailability AiPanel
 
 @{
     var routeVals = ViewContext.RouteData.Values;
@@ -132,6 +133,13 @@
 
     // ✅ Feature helper — reads from TenantSettings.FeatureFlags via ICurrentTenantService
     // Injected as Ui in page scope — accessible here
+}
+@{
+    // 122 — the "Ask Merkai" button: the plan includes the assistant AND the
+    // workspace's admin has turned it on. Not on the /Assistant page itself.
+    var showAiPanel = InPlan("ai_assistant")
+                      && !currentPage.StartsWith("/Assistant", StringComparison.OrdinalIgnoreCase)
+                      && await AiPanel.IsOnAsync();
 }
 
 <!doctype html>
@@ -1098,6 +1106,48 @@
         /* A greyed-out button that only says WHY something can't be done
            ("Issued — can't be deleted") is a message: keep it readable. */
         .btn.disabled.pe-none { opacity: 1; color: #5c636a; background-color: #f1f3f5; border-color: #ced4da; }
+
+        /* ── 122: the AI assistant (panel and /Assistant page) ───────── */
+        .ai-chat { display: flex; flex-direction: column; min-height: 0; }
+        .ai-log { flex: 1 1 auto; min-height: 12rem; max-height: 55vh; overflow-y: auto; padding: .25rem; margin-bottom: .75rem; }
+        .offcanvas .ai-log { max-height: none; }
+        .ai-msg { display: flex; margin-bottom: .6rem; }
+        .ai-msg.ai-user { justify-content: flex-end; }
+        .ai-msg.ai-has-proposals { flex-direction: column; align-items: flex-start; }   /* 125 */
+        .ai-bubble { max-width: 85%; padding: .55rem .8rem; border-radius: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92rem; line-height: 1.4; }
+        .ai-user .ai-bubble { background: #4f46e5; color: #fff; border-bottom-right-radius: .25rem; }
+        .ai-assistant .ai-bubble { background: #f1f5f9; color: #0f172a; border-bottom-left-radius: .25rem; }
+        .ai-error .ai-bubble { background: #fef2f2; color: #991b1b; }
+        .ai-thinking .ai-bubble { color: #64748b; font-style: italic; }
+        /* 123: formatted answers (built element by element by ai-assistant.js) */
+        .ai-bubble.ai-rich { white-space: normal; }
+        .ai-rich p { margin: 0 0 .5rem; }
+        .ai-rich ul, .ai-rich ol { margin: 0 0 .5rem; padding-left: 1.25rem; }
+        .ai-rich li { margin-bottom: .15rem; }
+        .ai-rich > :last-child { margin-bottom: 0; }
+        .ai-rich .ai-link { color: #4338ca; text-decoration: underline; }
+        .ai-rich .ai-looked { margin-top: .45rem; padding-top: .35rem; border-top: 1px solid #e2e8f0; font-size: .78rem; }
+        .ai-hello .ai-bubble { white-space: normal; }
+        /* 124: the record helpers card */
+        .ai-help-out { max-width: none; background: #f8fafc; border: 1px solid #e2e8f0; color: #0f172a; }
+        .ai-help-out.ai-error { background: #fef2f2; color: #991b1b; border-color: #fecaca; white-space: normal; }
+        .ai-help-out.ai-thinking-text { color: #64748b; font-style: italic; }
+        /* 125: prepared changes under an answer */
+        .ai-proposal { margin-top: .5rem; padding: .6rem .7rem; border: 1px solid #c7d2fe; border-left: 4px solid #4f46e5; border-radius: .5rem; background: #fff; max-width: 85%; }
+        .ai-proposal.is-done { border-color: #bbf7d0; border-left-color: #16a34a; }
+        .ai-proposal.is-cancelled { opacity: .7; border-left-color: #94a3b8; }
+        .ai-proposal-head { color: #4338ca; margin-bottom: .25rem; }
+        .ai-proposal-text { font-size: .9rem; color: #0f172a; white-space: pre-wrap; }
+        .ai-proposal-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .5rem; }
+        .ai-proposal-result:empty { display: none; }
+        .ai-proposal-result { margin-top: .35rem; }
+        /* 125: room at the bottom of every page so "Ask Merkai" never covers the last buttons */
+        .ai-fab-spacer { height: 4.5rem; }
+        .ai-fab { position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 1040; border-radius: 999px; box-shadow: 0 6px 20px rgba(79,70,229,.35); }
+        @@media (max-width: 575.98px) { .ai-fab { right: .75rem; bottom: .75rem; } .ai-fab .ai-fab-label { display: none; } }
+        #aiPanel { width: min(28rem, 100vw); }
+        #aiPanel .offcanvas-body { display: flex; flex-direction: column; }
+        #aiPanel .ai-chat { flex: 1 1 auto; }
     </style>
 </head>
 @* ✅ Tenant culture published to the client so JS money formatting matches the
@@ -1437,6 +1487,16 @@
                         </a>
                     }
 
+                    @* 122. The AI assistant: whether it is on, and how many questions are left. *@
+                    @if (CanNav("settings"))
+                    {
+                        <a class="lf-nav-item @(IsActive("/Settings/AiAssistant") ? "active" : "")"
+                           asp-page="/Settings/AiAssistant/Index">
+                            <i class="bi bi-stars"></i> AI Assistant
+                            @if (!InPlan("ai_assistant")) { <i class="bi bi-lock-fill lf-lock-icon" aria-hidden="true" title="Not in your plan"></i><span class="visually-hidden"> (not in your plan)</span> }
+                        </a>
+                    }
+
                     @* 098. Workflow automation — its own module, so a tenant
                        admin can hand it to a sales manager with one tick in
                        the role editor without also handing over the rest of
@@ -1746,11 +1806,57 @@
             }
 
             @RenderBody()
+            @if (showAiPanel)
+            {
+                <div class="ai-fab-spacer" aria-hidden="true"></div>
+            }
         </main>
 
     </div>
 
+    @if (showAiPanel)
+    {
+        @* 122 — "Ask Merkai": a button on every page, a side panel with the chat. *@
+        <button type="button" class="btn btn-primary ai-fab" id="aiFab"
+                data-bs-toggle="offcanvas" data-bs-target="#aiPanel" aria-controls="aiPanel">
+            <i class="bi bi-stars" aria-hidden="true"></i><span class="ai-fab-label"> Ask Merkai</span>
+            <span class="visually-hidden">Open the AI assistant</span>
+        </button>
+        <div class="offcanvas offcanvas-end" tabindex="-1" id="aiPanel" aria-labelledby="aiPanelTitle">
+            <div class="offcanvas-header border-bottom">
+                <h2 class="offcanvas-title h6 mb-0" id="aiPanelTitle"><i class="bi bi-stars me-1" aria-hidden="true"></i> AI Assistant</h2>
+                <div class="d-flex align-items-center gap-2">
+                    <a href="/Assistant" class="btn btn-sm btn-link" title="Open full page">Full page</a>
+                    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+                </div>
+            </div>
+            <div class="offcanvas-body">
+                <partial name="_AiChat" model="@("aiPanelChat")" />
+            </div>
+        </div>
+    }
+
     <script src="~/lib/bootstrap-5.3.3/js/bootstrap.bundle.min.js"></script>
+    @if (showAiPanel)
+    {
+        <script src="~/js/ai-assistant.js" asp-append-version="true"></script>
+        <script>
+            // 122 — wired the first time the panel opens (no status call on every page).
+            // 122-update1: wired as the panel STARTS to open (show), not after its
+            // slide-in finishes (shown) — a question typed during the slide-in
+            // was lost, because Enter did nothing until then.
+            (function () {
+                var panel = document.getElementById('aiPanel');
+                panel.addEventListener('show.bs.offcanvas', function () {
+                    MerkaiAssistant.attach(document.getElementById('aiPanelChat'));
+                });
+                panel.addEventListener('shown.bs.offcanvas', function () {
+                    var box = document.querySelector('#aiPanelChat textarea[name=question]');
+                    if (box) box.focus();
+                });
+            })();
+        </script>
+    }
     <script>
         // 094 (6): the open state is on the button for screen readers, and
         // the page behind the menu stops scrolling while it is open.

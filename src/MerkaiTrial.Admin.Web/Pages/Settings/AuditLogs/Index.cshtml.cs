@@ -247,6 +247,18 @@ public class IndexModel : AuthorizedPageModel
             AuditAction.InviteIssued     => "Invite link issued" + (S("summary") is { Length: > 0 } iv ? $" — {iv}" : ""),
             AuditAction.ResetIssued      => "Password reset link issued" + (S("summary") is { Length: > 0 } rs ? $" — {rs}" : ""),
             AuditAction.PermissionChanged => S("summary") is { Length: > 0 } pc ? pc : "Permissions changed",
+            // 122 — the AI assistant
+            AuditAction.AiQuestion       => "Asked the AI assistant" + (S("question") is { Length: > 0 } aq ? $": \"{aq}\"" : "")
+                                            + (S("outcome") is "failed" ? " (not answered)" : S("outcome") is "limit" ? " (monthly limit reached)" : "")
+                                            + (S("looked") is { Length: > 0 } lk ? $" — looked at records ({lk})" : ""),   // 123
+            // 125 — a change the assistant prepared, confirmed by the person (or an AI draft saved as a note)
+            AuditAction.AiActionConfirmed => S("source") is "helper"
+                                                ? (S("summary") is { Length: > 0 } hs ? hs : "Saved an AI draft as a note")
+                                                : "Confirmed an AI assistant suggestion" + (S("summary") is { Length: > 0 } cs ? $": {cs}" : ""),
+            // 123 — "changed" says which switch: on (the assistant) or records (looking at records)
+            AuditAction.AiSettingChanged => S("changed") is "records"
+                                                ? (S("records") is "Yes" or "True" or "true" ? "AI assistant allowed to look at records" : "AI assistant no longer allowed to look at records")
+                                                : S("on") is "Yes" or "True" or "true" ? "AI assistant turned on" : "AI assistant turned off",
             AuditAction.AccountUnlocked  => "Sign-in unlocked" + (S("person") is { Length: > 0 } up ? $" for {up}" : "") + (S("summary") is { Length: > 0 } us ? $" {us}" : ""),
             AuditAction.StaffAdded       => S("summary") is { Length: > 0 } sa ? sa : "Added to the MadeeVision team",
             AuditAction.StaffSwitchedOff => S("summary") is { Length: > 0 } so ? so : "Team member switched off",
